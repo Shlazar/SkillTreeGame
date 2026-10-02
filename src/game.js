@@ -1,362 +1,449 @@
-/* The game: a gunship circling out of sight over an endless night, the dead walking towards
- * whatever it watches. 25mm rounds stream down from the lower right; 105mm shells drop from the
- * lower left. Fuel runs out after a minute. Units are world units (about 7 to a metre). */
+/* The game: an AC-130 circling over an endless countryside at night. The camera looks where the
+ * crosshair is; the guns fire from the aircraft itself, so every round leaves the camera and flies
+ * a second or so down to the ground. Units are metres and seconds. */
 
 const CFG = {
   fuel: 60,
-  pan: 250,                                         // camera pixels per second
-  mg: { rate: 11, spread: 2.2, travel: 0.2, splash: 3.4 },
-  he: { reload: 2.2, travel: 1.05, kill: 28, hurt: 44 },
-  pop: { start: 140, perSec: 7, max: 650 },
+  orbit: { radius: 780, alt: 980, period: 120 },
+  fov: { def: 5, min: 2.2, max: 10 },
+  mg: { rate: 12, speed: 1500, spread: 0.0016, splash: 2.6, victims: 4, heatPer: 0.035, cool: 0.45 },
+  he: { reload: 2.6, speed: 800, kill: 11, hurt: 18 },
+  pop: { start: 160, perSec: 8, max: 700 },
   types: [
-    { hp: 2, speed: [7, 11], value: 1, skins: ['zskin', 'zskinGrey'], big: false },
-    { hp: 1, speed: [24, 30], value: 2, skins: ['zskinPale'], big: false },
-    { hp: 14, speed: [5, 6], value: 10, skins: ['zskinGrey'], big: true },
+    { hp: 1, speed: [1.1, 1.7], value: 1, scale: [1.12, 1.28], heat: [0.86, 0.97], run: false },
+    { hp: 1, speed: [4.2, 5.6], value: 2, scale: [1.08, 1.18], heat: [0.92, 1.0], run: true },
+    { hp: 8, speed: [0.85, 1.0], value: 10, scale: [1.62, 1.75], heat: [1.0, 1.06], run: false },
   ],
 };
-const SHIRTS = ['shirtB', 'shirtR', 'shirtW', 'shirtG', 'shirtY', 'shirtP'], PANTS = ['pants', 'pantsBr', 'pantsGr'];
 
 function createGame() {
   const S = {};
   const R = Math.random;
-  const pick = (a) => a[Math.floor(R() * a.length)];
-  const G3 = [0, 0, 0];
+  const cam = R3.camera;
+  const V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), V3 = new THREE.Vector3();
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const camF = new THREE.Vector3(), camR = new THREE.Vector3(), camU = new THREE.Vector3();
 
-  function reset(full) {
-    S.t = 0; S.run = 0; S.fuel = CFG.fuel; S.kills = 0; S.cash = 0; S.shots = 0; S.hits = 0; S.bestBlast = 0;
-    S.mode = 'title'; S.over = false;
-    S.trigger = false; S.mgCd = 0; S.heReload = 0; S.hitT = 0;
-    S.aim = { sx: W / 2, sy: H / 2, seen: false };
-    if (full || S.cx === undefined) { S.cx = OFFS + 0.5; S.cy = OFFS + 0.5; }
-    S.pan = [0, 0]; S.vel = [0, 0];
-    S.zombies = []; S.dying = []; S.rounds = []; S.particles = []; S.puffs = []; S.booms = []; S.impacts = [];
-    S.lights = []; S.numbers = []; S.scorches = []; S.events = []; S.drawList = [];
-    S.spawnCd = 0; S.attractT = 1.2; S.burst = null; S.nextId = 1;
-    applyView();
-  }
-  function applyView() {
-    VIEW.x = Math.round(S.cx - W / 2); VIEW.y = Math.round(S.cy - H / 2);
-    syncView();
+  function reset(keepPlace) {
+    S.t = S.t || 0; S.run = 0; S.fuel = CFG.fuel; S.kills = 0; S.cash = 0; S.shots = 0; S.hits = 0; S.bestBlast = 0;
+    S.mode = 'title'; S.endT = 0;
+    S.trigger = false; S.mgCd = 0; S.mgHeat = 0; S.overheat = false; S.heReload = 0; S.hitT = 0;
+    if (!keepPlace || !S.C) { const [x, z] = startSpot(); S.C = new THREE.Vector3(x, 0, z); S.T = new THREE.Vector3(x, 0, z); S.theta = 0.8; }
+    S.fov = CFG.fov.def; S.fovT = CFG.fov.def; S.pan = [0, 0]; S.panV = [0, 0];
+    S.locked = S.locked || false; S.free = S.free || false; S.cursor = S.cursor || { x: 0.5, y: 0.5 }; S.aim = new THREE.Vector3(); S.aimOK = false;
+    S.shake = 0; S.zoomBlur = 0;
+    S.zombies = []; S.dying = []; S.rounds = []; S.flames = []; S.events = []; S.spawnCd = 0; S.attractT = 1.5; S.burst = null; S.nextId = 1;
+    S.viewR = 300;
   }
 
-  /* ------------------------------------------------------------- the dead */
-  function makeZombie(x, y, type) {
-    const T = CFG.types[type];
+  /* ------------------------------------------------------------ camera */
+  function updateCamera(dt) {
+    S.theta += dt * TAU / CFG.orbit.period;
+    // WASD slides the whole orbit over the ground, in the camera's frame
+    const fx = -Math.cos(S.theta), fz = -Math.sin(S.theta), rx = -fz, rz = fx;
+    let px = S.pan[0], py = S.pan[1];
+    if (S.free && S.mode === 'play') {       // no mouse lock: the cursor at the edge of the view pushes it along
+      const ex = S.cursor.x * 2 - 1, ey = S.cursor.y * 2 - 1;
+      px = clamp(px + Math.sign(ex) * smoothstep(0.7, 0.97, Math.abs(ex)), -1, 1);
+      py = clamp(py + Math.sign(ey) * smoothstep(0.7, 0.97, Math.abs(ey)), -1, 1);
+    }
+    const sp = 70 * (S.fov / CFG.fov.def), k = Math.min(1, dt * 5);
+    S.panV[0] += ((rx * px + fx * -py) * sp - S.panV[0]) * k;
+    S.panV[1] += ((rz * px + fz * -py) * sp - S.panV[1]) * k;
+    S.C.x += S.panV[0] * dt; S.C.z += S.panV[1] * dt; S.T.x += S.panV[0] * dt; S.T.z += S.panV[1] * dt;
+    // the aim may roam; past 260 m the orbit follows it
+    const dx = S.T.x - S.C.x, dz = S.T.z - S.C.z, d = Math.hypot(dx, dz);
+    if (d > 260) { S.C.x = S.T.x - dx / d * 260; S.C.z = S.T.z - dz / d * 260; }
+    S.fov += (S.fovT - S.fov) * Math.min(1, dt * 6);
+    S.zoomBlur = Math.max(0, Math.min(1, Math.abs(S.fovT - S.fov) / 2.5));
+    cam.fov = S.fov;
+    cam.updateProjectionMatrix();
+    cam.position.set(S.C.x + Math.cos(S.theta) * CFG.orbit.radius, CFG.orbit.alt, S.C.z + Math.sin(S.theta) * CFG.orbit.radius);
+    const j = S.shake * S.fov / CFG.fov.def * 0.9;
+    V1.set(S.T.x + (R() - 0.5) * j, 0, S.T.z + (R() - 0.5) * j);
+    cam.lookAt(V1);
+    cam.updateMatrixWorld();
+    U.uCamPos.value.copy(cam.position);
+    U_PX.value = 2 * Math.tan(S.fov * Math.PI / 360) / R3.h;
+    cam.getWorldDirection(camF); camR.crossVectors(camF, cam.up).normalize(); camU.crossVectors(camR, camF);
+    // where the crosshair falls: the middle of the screen when the mouse is locked, else the cursor
+    if (S.locked || S.mode !== 'play') S.aim.copy(S.T), S.aimOK = true;
+    else {
+      ndc.set(S.cursor.x * 2 - 1, -(S.cursor.y * 2 - 1));
+      ray.setFromCamera(ndc, cam);
+      S.aimOK = !!ray.ray.intersectPlane(groundPlane, S.aim);
+    }
+    // how far the view reaches on the ground, for spawning just out of sight
+    let r = 0;
+    for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      ndc.set(x, y); ray.setFromCamera(ndc, cam);
+      if (ray.ray.intersectPlane(groundPlane, V2)) r = Math.max(r, Math.hypot(V2.x - S.T.x, V2.z - S.T.z));
+    }
+    S.viewR = r || 400;
+  }
+  // the mouse moved by (dx, dy) pixels while locked: move the aim across the ground
+  function look(dx, dy) {
+    const mpp = 2 * cam.position.distanceTo(S.T) * Math.tan(S.fov * Math.PI / 360) / Math.max(1, innerHeight);
+    const fx = camF.x, fz = camF.z, fl = Math.hypot(fx, fz) || 1, rl = Math.hypot(camR.x, camR.z) || 1;
+    const k = mpp * 0.85;
+    S.T.x += (camR.x / rl * dx - fx / fl * dy * 1.25) * k;
+    S.T.z += (camR.z / rl * dx - fz / fl * dy * 1.25) * k;
+  }
+
+  /* --------------------------------------------------------- the horde */
+  // the dead move in packs: each pack drifts towards its own spot near the middle of the orbit
+  function newPack(p) {
+    const a = R() * TAU, r = 10 + R() * 70;
+    p = p || {};
+    p.ox = Math.cos(a) * r; p.oz = Math.sin(a) * r; p.next = S.t + 6 + R() * 8;
+    return p;
+  }
+  function makeZombie(x, z, type, pack) {
+    const T = CFG.types[type], s = T.scale[0] + R() * (T.scale[1] - T.scale[0]);
     return {
-      id: S.nextId++, x, y, type, hp: T.hp, value: T.value, big: T.big,
-      speed: T.speed[0] + R() * (T.speed[1] - T.speed[0]), phase: R() * 4, wob: R() * TAU, flip: R() < 0.5, flash: 0,
-      skin: M[pick(T.skins)], shirt: M[pick(SHIRTS)], pants: M[pick(PANTS)],
-      ox: 0, oy: 0, retarget: 0, pose: 'walk', st: 0, seed: R(),
+      id: S.nextId++, x, z, type, hp: T.hp, value: T.value, run: T.run, big: type === 2,
+      speed: T.speed[0] + R() * (T.speed[1] - T.speed[0]), scale: s, heat: T.heat[0] + R() * (T.heat[1] - T.heat[0]),
+      yaw: R() * TAU, phase: R() * TAU, seed: R(), limp: R() < 0.35 ? R() : 0, flash: 0,
+      pack: pack || newPack(), jx: (R() - 0.5) * 10, jz: (R() - 0.5) * 10, wob: R() * TAU, block: [], blockT: 0,
     };
   }
   function pickType() {
-    if (S.mode !== 'play') return R() < 0.06 ? 1 : 0;
+    if (S.mode !== 'play') return R() < 0.07 ? 1 : 0;
     const r = R();
-    if (S.run > 28 && r < 0.05) return 2;
-    if (S.run > 10 && r < 0.16) return 1;
+    if (S.run > 25 && r < 0.05) return 2;
+    if (S.run > 8 && r < 0.16) return 1;
     return 0;
   }
-  function spawnHorde(n) {
-    // just beyond an edge of the screen
-    const side = R(), m = 36;
-    let sx, sy;
-    if (side < 0.3) { sx = -m - R() * 30; sy = R() * H; } else if (side < 0.6) { sx = W + m + R() * 30; sy = R() * H; }
-    else if (side < 0.8) { sx = R() * W; sy = -m - R() * 30; } else { sx = R() * W; sy = H + m + R() * 30; }
-    const c = groundAtScreen(sx, sy, [0, 0, 0]);
-    for (let k = 0; k < n; k++) S.zombies.push(makeZombie(c[0] + (R() - 0.5) * 28, c[1] + (R() - 0.5) * 28, pickType()));
-  }
-  function spawnScatter(n) {
+  function pack(n, hx, hz) {
+    const p = newPack();
     for (let k = 0; k < n; k++) {
-      const c = groundAtScreen(R() * W, R() * H, [0, 0, 0]);
-      S.zombies.push(makeZombie(c[0], c[1], pickType()));
+      const r = Math.sqrt(R()) * (6 + n * 0.45), b = R() * TAU;
+      S.zombies.push(makeZombie(hx + Math.cos(b) * r, hz + Math.sin(b) * r, pickType(), p));
     }
   }
-  const attractor = [0, 0, 0];
-  const BL = [];
-  let gridMap = new Map();
-  const GC = 8, gk = (i, j) => (i + 50000) * 100000 + (j + 50000);
-  function updateZombies(dt) {
-    groundAtScreen(W / 2, H / 2 + 30, attractor);
-    const want = S.mode === 'play' || S.mode === 'ending' ? Math.min(CFG.pop.max, CFG.pop.start + CFG.pop.perSec * S.run) : 170;
-    S.spawnCd -= dt;
-    if (S.spawnCd <= 0 && S.zombies.length < want) { spawnHorde(Math.min(Math.ceil(want - S.zombies.length), 8 + Math.floor(R() * 18))); S.spawnCd = 0.4; }
-    const zs = S.zombies;
-    for (const z of zs) {
-      z.retarget -= dt;
-      if (z.retarget <= 0) { const a = R() * TAU, r = 8 + R() * 44; z.ox = Math.cos(a) * r; z.oy = Math.sin(a) * r; z.retarget = 3 + R() * 6; }
-      const dx = attractor[0] + z.ox - z.x, dy = attractor[1] + z.oy - z.y, d = Math.hypot(dx, dy) || 1;
-      z.wob += dt * 0.9;
-      const w = Math.sin(z.wob) * 0.4, cw = Math.cos(w), sw = Math.sin(w);
-      const ux = (dx * cw - dy * sw) / d, uy = (dx * sw + dy * cw) / d;
-      const sp = z.speed * (d < 6 ? 0.15 : 1) * (z.flash > 0 ? 0.3 : 1);
-      z.x += ux * sp * dt; z.y += uy * sp * dt;
-      const dsx = ux * CR[0] + uy * CR[1];
-      if (Math.abs(dsx) > 0.15) z.flip = dsx < 0;
-      z.phase += dt * (sp * (z.big ? 0.32 : 0.45) + 0.4);
-      if (z.flash > 0) z.flash -= dt;
-      const sx = scrX(z.x, z.y), sy = scrY(z.x, z.y, 0);
-      if (sx < -420 || sx > W + 420 || sy < -420 || sy > H + 420) z.gone = true;
+  // a pack walks in from just out of sight
+  function spawnHorde(n) {
+    const a = R() * TAU, d = S.viewR + 15 + R() * 40;
+    pack(n, S.T.x + Math.cos(a) * d, S.T.z + Math.sin(a) * d);
+  }
+  // packs already in view (a new mission, the title screen)
+  function spawnScatter(n) {
+    while (n > 0) {
+      const m = Math.min(n, 6 + Math.floor(R() * 16)), a = R() * TAU, r = 25 + Math.sqrt(R()) * S.viewR * 1.1;
+      pack(m, S.T.x + Math.cos(a) * r, S.T.z + Math.sin(a) * r);
+      n -= m;
     }
-    // keep a little room between them, and out of houses, cars and trunks
-    gridMap = new Map();
-    for (const z of zs) {
-      const k = gk(Math.floor(z.x / GC), Math.floor(z.y / GC));
-      let a = gridMap.get(k);
-      if (!a) gridMap.set(k, (a = []));
+  }
+  const GC = 2, gk = (i, j) => (i + 500000) * 1000003 + (j + 500000);
+  let grid = new Map();
+  function updateZombies(dt) {
+    const want = S.mode === 'play' || S.mode === 'ending' ? Math.min(CFG.pop.max, CFG.pop.start + CFG.pop.perSec * S.run) : 220;
+    S.spawnCd -= dt;
+    if (S.spawnCd <= 0 && S.zombies.length < want) { spawnHorde(Math.min(Math.ceil(want - S.zombies.length), 10 + Math.floor(R() * 16))); S.spawnCd = 0.45; }
+    for (const z of S.zombies) {
+      const pk = z.pack;
+      if (S.t > pk.next) newPack(pk);
+      const dx = S.C.x + pk.ox + z.jx - z.x, dz = S.C.z + pk.oz + z.jz - z.z, d = Math.hypot(dx, dz) || 1;
+      z.wob += dt * (z.run ? 2 : 0.8);
+      const w = Math.sin(z.wob) * (z.run ? 0.25 : 0.45), cw = Math.cos(w), sw = Math.sin(w);
+      const ux = (dx * cw - dz * sw) / d, uz = (dx * sw + dz * cw) / d;
+      const sp = z.speed * (d < 4 ? 0.12 : 1) * (z.flash > 0 ? 0.3 : 1);
+      z.x += ux * sp * dt; z.z += uz * sp * dt;
+      let dy = Math.atan2(ux, uz) - z.yaw;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      z.yaw += dy * Math.min(1, dt * 4);
+      z.phase += dt * (sp * (z.run ? 2.3 : 3.6) / z.scale + 0.3);
+      if (z.flash > 0) z.flash -= dt;
+      if (Math.hypot(z.x - S.T.x, z.z - S.T.z) > 750) z.gone = true;
+    }
+    // spacing in the crowd, and round houses, cars and trees
+    grid = new Map();
+    for (const z of S.zombies) {
+      const k = gk(Math.floor(z.x / GC), Math.floor(z.z / GC));
+      let a = grid.get(k);
+      if (!a) grid.set(k, (a = []));
       a.push(z);
     }
-    for (const a of zs) {
-      const r0 = a.big ? 6 : 4, ix = Math.floor(a.x / GC), iy = Math.floor(a.y / GC);
-      for (let i = ix - 1; i <= ix + 1; i++) for (let j = iy - 1; j <= iy + 1; j++) {
-        const list = gridMap.get(gk(i, j));
+    for (const a of S.zombies) {
+      const ra = a.big ? 0.85 : 0.48, ix = Math.floor(a.x / GC), iz = Math.floor(a.z / GC);
+      for (let i = ix - 1; i <= ix + 1; i++) for (let j = iz - 1; j <= iz + 1; j++) {
+        const list = grid.get(gk(i, j));
         if (!list) continue;
         for (const b of list) {
           if (b === a) continue;
-          const dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy, rr = r0 + (b.big ? 6 : 4);
-          if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2), p = (rr - d) * 0.25 / d; a.x += dx * p; a.y += dy * p; b.x -= dx * p; b.y -= dy * p; }
+          const dx = a.x - b.x, dz = a.z - b.z, d2 = dx * dx + dz * dz, rr = ra + (b.big ? 0.85 : 0.48);
+          if (d2 < rr * rr && d2 > 1e-8) { const d = Math.sqrt(d2), p = (rr - d) * 0.25 / d; a.x += dx * p; a.z += dz * p; b.x -= dx * p; b.z -= dz * p; }
         }
       }
-      if ((a.id + Math.floor(S.t * 30)) % 3) continue;
-      blockersNear(a.x, a.y, BL);
-      for (let k = 0; k < BL.length; k += 3) {
-        const dx = a.x - BL[k], dy = a.y - BL[k + 1], d = Math.hypot(dx, dy), m = BL[k + 2] + 2.5;
-        if (d < m && d > 1e-4) { a.x = BL[k] + dx / d * m; a.y = BL[k + 1] + dy / d * m; }
+      a.blockT -= dt;
+      if (a.blockT <= 0) { blockersNear(a.x, a.z, a.block); a.blockT = 0.5 + R() * 0.3; }
+      for (let k = 0; k < a.block.length; k += 3) {
+        const dx = a.x - a.block[k], dz = a.z - a.block[k + 1], d = Math.hypot(dx, dz), m = a.block[k + 2] + ra;
+        if (d < m && d > 1e-4) { a.x = a.block[k] + dx / d * m; a.z = a.block[k + 1] + dz / d * m; }
       }
     }
-    S.zombies = zs.filter((z) => !z.gone && !z.dead);
+    S.zombies = S.zombies.filter((z) => !z.gone && !z.dead);
   }
-  function nearby(x, y, r, fn) {
-    const i0 = Math.floor((x - r) / GC), i1 = Math.floor((x + r) / GC), j0 = Math.floor((y - r) / GC), j1 = Math.floor((y + r) / GC);
+  function nearby(x, z, r, fn) {
+    const i0 = Math.floor((x - r) / GC), i1 = Math.floor((x + r) / GC), j0 = Math.floor((z - r) / GC), j1 = Math.floor((z + r) / GC);
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
-      const list = gridMap.get(gk(i, j));
+      const list = grid.get(gk(i, j));
       if (!list) continue;
-      for (const z of list) if (!z.dead && !z.gone) { const d = Math.hypot(z.x - x, z.y - y); if (d <= r) fn(z, d); }
+      for (const zb of list) if (!zb.dead && !zb.gone) { const d = Math.hypot(zb.x - x, zb.z - z); if (d <= r) fn(zb, d); }
     }
   }
 
-  /* ---------------------------------------------------------- death */
-  function bake(z) {
-    addDecal({ type: 'blood', x: z.x, y: z.y, s: (z.big ? 8 : 5) + R() * 3, seed: Math.floor(R() * 1e6) });
-    addDecal({ type: 'corpse', x: z.x, y: z.y, frame: Math.floor(R() * 2), flip: R() < 0.5, big: z.big,
-      skin: z.skin, shirt: z.shirt, pants: z.pants, seed: Math.floor(R() * 1e6) });
+  /* ------------------------------------------------------------- death */
+  function scoring() { return S.mode === 'play' || S.mode === 'ending'; }
+  function blood(x, z, n, up) {
+    for (let k = 0; k < n; k++) {
+      const a = R() * TAU, v = 1 + R() * 3;
+      HOT.spawn(x, 1 + R() * 0.6, z, Math.cos(a) * v, up * (0.5 + R()), Math.sin(a) * v, { life: 0.5 + R() * 0.4, s0: 0.14, s1: 0.1, h0: 0.95, h1: 0.5, a: 0.8, kind: 2, grav: 9 });
+    }
   }
-  function kill(z, cause, cx, cy, dist) {
+  function kill(z, cause, cx, cz, dist) {
     if (z.dead) return;
     z.dead = true;
-    if (S.mode === 'play' || S.mode === 'ending') { S.kills++; S.cash += z.value; }
-    S.events.push({ type: 'kill', big: z.big });
+    if (scoring()) { S.kills++; S.cash += z.value; }
+    S.events.push({ type: 'kill' });
     if (cause === 'mg') {
-      S.dying.push(Object.assign(z, { pose: 'die', st: 0, flash: 0.06 }));
-      burst(z.x, z.y, 7, 'blood', 6, 30);
+      S.dying.push(Object.assign(z, { mode: 'fall', t: 0, dir: R() < 0.6 ? 1 : -1, flash: 0.08 }));
+      blood(z.x, z.z, 5, 3);
+      addDecal(2, z.x + (R() - 0.5), z.z + (R() - 0.5), 1.4 + R(), 0.72, S.t);
       return;
     }
-    let dx = z.x - cx, dy = z.y - cy;
-    const l = Math.hypot(dx, dy) || 1, f = 1 - Math.min(1, dist / CFG.he.kill);
-    dx /= l; dy /= l;
-    const v = 18 + f * 45 + R() * 10;
-    S.dying.push(Object.assign(z, { pose: 'tumble', st: 0, h: 2, vx: dx * v, vy: dy * v, vz: 30 + f * 45 + R() * 12, flash: 0.05 }));
-    if (f > 0.55) burst(z.x, z.y, 6, 'gib', 5, 40);
+    let dx = z.x - cx, dz = z.z - cz;
+    const l = Math.hypot(dx, dz) || 1, f = 1 - Math.min(1, dist / CFG.he.kill), v = 5 + f * 13 + R() * 3;
+    dx /= l; dz /= l;
+    const q = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, z.yaw);
+    const axis = new THREE.Vector3(R() - 0.5, R() - 0.5, R() - 0.5).normalize();
+    S.dying.push(Object.assign(z, { mode: 'thrown', t: 0, y: 0.95 * z.scale, vx: dx * v, vy: 7 + f * 13 + R() * 4, vz: dz * v, q, axis, spin: 5 + R() * 9, flash: 0.1 }));
+    if (f > 0.5) for (let k = 0; k < 6; k++) {
+      const a = R() * TAU, s = 4 + R() * 9;
+      HOT.spawn(z.x, 1, z.z, Math.cos(a) * s, 6 + R() * 10, Math.sin(a) * s, { life: 1 + R() * 0.8, s0: 0.22, s1: 0.18, h0: 0.95, h1: 0.45, a: 1, kind: 2, grav: 14, spin: 6 });
+    }
   }
+  const QA = new THREE.Quaternion(), QB = new THREE.Quaternion();
   function updateDying(dt) {
     for (const z of S.dying) {
-      z.st += dt;
+      z.t += dt;
       if (z.flash > 0) z.flash -= dt;
-      if (z.pose === 'die') { if (z.st > 0.38) { bake(z); z.done = true; } continue; }
-      z.vz -= 140 * dt;
-      z.x += z.vx * dt; z.y += z.vy * dt; z.h += z.vz * dt;
-      if (z.h <= 0 && z.vz < 0) {
-        z.h = 0;
-        burst(z.x, z.y, 1, 'dirt', 4, 20);
-        bake(z); z.done = true;
+      if (z.mode === 'fall') {
+        if (z.t >= 0.6) {
+          QA.setFromAxisAngle(Y_AXIS, z.yaw); QB.setFromAxisAngle(X_AXIS, -Math.PI / 2 * z.dir);
+          QA.multiply(QB);
+          addCorpse(z, QA, z.x, 0.12 * z.scale, z.z, S.t);
+          z.done = true;
+        }
+        continue;
+      }
+      z.vy -= 14 * dt;
+      z.x += z.vx * dt; z.y += z.vy * dt; z.z += z.vz * dt;
+      QA.setFromAxisAngle(z.axis, z.spin * dt); z.q.premultiply(QA);
+      if (z.y <= 0.3 * z.scale && z.vy < 0) {
+        QA.setFromAxisAngle(Y_AXIS, R() * TAU); QB.setFromAxisAngle(X_AXIS, (R() < 0.5 ? -1 : 1) * Math.PI / 2);
+        QA.multiply(QB);
+        addCorpse(z, QA, z.x, 0.12 * z.scale, z.z, S.t);
+        addDecal(2, z.x, z.z, 1.8 + R(), 0.75, S.t);
+        for (let k = 0; k < 4; k++) COOL.spawn(z.x, 0.3, z.z, (R() - 0.5) * 3, 1 + R(), (R() - 0.5) * 3, { life: 1.2, s0: 0.6, s1: 1.6, h0: 0.36, h1: 0.33, a: 0.5, kind: 1, drag: 2 });
+        z.done = true;
       }
     }
     S.dying = S.dying.filter((z) => !z.done);
   }
 
-  /* --------------------------------------------------------- effects */
-  function burst(x, y, z, kind, n, speed, o) {
-    for (let j = 0; j < n && S.particles.length < 900; j++) {
-      const a = R() * TAU, v = speed * (0.3 + R() * 0.7);
-      S.particles.push({ x, y, z, vx: Math.cos(a) * v * 0.7, vy: Math.sin(a) * v * 0.7, vz: v * (0.6 + R() * 0.8), kind,
-        shade: Math.floor(R() * 3), age: 0, life: 0.6 + R() * 0.9, g: kind === 'ember' ? -12 : 70, drag: kind === 'ember' ? 1.5 : 0,
-        hot: o && o.hot, big: R() < 0.3 });
-    }
+  /* ----------------------------------------------------------- weapons */
+  // The guns sit just under the camera, so their rounds come up from the bottom of the picture. A round's
+  // start rides along with the aircraft while it flies, so the streak always leaves the camera.
+  function gunPort(side, out) {
+    return (out || new THREE.Vector3()).copy(cam.position).addScaledVector(camF, 16).addScaledVector(camR, side * 0.7).addScaledVector(camU, -5.5);
   }
-  function puff(x, y, z, r0, gr, a, dark, life, vz, delay, heat) {
-    if (S.puffs.length >= 420) return;
-    S.puffs.push({ x, y, z, r0, gr, a, dark, life, vz, heat: heat || 0, age: -(delay || 0), vx: -0.6 + (R() - 0.5) * 2, vy: -2.3 + (R() - 0.5) * 2 });
+  function fireMG(target, player) {
+    const a = gunPort(1), b = new THREE.Vector3().copy(target), dist = a.distanceTo(b);
+    const s = CFG.mg.spread * dist * Math.sqrt(R()), ang = R() * TAU;
+    b.x += Math.cos(ang) * s; b.z += Math.sin(ang) * s; b.y = 0;
+    const d = a.distanceTo(b);
+    S.rounds.push({ kind: 'mg', side: 1, a, b, age: 0, travel: d / CFG.mg.speed, dist: d, streak: 80, width: 0.09, heat: 2.2, player });
+    if (player) { S.shots++; S.mgHeat = Math.min(1, S.mgHeat + CFG.mg.heatPer); S.shake = Math.min(1.2, S.shake + 0.07); S.events.push({ type: 'mg' }); }
   }
-  function light(x, y, z, r, I, life, kind) { S.lights.push({ x, y, z, r, I, age: 0, life, kind }); }
-
-  /* ---------------------------------------------------------- weapons */
-  // where a round leaves the gunship: high above and behind the camera, off the lower edge
-  function origin(g, side) {
-    const D = 420, K = 250, X = side * 80;
-    return [g[0] + CV[0] * D - CU[0] * K + CR[0] * X, g[1] + CV[1] * D - CU[1] * K + CR[1] * X, CV[2] * D - CU[2] * K];
-  }
-  function fireMG(sx, sy, player) {
-    const tx = sx + (R() - 0.5) * 2 * CFG.mg.spread, ty = sy + (R() - 0.5) * 2 * CFG.mg.spread;
-    const g = groundAtScreen(tx, ty, [0, 0, 0]);
-    S.rounds.push({ kind: 'mg', a: origin(g, 1), b: [g[0], g[1], 0], age: 0, travel: CFG.mg.travel, player, ox: tx - sx, oy: ty - sy });
-    if (player) { S.shots++; S.events.push({ type: 'mg' }); }
-  }
-  function fireHE(sx, sy, player) {
-    const g = groundAtScreen(sx, sy, [0, 0, 0]);
-    S.rounds.push({ kind: 'he', a: origin(g, -1), b: [g[0], g[1], 0], age: 0, travel: CFG.he.travel, player });
-    if (player) { S.heReload = CFG.he.reload; S.events.push({ type: 'cannon' }); }
+  function fireHE(target, player) {
+    const a = gunPort(-1), b = new THREE.Vector3().copy(target);
+    b.y = 0;
+    const d = a.distanceTo(b);
+    S.rounds.push({ kind: 'he', side: -1, a, b, age: 0, travel: d / CFG.he.speed, dist: d, streak: 40, width: 0.26, heat: 3.2, player });
+    if (player) { S.heReload = CFG.he.reload; S.shake = Math.min(1.6, S.shake + 0.9); S.events.push({ type: 'cannon' }); }
   }
   function mgImpact(r) {
-    const x = r.b[0], y = r.b[1], ix = scrX(x, y), iy = scrY(x, y, 0);
+    const x = r.b.x, z = r.b.z;
     let hits = 0;
-    for (const z of S.zombies) {
-      if (z.dead || hits >= 2) continue;
-      const zx = scrX(z.x, z.y), zy = scrY(z.x, z.y, 0), hw = z.big ? 9 : 6, hh = z.big ? 25 : 17;
-      const onSprite = Math.abs(ix - zx) <= hw + 1 && iy >= zy - hh - 1 && iy <= zy + 2;
-      if (!onSprite && Math.hypot(z.x - x, z.y - y) > CFG.mg.splash) continue;
+    nearby(x, z, CFG.mg.splash, (zb) => {
+      if (hits >= CFG.mg.victims) return;
       hits++;
-      z.hp -= 1; z.flash = 0.08;
-      burst(z.x, z.y, 8, 'blood', 3, 26);
-      if (z.hp <= 0) kill(z, 'mg', x, y, 0);
-    }
-    if (hits && r.player) { S.hits++; S.hitT = 0.12; }
-    S.impacts.push({ x, y, z: 1, age: 0, life: 0.07, size: 1 });
-    for (let k = 0; k < 3; k++) {
-      const a = R() * TAU, v = 30 + R() * 50;
-      S.particles.push({ x, y, z: 0.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 20 + R() * 30, kind: 'spark', age: 0, life: 0.22 + R() * 0.15, g: 80, shade: 0 });
-    }
-    burst(x, y, 0.5, 'dirt', 3, 22);
-    if (R() < 0.2) puff(x, y, 2, 1.2, 4, 0.28, 0.1, 0.8, 3, 0, 0);
-    light(x, y, 4, 22, 1.6, 0.08, 'flash');
-    if (!hits && R() < 0.5) addDecal({ type: 'hole', x, y, s: 1.3, seed: Math.floor(R() * 1e6) });
-  }
-  function explode(x, y, player) {
-    let killed = 0, value = 0;
-    nearby(x, y, CFG.he.hurt, (z, d) => {
-      if (d >= CFG.he.kill) {
-        z.hp -= 4; z.flash = 0.2;
-        const k = 6 / Math.max(d, 1);
-        z.x += (z.x - x) * k; z.y += (z.y - y) * k;
-        if (z.hp > 0) return;
-      }
-      value += z.value; killed++;
-      kill(z, 'he', x, y, d);
+      zb.hp -= 1; zb.flash = 0.1;
+      blood(zb.x, zb.z, 2, 2);
+      if (zb.hp <= 0) kill(zb, 'mg', x, z, 0);
     });
-    S.booms.push({ x, y, age: 0, life: 1.2, seed: Math.floor(R() * 1000), scale: 1.5, radius: CFG.he.kill });
-    S.scorches.push({ x, y, r: 20, age: 0, life: 3, seed: Math.floor(R() * 1000) });
-    addDecal({ type: 'scorch', x, y, s: 32 + R() * 6, seed: Math.floor(R() * 1e6) });
-    light(x, y, 9, 120, 5, 0.5, 'flash');
-    light(x, y, 6, 70, 2.2, 1.6, 'fire');
-    burst(x, y, 1.5, 'dirt', 30, 85);
-    burst(x, y, 2, 'spark', 24, 100);
-    burst(x, y, 3, 'ember', 18, 60);
-    burst(x, y, 2, 'debris', 10, 75, { hot: true });
-    for (let j = 0; j < 16; j++) {
-      const a = R() * TAU, r = R() * 11;
-      puff(x + Math.cos(a) * r, y + Math.sin(a) * r, 3 + R() * 10, 5.5 + R() * 3, 4.5 + R() * 2.5, 0.9, 0.5, 2.8 + R() * 1.6, 7 + R() * 8, 0.12 + R() * 0.28, 1);
+    if (hits && r.player) { S.hits++; S.hitT = 0.15; }
+    HOT.spawn(x, 0.6, z, 0, 0.5, 0, { life: 0.09, s0: 2.6, s1: 3.4, h0: 2.6, h1: 1.2, a: 1, kind: 0 });
+    for (let k = 0; k < 5; k++) {
+      const a = R() * TAU, v = 6 + R() * 12;
+      HOT.spawn(x, 0.3, z, Math.cos(a) * v, 3 + R() * 9, Math.sin(a) * v, { life: 0.2 + R() * 0.25, s0: 0.12, h0: 1.8, h1: 0.8, a: 1, kind: 3, grav: 20 });
     }
-    for (let k = 0; k < 10; k++) {
-      const c = Math.cos(k * TAU / 10), sn = Math.sin(k * TAU / 10);
-      S.puffs.push({ x: x + c * 8, y: y + sn * 8, z: 1.2, r0: 2.2, gr: 5.5, a: 0.32, dark: 0.3, life: 1.1, vz: 1.5, heat: 0, age: 0,
-        vx: 0, vy: 0, px: c * 60, py: sn * 60, k: 2.8 });
+    for (let k = 0; k < 4; k++) {
+      const a = R() * TAU, v = 1.5 + R() * 4;
+      COOL.spawn(x, 0.3, z, Math.cos(a) * v, 3 + R() * 6, Math.sin(a) * v, { life: 0.7 + R() * 0.5, s0: 0.22, s1: 0.18, h0: 0.38, a: 1, kind: 2, grav: 16 });
     }
-    S.events.push({ type: 'boom', kills: killed, x, y });
-    if (player && (S.mode === 'play' || S.mode === 'ending') && killed) {
+    COOL.spawn(x, 0.8, z, (R() - 0.5), 1.2, (R() - 0.5), { life: 1.6, s0: 1.2, s1: 3.6, h0: 0.5, h1: 0.36, a: 0.55, kind: 1, drag: 1.5 });
+    addDecal(1, x, z, 1.8 + R() * 0.8, 0.85, S.t);
+    addHeat(x, z, 2.6, 0.5, 1.4);
+  }
+  function explode(x, z, player) {
+    let killed = 0, value = 0;
+    nearby(x, z, CFG.he.hurt, (zb, d) => {
+      if (d >= CFG.he.kill) {
+        zb.hp -= 4; zb.flash = 0.25;
+        const k = 2.5 / Math.max(d, 1);
+        zb.x += (zb.x - x) * k; zb.z += (zb.z - z) * k;
+        if (zb.hp > 0) return;
+      }
+      value += zb.value; killed++;
+      kill(zb, 'he', x, z, d);
+    });
+    // the flash, a fireball rolling up, a ring of hot air, earth and sparks thrown out, smoke
+    HOT.spawn(x, 3, z, 0, 0, 0, { life: 0.12, s0: 10, s1: 18, h0: 4, h1: 1.5, a: 1, kind: 0 });
+    for (let k = 0; k < 12; k++) {                     // the fireball, rolling up and cooling
+      const a = R() * TAU, v = R() * 7, r = R() * 3;
+      HOT.spawn(x + Math.cos(a) * r, 1.5 + R() * 3, z + Math.sin(a) * r, Math.cos(a) * v, 3 + R() * 6, Math.sin(a) * v,
+        { life: 1 + R() * 0.8, s0: 2.5 + R() * 1.5, s1: 7 + R() * 4, h0: 2.4, h1: 0.4, a: 1, kind: 0, grav: -5, drag: 1.6 });
+    }
+    for (let k = 0; k < 6; k++) {                      // burning ground
+      const a = R() * TAU, r = 2 + R() * 6;
+      HOT.spawn(x + Math.cos(a) * r, 0.8, z + Math.sin(a) * r, 0, 0.6, 0, { life: 2 + R() * 1.5, s0: 3, s1: 5, h0: 1.3, h1: 0.35, a: 1, kind: 0 });
+    }
+    for (let k = 0; k < 32; k++) {                     // white-hot fragments flung out on arcs
+      const a = R() * TAU, v = 10 + R() * 26;
+      HOT.spawn(x, 1, z, Math.cos(a) * v, 10 + R() * 22, Math.sin(a) * v, { life: 0.9 + R() * 1, s0: 0.45, h0: 2.2, h1: 0.6, a: 1, kind: 3, grav: 18, drag: 0.4 });
+    }
+    for (let k = 0; k < 4; k++) {                      // and a few that keep burning where they land
+      const a = R() * TAU, r = 9 + R() * 14;
+      S.flames.push({ x: x + Math.cos(a) * r, z: z + Math.sin(a) * r, life: 5 + R() * 7 });
+    }
+    for (let k = 0; k < 45; k++) {
+      const a = R() * TAU, v = 6 + R() * 22;
+      COOL.spawn(x, 0.5, z, Math.cos(a) * v, 6 + R() * 20, Math.sin(a) * v, { life: 1.2 + R() * 1.2, s0: 0.35 + R() * 0.3, s1: 0.3, h0: R() < 0.3 ? 0.9 : 0.42, h1: 0.36, a: 1, kind: 2, grav: 20, spin: 8 });
+    }
+    for (let k = 0; k < 14; k++) {
+      const a = R() * TAU, r = R() * 6;
+      COOL.spawn(x + Math.cos(a) * r, 2 + R() * 6, z + Math.sin(a) * r, Math.cos(a) * 1.5, 2.5 + R() * 2.5, Math.sin(a) * 1.5,
+        { life: 6 + R() * 4, s0: 4 + R() * 3, s1: 16 + R() * 9, h0: 0.62, h1: 0.34, a: 0.55, kind: 1, drag: 0.5, fadeIn: 0.1 });
+    }
+    for (let k = 0; k < 16; k++) {
+      const a = k / 16 * TAU;
+      COOL.spawn(x + Math.cos(a) * 3, 0.8, z + Math.sin(a) * 3, Math.cos(a) * 26, 1, Math.sin(a) * 26,
+        { life: 1.6, s0: 2.5, s1: 6, h0: 0.45, h1: 0.34, a: 0.5, kind: 1, drag: 3 });
+    }
+    addRing(x, z, CFG.he.hurt * 1.5, 2.2);
+    addDecal(0, x, z, 20 + R() * 4, 1, S.t);
+    addHeat(x, z, 11, 0.9, 1.2);
+    addHeat(x, z, 9, 0.16, 25);
+    S.events.push({ type: 'boom', kills: killed, x, z });
+    if (player && scoring() && killed) {
       S.bestBlast = Math.max(S.bestBlast, killed);
-      S.numbers.push({ x, y, z: 22, text: '+' + value, color: 'gold', age: 0, life: 1.4, scale: killed >= 8 ? 2 : 1 });
-      if (killed >= 4) S.events.push({ type: 'multi', kills: killed });
+      if (killed >= 4) S.events.push({ type: 'multi', kills: killed, value });
     }
   }
   function updateRounds(dt) {
     for (const r of S.rounds) {
       r.age += dt;
+      gunPort(r.side, r.a);
       if (r.kind === 'he' && r.age < r.travel) {
         const u = r.age / r.travel;
-        S.lights.push({ x: lerp(r.a[0], r.b[0], u), y: lerp(r.a[1], r.b[1], u), z: lerp(r.a[2], r.b[2], u), r: 26, I: 1.1, age: 0, life: dt * 1.5, kind: 'fire' });
+        HOT.spawn(lerp(r.a.x, r.b.x, u), lerp(r.a.y, r.b.y, u), lerp(r.a.z, r.b.z, u), 0, 0, 0, { life: 0.05, s0: 1.4, h0: 3, a: 1, kind: 0 });
       }
-      if (r.age >= r.travel) { r.done = true; if (r.kind === 'he') explode(r.b[0], r.b[1], r.player); else mgImpact(r); }
+      if (r.age >= r.travel) { r.done = true; if (r.kind === 'he') explode(r.b.x, r.b.z, r.player); else mgImpact(r); }
     }
     S.rounds = S.rounds.filter((r) => !r.done);
   }
-  function updateEffects(dt) {
-    for (const p of S.particles) {
-      p.age += dt; p.vz -= (p.g === undefined ? 70 : p.g) * dt;
-      if (p.drag) { const f = Math.exp(-p.drag * dt); p.vx *= f; p.vy *= f; p.vz *= f; }
-      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-      if (p.z < 0) { p.z = 0; p.vz *= -0.3; p.vx *= 0.5; p.vy *= 0.5; }
+  // burning wrecks and houses: tongues of fire and a column of warm smoke; little fires left by blasts
+  function updateFires(dt) {
+    for (const f of S.flames) {
+      f.life -= dt;
+      if (R() < dt * 14) HOT.spawn(f.x + (R() - 0.5), 0.4, f.z + (R() - 0.5), 0, 1.5 + R(), 0,
+        { life: 0.35 + R() * 0.3, s0: 0.7 + R() * 0.5, s1: 0.2, h0: 1.4, h1: 0.5, a: 1, kind: 0, grav: -2 });
     }
-    S.particles = S.particles.filter((p) => p.age < p.life);
-    for (const a of [S.numbers, S.impacts, S.lights, S.booms, S.scorches, S.puffs]) for (const e of a) e.age += dt;
-    S.numbers = S.numbers.filter((e) => e.age < e.life);
-    S.impacts = S.impacts.filter((e) => e.age < e.life);
-    S.lights = S.lights.filter((e) => e.age < e.life);
-    S.booms = S.booms.filter((e) => e.age < e.life);
-    S.scorches = S.scorches.filter((e) => e.age < e.life);
-    S.puffs = S.puffs.filter((e) => e.age < e.life);
+    S.flames = S.flames.filter((f) => f.life > 0);
+    for (const f of ACTIVE.fires) {
+      if (Math.abs(f.x - S.T.x) > 500 || Math.abs(f.z - S.T.z) > 500) continue;
+      const k = f.big ? 2.2 : 1, w = f.big ? 6 : 3;
+      if (R() < dt * 30 * k) HOT.spawn(f.x + (R() - 0.5) * w, f.y + R(), f.z + (R() - 0.5) * w * 0.6, (R() - 0.5), 3 + R() * 3, (R() - 0.5),
+        { life: 0.4 + R() * 0.5, s0: (0.9 + R() * 0.8) * (f.big ? 1.4 : 1), s1: 0.3, h0: 1.5, h1: 0.6, a: 1, kind: 0, grav: -2 });
+      if (R() < dt * 5 * k) COOL.spawn(f.x + (R() - 0.5) * w * 0.6, f.y + 2, f.z + (R() - 0.5) * w * 0.6, 0.8 + (R() - 0.5), 3 + R() * 2, (R() - 0.5),
+        { life: 7 + R() * 3, s0: 2 * k, s1: 11 * k, h0: 0.5, h1: 0.34, a: 0.5, kind: 1, drag: 0.3, fadeIn: 0.1 });
+    }
   }
-
-  // Title screen: the gunship works the horde on its own.
+  // the title screen: the gunship works the horde on its own
   function attract(dt) {
     if (S.burst) {
       S.burst.cd -= dt;
-      while (S.burst.cd <= 0 && S.burst.n > 0) { fireMG(S.burst.x, S.burst.y, false); S.burst.n--; S.burst.cd += 1 / CFG.mg.rate; }
+      while (S.burst.cd <= 0 && S.burst.n > 0) { fireMG(S.burst.p, false); S.burst.n--; S.burst.cd += 1 / CFG.mg.rate; }
       if (S.burst.n <= 0) S.burst = null;
     }
     S.attractT -= dt;
     if (S.attractT > 0 || !S.zombies.length) return;
-    S.attractT = 1.3 + R() * 1.6;
-    const z = S.zombies[Math.floor(R() * S.zombies.length)], sx = scrX(z.x, z.y), sy = scrY(z.x, z.y, 0) - 8;
-    if (sx < 120 || sx > W - 120 || sy < 90 || sy > H - 90) return;
-    if (R() < 0.5) fireHE(sx, sy + 8, false); else S.burst = { x: sx, y: sy, n: 10, cd: 0 };
+    S.attractT = 1.4 + R() * 1.8;
+    const z = S.zombies[Math.floor(R() * S.zombies.length)];
+    if (Math.hypot(z.x - S.T.x, z.z - S.T.z) > S.viewR * 0.55) return;
+    const p = new THREE.Vector3(z.x, 0, z.z);
+    if (R() < 0.45) fireHE(p, false); else S.burst = { p, n: 12, cd: 0 };
   }
 
-  /* ------------------------------------------------------------- step */
+  /* -------------------------------------------------------------- step */
   function update(dt) {
     S.t += dt;
-    // the camera: WASD in play, a slow drift on the title
-    if (S.mode === 'play') {
-      const tx = S.pan[0] * CFG.pan, ty = S.pan[1] * CFG.pan, k = Math.min(1, dt * 6);
-      S.vel[0] += (tx - S.vel[0]) * k; S.vel[1] += (ty - S.vel[1]) * k;
-    } else if (S.mode === 'title') { S.vel[0] = 9; S.vel[1] = -4; } else { S.vel[0] *= 0.9; S.vel[1] *= 0.9; }
-    S.cx += S.vel[0] * dt; S.cy += S.vel[1] * dt;
-    applyView();
+    U.uTime.value = S.t;
+    if (S.mode !== 'play') S.pan[0] = S.pan[1] = 0;
+    updateCamera(dt);
     if (S.mode === 'play') {
       S.run += dt; S.fuel -= dt;
-      if (S.trigger && S.aim.seen) {
+      S.mgHeat = Math.max(0, S.mgHeat - CFG.mg.cool * dt * (S.trigger && !S.overheat ? 0.25 : 1));
+      if (S.mgHeat >= 1) { S.overheat = true; S.events.push({ type: 'overheat' }); }
+      if (S.overheat && S.mgHeat < 0.35) S.overheat = false;
+      if (S.trigger && !S.overheat && S.aimOK) {
         S.mgCd -= dt;
-        while (S.mgCd <= 0) { fireMG(S.aim.sx, S.aim.sy, true); S.mgCd += 1 / CFG.mg.rate; }
+        while (S.mgCd <= 0 && !S.overheat) { fireMG(S.aim, true); S.mgCd += 1 / CFG.mg.rate; if (S.mgHeat >= 1) { S.overheat = true; S.events.push({ type: 'overheat' }); } }
       } else S.mgCd = Math.max(0, S.mgCd - dt);
       S.heReload = Math.max(0, S.heReload - dt);
       if (S.fuel <= 0) { S.fuel = 0; S.mode = 'ending'; S.endT = 0; S.trigger = false; S.events.push({ type: 'fuelout' }); }
     } else if (S.mode === 'title') attract(dt);
-    else if (S.mode === 'ending') { S.endT += dt; if (S.endT > 1.2) { S.mode = 'over'; S.over = true; } }
+    else if (S.mode === 'ending') { S.endT += dt; if (S.endT > 1.4) S.mode = 'over'; }
     S.hitT = Math.max(0, S.hitT - dt);
+    S.shake = Math.max(0, S.shake - dt * 2.5);
+    updateWorld(S.T.x, S.T.z);
     updateZombies(dt);
     updateRounds(dt);
     updateDying(dt);
-    updateEffects(dt);
+    updateFires(dt);
+    updateFx(dt);
+    packHeat(dt, ACTIVE.fires, S.t);
+    writeTracers(S.rounds);
+    writeZombies(S.zombies, S.dying, S.t);
   }
 
-  /* ------------------------------------------------------------ views */
-  function scene() {
-    const dl = S.drawList;
-    dl.length = 0;
-    for (const z of S.zombies) { z.dep = depth(z.x, z.y, 0); dl.push(z); }
-    for (const z of S.dying) { z.dep = depth(z.x, z.y, 0); dl.push(z); }
-    S.ui = null;
-    if (S.mode === 'play' && S.aim.seen) {
-      const g = groundAtScreen(S.aim.sx, S.aim.sy, G3);
-      S.ui = { cross: { x: S.aim.sx, y: S.aim.sy, firing: S.trigger, hit: S.hitT },
-        ring: { x: g[0], y: g[1], r: CFG.he.kill, ready: S.heReload <= 0 } };
-    } else if (S.mode === 'play') S.ui = {};
-    return S;
-  }
-  reset(true);
+  reset(false);
   return {
-    S, reset, update, scene, spawnScatter,
-    start() { reset(false); S.mode = 'play'; S.zombies = []; spawnScatter(CFG.pop.start); },
-    aim(sx, sy) { S.aim.sx = sx; S.aim.sy = sy; S.aim.seen = true; },
+    S, update, look,
+    start() {
+      reset(true);
+      S.mode = 'play';
+      S.zombies = []; S.dying = []; S.rounds = []; S.flames = [];
+      clearCorpses(); clearFx();
+      spawnScatter(CFG.pop.start);
+    },
+    spawnScatter,
     trigger(on) { S.trigger = !!on && S.mode === 'play'; },
-    fireHE() { if (S.mode === 'play' && S.heReload <= 0 && S.aim.seen) fireHE(S.aim.sx, S.aim.sy, true); },
+    fireHE() { if (S.mode === 'play' && S.heReload <= 0 && S.aimOK) fireHE(S.aim, true); },
     setPan(x, y) { S.pan[0] = x; S.pan[1] = y; },
+    zoom(f) { S.fovT = clamp(S.fovT * f, CFG.fov.min, CFG.fov.max); },
+    cycleZoom() { const steps = [9, 5, 2.6], i = steps.findIndex((v) => v < S.fovT - 0.1); S.fovT = i < 0 ? steps[0] : steps[i]; },
   };
 }

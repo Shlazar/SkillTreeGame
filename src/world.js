@@ -1,516 +1,474 @@
-/* The endless world. Terrain is painted per pixel; scenery is dealt out per 32-unit cell from a
- * hash, so any part of the world can be rebuilt identically. The G-buffer lives in 128 px tiles
- * held in a wrap-around store (12 x 8 tiles) that mirrors the GPU textures: scrolling only ever
- * builds the strip of tiles coming into view. */
+/* The endless countryside, in 150 m field cells. Each cell's crop, pond, hedges, farmstead, cars
+ * and power poles come from a hash of its coordinates, so any part of the world rebuilds the same.
+ * Field types reach the ground shader through a small texture; scenery is drawn with instancing. */
 
-/* ----------------------------------------------------------------- roads */
-const ROAD = { sx: 380, sy: 440 };
-function roadDist(x, y) {
-  const wx = x + 26 * Math.sin(y * 0.0071) + 11 * Math.sin(y * 0.019 + 1.7);
-  const wy = y + 26 * Math.sin(x * 0.0063 + 0.6) + 11 * Math.sin(x * 0.017 + 2.9);
-  return Math.min(Math.abs(mod(wx, ROAD.sx) - ROAD.sx / 2), Math.abs(mod(wy, ROAD.sy) - ROAD.sy / 2));
+const CELL = 150, FT = 64;
+// highways and farm tracks: warped grids, the same in JS and GLSL
+const hwX = (z) => 40 * Math.sin(z * 0.0021) + 18 * Math.sin(z * 0.0057 + 1.3);
+const hwZ = (x) => 40 * Math.sin(x * 0.0019 + 0.7) + 18 * Math.sin(x * 0.0051 + 2.1);
+function hwDist(x, z) {
+  return Math.min(Math.abs(mod(x + hwX(z), 1100) - 550), Math.abs(mod(z + hwZ(x), 1300) - 650));
 }
-function roadGrad(x, y) {
-  const gx = roadDist(x + 1, y) - roadDist(x - 1, y), gy = roadDist(x, y + 1) - roadDist(x, y - 1), l = Math.hypot(gx, gy) || 1;
-  return [gx / l, gy / l];
+function trackDist(x, z) {
+  const wx = x + 14 * Math.sin(z * 0.011) + 7 * Math.sin(z * 0.029 + 1.7);
+  const wz = z + 14 * Math.sin(x * 0.012 + 0.6) + 7 * Math.sin(x * 0.027 + 2.9);
+  return Math.min(Math.abs(mod(wx, 300) - 150), Math.abs(mod(wz, 340) - 170));
 }
-const fieldAt = (x, y) => noise2(x * 0.0042 + 31.7, y * 0.0042 - 12.3, 31);
-const forestAt = (x, y) => noise2(x * 0.0075, y * 0.0075, 81);
+const GLSL_ROADS = `
+  float hwDx(vec2 p) { return abs(mod(p.x + 40.0 * sin(p.y * 0.0021) + 18.0 * sin(p.y * 0.0057 + 1.3), 1100.0) - 550.0); }
+  float hwDz(vec2 p) { return abs(mod(p.y + 40.0 * sin(p.x * 0.0019 + 0.7) + 18.0 * sin(p.x * 0.0051 + 2.1), 1300.0) - 650.0); }
+  float trackD(vec2 p) {
+    float wx = p.x + 14.0 * sin(p.y * 0.011) + 7.0 * sin(p.y * 0.029 + 1.7);
+    float wz = p.y + 14.0 * sin(p.x * 0.012 + 0.6) + 7.0 * sin(p.x * 0.027 + 2.9);
+    return min(abs(mod(wx, 300.0) - 150.0), abs(mod(wz, 340.0) - 170.0));
+  }
+`;
+function vnoise2(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const a = rnd(xi, yi, s), b = rnd(xi + 1, yi, s), c = rnd(xi, yi + 1, s), d = rnd(xi + 1, yi + 1, s);
+  return lerp(lerp(a, b, ux), lerp(c, d, ux), uy);
+}
+// a town sits on every highway crossing
+function crossing(kx, kz) {
+  let x = 550 + 1100 * kx, z = 650 + 1300 * kz;
+  for (let i = 0; i < 4; i++) { x = 550 + 1100 * kx - hwX(z); z = 650 + 1300 * kz - hwZ(x); }
+  return [x, z];
+}
+function townOf(x, z) {
+  const kx = Math.round((x + hwX(z) - 550) / 1100), kz = Math.round((z + hwZ(x) - 650) / 1300), c = crossing(kx, kz);
+  return { x: c[0], z: c[1], r: 170 + 130 * rnd(kx, kz, 77), d: Math.hypot(x - c[0], z - c[1]) };
+}
+// where a mission starts: the edge of the first town's centre
+function startSpot() { const c = crossing(0, 0); return [c[0] + 45, c[1] + 60]; }
+// field types: 0 pasture, 1 ploughed, 2 crop rows, 3 stubble, 4 woodland, 5 town
+const fieldCache = new Map();
+function fieldOf(ci, cj) {
+  const key = ci * 100003 + cj;
+  let f = fieldCache.get(key);
+  if (f) return f;
+  const r = rnd(ci, cj, 1), forest = vnoise2(ci * 0.21, cj * 0.21, 4), town = townOf((ci + 0.5) * CELL, (cj + 0.5) * CELL);
+  let type = town.d < town.r ? 5 : forest > 0.7 ? 4 : r < 0.3 ? 0 : r < 0.55 ? 1 : r < 0.76 ? 2 : 3;
+  f = { type, ang: Math.floor(rnd(ci, cj, 2) * 4), v: rnd(ci, cj, 3), pond: type === 0 && rnd(ci, cj, 9) < 0.07 };
+  if (fieldCache.size > 20000) fieldCache.clear();
+  fieldCache.set(key, f);
+  return f;
+}
 
-/* ---------------------------------------------------------------- terrain */
-function terrainPaint(o) {
-  const x = o.x, y = o.y, r = rnd(o.sx, o.sy, 22), rd = roadDist(x, y);
-  if (rd < 6.2) {                                   // a farm track: two muddy ruts, a grassy crown
-    if (rd < 1.1) { o.mat = r < 0.5 ? M.grassDk : M.dirt; o.tex = r < 0.15 ? -1 : 0; }
-    else if (Math.abs(rd - 2.4) < 0.8) { o.mat = M.mud; o.tex = r < 0.25 ? -1 : 0; }
-    else if (rd < 4.9) { o.mat = M.dirt; o.tex = r < 0.12 ? 1 : r > 0.9 ? -1 : 0; }
-    else { o.mat = noise2(x * 0.5, y * 0.5, 9) > 0.5 ? M.grassDk : M.dirt; o.tex = r < 0.2 ? -1 : 0; }
-    return;
+/* ------------------------------------------------------------- the ground */
+const fieldData = new Uint8Array(FT * FT * 4);
+const fieldTex = new THREE.DataTexture(fieldData, FT, FT, THREE.RGBAFormat);
+fieldTex.magFilter = THREE.NearestFilter; fieldTex.minFilter = THREE.NearestFilter;
+const fieldO = new THREE.Vector2(1e9, 1e9);
+function updateFieldTex(cx, cz) {
+  const ci = Math.floor(cx / CELL), cj = Math.floor(cz / CELL);
+  if (Math.abs(ci - (fieldO.x + FT / 2)) < 16 && Math.abs(cj - (fieldO.y + FT / 2)) < 16) return;
+  fieldO.set(ci - FT / 2, cj - FT / 2);
+  for (let j = 0; j < FT; j++) for (let i = 0; i < FT; i++) {
+    const f = fieldOf(fieldO.x + i, fieldO.y + j), o = (j * FT + i) * 4;
+    fieldData[o] = f.type; fieldData[o + 1] = f.ang; fieldData[o + 2] = Math.round(f.v * 255); fieldData[o + 3] = f.pond ? 255 : 0;
   }
-  const fn = fieldAt(x, y);
-  if (fn > 0.64 && rd > 9) {                        // a ploughed field, furrows one way per field
-    const fa = Math.floor(noise2(x * 0.0021, y * 0.0021, 32) * 4) * (Math.PI / 4);
-    const s = Math.sin((x * Math.cos(fa) + y * Math.sin(fa)) * 1.6);
-    o.mat = fn < 0.665 ? M.grassDk : s > 0.35 ? M.soil : M.soilDk;
-    o.tex = s > 0.85 ? 1 : r < 0.08 ? -1 : 0;
-    return;
-  }
-  o.mat = noise2(x * 0.085, y * 0.085, 5) > 0.6 ? M.grassDk : M.grass;
-  if (noise2(x * 0.06 + 40, y * 0.06, 6) > 0.7 && r < 0.35) o.mat = M.grassLt;
-  o.tex = r < 0.1 ? 1 : r > 0.92 ? -1 : 0;
-  if (noise2(x * 0.03 + 11, y * 0.03 - 4, 7) > 0.78 && r < 0.6) { o.mat = M.dirt; o.tex = r < 0.1 ? -1 : 0; }
+  fieldTex.needsUpdate = true;
 }
+const groundMat = new THREE.ShaderMaterial({
+  uniforms: Object.assign({ uField: { value: fieldTex }, uFieldO: { value: fieldO } }, U),
+  vertexShader: `
+    varying vec3 vW;
+    void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
+  fragmentShader: GLSL_NOISE + GLSL_OUT + GLSL_SRC + GLSL_ROADS + `
+    uniform sampler2D uField; uniform vec2 uFieldO; uniform float uTime;
+    varying vec3 vW;
+    void main() {
+      vec2 p = vW.xz, q = p / 150.0, cell = floor(q), fr = q - cell;
+      vec4 F = texture2D(uField, (cell - uFieldO + 0.5) / 64.0);
+      float type = floor(F.r * 255.0 + 0.5), ang = floor(F.g * 255.0 + 0.5) * 0.785398, var = F.b - 0.5;
+      vec2 dir = vec2(cos(ang), sin(ang));
+      float edge = min(min(fr.x, 1.0 - fr.x), min(fr.y, 1.0 - fr.y)) * 150.0;
+      float g1 = fbm(p * 0.07), g2 = vnoise(p * 1.3), g3 = hash12(floor(p * 2.0));
+      float h;
+      if (type < 0.5) h = 0.30 + (g1 - 0.5) * 0.06 + (g2 - 0.5) * 0.02 + g3 * 0.006;                    // pasture
+      else if (type < 1.5) h = 0.375 + sin(dot(p, dir) * 2.2 + g2 * 2.0) * 0.008 + (g1 - 0.5) * 0.05 + g3 * 0.008;  // ploughed
+      else if (type < 2.5) h = 0.295 + (1.0 - smoothstep(0.15, 0.85, abs(sin(dot(p, dir) * 1.4)))) * 0.016 + (g1 - 0.5) * 0.04 + (g2 - 0.5) * 0.02; // crop rows
+      else if (type < 3.5) h = 0.34 + sin(dot(p, dir) * 5.0 + g2 * 3.0) * 0.005 + (g1 - 0.5) * 0.04 + g3 * 0.006;    // stubble
+      else if (type < 4.5) h = 0.335 + (g1 - 0.5) * 0.05 + (g2 - 0.5) * 0.02;                                // woodland floor
+      else {                                    // town: 75 m blocks, streets on their edges, three lots along each street side
+        vec2 bl = mod(p, 75.0), e = min(bl, 75.0 - bl);
+        float sd = min(e.x, e.y), lx = bl.x - 6.0, lot = lx - floor(lx / 21.0) * 21.0, inLots = step(0.0, lx) * step(lx, 63.0);
+        h = 0.3 + (g1 - 0.5) * 0.035 + (g2 - 0.5) * 0.012 + g3 * 0.005;                                   // lawns
+        float fence = inLots * (1.0 - smoothstep(0.1, 0.28, min(lot, 21.0 - lot))) * step(6.0, e.y);
+        fence = max(fence, (1.0 - smoothstep(0.1, 0.28, abs(e.y - 37.5))) * step(6.0, e.x));
+        h = mix(h, 0.35, fence * 0.8);                                                                     // fences between yards
+        float drive = inLots * step(15.0, lot) * step(lot, 19.4) * step(e.y, 21.0);
+        h = mix(h, 0.355 + (g2 - 0.5) * 0.012, drive);                                                    // driveways
+        float along = e.y < e.x ? p.x : p.y;
+        h = mix(h, 0.36 + step(0.93, fract(along / 1.6)) * 0.012 + g3 * 0.004, 1.0 - smoothstep(5.9, 6.05, sd)); // sidewalks
+        h = mix(h, 0.385 + (vnoise(p * 0.35) - 0.5) * 0.02 + g3 * 0.006 - smoothstep(0.93, 0.97, vnoise(p * vec2(0.8, 0.3))) * 0.015,
+          1.0 - smoothstep(3.9, 4.05, sd));                                                                // the street
+        h -= (1.0 - smoothstep(0.0, 0.3, abs(sd - 4.0))) * 0.018;                                          // the gutter by the curb
+      }
+      h += var * 0.03;
+      if (type < 3.5) h += (1.0 - smoothstep(0.5, 1.8, edge)) * 0.028;                                        // a damp ditch
+      if (F.a > 0.5) {                                                                                        // a pond: cold, flat water
+        vec2 c = fr - 0.5;
+        float r = length(c * vec2(1.0, 1.25)) + (vnoise(p * 0.05) - 0.5) * 0.12;
+        float w = 1.0 - smoothstep(0.24, 0.255, r);
+        h = mix(h, 0.212 + (vnoise(p * 0.25 + uTime * 0.04) - 0.5) * 0.006, w);
+        h += (smoothstep(0.245, 0.26, r) - smoothstep(0.26, 0.31, r)) * 0.035;
+      }
+      float td = trackD(p), track = (1.0 - smoothstep(2.1, 2.7, td)) * step(type, 4.5);
+      float rut = (1.0 - smoothstep(0.3, 0.55, abs(td - 1.15))) * track;
+      h = mix(h, 0.365 + (g2 - 0.5) * 0.02 + rut * 0.022, track);
+      float dx = hwDx(p), dz = hwDz(p), hd = min(dx, dz), along = dx < dz ? p.y : p.x;
+      float road = 1.0 - smoothstep(3.6, 4.0, hd), shoulder = (1.0 - smoothstep(4.0, 5.6, hd)) * (1.0 - road);
+      float lane = (1.0 - smoothstep(0.08, 0.16, hd)) * step(0.45, fract(along / 9.0));
+      float crack = smoothstep(0.92, 0.97, vnoise(p * vec2(0.9, 0.35)));
+      h = mix(h, 0.395 + (vnoise(p * 0.35) - 0.5) * 0.025 + g3 * 0.008 - crack * 0.02, road);
+      h = mix(h, 0.37, lane * road);
+      h -= shoulder * 0.022;
+      h += srcHeat(vW);
+      gl_FragColor = heatOut(h, vW);
+    }`,
+});
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(5000, 5000, 1, 1).rotateX(-Math.PI / 2), groundMat);
+ground.frustumCulled = false;
 
 /* ---------------------------------------------------------------- scenery */
-function barkPaint(o) { o.tex = rnd(o.sx, o.sy, 93) < 0.2 ? -1 : 0; }
-function pinePaint(seed) {
-  return (o) => {
-    o.mat = noise2(o.x * 0.45 + o.z * 0.2, o.y * 0.45 - o.z * 0.35, seed) > 0.56 ? M.pineDk : M.pine;
-    const r = rnd(o.sx, o.sy, seed);
-    o.tex = r < 0.08 ? 1 : r > 0.9 ? -1 : 0;
-  };
+// solids: heat per instance, faces open to the sky a little cooler, fires warm what is near them
+function solidMat(kind) {
+  return new THREE.ShaderMaterial({
+    uniforms: U,
+    defines: { KIND: kind },
+    vertexShader: `
+      attribute float iHeat;
+      varying float vHeat; varying vec3 vN, vW, vL;
+      void main() {
+        mat4 m = modelMatrix * instanceMatrix;
+        vec4 wp = m * vec4(position, 1.0);
+        vW = wp.xyz; vN = normalize(mat3(m) * normal); vL = position; vHeat = iHeat;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }`,
+    fragmentShader: GLSL_NOISE + GLSL_OUT + GLSL_SRC + `
+      varying float vHeat; varying vec3 vN, vW, vL;
+      void main() {
+        float h = vHeat - max(vN.y, 0.0) * 0.02 + (fbm(vW.xz * 0.8 + vW.y * 0.3) - 0.5) * 0.025;
+        #if KIND == 1
+          h += (vnoise(vW.xz * 4.5 + vW.y * 3.3) * 0.45 + vnoise(vW.xz * 10.0 - vW.y * 7.0) * 0.55 - 0.5) * 0.06 + (1.0 - vN.y) * 0.02;   // clumps of leaves
+        #elif KIND == 2
+          h += step(0.82, fract(vL.z * 9.0)) * 0.012 - step(0.5, vN.y) * 0.02;           // roof: rows of tiles
+        #elif KIND == 3
+          h += (step(0.85, fract(vW.y * 1.3)) - 0.15) * 0.01;                             // walls: courses
+        #endif
+        h += srcHeat(vW) * 0.7;
+        gl_FragColor = heatOut(h, vW);
+      }`,
+  });
 }
-function leafPaint(seed, autumn) {
-  return (o) => {
-    const n = noise2(o.x * 0.42 + o.z * 0.25, o.y * 0.42 - o.z * 0.3, seed);
-    o.mat = autumn ? (n > 0.5 ? M.autumn : M.autumnDk) : n > 0.64 ? M.leafLt : n < 0.34 ? M.leafDk : M.leaf;
-    const r = rnd(o.sx, o.sy, seed + 1);
-    o.tex = r < 0.07 ? 1 : r > 0.92 ? -1 : 0;
+function gableGeo() {
+  // a unit gable roof: base x, z in [-0.5, 0.5] at y 0, ridge along x at y 1
+  const v = [], n = [];
+  const tri = (a, b, c) => {
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const nx = ab[1] * ac[2] - ab[2] * ac[1], ny = ab[2] * ac[0] - ab[0] * ac[2], nz = ab[0] * ac[1] - ab[1] * ac[0], l = Math.hypot(nx, ny, nz) || 1;
+    for (const p of [a, b, c]) { v.push(...p); n.push(nx / l, ny / l, nz / l); }
   };
+  const A = [-0.5, 0, 0.5], B = [0.5, 0, 0.5], C = [0.5, 0, -0.5], D = [-0.5, 0, -0.5], E = [-0.5, 1, 0], F = [0.5, 1, 0];
+  tri(A, B, F); tri(A, F, E); tri(C, D, E); tri(C, E, F); tri(B, C, F); tri(D, A, E);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3));
+  return g;
 }
-function pine(F, x, y, h, seed) {
-  cyl(F, TF0, 2, 0, h * 0.34, x, y, 0.9, 8, M.bark, { cap0: false, paint: barkPaint });
-  for (let k = 0; k < 3; k++) {
-    const z0 = h * (0.2 + k * 0.23), z1 = z0 + h * (0.44 - k * 0.04), r = h * (0.3 - k * 0.075);
-    cone(F, TF0, x, y, z0, z1, r, 14, M.pine, { paint: pinePaint(seed + k), rot: rnd(seed, k, 3) * TAU });
+function blobGeo(seed) {
+  const g = new THREE.IcosahedronGeometry(1, 2), p = g.attributes.position, rng = mulberry(seed);
+  const bumps = Array.from({ length: 7 }, () => [rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1, 0.12 + rng() * 0.12]);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    let k = 1;
+    for (const b of bumps) k += b[3] * Math.max(0, x * b[0] + y * b[1] + z * b[2]);
+    p.setXYZ(i, x * k, y * k * 0.85, z * k);
   }
+  g.computeVertexNormals();
+  return g;
 }
-function roundTree(F, x, y, h, seed, autumn) {
-  cyl(F, TF0, 2, 0, h * 0.55, x, y, 1.1, 8, M.bark, { cap0: false, paint: barkPaint });
-  const rng = mulberry(seed), R = h * 0.28, paint = leafPaint(seed, autumn);
-  sphere(F, x, y, h * 0.66, R, M.leaf, { paint });
-  for (let k = 0; k < 5; k++) {
-    const a = rng() * TAU, d = R * (0.55 + rng() * 0.25);
-    sphere(F, x + Math.cos(a) * d, y + Math.sin(a) * d, h * (0.52 + rng() * 0.28), R * (0.5 + rng() * 0.2), M.leaf, { paint });
-  }
+const unitBox = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+const POOLS = {};
+function pool(name, geo, mat, max) {
+  geo = geo.clone();
+  const heat = new THREE.InstancedBufferAttribute(new Float32Array(max), 1);
+  heat.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('iHeat', heat);
+  const mesh = new THREE.InstancedMesh(geo, mat, max);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.frustumCulled = false; mesh.count = 0;
+  POOLS[name] = { mesh, heat, n: 0, max };
+  return mesh;
 }
-function bush(F, x, y, r, seed) { sphere(F, x, y, r * 0.35, r, M.leaf, { paint: leafPaint(seed, false) }); }
-function rockPaint(o) { const r = rnd(o.sx, o.sy, 57); o.mat = r < 0.3 ? M.rockDk : M.rock; o.tex = r > 0.9 ? 1 : r < 0.12 ? -1 : 0; }
-function glassPaint(o, F) {
-  if (F.side === 5 || (Math.abs(o.lx) > 0.72 && Math.abs(o.ly) > 0.72)) { o.mat = M.iron; return; }
-  o.mat = E.lamp; o.tex = o.lz < 0.9 ? 4 : 3; o.emi = CH.lamp;
-}
-function lampPost(F, P, x, y, h) {
-  P.push([x, y, 0, h - 1.8, M.iron]);
-  box(F, tfAt(x, y, h - 2, 0), -1, 1, -1, 1, 0, 2, M.iron, { paint: glassPaint, noShadow: true });
-  box(F, TF0, x - 1.4, x + 1.4, y - 1.4, y + 1.4, h, h + 0.6, M.iron);
-  P.push([x, y, h + 0.6, h + 1.4, M.iron]);
-}
-// a farmhouse: walls with windows (some lit), a slate roof and a chimney
-function housePaints(seed) {
-  const rng = mulberry(seed), wall = [M.plaster, M.woodLt, M.brick][Math.floor(rng() * 3)], lit = [];
-  for (let k = 0; k < 8; k++) lit.push(rng() < 0.55);
-  const opens = [];
-  for (const side of [3, 4]) for (let k = 0; k < 3; k++) opens.push({ side, a: -11 + k * 9, b: -7 + k * 9, z0: 5, z1: 10, lit: lit[opens.length], door: side === 3 && k === 1 });
-  for (const side of [1, 2]) opens.push({ side, a: -2, b: 2, z0: 5, z1: 10, lit: lit[opens.length] });
-  const wallPaint = (o, F) => {
-    const hc = F.side === 1 || F.side === 2 ? o.ly : o.lx, z = o.lz;
-    for (const w of opens) {
-      if (w.side !== F.side || hc < w.a || hc > w.b || z > w.z1 || z < (w.door ? 0 : w.z0)) continue;
-      const fa = hc - w.a, fb = w.b - hc, fz1 = w.z1 - z, fz0 = z - w.z0, mid = (w.a + w.b) / 2, zm = (w.z0 + w.z1) / 2;
-      if (w.door) {
-        if (fa < 0.5 || fb < 0.5 || fz1 < 0.5) { o.mat = M.woodDk; o.tex = 1; return; }
-        o.mat = M.woodDk; o.tex = mod(hc, 1.0) < 0.25 ? -1 : 0;
-        return;
-      }
-      if (fa < 0.5 || fb < 0.5 || fz0 < 0.5 || fz1 < 0.5) { o.mat = M.woodDk; o.tex = fz1 < 0.5 ? 1 : 0; return; }
-      if (Math.abs(hc - mid) < 0.3 || Math.abs(z - zm) < 0.3) { o.mat = E.sil; o.tex = 3; o.emi = 0; return; }
-      if (w.lit) { o.mat = E.window; o.tex = z > zm ? 4 : 5; o.emi = CH.window; } else { o.mat = E.sil; o.tex = 1; o.emi = 0; }
-      return;
-    }
-    if (z < 1.6) { o.mat = M.stoneDk; o.tex = mod(hc, 2.4) < 0.3 ? -1 : 0; return; }
-    if (wall === M.brick) { const row = Math.floor(z / 0.9); o.tex = mod(z, 0.9) < 0.3 || mod(hc + (row & 1) * 1.1, 2.2) < 0.35 ? -1 : 0; return; }
-    if (wall === M.woodLt) { o.tex = mod(z, 1.2) < 0.3 ? -1 : 0; return; }
-    o.tex = rnd(o.sx, o.sy, 91) < 0.06 ? -1 : 0;
-  };
-  return { wall, opens, wallPaint };
-}
-function roofPaint(o) {
-  if (o.flip) { o.mat = M.woodDk; o.tex = -1; return; }
-  const row = Math.floor(o.lz / 1.05), col = Math.floor((o.lx + (row & 1) * 1.1) / 2.2);
-  o.mat = rnd(col, row, 95) < 0.3 ? M.slateDk : M.slate;
-  o.tex = mod(o.lz, 1.05) < 0.3 ? -1 : 0;
-}
-function house(F, P, ob) {
-  const tf = tfAt(ob.x, ob.y, 0, ob.hd), hp = housePaints(ob.seed), L = 15, Wd = 10, Hw = 13, ridge = 21, oh = 1.4;
-  const w = (x, y, z) => W3(tf, x, y, z), n = (x, y, z) => nL(tf, x, y, z);
-  box(F, tf, -L, L, -Wd, Wd, 0, Hw, hp.wall, { paint: hp.wallPaint });
-  const slope = (ridge - Hw) / (Wd + oh), zAt = (y) => ridge - slope * Math.abs(y);
-  for (const [x, sx] of [[L, 1], [-L, -1]]) {
-    pushPts(F, [w(x, Wd, Hw), w(x, Wd, zAt(Wd)), w(x, 0, ridge), w(x, -Wd, zAt(-Wd)), w(x, -Wd, Hw)], M.woodLt,
-      { paint: (o) => { o.mat = mod(o.ly, 1.6) < 0.35 ? M.woodDk : M.woodLt; o.tex = 0; }, side: sx > 0 ? 1 : 2, tf }, n(sx, 0, 0));
-  }
-  const xa = -L - oh, xb = L + oh;
-  pushPts(F, [w(xa, Wd + oh, Hw - oh * slope), w(xb, Wd + oh, Hw - oh * slope), w(xb, 0, ridge), w(xa, 0, ridge)], M.slate, { paint: roofPaint, two: true, tf }, n(0, 1, 1));
-  pushPts(F, [w(xa, -Wd - oh, Hw - oh * slope), w(xa, 0, ridge), w(xb, 0, ridge), w(xb, -Wd - oh, Hw - oh * slope)], M.slate, { paint: roofPaint, two: true, tf }, n(0, -1, 1));
-  box(F, tf, 7, 9.6, -5, -2.4, 15, 25, M.brick, { paint: (o, F2) => { if (F2.side !== 5 && mod(o.lz, 0.9) < 0.3) o.tex = -1; } });
-}
-function carPaints(burnt) {
-  const body = (o, F) => {
-    if (burnt) { const r = rnd(o.sx, o.sy, 33); o.mat = r < 0.35 ? M.rust : M.soot; o.tex = r > 0.9 ? 1 : 0; return; }
-    if (F.side === 5) { o.tex = 1; return; }
-    if (o.lz < 2.4) { o.mat = M.iron; o.tex = -1; }
-  };
-  const cabin = (o, F) => {
-    if (F.side === 5) { if (burnt) { o.mat = M.soot; o.tex = -1; } else o.tex = 1; return; }
-    const a = F.side === 1 || F.side === 2 ? o.ly : o.lx;
-    if (o.lz > 5.8 && o.lz < 8.0 && Math.abs(mod(a + 20, 5) - 2.5) < 2.0) { o.mat = burnt ? M.soot : M.glassDk; o.tex = burnt ? -1 : 1; return; }
-    if (burnt) { o.mat = rnd(o.sx, o.sy, 34) < 0.4 ? M.rust : M.soot; o.tex = 0; }
-  };
-  return { body, cabin };
-}
-function car(F, ob) {
-  const tf = tfAt(ob.x, ob.y, 0, ob.hd), p = carPaints(ob.burning), L = 11, Wd = 5;
-  for (const wx of [-7, 7]) for (const s of [-1, 1]) {
-    cyl(F, tf, 1, s * (Wd - 1.4), s * (Wd + 0.1), wx, 2.2, 2.2, 8, M.tire, {});
-  }
-  box(F, tf, -L, L, -Wd, Wd, 1.6, 5.4, ob.burning ? M.soot : ob.paint, { paint: p.body });
-  box(F, tf, -5.5, 4.5, -Wd + 0.6, Wd - 0.6, 5.4, 8.8, ob.burning ? M.soot : ob.paint, { paint: p.cabin });
+const M_PLAIN = solidMat(0), M_LEAF = solidMat(1), M_ROOF = solidMat(2), M_WALL = solidMat(3);
+const SCENERY = new THREE.Group();
+SCENERY.add(
+  pool('trunk', new THREE.CylinderGeometry(0.18, 0.3, 1, 6).translate(0, 0.5, 0), M_PLAIN, 4000),
+  pool('crownA', blobGeo(11), M_LEAF, 9000),
+  pool('crownB', blobGeo(23), M_LEAF, 6000),
+  pool('conifer', new THREE.ConeGeometry(1, 1, 8).translate(0, 0.5, 0), M_LEAF, 2000),
+  pool('wall', unitBox, M_WALL, 1600),
+  pool('roof', gableGeo(), M_ROOF, 1600),
+  pool('box', unitBox, M_PLAIN, 14000),
+  pool('wheel', new THREE.CylinderGeometry(1, 1, 1, 10).rotateX(Math.PI / 2), M_PLAIN, 5000),
+  pool('bale', new THREE.CylinderGeometry(1, 1, 1, 12).rotateZ(Math.PI / 2), M_PLAIN, 800),
+  pool('pole', new THREE.CylinderGeometry(0.13, 0.17, 1, 6).translate(0, 0.5, 0), M_PLAIN, 2600),
+);
+const wireGeo = new THREE.BufferGeometry();
+const wireMax = 800 * 3 * 8;
+wireGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(wireMax * 6), 3));
+const wires = new THREE.LineSegments(wireGeo, new THREE.ShaderMaterial({
+  uniforms: U,
+  vertexShader: 'varying vec3 vW; void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }',
+  fragmentShader: GLSL_OUT + 'varying vec3 vW; void main() { gl_FragColor = heatOut(0.28, vW); }',
+}));
+wires.frustumCulled = false;
+SCENERY.add(wires);
+
+const QM = new THREE.Matrix4(), QQ = new THREE.Quaternion(), QP = new THREE.Vector3(), QS = new THREE.Vector3(), QE = new THREE.Euler();
+function put(name, x, y, z, sx, sy, sz, yaw, heat) {
+  const P = POOLS[name];
+  if (P.n >= P.max) return;
+  QE.set(0, yaw || 0, 0); QQ.setFromEuler(QE);
+  QM.compose(QP.set(x, y, z), QQ, QS.set(sx, sy, sz));
+  QM.toArray(P.mesh.instanceMatrix.array, P.n * 16);
+  P.heat.array[P.n] = heat;
+  P.n++;
 }
 
-/* --------------------------------------------------------------- the cells */
-const CELL = 32, MAXH = 44, MAXR = 22;
-const cellCache = new Map();
-const cellKey = (ci, cj) => (ci + 32768) * 65536 + (cj + 32768);
-const CAR_PAINT = [M.carRed, M.carBlue, M.carCream, M.carGreen];
-function cellObjects(ci, cj) {
-  const key = cellKey(ci, cj);
-  let c = cellCache.get(key);
+/* ----------------------------------------------------- what stands in a cell */
+const contentCache = new Map();
+function cellContent(ci, cj) {
+  const key = ci * 100003 + cj;
+  let c = contentCache.get(key);
   if (c) return c;
-  const rng = mulberry(hash(ci * 7919 + 13) ^ hash(cj * 104729 + 7) ^ 0x51ed27);
-  const x0 = ci * CELL, y0 = cj * CELL, cx = x0 + CELL / 2, cy = y0 + CELL / 2, list = [];
-  const rd = roadDist(cx, cy);
-  const inCell = (x, y, m) => x > x0 + m && x < x0 + CELL - m && y > y0 + m && y < y0 + CELL - m;
-  // a lamp post beside the track now and then
-  if (rd < CELL * 0.8 && rng() < 0.28) {
-    const px = cx + (rng() - 0.5) * CELL * 0.5, py = cy + (rng() - 0.5) * CELL * 0.5, g = roadGrad(px, py), d = roadDist(px, py);
-    const x = px + g[0] * (10 - d), y = py + g[1] * (10 - d);
-    if (inCell(x, y, 2) && Math.abs(roadDist(x, y) - 10) < 2.5) {
-      list.push({ kind: 'lamp', x, y, h: 17, r: 2, seed: hash(key) % 1000,
-        light: { x, y, z: 16, r: 46, kind: 'lamp', glowR: 15 } });
-    }
+  const f = fieldOf(ci, cj), rng = mulberry(hash32(ci * 7919 + 17) ^ hash32(cj * 104729 + 5) ^ 0x2f6d);
+  const x0 = ci * CELL, z0 = cj * CELL;
+  c = { trees: [], houses: [], cars: [], poles: [], bales: [], misc: [], block: [] };
+  const town = f.type === 5;
+  const clear = (x, z, m) => hwDist(x, z) > 7 + m && (town || trackDist(x, z) > 4 + m);
+  const tree = (x, z, s) => {
+    if (!clear(x, z, 2)) return;
+    const kind = rng() < 0.3 ? 2 : rng() < 0.5 ? 1 : 0;
+    c.trees.push({ x, z, s: s * (0.8 + rng() * 0.5), kind, heat: 0.36 + rng() * 0.04, yaw: rng() * TAU });
+    c.block.push(x, z, 0.8);
+  };
+  if (f.type === 4) {                                            // a wood
+    const n = 34 + Math.floor(rng() * 14);
+    for (let k = 0; k < n; k++) tree(x0 + rng() * CELL, z0 + rng() * CELL, 1);
   }
-  // an abandoned car on the track; some still burn
-  if (rd < 3.6 && rng() < 0.1) {
-    const g = roadGrad(cx, cy), hd = Math.atan2(g[1], g[0]) + Math.PI / 2 + (rng() - 0.5) * 0.7, burning = rng() < 0.45;
-    const x = cx + (rng() - 0.5) * 6, y = cy + (rng() - 0.5) * 6;
-    list.push({ kind: 'car', x, y, hd, r: 9, h: 9, burning, paint: CAR_PAINT[Math.floor(rng() * 4)], seed: hash(key + 1) % 1000,
-      light: burning ? { x, y, z: 9, r: 52, kind: 'fire', ch: 3 + (hash(key) & 3) } : null });
-  }
-  // a farmhouse back from the track, rarely
-  if (rd > 30 && rd < 60 && rnd(ci, cj, 77) < 0.012 && fieldAt(cx, cy) < 0.62) {
-    const g = roadGrad(cx, cy), hd = Math.atan2(g[1], g[0]);
-    const seed = hash(key + 2) % 100000, hp = housePaints(seed), lights = [];
-    const tf = tfAt(cx, cy, 0, hd);
-    for (const w of hp.opens) if (w.lit) {
-      const m = (w.a + w.b) / 2;
-      const q = w.side === 3 ? W3(tf, m, 12, 7.5) : w.side === 4 ? W3(tf, m, -12, 7.5) : W3(tf, w.side === 1 ? 17 : -17, m, 7.5);
-      lights.push({ x: q[0], y: q[1], z: q[2], r: 24, kind: 'window', ch: CH.window });
-    }
-    list.push({ kind: 'house', x: cx, y: cy, hd, r: 19, h: 26, seed, lights });
-  }
-  // trees: copses where the forest noise is high, a lone tree elsewhere; none in fields or tracks
-  const forest = forestAt(cx, cy), dense = forest > 0.64;
-  const nt = dense ? 1 + Math.floor(rng() * 3) : rng() < 0.07 ? 1 : 0;
-  for (let k = 0; k < nt; k++) {
-    const x = x0 + 4 + rng() * (CELL - 8), y = y0 + 4 + rng() * (CELL - 8), kind = rng(), seed = hash(key + 10 + k) % 100000;
-    if (roadDist(x, y) < 16 || fieldAt(x, y) > 0.62) continue;
-    if (kind < 0.6) list.push({ kind: 'pine', x, y, h: 24 + rng() * 12, r: 9, seed });
-    else list.push({ kind: 'tree', x, y, h: 22 + rng() * 9, r: 10, seed, autumn: noise2(x * 0.006, y * 0.006, 82) > 0.62 });
-  }
-  if (rng() < 0.1) {
-    const x = x0 + 3 + rng() * (CELL - 6), y = y0 + 3 + rng() * (CELL - 6);
-    if (roadDist(x, y) > 9 && fieldAt(x, y) < 0.62) list.push({ kind: 'bush', x, y, r: 3 + rng() * 2.2, h: 6, seed: hash(key + 30) % 100000 });
-  }
-  if (rng() < 0.05) {
-    const x = x0 + 3 + rng() * (CELL - 6), y = y0 + 3 + rng() * (CELL - 6);
-    if (roadDist(x, y) > 8) list.push({ kind: 'rock', x, y, r: 1.8 + rng() * 1.8, h: 4, seed: hash(key + 40) % 100000 });
-  }
-  c = { list, faces: null, poles: null };
-  if (cellCache.size > 6000) cellCache.clear();
-  cellCache.set(key, c);
-  return c;
-}
-// the faces of a cell's scenery, built once and kept with the cell
-function cellGeometry(c) {
-  if (c.faces) return c;
-  const F = [], P = [];
-  for (const ob of c.list) {
-    if (ob.kind === 'pine') pine(F, ob.x, ob.y, ob.h, ob.seed);
-    else if (ob.kind === 'tree') roundTree(F, ob.x, ob.y, ob.h * 0.85, ob.seed, ob.autumn);
-    else if (ob.kind === 'bush') bush(F, ob.x, ob.y, ob.r, ob.seed);
-    else if (ob.kind === 'rock') sphere(F, ob.x, ob.y, 0.4, ob.r, M.rock, { paint: rockPaint });
-    else if (ob.kind === 'lamp') lampPost(F, P, ob.x, ob.y, ob.h);
-    else if (ob.kind === 'car') car(F, ob);
-    else if (ob.kind === 'house') house(F, P, ob);
-  }
-  c.faces = F; c.poles = P;
-  return c;
-}
-function forCells(x0, y0, x1, y1, fn) {
-  const i0 = Math.floor(x0 / CELL), i1 = Math.floor(x1 / CELL), j0 = Math.floor(y0 / CELL), j1 = Math.floor(y1 / CELL);
-  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) fn(cellObjects(i, j), i, j);
-}
-// the world box under a rectangle of global pixels at ground level
-const BX = [0, 0, 0];
-function groundBox(gx0, gy0, gx1, gy1) {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [gx, gy] of [[gx0, gy0], [gx1, gy0], [gx0, gy1], [gx1, gy1]]) {
-    groundAtG(gx, gy, BX);
-    x0 = Math.min(x0, BX[0]); x1 = Math.max(x1, BX[0]); y0 = Math.min(y0, BX[1]); y1 = Math.max(y1, BX[1]);
-  }
-  return [x0, y0, x1, y1];
-}
-
-/* ------------------------------------------------------------ the tile store */
-const TS = 128, NTX = 12, NTY = 8, TW = TS * NTX, TH = TS * NTY;
-const mAlb = new Uint8Array(TW * TH * 4), mDep = new Float32Array(TW * TH), mGnd = new Uint8Array(TW * TH), mLit = new Uint8Array(TW * TH);
-const slotKey = new Float64Array(NTX * NTY).fill(-1);
-const slotDirty = new Uint8Array(NTX * NTY);
-const tileKey = (tx, ty) => tx * 65536 + ty;
-const TT = target(TS, TS);
-const tA = new Uint8Array(TS * TS * 4), tN = new Uint8Array(TS * TS * 4), tD = new Float32Array(TS * TS);
-const WORLD = { upload: null, uploadAlb: null, built: 0 };
-const UP = [0, 0, 1];
-let TSM = smap(8, 8, 1);
-
-function buildTile(tx, ty) {
-  const T = TT, gx0 = tx * TS, gy0 = ty * TS;
-  T.x0 = gx0; T.y0 = gy0;
-  T.d.fill(-1e9); T.mat.fill(0); T.lit.fill(1); T.gnd.fill(0);
-  // 1. the ground
-  for (let ly = 0; ly < TS; ly++) {
-    const gy = gy0 + ly, dep = groundDepthG(gy + 0.5);
-    for (let lx = 0; lx < TS; lx++) {
-      const gx = gx0 + lx, i = ly * TS + lx;
-      unprojectG(gx + 0.5, gy + 0.5, dep, P3);
-      O.x = P3[0]; O.y = P3[1]; O.z = 0; O.sx = gx; O.sy = gy; O.emi = 0; O.gnd = 1; O.nx = 0; O.ny = 0; O.nz = 1;
-      terrainPaint(O);
-      writePx(T, i, dep, O);
-    }
-  }
-  // 2. tufts, flowers and pebbles on the grass
-  const gb = groundBox(gx0 - 2, gy0 - 2, gx0 + TS + 2, gy0 + TS + 2);
-  forCells(gb[0], gb[1], gb[2], gb[3], (c, i, j) => {
-    const rng = mulberry(hash(i * 31337 + 5) ^ hash(j * 7331 + 11));
-    for (let k = 0; k < 26; k++) {
-      const x = i * CELL + rng() * CELL, y = j * CELL + rng() * CELL, r = rng(), m = rng();
-      if (roadDist(x, y) < 6.5 || fieldAt(x, y) > 0.64) continue;
-      if (r < 0.1) {
-        const mat = [M.flowerR, M.flowerY, M.flowerW][Math.floor(m * 3)];
-        for (let q = 0; q < 3; q++) splat(T, x + (rng() - 0.5) * 3, y + (rng() - 0.5) * 3, 0.5, mat, UP, rng() < 0.5 ? 1 : 0, 1);
-      } else if (r < 0.88) {
-        splat(T, x, y, 0.45, M.grassLt, UP, 0, 1);
-        if (m < 0.5) splat(T, x, y, 1.3, M.grass, UP, 1, 1);
-      } else splat(T, x, y, 0.4, M.stone, UP, 0, 1);
-    }
-  });
-  // 3. scenery standing in or reaching into the tile
-  const padS = MAXR * SC, padT = MAXR * SC * 0.5, padB = MAXH * ZK;
-  const db = groundBox(gx0 - padS, gy0 - padT, gx0 + TS + padS, gy0 + TS + padB);
-  const drawn = [];
-  forCells(db[0], db[1], db[2], db[3], (c) => {
-    if (!c.list.length) return;
-    cellGeometry(c);
-    drawn.push(c);
-    for (const f of c.faces) drawAny(f, T);
-    for (const p of c.poles) drawPole(T, null, p[0], p[1], p[2], p[3], p[4]);
-  });
-  // 4. moon shadows: a shadow map fitted to the tile, with every caster near enough to reach it
-  let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-  for (const [gx, gy] of [[gx0, gy0], [gx0 + TS, gy0], [gx0, gy0 + TS], [gx0 + TS, gy0 + TS]]) {
-    for (const z of [0, MAXH]) {
-      unprojectG(gx, gy, groundDepthG(gy) + z / CV[2], P3);
-      const u = lu(P3[0], P3[1], P3[2]), v = lv(P3[0], P3[1], P3[2]);
-      if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v;
-    }
-  }
-  const sw = Math.ceil(u1 - u0) + 8, sh = Math.ceil(v1 - v0) + 8;
-  if (TSM.buf.length < sw * sh) TSM = smap(sw, sh, 1);
-  TSM.w = sw; TSM.h = sh; TSM.u0 = u0 - 4; TSM.v0 = v0 - 4;
-  TSM.buf.fill(-1e9, 0, sw * sh);
-  const sb = [db[0] - 40, db[1] - 40, db[2] + 40, db[3] + 40];
-  forCells(sb[0], sb[1], sb[2], sb[3], (c) => {
-    if (!c.list.length) return;
-    cellGeometry(c);
-    for (const f of c.faces) shadowAny(f, TSM);
-    for (const p of c.poles) drawPole(null, TSM, p[0], p[1], p[2], p[3], p[4]);
-  });
-  for (let i = 0; i < TS * TS; i++) {
-    const m = T.mat[i];
-    if (!m || m >= 128) continue;
-    const lam = (T.nx[i] * LD[0] + T.ny[i] * LD[1] + T.nz[i] * LD[2]) / 127;
-    if (lam <= 0) continue;
-    unprojectG(gx0 + (i % TS) + 0.5, gy0 + ((i / TS) | 0) + 0.5, T.d[i], P3);
-    if (shadowed(TSM, P3[0], P3[1], P3[2], 0.9 + 1.4 * (1 - lam))) T.lit[i] = 0;
-  }
-  // 5. encode for the GPU: albedo + class, normal + moon visibility, depth
-  for (let i = 0; i < TS * TS; i++) {
-    const m = T.mat[i], o = i * 4;
-    tD[i] = T.d[i];
-    tN[o] = 128 + T.nx[i]; tN[o + 1] = 128 + T.ny[i]; tN[o + 2] = 128 + T.nz[i]; tN[o + 3] = T.lit[i] ? 255 : 0;
-    if (m >= 128) {
-      const e = EMIS[m - 128], c = e[clamp(T.tex[i], 0, e.length - 1)];
-      tA[o] = c & 255; tA[o + 1] = (c >> 8) & 255; tA[o + 2] = (c >> 16) & 255; tA[o + 3] = 1 + Math.min(126, T.emi[i]);
-      continue;
-    }
-    const s = MATSRGB[m] || MATSRGB[M.grass], k = clamp(1 + 0.13 * T.tex[i], 0.6, 1.4);
-    tA[o] = clamp(s[0] * k, 0, 255); tA[o + 1] = clamp(s[1] * k, 0, 255); tA[o + 2] = clamp(s[2] * k, 0, 255); tA[o + 3] = MATCLASS[m] || 200;
-  }
-  // 6. the ground marks already made here (blood, craters, the fallen)
-  const list = DECALS.get(tileKey(tx, ty));
-  if (list) for (const d of list) paintDecal(d, tA, T.gnd, 0, 0, TS, gx0, gy0);
-  // 7. into the wrap-around store and the GPU
-  const sx = mod(tx, NTX), sy = mod(ty, NTY), ox = sx * TS, oy = sy * TS;
-  for (let ly = 0; ly < TS; ly++) {
-    const di = (oy + ly) * TW + ox, si = ly * TS;
-    mAlb.set(tA.subarray(si * 4, (si + TS) * 4), di * 4);
-    mDep.set(tD.subarray(si, si + TS), di);
-    mGnd.set(T.gnd.subarray(si, si + TS), di);
-    mLit.set(T.lit.subarray(si, si + TS), di);
-  }
-  slotKey[sy * NTX + sx] = tileKey(tx, ty);
-  slotDirty[sy * NTX + sx] = 0;
-  if (WORLD.upload) WORLD.upload(ox, oy, tA, tN, tD);
-  WORLD.built++;
-}
-const resident = (tx, ty) => slotKey[mod(ty, NTY) * NTX + mod(tx, NTX)] === tileKey(tx, ty);
-// make sure the tiles on screen exist; then build up to `budget` ms of the ring around them
-function ensureTiles(budget) {
-  const tx0 = Math.floor(VIEW.x / TS), tx1 = Math.floor((VIEW.x + W - 1) / TS);
-  const ty0 = Math.floor(VIEW.y / TS), ty1 = Math.floor((VIEW.y + H - 1) / TS);
-  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) if (!resident(tx, ty)) buildTile(tx, ty);
-  const start = performance.now(), cx = (tx0 + tx1) / 2, cy = (ty0 + ty1) / 2, todo = [];
-  for (let ty = ty0 - 1; ty <= ty1 + 1; ty++) for (let tx = tx0 - 1; tx <= tx1 + 1; tx++) {
-    if (!resident(tx, ty)) todo.push([tx, ty, Math.hypot(tx - cx, (ty - cy) * 1.4)]);
-  }
-  todo.sort((a, b) => a[2] - b[2]);
-  for (const [tx, ty] of todo) {
-    if (performance.now() - start > budget) break;
-    buildTile(tx, ty);
-  }
-}
-// screen pixel -> index into the store (rows and columns cached per frame)
-const rowB = new Int32Array(H), colB = new Int32Array(W);
-function syncView() {
-  for (let y = 0; y < H; y++) rowB[y] = mod(VIEW.y + y, TH) * TW;
-  for (let x = 0; x < W; x++) colB[x] = mod(VIEW.x + x, TW);
-}
-const storeAt = (sx, sy) => rowB[sy] + colB[sx];
-
-/* ------------------------------------------------------------------ decals
- * Marks baked into the ground's albedo, so the GPU lights them like the ground: blood, scorched
- * craters, bullet scars and the bodies of the fallen. Each is kept with every tile it touches, to
- * be painted again whenever that tile is rebuilt. */
-const DECALS = new Map();
-const DECAL_CAP = 700;
-function decalBox(d) {
-  const cx = GX(d.x, d.y), cy = GY(d.x, d.y, 0), r = d.type === 'scorch' ? d.s * 1.75 : d.type === 'corpse' ? (d.big ? 18 : 12) : d.s * 1.5 + 2;
-  return [Math.floor(cx - r), Math.floor(cy - r), Math.ceil(cx + r), Math.ceil(cy + r)];
-}
-function addDecal(d) {
-  const b = decalBox(d);
-  const tx0 = Math.floor(b[0] / TS), tx1 = Math.floor(b[2] / TS), ty0 = Math.floor(b[1] / TS), ty1 = Math.floor(b[3] / TS);
-  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
-    const key = tileKey(tx, ty);
-    let list = DECALS.get(key);
-    if (!list) DECALS.set(key, (list = []));
-    list.push(d);
-    if (list.length > DECAL_CAP) list.splice(0, list.length - DECAL_CAP);
-    if (!resident(tx, ty)) continue;
-    const sx = mod(tx, NTX), sy = mod(ty, NTY);
-    paintDecal(d, mAlb, mGnd, sx * TS, sy * TS, TW, tx * TS, ty * TS);
-    slotDirty[sy * NTX + sx] = 1;
-  }
-}
-// push the albedo of tiles that gained marks this frame
-function flushDecals() {
-  for (let s = 0; s < NTX * NTY; s++) {
-    if (!slotDirty[s]) continue;
-    slotDirty[s] = 0;
-    if (WORLD.uploadAlb) WORLD.uploadAlb((s % NTX) * TS, ((s / NTX) | 0) * TS);
-  }
-}
-const CHAR_K = 0.12;
-function mixPx(A, o, r, g, b, a) {
-  A[o] += (r - A[o]) * a; A[o + 1] += (g - A[o + 1]) * a; A[o + 2] += (b - A[o + 2]) * a;
-}
-// paint decal d into the TS x TS region at global (rx, ry), stored in A/G at (ox, oy) with stride
-function paintDecal(d, A, G, ox, oy, stride, rx, ry) {
-  const b = decalBox(d);
-  const x0 = Math.max(b[0], rx), x1 = Math.min(b[2], rx + TS - 1), y0 = Math.max(b[1], ry), y1 = Math.min(b[3], ry + TS - 1);
-  if (x0 > x1 || y0 > y1) return;
-  const cx = GX(d.x, d.y), cy = GY(d.x, d.y, 0), seed = d.seed | 0;
-  if (d.type === 'corpse') { paintCorpse(d, A, G, ox, oy, stride, rx, ry, x0, y0, x1, y1, cx, cy); return; }
-  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
-    const idx = (oy + gy - ry) * stride + ox + gx - rx;
-    if (!G[idx]) continue;
-    const dx = gx + 0.5 - cx, dy = (gy + 0.5 - cy) * 2, q = Math.sqrt(dx * dx + dy * dy) / d.s, o = idx * 4;
-    if (d.type === 'blood') {
-      const edge = 0.55 + 0.45 * noise2(Math.atan2(dy, dx) * 1.7 + seed, seed * 0.37, 41);
-      const drop = q < 1.6 && rnd(gx, gy, seed) < 0.1;
-      if (q < edge) mixPx(A, o, 70, 12, 12, 0.78 - 0.2 * q);
-      else if (drop) mixPx(A, o, 90, 18, 16, 0.65);
-    } else if (d.type === 'scorch') {
-      const edge = 0.72 + 0.4 * noise2(Math.atan2(dy, dx) * 2.4 + seed, seed * 0.21, 42);
-      const k = q / edge, r = rnd(gx, gy, seed + 1);
-      if (k < 0.45) mixPx(A, o, 12, 10, 10, 0.96);                                   // the crater
-      else if (k < 0.62) mixPx(A, o, 104, 80, 54, r < 0.2 ? 0.5 : 0.88);            // a rim of thrown-up earth
-      else if (k < 1) mixPx(A, o, 24, 20, 18, (0.9 - 0.75 * (k - 0.62) / 0.38) * (0.8 + 0.2 * r));   // soot
-      else if (k < 1.6 && r < 0.06) mixPx(A, o, 96, 74, 50, 0.85);                   // flung clods
-      if (k > 0.5 && k < 1 && rnd(gx, gy, seed + 2) < 0.05) mixPx(A, o, 110, 104, 96, 0.6);   // pale ash
-    } else if (d.type === 'hole') {
-      if (q < 1) mixPx(A, o, 22, 18, 16, 0.85);
-    }
-  }
-}
-// a body lying where it fell: its sprite, baked flat onto the ground with a pool of blood
-function paintCorpse(d, A, G, ox, oy, stride, rx, ry, x0, y0, x1, y1, cx, cy) {
-  const set = d.big ? CORPSE_BIG : CORPSE, rows = set[d.frame % set.length], h = rows.length, w = rows[0].length;
-  const left = Math.round(cx) - (w >> 1), top = Math.round(cy) - h + 2;
-  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
-    const idx = (oy + gy - ry) * stride + ox + gx - rx;
-    if (!G[idx]) continue;
-    const o = idx * 4, dx = gx + 0.5 - cx, dy = (gy + 0.5 - cy - 1) * 2.2, q = Math.hypot(dx, dy) / 8;
-    if (q < (d.big ? 1.15 : 0.75) + 0.3 * noise2(gx * 0.5, gy * 0.5, d.seed | 0)) mixPx(A, o, 58, 10, 10, 0.75);
-    const r = gy - top, k = d.flip ? w - 1 - (gx - left) : gx - left;
-    if (r < 0 || r >= h || k < 0 || k >= w) continue;
-    const ch = rows[r][k];
-    if (ch === '.') continue;
-    const e = ZPART[ch];
-    if (!e) continue;
-    const mat = e[0] === 'skin' ? d.skin : e[0] === 'shirt' ? d.shirt : e[0] === 'pants' ? d.pants : M[e[0]];
-    const s = MATSRGB[mat], f = 0.55 + 0.15 * e[1];
-    A[o] = s[0] * f; A[o + 1] = s[1] * f; A[o + 2] = s[2] * f;
-  }
-}
-
-/* ------------------------------------------------------------------ lights
- * The lamps, lit windows and burning wrecks around the view, gathered when the view moves. */
-const NEAR = { key: '', lights: [], fires: [] };
-function gatherNear() {
-  const key = (VIEW.x >> 4) + ',' + (VIEW.y >> 4);
-  if (key === NEAR.key) return NEAR;
-  NEAR.key = key; NEAR.lights = []; NEAR.fires = [];
-  const pad = 60, b = groundBox(VIEW.x - pad, VIEW.y - pad, VIEW.x + W + pad, VIEW.y + H + pad + 40);
-  const cxs = W / 2, cys = H / 2;
-  forCells(b[0], b[1], b[2], b[3], (c) => {
-    for (const ob of c.list) {
-      const ls = ob.lights || (ob.light ? [ob.light] : null);
-      if (ls) for (const L of ls) {
-        const sx = scrX(L.x, L.y), sy = scrY(L.x, L.y, L.z), m = L.r * SC;
-        if (sx < -m || sy < -m || sx > W + m || sy > H + m) continue;
-        NEAR.lights.push(Object.assign({ dist: Math.hypot(sx - cxs, sy - cys), seed: (ob.seed | 0) + NEAR.lights.length }, L));
-      }
-      if (ob.kind === 'car' && ob.burning) {
-        const sx = scrX(ob.x, ob.y), sy = scrY(ob.x, ob.y, 0);
-        if (sx > -40 && sx < W + 40 && sy > -40 && sy < H + 80) NEAR.fires.push(ob);
+  if (town) {                                                   // houses: three lots along each side of each 75 m block
+    for (let bj = 0; bj < 2; bj++) for (let bi = 0; bi < 2; bi++) {
+      const bx = x0 + bi * 75, bz = z0 + bj * 75;
+      for (const side of [0, 1]) {
+        const dir = side ? -1 : 1, front = side ? bz + 69 : bz + 6;
+        for (let k = 0; k < 3; k++) {
+          const lx = bx + 6 + 21 * k, at = (u, v) => [lx + u, front + dir * v];      // u across the lot, v back from the sidewalk
+          if (!clear(...at(10.5, 15), 15) || rng() < 0.06) continue;
+          const w = 10 + rng() * 3, d = 8 + rng() * 3, hh = 5 + rng() * 2.2, [hx, hz] = at(2 + w / 2, 5 + d / 2), lit = [];
+          for (let n = 0; n < 8; n++) lit.push(rng() < 0.3);
+          const burning = rng() < 0.035;
+          c.houses.push({ x: hx, z: hz, yaw: (rng() - 0.5) * 0.04, w, d, h: hh, lit, barn: false, heat: 0.39 + rng() * 0.05, burning });
+          c.block.push(hx, hz, Math.max(w, d) / 2 + 0.3);
+          const [gx, gz] = at(17.2, 18);                                         // the garage at the end of the drive
+          c.misc.push(['box', gx, 0, gz, 4.6, 3, 6, 0, 0.36]);
+          c.block.push(gx, gz, 3.2);
+          if (rng() < 0.55) { const [cx, cz] = at(17.2, 9.5 + rng() * 1.5); c.cars.push({ x: cx, z: cz, yaw: Math.PI / 2, state: rng() < 0.3 ? 'warm' : 'cold' }); c.block.push(cx, cz, 2.4); }
+          if (rng() < 0.6) { const [ax, az] = at(1, 5 + d * 0.6); c.misc.push(['box', ax, 0, az, 0.9, 0.9, 0.9, 0, 0.5]); }   // an air conditioner
+          if (rng() < 0.35) tree(...at(3 + rng() * 9, 1.5 + rng() * 2), 0.75);                                           // front yard
+          for (let n = rng() < 0.75 ? 1 + Math.floor(rng() * 2) : 0; n > 0; n--) tree(...at(2 + rng() * 17, 25 + rng() * 10), 0.9);
+          if (rng() < 0.3) { const [sx, sz] = at(3 + rng() * 14, 30 + rng() * 3); c.misc.push(['box', sx, 0, sz, 3, 2.4, 2.4, 0, 0.33]); c.block.push(sx, sz, 2); }
+          else if (rng() < 0.2) { const [px, pz] = at(5 + rng() * 6, 27); c.misc.push(['box', px, 0, pz, 8, 0.05, 4, 0, 0.25]); }  // a pool
+        }
+        // street lights on the sidewalk, cars parked at the curb
+        for (const u of [14, 47]) {
+          const x = bx + u, z = side ? bz + 70 : bz + 5;
+          if (!clear(x, z, 2)) continue;
+          c.misc.push(['pole', x, 0, z, 0.8, 7.4, 0.8, 0, 0.32], ['box', x, 7.3, z - dir * 0.9, 0.35, 0.18, 1.6, 0, 0.32], ['box', x, 7.18, z - dir * 1.5, 0.4, 0.14, 0.5, 0, 0.8]);
+        }
+        if (rng() < 0.45) {
+          const x = bx + 8 + rng() * 60, z = side ? bz + 72.4 : bz + 2.6;
+          if (clear(x, z, 0)) { c.cars.push({ x, z, yaw: rng() < 0.5 ? 0 : Math.PI, state: rng() < 0.12 ? 'warm' : 'cold' }); c.block.push(x, z, 2.4); }
+        }
       }
     }
-  });
-  NEAR.lights.sort((a, b2) => a.dist - b2.dist);
-  if (NEAR.lights.length > 40) NEAR.lights.length = 40;
-  return NEAR;
+  }
+  // hedgerows on this cell's west and south edges
+  for (const side of [0, 1]) {
+    if (town || rnd(ci, cj, 40 + side) > 0.38) continue;
+    for (let s = 3; s < CELL; s += 6 + rng() * 6) {
+      const x = side ? x0 + s : x0 + (rng() - 0.5) * 2, z = side ? z0 + (rng() - 0.5) * 2 : z0 + s;
+      tree(x, z, 0.85);
+    }
+  }
+  // a farmstead: house, barn, a car or two, hay
+  if (f.type < 4 && !f.pond && rnd(ci, cj, 5) < 0.12) {
+    const hx = x0 + 40 + rng() * 70, hz = z0 + 40 + rng() * 70;
+    if (clear(hx, hz, 22)) {
+      const yaw = Math.floor(rng() * 4) * Math.PI / 2 + (rng() - 0.5) * 0.3;
+      const lit = [];
+      for (let k = 0; k < 8; k++) lit.push(rng() < 0.45);
+      c.houses.push({ x: hx, z: hz, yaw, w: 11, d: 8, h: 6, lit, barn: false, heat: 0.4 + rng() * 0.04 });
+      const bx = hx + Math.cos(yaw) * 24, bz = hz - Math.sin(yaw) * 24;
+      c.houses.push({ x: bx, z: bz, yaw, w: 20, d: 12, h: 8, lit: [], barn: true, heat: 0.33 + rng() * 0.03 });
+      c.block.push(hx, hz, 7.5, bx, bz, 12);
+      for (let k = 0; k < 2 + Math.floor(rng() * 3); k++) tree(hx + (rng() - 0.5) * 50, hz + (rng() - 0.5) * 50, 1.1);
+      if (rng() < 0.7) {
+        const a = yaw + Math.PI / 2, cx = hx + Math.cos(a) * 12, cz = hz - Math.sin(a) * 12;
+        c.cars.push({ x: cx, z: cz, yaw: yaw + (rng() - 0.5) * 0.6, state: rng() < 0.4 ? 'warm' : 'cold' });
+        c.block.push(cx, cz, 3);
+      }
+    }
+  }
+  if (f.type === 3 && rng() < 0.55) {                             // round bales on the stubble
+    const n = 6 + Math.floor(rng() * 10), bx = x0 + 20 + rng() * 80, bz = z0 + 20 + rng() * 80, a = rng() * TAU;
+    for (let k = 0; k < n; k++) {
+      const x = bx + Math.cos(a) * k * 7 + (rng() - 0.5) * 2, z = bz + Math.sin(a) * k * 7 + (rng() - 0.5) * 2;
+      if (clear(x, z, 2)) { c.bales.push({ x, z, yaw: rng() * TAU, heat: 0.37 + rng() * 0.03 }); c.block.push(x, z, 1.1); }
+    }
+  }
+  // the highways through this cell: power poles every 50 m, and cars, some burning
+  for (let z = Math.ceil(z0 / 50) * 50; z < z0 + CELL; z += 50) {
+    const n = Math.round((x0 + 75 + hwX(z) - 550) / 1100);
+    for (const k of [n - 1, n, n + 1]) {
+      const x = 550 + 1100 * k - hwX(z);
+      if (x >= x0 && x < x0 + CELL) c.poles.push({ x: x + 8, z, line: 'x' + k, at: z });
+    }
+  }
+  for (let x = Math.ceil(x0 / 50) * 50; x < x0 + CELL; x += 50) {
+    const n = Math.round((z0 + 75 + hwZ(x) - 650) / 1300);
+    for (const k of [n - 1, n, n + 1]) {
+      const z = 650 + 1300 * k - hwZ(x);
+      if (z >= z0 && z < z0 + CELL) c.poles.push({ x, z: z + 8, line: 'z' + k, at: x });
+    }
+  }
+  if (rng() < (town ? 0.8 : 0.45)) {
+    for (let k = 0; k < 1 + Math.floor(rng() * 3); k++) {
+      const along = rng() * CELL, side = rng() < 0.5 ? -1.9 : 1.9, onX = rng() < 0.5;
+      let x, z, yaw;
+      // yaw turns the car's length (local x) along the road: x axis -> (cos yaw, -sin yaw)
+      if (onX) { z = z0 + along; const n = Math.round((x0 + 75 + hwX(z) - 550) / 1100); x = 550 + 1100 * n - hwX(z) + side; yaw = Math.atan2(-1, -(hwX(z + 1) - hwX(z - 1)) / 2); }
+      else { x = x0 + along; const n = Math.round((z0 + 75 + hwZ(x) - 650) / 1300); z = 650 + 1300 * n - hwZ(x) + side; yaw = Math.atan2((hwZ(x + 1) - hwZ(x - 1)) / 2, 1); }
+      if (x < x0 || x >= x0 + CELL || z < z0 || z >= z0 + CELL) continue;
+      const r = rng();
+      c.cars.push({ x, z, yaw: yaw + (rng() < 0.5 ? Math.PI : 0) + (rng() - 0.5) * 0.5, state: r < 0.2 ? 'burning' : r < 0.45 ? 'warm' : 'cold' });
+      c.block.push(x, z, 3);
+    }
+  }
+  if (contentCache.size > 5000) contentCache.clear();
+  contentCache.set(key, c);
+  return c;
 }
-// solid scenery to keep the dead from walking through: houses, cars, trunks, rocks
-function blockersNear(x, y, out) {
+
+/* -------------------------------------------------- filling the instance pools */
+const ACTIVE = { ci: 1e9, cj: 1e9, fires: [], cells: [] };
+const VIEW_CELLS = 5;
+function rebuildScenery(cx, cz) {
+  const ci = Math.floor(cx / CELL), cj = Math.floor(cz / CELL);
+  if (ci === ACTIVE.ci && cj === ACTIVE.cj) return;
+  ACTIVE.ci = ci; ACTIVE.cj = cj; ACTIVE.fires = []; ACTIVE.cells = [];
+  for (const k in POOLS) POOLS[k].n = 0;
+  const poleLines = new Map();
+  for (let j = cj - VIEW_CELLS; j <= cj + VIEW_CELLS; j++) for (let i = ci - VIEW_CELLS; i <= ci + VIEW_CELLS; i++) {
+    const c = cellContent(i, j);
+    ACTIVE.cells.push(c);
+    for (const t of c.trees) {
+      const h = (t.kind === 2 ? 15 : 12) * t.s, r = (t.kind === 2 ? 3.2 : 4.4) * t.s;
+      put('trunk', t.x, 0, t.z, t.s, h * (t.kind === 2 ? 0.45 : 0.62), t.s, 0, 0.36);
+      if (t.kind === 2) put('conifer', t.x, h * 0.2, t.z, r, h * 0.85, r, t.yaw, t.heat);
+      else {                                       // a crown of three lobes, so no two trees have the same outline
+        const pa = t.kind ? 'crownB' : 'crownA', pb = t.kind ? 'crownA' : 'crownB';
+        put(pa, t.x, h * 0.66, t.z, r, r, r, t.yaw, t.heat);
+        put(pb, t.x + Math.cos(t.yaw) * r * 0.6, h * 0.6, t.z + Math.sin(t.yaw) * r * 0.6, r * 0.7, r * 0.75, r * 0.7, t.yaw * 3, t.heat + 0.01);
+        put(pa, t.x + Math.cos(t.yaw + 2.4) * r * 0.55, h * 0.58, t.z + Math.sin(t.yaw + 2.4) * r * 0.55, r * 0.6, r * 0.65, r * 0.6, t.yaw * 5, t.heat - 0.01);
+      }
+    }
+    for (const m of c.misc) put(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+    for (const b of c.houses) {
+      put('wall', b.x, 0, b.z, b.w, b.h, b.d, b.yaw, b.burning ? 0.5 : b.heat);
+      put('roof', b.x, b.h, b.z, b.w + 1.2, b.barn ? 5 : 3.6, b.d + 1.6, b.yaw, b.burning ? 0.6 : b.barn ? 0.28 : 0.3);
+      const ca = Math.cos(b.yaw), sa = Math.sin(b.yaw);
+      const at = (lx, lz) => [b.x + lx * ca + lz * sa, b.z - lx * sa + lz * ca];
+      if (!b.barn) {
+        const ch = at(b.w * 0.28, 0);
+        put('box', ch[0], b.h, ch[1], 1.1, 4.6, 1.1, b.yaw, 0.43);          // a chimney, still warm
+        let k = 0;
+        for (const lz of [-1, 1]) for (const lx of [-3.6, 0, 3.6]) {
+          const p = at(lx, lz * (b.d / 2 + 0.05));
+          put('box', p[0], 2.6, p[1], 1.4, 1.5, 0.12, b.yaw, b.burning ? 1.2 : b.lit[k++] ? 0.5 : 0.25);
+        }
+        for (const lx of [-1, 1]) { const p = at(lx * (b.w / 2 + 0.05), 0); put('box', p[0], 2.6, p[1], 0.12, 1.5, 1.4, b.yaw, b.burning ? 1.2 : b.lit[k++] ? 0.5 : 0.25); }
+        if (b.burning) ACTIVE.fires.push({ x: b.x, y: b.h + 1, z: b.z, seed: Math.floor(b.x * 7 + b.z * 13), big: true });
+      } else {
+        const p = at(0, b.d / 2 + 0.05);
+        put('box', p[0], 0, p[1], 6, 5.5, 0.15, b.yaw, 0.3);               // the barn door
+      }
+    }
+    for (const v of c.cars) {
+      const ca = Math.cos(v.yaw), sa = Math.sin(v.yaw), body = v.state === 'burning' ? 0.9 : 0.29;
+      const at = (lx, lz) => [v.x + lx * ca + lz * sa, v.z - lx * sa + lz * ca];
+      put('box', v.x, 0.45, v.z, 4.3, 0.75, 1.8, v.yaw, body);
+      const cab = at(-0.3, 0);
+      put('box', cab[0], 1.2, cab[1], 2.2, 0.62, 1.6, v.yaw, v.state === 'burning' ? 1.15 : 0.27);
+      const hood = at(1.5, 0);
+      put('box', hood[0], 1.2, hood[1], 1.1, 0.04, 1.6, v.yaw, v.state === 'warm' ? 0.72 : v.state === 'burning' ? 1.3 : 0.3);
+      for (const lx of [-1.35, 1.35]) for (const lz of [-0.85, 0.85]) { const w = at(lx, lz); put('wheel', w[0], 0.36, w[1], 0.36, 0.36, 0.22, v.yaw, 0.31); }
+      if (v.state === 'burning') ACTIVE.fires.push({ x: v.x, y: 1, z: v.z, seed: Math.floor(v.x * 7 + v.z * 13), big: false });
+    }
+    for (const b of c.bales) put('bale', b.x, 0.85, b.z, 1.3, 0.85, 0.85, b.yaw, b.heat);
+    for (const p of c.poles) {
+      put('pole', p.x, 0, p.z, 1, 10, 1, 0, 0.3);
+      const arm = p.line[0] === 'x';
+      put('box', p.x, 9.2, p.z, arm ? 2.4 : 0.14, 0.14, arm ? 0.14 : 2.4, 0, 0.29);
+      if (!poleLines.has(p.line)) poleLines.set(p.line, []);
+      poleLines.get(p.line).push(p);
+    }
+  }
+  for (const k in POOLS) {
+    const P = POOLS[k];
+    P.mesh.count = P.n;
+    P.mesh.instanceMatrix.needsUpdate = true;
+    P.heat.needsUpdate = true;
+  }
+  // three sagging wires between neighbouring poles along each highway
+  const wp = wireGeo.attributes.position.array;
+  let w = 0;
+  for (const list of poleLines.values()) {
+    list.sort((a, b) => a.at - b.at);
+    for (let k = 1; k < list.length; k++) {
+      const a = list[k - 1], b = list[k];
+      if (b.at - a.at > 55) continue;
+      const arm = a.line[0] === 'x';
+      for (const off of [-1.05, 0, 1.05]) {
+        const ox = arm ? off : 0, oz = arm ? 0 : off;
+        for (let s = 0; s < 8 && w < wireMax; s++) {
+          const u0 = s / 8, u1 = (s + 1) / 8, sag = (u) => 9.3 - 0.9 * 4 * u * (1 - u);
+          wp.set([lerp(a.x, b.x, u0) + ox, sag(u0), lerp(a.z, b.z, u0) + oz, lerp(a.x, b.x, u1) + ox, sag(u1), lerp(a.z, b.z, u1) + oz], w * 6);
+          w++;
+        }
+      }
+    }
+  }
+  wireGeo.setDrawRange(0, w * 2);
+  wireGeo.attributes.position.needsUpdate = true;
+}
+// solid things near (x, z) the dead must walk round: flat triples x, z, radius
+function blockersNear(x, z, out) {
   out.length = 0;
-  const i0 = Math.floor((x - 20) / CELL), i1 = Math.floor((x + 20) / CELL), j0 = Math.floor((y - 20) / CELL), j1 = Math.floor((y + 20) / CELL);
-  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (const ob of cellObjects(i, j).list) {
-    if (ob.kind === 'house') out.push(ob.x, ob.y, 18);
-    else if (ob.kind === 'car') out.push(ob.x, ob.y, 9);
-    else if (ob.kind === 'pine' || ob.kind === 'tree') out.push(ob.x, ob.y, 2);
-    else if (ob.kind === 'rock') out.push(ob.x, ob.y, ob.r + 1);
+  const i0 = Math.floor((x - 14) / CELL), i1 = Math.floor((x + 14) / CELL), j0 = Math.floor((z - 14) / CELL), j1 = Math.floor((z + 14) / CELL);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    const b = cellContent(i, j).block;
+    for (let k = 0; k < b.length; k += 3) if (Math.abs(b[k] - x) < 14 && Math.abs(b[k + 1] - z) < 14) out.push(b[k], b[k + 1], b[k + 2]);
   }
   return out;
+}
+function initWorld() {
+  R3.scene.add(ground, SCENERY);
+}
+function updateWorld(cx, cz) {
+  updateFieldTex(cx, cz);
+  rebuildScenery(cx, cz);
+  ground.position.set(Math.round(cx / 50) * 50, 0, Math.round(cz / 50) * 50);
 }

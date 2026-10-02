@@ -3,7 +3,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-ORDER = ['engine.js', 'world.js', 'sprites.js', 'fx.js', 'gfx.js', 'game.js', 'app.js']
+ORDER = ['core.js', 'world.js', 'zombies.js', 'fx.js', 'game.js', 'hud.js', 'app.js']
 
 shell = (ROOT / 'src' / 'shell.html').read_text()
 code = '\n'.join((ROOT / 'src' / name).read_text() for name in ORDER)

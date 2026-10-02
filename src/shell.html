@@ -1,186 +1,111 @@
 <title>Sky Reaper</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Pixelify+Sans:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@600;700&display=swap">
 <style>
-  /* One frame of pixel art, scaled to fit the window; HUD panels pinned to its corners.
-     A single moonlit night look, so colours are set once on :root. */
+  /* A full-window thermal camera feed with a vector HUD over it; menus are bracketed cards.
+     One deliberate look (a black-and-white sensor feed), so colours are set once on :root. */
   :root {
     color-scheme: dark;
-    --void: #04060c;
-    --ink: #dfe7f2;
-    --muted: #8a98b1;
-    --ember: #f5a13a;
-    --blood: #ff5a4a;
-    --gold: #ffd176;
-    --panel: #0b1322f5;
-    --edge: #4c6372;
-    --line: rgba(138, 152, 177, 0.3);
-    --spent: #2a2432;
-    --font-pixel: "Pixelify Sans", ui-monospace, Consolas, monospace;
-    --font-text: "Atkinson Hyperlegible", "Segoe UI", sans-serif;
+    --void: #050505;
+    --ink: #f2f2f2;
+    --dim: #9a9a9a;
+    --line: rgba(242, 242, 242, 0.75);
+    --panel: rgba(6, 6, 6, 0.82);
+    --font-mono: "Share Tech Mono", ui-monospace, Consolas, monospace;
+    --font-head: "Rajdhani", "Share Tech Mono", sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   [hidden] { display: none !important; }
-  body {
-    margin: 0; overflow: hidden; background: var(--void); color: var(--ink);
-    font-family: var(--font-pixel); user-select: none; -webkit-user-select: none;
-  }
-  .stage { position: fixed; inset: 0; display: grid; place-items: center; }
-  .frame { position: relative; overflow: hidden; background: var(--void); }
-  #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  .frame.playing #gl { cursor: none; }
-  .hud { position: absolute; font-size: 16px; pointer-events: none; }
-  .frame[data-mode="title"] .hud, .frame[data-mode="over"] .hud { visibility: hidden; }
-  .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 4px; box-shadow: 0 3px 0 #04060c88; }
-  .fuel { top: 16px; left: 16px; display: flex; align-items: center; gap: 10px; width: 246px; height: 58px; padding: 10px 12px; }
-  .icon { display: inline-flex; flex-shrink: 0; width: 30px; height: 30px; }
-  .icon svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
-  .num { font-variant-numeric: tabular-nums; }
-  .fuel .num { font-size: 25px; font-weight: 600; min-width: 2.6em; text-align: right; }
-  .bar { flex: 1; height: 10px; overflow: hidden; border-radius: 1px; background: var(--spent); }
-  .bar i { display: block; width: 100%; height: 100%; background: var(--ember); }
-  .fuel.low .bar i { background: var(--blood); }
-  .fuel.low .num { color: var(--blood); }
-  .wallet { top: 16px; right: 16px; display: flex; align-items: center; gap: 18px; min-height: 58px; padding: 8px 14px; }
-  .resource { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-  .resource .num { font-size: 30px; font-weight: 600; line-height: 1; }
-  .gold { color: var(--gold); }
-  .kills { color: #e7d9d2; }
-  .dock { bottom: 16px; left: 16px; display: flex; gap: 10px; }
-  .weapon { --weapon-color: #8fc9ed; position: relative; display: flex; align-items: center; gap: 12px; width: 196px; min-height: 86px;
-    padding: 12px 14px 16px; border-top: 3px solid var(--weapon-color); }
-  .weapon.heavy { --weapon-color: #ffb56a; }
-  .weapon .icon { width: 44px; height: 44px; }
-  .weapon-name { color: #b4c5d9; font-size: 12px; line-height: 1.2; }
-  .weapon-state { font-size: 26px; font-weight: 600; color: #f2f6ff; line-height: 1.1; }
-  .weapon-state.wait { color: var(--muted); }
-  .weapon-key { position: absolute; top: 7px; right: 9px; color: #b4c5d9; font: 10px/1.2 var(--font-text); }
-  .weapon-meter { position: absolute; bottom: 8px; left: 14px; right: 14px; height: 4px; background: #263147; }
-  .weapon-meter i { display: block; width: 100%; height: 100%; background: var(--weapon-color); }
-  .count { bottom: 16px; right: 16px; padding: 10px 14px; text-align: right; }
-  .count .label { color: var(--muted); font-size: 12px; }
-  .count .num { font-size: 22px; font-weight: 600; }
-  .banner { top: 24%; left: 0; right: 0; text-align: center; font-size: 40px; font-weight: 600; color: #fff1cf;
-    text-shadow: 0 3px 0 #2a1608, 0 0 18px #f5a13a88; opacity: 0; }
-  .banner.show { animation: banner 1.5s ease-out forwards; }
-  @keyframes banner { 0% { opacity: 0; transform: scale(1.6); } 12% { opacity: 1; transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-10px); } }
-  .warn { top: 90px; left: 0; right: 0; text-align: center; font-size: 22px; color: var(--blood); text-shadow: 0 2px 0 #1a0606; }
-  .warn.on { animation: blink 0.7s steps(2, start) infinite; }
-  @keyframes blink { to { visibility: hidden; } }
-  .overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 14px; background: rgba(4, 6, 12, 0.45); }
-  .card { width: min(31em, 92%); max-height: 100%; overflow: auto; padding: clamp(18px, 4vw, 40px); text-align: center;
-    background: rgba(8, 11, 22, 0.93); border: 1px solid var(--line); border-radius: 10px; }
-  h1, h2 { margin: 0 0 0.45em; font-weight: 600; font-size: clamp(30px, 5vw, 52px); line-height: 1; text-wrap: balance; }
-  h1 span, h2 span { color: var(--ember); }
-  p { margin: 0.7em 0; font-family: var(--font-text); font-size: clamp(12px, 1.4vw, 16px); line-height: 1.45; color: var(--muted); }
-  .controls { display: grid; grid-template-columns: auto auto; gap: 6px 16px; justify-content: center; margin: 1em auto 0; text-align: left;
-    font-family: var(--font-text); font-size: clamp(12px, 1.35vw, 15px); }
-  .controls kbd { font: 600 1em var(--font-pixel); color: var(--ink); }
-  .controls span { color: var(--muted); }
-  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin: 1em 0 0.4em; text-align: left; }
+  body { margin: 0; overflow: hidden; background: var(--void); color: var(--ink); font-family: var(--font-mono);
+    user-select: none; -webkit-user-select: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #gl { touch-action: none; cursor: crosshair; }
+  body.playing #gl { cursor: none; }
+  #hud { pointer-events: none; }
+  .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; overflow-y: auto;
+    background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.72)); }
+  .card { position: relative; width: min(100%, 470px); padding: 28px 28px 24px; background: var(--panel);
+    border: 1px solid var(--line); display: grid; gap: 16px; }
+  .card::before, .card::after { content: ''; position: absolute; width: 16px; height: 16px; border: 2px solid var(--ink); }
+  .card::before { top: -6px; left: -6px; border-right: 0; border-bottom: 0; }
+  .card::after { bottom: -6px; right: -6px; border-left: 0; border-top: 0; }
+  .eyebrow { margin: 0; font-size: 12px; letter-spacing: 0.22em; color: var(--dim); }
+  h1, h2 { margin: 0; font: 700 clamp(40px, 9vw, 64px)/0.9 var(--font-head); letter-spacing: 0.04em; text-wrap: balance; }
+  h2 { font-size: clamp(34px, 7vw, 52px); }
+  .keys { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 16px; font-size: 14px; }
+  .keys dt { color: var(--ink); }
+  .keys dd { margin: 0; color: var(--dim); }
+  .note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--dim); }
+  .stats { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
   .stats div { min-width: 0; }
-  .stats dt { color: var(--muted); font: 12px var(--font-text); }
-  .stats dd { margin: 0; font-size: 30px; font-weight: 600; }
-  .badge { display: inline-block; margin-bottom: 0.4em; padding: 3px 8px; background: var(--ember); color: var(--void); font-size: 14px; border-radius: 3px; }
-  .buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6em; margin-top: 1.2em; }
-  button { font: inherit; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
-    cursor: pointer; padding: 0.55em 1.1em; font-size: clamp(16px, 1.7vw, 22px); }
-  button:hover { border-color: var(--ember); }
-  button:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
-  button.primary { color: var(--void); background: var(--ember); border-color: var(--ember); }
-  button.primary:hover { background: #ffb65a; }
-  button:disabled { opacity: 0.5; cursor: default; }
-  .loading { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 14px; }
-  #btn105 { position: absolute; right: 16px; bottom: 96px; width: 74px; height: 74px; border-radius: 50%; padding: 0; font-size: 16px; pointer-events: auto; }
+  .stats dt { font-size: 11px; letter-spacing: 0.16em; color: var(--dim); }
+  .stats dd { margin: 0; font-size: 30px; font-variant-numeric: tabular-nums; }
+  .badge { justify-self: start; padding: 3px 8px; background: var(--ink); color: var(--void); font-size: 12px; letter-spacing: 0.14em; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; }
+  button { font: inherit; font-size: 15px; letter-spacing: 0.14em; color: var(--void); background: var(--ink);
+    border: 1px solid var(--ink); padding: 12px 20px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--ink); }
+  button:hover { background: #ffffff; }
+  button.ghost:hover { background: rgba(255, 255, 255, 0.12); }
+  button:focus-visible { outline: 2px dashed var(--ink); outline-offset: 4px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .loading { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); font-size: 13px; color: var(--dim); letter-spacing: 0.16em; }
+  #btn105 { position: fixed; right: 16px; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); width: 76px; height: 76px;
+    border-radius: 50%; padding: 0; background: rgba(0, 0, 0, 0.4); color: var(--ink); }
   @media (pointer: fine) { #btn105 { display: none !important; } }
-  @media (max-width: 720px), (max-height: 430px) {
-    .fuel { top: 8px; left: 8px; width: 170px; height: 44px; padding: 6px 8px; gap: 6px; }
-    .fuel .num { font-size: 19px; }
-    .icon { width: 22px; height: 22px; }
-    .wallet { top: 8px; right: 8px; min-height: 44px; gap: 10px; padding: 6px 8px; }
-    .resource .num { font-size: 21px; }
-    .dock { bottom: 8px; left: 8px; gap: 6px; }
-    .weapon { width: 130px; min-height: 66px; gap: 6px; padding: 9px 8px 13px; }
-    .weapon .icon { width: 28px; height: 28px; }
-    .weapon-state { font-size: 18px; }
-    .count { bottom: 8px; right: 8px; padding: 6px 8px; }
-    .count .num { font-size: 17px; }
-    .banner { font-size: 26px; }
-    .warn { top: 60px; font-size: 16px; }
-  }
-  @media (prefers-reduced-motion: reduce) { .banner.show { animation-duration: 0.01s; } .warn.on { animation: none; } }
+  @media (max-width: 420px) { .card { padding: 22px 18px 20px; } .keys { font-size: 13px; } }
 </style>
 
-<div class="loading" id="loading" role="status">Building the world…</div>
-<div class="stage">
-  <div class="frame" id="frame" data-mode="title">
-    <canvas id="gl" width="1920" height="1080" role="img" aria-label="Sky Reaper. A gunship's view of a moonlit countryside full of zombies."></canvas>
+<canvas id="gl"></canvas>
+<canvas id="hud"></canvas>
+<div class="loading" id="loading" role="status">LOADING SENSOR FEED…</div>
 
-    <div class="hud panel fuel" id="fuelHud" role="group" aria-label="Fuel">
-      <span class="icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="#f5a13a" d="M4 3h6v1h1v1h1v9H3V5h1z"/><path fill="#ffd48a" d="M5 4h4v1H5z"/><path fill="#8a4a16" d="M3 13h9v1H3zM10 2h3v1h-3z"/><path fill="#ffe7b8" d="M5 7h2v1H5zM6 8h2v1H6zM7 9h2v1H7z"/></svg></span>
-      <span class="bar"><i id="fuelFill"></i></span><span class="num" id="fuelNum">1:00</span>
-    </div>
-    <div class="hud panel wallet">
-      <span class="resource gold" role="group" aria-label="Cash"><span class="icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="#c98a2a" d="M5 2h6v1h2v2h1v6h-1v2h-2v1H5v-1H3v-2H2V5h1V3h2z"/><path fill="#ffd176" d="M5 3h6v1h1v1h1v6h-1v1h-1v1H5v-1H4v-1H3V5h1V4h1z"/><path fill="#fff1c0" d="M5 4h3v1H6v1H5zM4 6h1v3H4z"/><path fill="#c98a2a" d="M7 5h2v1h1v1H8v1h1v1h1v2H9v1H7v-1H6v-1h2V9H7V8H6V6h1z"/></svg></span><span class="num" id="cash">0</span></span>
-      <span class="resource kills" role="group" aria-label="Kills"><span class="icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="#e8e0cc" d="M5 2h6v1h1v1h1v5h-1v2h-1v2H5v-2H4V9H3V4h1V3h1z"/><path fill="#3a1414" d="M5 6h2v2H5zM9 6h2v2H9zM7 9h2v1H7zM6 11h1v1H6zM9 11h1v1H9z"/></svg></span><span class="num" id="kills">0</span></span>
-    </div>
-    <div class="hud dock">
-      <div class="panel weapon" role="group" aria-label="25 millimetre gun">
-        <span class="icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="#8fc9ed" d="M2 7h9v1h2v1h1v1h-1v1h-2v1H2z"/><path fill="#d8efff" d="M3 8h7v1H3z"/><path fill="#4a6b86" d="M2 11h9v1H2z"/><path fill="#ffe28a" d="M14 9h1v1h-1z"/></svg></span>
-        <span><span class="weapon-name">25MM GUN</span><br><span class="weapon-state" id="mgState">HOLD</span></span>
-        <span class="weapon-key" aria-hidden="true">LMB</span>
-        <span class="weapon-meter" aria-hidden="true"><i id="mgFill"></i></span>
-      </div>
-      <div class="panel weapon heavy" role="group" aria-label="105 millimetre cannon">
-        <span class="icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="#ffb56a" d="M2 5h8v1h2v1h1v1h1v1h-1v1h-1v1h-2v1H2z"/><path fill="#ffe0b8" d="M3 6h7v1H3z"/><path fill="#8a5222" d="M2 10h8v1H2zM2 5h1v6H2z"/><path fill="#ff7a4a" d="M13 7h1v2h-1z"/></svg></span>
-        <span><span class="weapon-name">105MM CANNON</span><br><span class="weapon-state" id="heState">READY</span></span>
-        <span class="weapon-key" aria-hidden="true">RMB · SPACE</span>
-        <span class="weapon-meter" aria-hidden="true"><i id="heFill"></i></span>
-      </div>
-    </div>
-    <div class="hud panel count"><div class="label">HORDE</div><div class="num" id="horde">0</div></div>
-    <div class="hud banner" id="banner" aria-live="polite"></div>
-    <div class="hud warn" id="warn" hidden>BINGO FUEL</div>
-    <button class="hud" id="btn105" type="button" hidden>105</button>
-
-    <div class="overlay" id="startOv">
-      <div class="card">
-        <h1>Sky <span>Reaper</span></h1>
-        <p>A gunship over the night countryside. The dead are walking.<br>Kill as many as you can before the fuel runs out.</p>
-        <div class="controls">
-          <kbd>WASD</kbd><span>Move the camera</span>
-          <kbd>Mouse</kbd><span>Aim</span>
-          <kbd>Hold left click</kbd><span>25mm gun</span>
-          <kbd>Right click · Space</kbd><span>105mm cannon</span>
-          <kbd>Esc</kbd><span>Pause</span>
-        </div>
-        <p id="noGpu" hidden>This game needs WebGL 2. Turn on hardware acceleration in your browser settings, then reload.</p>
-        <div class="buttons"><button class="primary" id="startBtn" type="button">Start mission</button></div>
-      </div>
-    </div>
-    <div class="overlay" id="pauseOv" hidden>
-      <div class="card">
-        <h2>Paused</h2>
-        <p>Press Esc to keep flying.</p>
-        <div class="buttons"><button class="primary" id="resumeBtn" type="button">Resume</button><button id="quitBtn" type="button">End mission</button></div>
-      </div>
-    </div>
-    <div class="overlay" id="overOv" hidden>
-      <div class="card">
-        <span class="badge" id="newBest" hidden>New best</span>
-        <h2>Out of <span>fuel</span></h2>
-        <dl class="stats">
-          <div><dt>Kills</dt><dd class="num" id="sKills">0</dd></div>
-          <div><dt>Biggest blast</dt><dd class="num" id="sBlast">0</dd></div>
-          <div><dt>Accuracy</dt><dd class="num" id="sAcc">0%</dd></div>
-          <div><dt>Cash earned</dt><dd class="num gold" id="sCash">0</dd></div>
-        </dl>
-        <p id="sTotals">Best run 0 kills · Total cash 0</p>
-        <div class="buttons"><button class="primary" id="againBtn" type="button">Fly again</button></div>
-      </div>
-    </div>
+<div class="screen" id="titleScreen">
+  <div class="card">
+    <p class="eyebrow">AC-130 GUNSHIP · THERMAL CAMERA</p>
+    <h1>SKY REAPER</h1>
+    <dl class="keys">
+      <dt>MOUSE</dt><dd>Aim (click first to lock the mouse)</dd>
+      <dt>LEFT CLICK</dt><dd>25mm gun, hold to fire</dd>
+      <dt>RIGHT CLICK · SPACE</dt><dd>105mm cannon</dd>
+      <dt>WASD</dt><dd>Move the camera</dd>
+      <dt>WHEEL · Z</dt><dd>Zoom</dd>
+      <dt>T</dt><dd>White hot / black hot</dd>
+      <dt>ESC</dt><dd>Free the mouse · pause</dd>
+    </dl>
+    <p class="note">60 seconds of fuel. The horde grows every second. Kill as many as you can.</p>
+    <p class="note" id="noGl" hidden>The 3D view did not start. This game needs WebGL: turn on hardware acceleration in your browser, then reload.</p>
+    <div class="row"><button id="startBtn" type="button">START MISSION</button></div>
   </div>
 </div>
+
+<div class="screen" id="pauseScreen" hidden>
+  <div class="card">
+    <p class="eyebrow">MISSION PAUSED</p>
+    <h2>PAUSED</h2>
+    <div class="row"><button id="resumeBtn" type="button">RESUME</button><button class="ghost" id="quitBtn" type="button">END MISSION</button></div>
+    <p class="note">Resume takes the mouse back. Esc frees it again.</p>
+  </div>
+</div>
+
+<div class="screen" id="overScreen" hidden>
+  <div class="card">
+    <p class="eyebrow">BINGO FUEL · RETURN TO BASE</p>
+    <h2>MISSION OVER</h2>
+    <span class="badge" id="newBest" hidden>NEW BEST</span>
+    <dl class="stats">
+      <div><dt>KILLS</dt><dd id="sKills">0</dd></div>
+      <div><dt>BIGGEST BLAST</dt><dd id="sBlast">0</dd></div>
+      <div><dt>ACCURACY</dt><dd id="sAcc">0%</dd></div>
+      <div><dt>CASH EARNED</dt><dd id="sCash">0</dd></div>
+    </dl>
+    <p class="note" id="sTotals">Best run 0 kills · Total cash 0</p>
+    <div class="row"><button id="againBtn" type="button">FLY AGAIN</button></div>
+  </div>
+</div>
+<button id="btn105" type="button" hidden>105</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <!-- SCRIPT -->
