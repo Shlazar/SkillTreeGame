@@ -1,0 +1,636 @@
+<title>Sky Reaper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap">
+<style>
+/* One-screen game: full-bleed pixel canvas, thin HUD pinned to the corners. Single dark night look by choice. */
+:root {
+  --night: #0b0f1a;
+  --ink: #e6efd6;
+  --dim: #8a957c;
+  --fuel: #f2a33a;
+  --cash: #ffd75e;
+  --danger: #e0485a;
+  --panel: rgba(8, 11, 20, 0.78);
+  --font-pixel: 'Silkscreen', 'Courier New', monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; overflow: hidden; background: var(--night); color: var(--ink);
+  font-family: var(--font-pixel); user-select: none; -webkit-user-select: none;
+  touch-action: none;
+}
+#game { position: fixed; left: 0; top: 0; image-rendering: pixelated; cursor: none; }
+.hud {
+  position: fixed; left: 0; right: 0; top: 0; pointer-events: none;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 0;
+}
+.fuel { display: grid; gap: 6px; }
+.label { font-size: 12px; letter-spacing: 0.12em; color: var(--dim); }
+.bar {
+  width: min(42vw, 240px); height: 14px; background: var(--panel);
+  border: 2px solid var(--ink); box-shadow: 0 2px 0 rgba(0,0,0,.6); position: relative;
+}
+.bar i { position: absolute; inset: 2px; right: auto; background: var(--fuel); width: 100%; }
+.bar.low i { background: var(--danger); }
+.stats { text-align: right; display: grid; gap: 4px; font-variant-numeric: tabular-nums; }
+.cash { font-size: 22px; color: var(--cash); text-shadow: 0 2px 0 #000; transition: transform .08s; }
+.cash.pop { transform: scale(1.18); }
+.kills { font-size: 13px; color: var(--ink); text-shadow: 0 2px 0 #000; }
+.hint {
+  position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  text-align: center; font-size: 12px; letter-spacing: 0.1em; color: var(--dim);
+  pointer-events: none; padding-inline: 16px; text-shadow: 0 2px 0 #000;
+}
+.screen {
+  position: fixed; inset: 0; display: grid; place-items: center; padding-inline: 16px;
+  background: radial-gradient(ellipse at center, rgba(5,7,14,.35), rgba(5,7,14,.85));
+}
+.card { display: grid; gap: 14px; justify-items: center; text-align: center; }
+.card h1 {
+  margin: 0; font-size: clamp(34px, 9vw, 72px); font-weight: 700; line-height: 1;
+  color: var(--ink); text-shadow: 0 4px 0 #000, 0 0 24px rgba(242,163,58,.35); text-wrap: balance;
+}
+.card h1 span { color: var(--fuel); }
+.card p { margin: 0; color: var(--dim); font-size: 13px; letter-spacing: .08em; }
+.card .big { color: var(--ink); font-size: 18px; }
+.card .big b { color: var(--cash); }
+button {
+  font: inherit; font-size: 16px; letter-spacing: .1em; color: var(--night); background: var(--fuel);
+  border: 0; padding: 12px 22px; cursor: pointer; box-shadow: 0 4px 0 #8a5212;
+}
+button:hover { filter: brightness(1.1); }
+button:active { transform: translateY(2px); box-shadow: 0 2px 0 #8a5212; }
+button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+</style>
+
+<canvas id="game"></canvas>
+
+<div class="hud">
+  <div class="fuel">
+    <div class="label">FUEL</div>
+    <div class="bar" id="fuelBar"><i id="fuelFill"></i></div>
+  </div>
+  <div class="stats">
+    <div class="cash" id="cash">$0</div>
+    <div class="kills" id="kills">KILLS 0</div>
+  </div>
+</div>
+<div class="hint" id="hint">WASD to fly · hold mouse to shoot</div>
+
+<div class="screen" id="titleScreen">
+  <div class="card">
+    <h1>SKY <span>REAPER</span></h1>
+    <p>The dead walk. You fly.</p>
+    <button id="startBtn">TAKE OFF</button>
+  </div>
+</div>
+
+<div class="screen" id="overScreen" hidden>
+  <div class="card">
+    <h1>OUT OF <span>FUEL</span></h1>
+    <p class="big">Kills <b id="overKills">0</b> · Cash <b id="overCash">$0</b></p>
+    <p id="overBest">Best run: 0 kills</p>
+    <button id="againBtn">FLY AGAIN</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const lc = document.createElement('canvas');
+const lctx = lc.getContext('2d');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let W = 0, H = 0, S = 3;
+function resize() {
+  const iw = innerWidth, ih = innerHeight;
+  S = Math.max(2, Math.round(Math.min(ih / 180, iw / 240)));
+  W = Math.ceil(iw / S); H = Math.ceil(ih / S);
+  cv.width = W; cv.height = H; lc.width = W; lc.height = H;
+  cv.style.width = W * S + 'px'; cv.style.height = H * S + 'px';
+  ctx.imageSmoothingEnabled = false;
+}
+addEventListener('resize', resize);
+resize();
+
+// ---------- deterministic world ----------
+function hash(x, y, s = 0) {
+  let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(s, 982451653)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function vnoise(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+const dirtVal = (x, y) => vnoise(x / 120, y / 120, 11) * 0.7 + vnoise(x / 40, y / 40, 12) * 0.3;
+const isDirt = (x, y) => dirtVal(x, y) > 0.64;
+
+const GRASS = [[46, 69, 36], [54, 80, 40], [61, 90, 44], [70, 101, 48], [39, 60, 32]];
+const DIRT = [[92, 74, 50], [104, 84, 56], [83, 66, 44], [116, 95, 64]];
+const CH = 128;
+const chunks = new Map();
+function chunk(cx, cy) {
+  const key = cx + ',' + cy;
+  let c = chunks.get(key);
+  if (c) { c.used = frame; return c; }
+  const can = document.createElement('canvas');
+  can.width = CH; can.height = CH;
+  const g = can.getContext('2d');
+  const img = g.createImageData(CH, CH);
+  const d = img.data;
+  for (let py = 0; py < CH; py++) {
+    for (let px = 0; px < CH; px++) {
+      const wx = cx * CH + px, wy = cy * CH + py;
+      const r = hash(wx, wy, 1);
+      const dv = dirtVal(wx, wy) + (r - 0.5) * 0.05;
+      let col;
+      if (dv > 0.64) {
+        col = DIRT[Math.min(3, (r * 3 + (dv > 0.7 ? 1 : 0)) | 0)];
+      } else {
+        const n = vnoise(wx / 30, wy / 30, 2) * 0.75 + r * 0.25;
+        col = GRASS[Math.min(4, (n * 4.2) | 0)];
+        if (dv > 0.6 && r < 0.4) col = DIRT[2];
+        if (r > 0.992) col = [96, 128, 62];              // grass tuft highlight
+        else if (r < 0.006) col = [150, 140, 96];         // dry stalk
+      }
+      const i = (py * CH + px) * 4;
+      d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  c = { can, used: frame };
+  chunks.set(key, c);
+  if (chunks.size > 80) {
+    for (const [k, v] of chunks) if (frame - v.used > 300) chunks.delete(k);
+  }
+  return c;
+}
+
+const DG = 30; // decor grid
+function decorAt(cx, cy) {
+  if (hash(cx, cy, 3) > 0.035) return null;
+  const x = cx * DG + hash(cx, cy, 4) * DG, y = cy * DG + hash(cx, cy, 5) * DG;
+  if (isDirt(x, y)) return null;
+  const t = hash(cx, cy, 6);
+  return { kind: t < 0.45 ? 'tree' : t < 0.8 ? 'bush' : 'rock', x, y, v: hash(cx, cy, 8) };
+}
+
+// ---------- state ----------
+const FUEL_MAX = 30;
+const cam = { x: 0, y: 0, vx: 0, vy: 0 };
+const ALT = 40;
+let frame = 0, time = 0, shake = 0, rotor = 0;
+let state = 'title';
+let fuel = FUEL_MAX, runTime = 0, cash = 0, kills = 0, best = 0;
+try { best = +localStorage.getItem('skyreaper.best') || 0; } catch (e) {}
+const zombies = [], decals = [], parts = [], tracers = [], flashes = [], casings = [];
+const keys = {};
+const mouse = { sx: 0, sy: 0, down: false, seen: false, touch: false };
+let fireCd = 0, facing = 1;
+
+const SHIRTS = ['#55698a', '#8a4848', '#7a6a48', '#4a5c48', '#6c4a7a', '#8a8070', '#3e5560'];
+const SKINS = ['#7fa36a', '#8fae74', '#6f9160', '#9bb27a'];
+const PANTS = ['#363b52', '#4a3a2a', '#2f3a2f', '#45454d'];
+const pick = (a) => a[(Math.random() * a.length) | 0];
+
+function spawnZombie(near) {
+  const a = Math.random() * Math.PI * 2;
+  const r = near ? 20 + Math.random() * Math.max(W, H) * 0.6 : Math.hypot(W, H) / 2 + 10 + Math.random() * 60;
+  zombies.push({
+    x: cam.x + Math.cos(a) * r, y: cam.y + Math.sin(a) * r,
+    hp: 3, speed: 7 + Math.random() * 9, phase: Math.random() * 10,
+    ox: (Math.random() - 0.5) * 70, oy: (Math.random() - 0.5) * 50, retarget: Math.random() * 4,
+    shirt: pick(SHIRTS), skin: pick(SKINS), pants: pick(PANTS), flash: 0, dir: 1,
+  });
+}
+for (let i = 0; i < 40; i++) spawnZombie(true);
+
+// ---------- audio ----------
+let actx = null, noiseBuf = null;
+function initAudio() {
+  if (actx) return;
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    noiseBuf = actx.createBuffer(1, actx.sampleRate * 1, actx.sampleRate);
+    const ch = noiseBuf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+    // rotor hum
+    const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 120;
+    const g = actx.createGain(); g.gain.value = 0.12;
+    const lfo = actx.createOscillator(); lfo.frequency.value = 11;
+    const lfoG = actx.createGain(); lfoG.gain.value = 0.06;
+    lfo.connect(lfoG); lfoG.connect(g.gain); lfo.start();
+    src.connect(lp); lp.connect(g); g.connect(actx.destination); src.start();
+  } catch (e) { actx = null; }
+}
+function sfx(freq, dur, vol, q = 1) {
+  if (!actx) return;
+  const t = actx.currentTime;
+  const src = actx.createBufferSource(); src.buffer = noiseBuf;
+  const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
+  const g = actx.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(bp); bp.connect(g); g.connect(actx.destination);
+  src.start(t, Math.random() * 0.5); src.stop(t + dur);
+}
+
+// ---------- input ----------
+addEventListener('keydown', (e) => { keys[e.code] = true; });
+addEventListener('keyup', (e) => { keys[e.code] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouse.down = false; });
+function setMouse(e) {
+  mouse.sx = e.clientX / S; mouse.sy = e.clientY / S; mouse.seen = true;
+  mouse.touch = e.pointerType === 'touch';
+}
+cv.addEventListener('pointermove', setMouse);
+cv.addEventListener('pointerdown', (e) => { setMouse(e); mouse.down = true; initAudio(); cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointerup', () => { mouse.down = false; });
+cv.addEventListener('pointercancel', () => { mouse.down = false; });
+cv.addEventListener('contextmenu', (e) => e.preventDefault());
+
+const $ = (id) => document.getElementById(id);
+const fuelFill = $('fuelFill'), fuelBar = $('fuelBar'), cashEl = $('cash'), killsEl = $('kills');
+function startRun() {
+  initAudio();
+  state = 'play'; fuel = FUEL_MAX; runTime = 0; cash = 0; kills = 0;
+  $('titleScreen').hidden = true; $('overScreen').hidden = true;
+  updateHud();
+}
+$('startBtn').addEventListener('click', startRun);
+$('againBtn').addEventListener('click', startRun);
+function endRun() {
+  state = 'over'; mouse.down = false;
+  if (kills > best) { best = kills; try { localStorage.setItem('skyreaper.best', best); } catch (e) {} }
+  $('overKills').textContent = kills; $('overCash').textContent = '$' + cash;
+  $('overBest').textContent = 'Best run: ' + best + ' kills';
+  $('overScreen').hidden = false;
+}
+let popT = 0;
+function updateHud() {
+  fuelFill.style.width = Math.max(0, fuel / FUEL_MAX * 100) + '%';
+  fuelBar.classList.toggle('low', fuel < 8);
+  cashEl.textContent = '$' + cash;
+  killsEl.textContent = 'KILLS ' + kills;
+}
+
+// ---------- helpers ----------
+const toWorldX = (sx) => cam.x + sx - W / 2;
+const toWorldY = (sy) => cam.y + sy - H / 2;
+
+function killZombie(z) {
+  kills++; cash += 1; popT = 0.1;
+  cashEl.classList.add('pop');
+  // corpse + blood decal
+  const px = [];
+  const dir = Math.random() < 0.5 ? -1 : 1;
+  for (let i = 0; i < 14; i++) {
+    const a = Math.random() * 6.28, r = Math.random() * 6;
+    px.push([Math.round(Math.cos(a) * r), Math.round(Math.sin(a) * r * 0.6), 1, 1, Math.random() < 0.5 ? '#5e1420' : '#7a1a28']);
+  }
+  px.push([-3 * dir, -1, 2, 2, z.pants], [-1 * dir - (dir < 0 ? 1 : 0), -1, 3, 2, z.shirt], [2 * dir - (dir < 0 ? 1 : 0), -2, 2, 2, z.skin]);
+  decals.push({ x: Math.round(z.x), y: Math.round(z.y), px, age: 0 });
+  if (decals.length > 600) decals.shift();
+  for (let i = 0; i < 10; i++) {
+    parts.push({ x: z.x, y: z.y, z: 5, vx: (Math.random() - 0.5) * 50, vy: (Math.random() - 0.5) * 30, vz: 20 + Math.random() * 40,
+      life: 0.6 + Math.random() * 0.4, col: Math.random() < 0.6 ? '#9a1f2e' : '#c4384a', ground: true });
+  }
+  sfx(180, 0.12, 0.25, 0.7);
+}
+
+function fire() {
+  const gx = cam.x + facing * 7, gy = cam.y - ALT + 5;
+  const tx = toWorldX(mouse.sx) + (Math.random() - 0.5) * 6;
+  const ty = toWorldY(mouse.sy) + (Math.random() - 0.5) * 6;
+  tracers.push({ x0: gx, y0: gy, x1: tx, y1: ty, t: 0, dur: 0.07 });
+  flashes.push({ x: gx, y: gy, r: 26, life: 0.05, max: 0.05 });
+  casings.push({ x: cam.x + facing * 2, y: cam.y, z: ALT - 6, vx: -facing * (8 + Math.random() * 10), vy: (Math.random() - 0.5) * 8, vz: 5, life: 1.2 });
+  if (!reduceMotion) shake = Math.min(2.2, shake + 0.6);
+  sfx(1400 + Math.random() * 400, 0.06, 0.18, 0.8);
+}
+
+function impact(x, y) {
+  let hit = null, bestD = 8;
+  for (const z of zombies) {
+    const d = Math.hypot(z.x - x, (z.y - 4) - y);
+    if (d < bestD) { bestD = d; hit = z; }
+  }
+  flashes.push({ x, y, r: 12, life: 0.08, max: 0.08 });
+  if (hit) {
+    hit.hp--; hit.flash = 0.07;
+    hit.x += (hit.x - cam.x) > 0 ? 1 : -1;
+    for (let i = 0; i < 4; i++) parts.push({ x: hit.x, y: hit.y, z: 5, vx: (Math.random() - 0.5) * 40, vy: (Math.random() - 0.5) * 20, vz: 15 + Math.random() * 25, life: 0.4, col: '#a8233a', ground: true });
+    if (hit.hp <= 0) { killZombie(hit); zombies.splice(zombies.indexOf(hit), 1); }
+  } else {
+    for (let i = 0; i < 4; i++) parts.push({ x, y, z: 0, vx: (Math.random() - 0.5) * 30, vy: (Math.random() - 0.5) * 16, vz: 10 + Math.random() * 20, life: 0.35, col: Math.random() < 0.5 ? '#9a8a66' : '#c9b98a', ground: false });
+    parts.push({ x, y, z: 1, vx: 0, vy: 0, vz: 0, life: 0.06, col: '#fff3b0', ground: false, spark: true });
+  }
+}
+
+// ---------- update ----------
+function update(dt) {
+  time += dt; frame++;
+  rotor += dt * 38;
+
+  // fly
+  let ax = 0, ay = 0;
+  if (state === 'play') {
+    if (keys.KeyA || keys.ArrowLeft) ax -= 1;
+    if (keys.KeyD || keys.ArrowRight) ax += 1;
+    if (keys.KeyW || keys.ArrowUp) ay -= 1;
+    if (keys.KeyS || keys.ArrowDown) ay += 1;
+    if (mouse.touch && mouse.down) { // touch: drift toward finger
+      const dx = mouse.sx - W / 2, dy = mouse.sy - H / 2, d = Math.hypot(dx, dy);
+      if (d > 50) { ax = dx / d * 0.6; ay = dy / d * 0.6; }
+    }
+  } else {
+    ax = Math.cos(time * 0.2) * 0.25; ay = Math.sin(time * 0.17) * 0.2;
+  }
+  const al = Math.hypot(ax, ay) || 1;
+  const MAX = 95, ACC = 380;
+  if (ax || ay) { cam.vx += ax / Math.max(1, al) * ACC * dt; cam.vy += ay / Math.max(1, al) * ACC * dt; }
+  const sp = Math.hypot(cam.vx, cam.vy);
+  if (sp > MAX) { cam.vx *= MAX / sp; cam.vy *= MAX / sp; }
+  const drag = Math.pow(0.04, dt);
+  if (!ax) cam.vx *= drag;
+  if (!ay) cam.vy *= drag;
+  cam.x += cam.vx * dt; cam.y += cam.vy * dt;
+
+  if (mouse.seen) facing = mouse.sx >= W / 2 ? 1 : -1;
+
+  // run timer
+  if (state === 'play') {
+    runTime += dt;
+    fuel -= dt;
+    if (fuel <= 0) { fuel = 0; endRun(); }
+    fireCd -= dt;
+    if (mouse.down && fireCd <= 0) { fire(); fireCd = 1 / 10; }
+  }
+
+  // zombies: horde grows with time
+  const target = Math.min(500, 40 + (state === 'play' ? runTime * 5 : 0));
+  let spawnBudget = 6;
+  while (zombies.length < target && spawnBudget-- > 0) spawnZombie(false);
+  const far = Math.hypot(W, H) * 0.9 + 80;
+  for (let i = zombies.length - 1; i >= 0; i--) {
+    const z = zombies[i];
+    z.retarget -= dt;
+    if (z.retarget < 0) { z.retarget = 2 + Math.random() * 3; z.ox = (Math.random() - 0.5) * 80; z.oy = (Math.random() - 0.5) * 56; }
+    const dx = cam.x + z.ox - z.x, dy = cam.y + z.oy - z.y, d = Math.hypot(dx, dy);
+    if (d > 2) {
+      const s = z.speed * (d < 30 ? 0.4 : 1);
+      z.x += dx / d * s * dt; z.y += dy / d * s * dt * 0.8;
+      z.phase += dt * z.speed * 0.35;
+      if (Math.abs(dx) > 1) z.dir = dx > 0 ? 1 : -1;
+    }
+    if (z.flash > 0) z.flash -= dt;
+    if (Math.hypot(z.x - cam.x, z.y - cam.y) > far) zombies.splice(i, 1);
+  }
+
+  // tracers
+  for (let i = tracers.length - 1; i >= 0; i--) {
+    const t = tracers[i];
+    t.t += dt;
+    if (t.t >= t.dur) { impact(t.x1, t.y1); tracers.splice(i, 1); }
+  }
+  // particles
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.life -= dt;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vz -= 160 * dt;
+    if (p.z <= 0) {
+      p.z = 0; p.vx *= 0.5; p.vy *= 0.5; p.vz = 0;
+      if (p.ground && p.life > 0) { // blood lands
+        decals.push({ x: Math.round(p.x), y: Math.round(p.y), px: [[0, 0, 1, 1, '#6e1824']], age: 0 });
+        if (decals.length > 600) decals.shift();
+        p.life = 0;
+      }
+    }
+    if (p.life <= 0) parts.splice(i, 1);
+  }
+  for (let i = casings.length - 1; i >= 0; i--) {
+    const c = casings[i];
+    c.life -= dt; c.x += c.vx * dt; c.y += c.vy * dt; c.z += c.vz * dt; c.vz -= 140 * dt;
+    if (c.z <= 0) { c.z = 0; c.vx = c.vy = 0; }
+    if (c.life <= 0) casings.splice(i, 1);
+  }
+  for (let i = flashes.length - 1; i >= 0; i--) { flashes[i].life -= dt; if (flashes[i].life <= 0) flashes.splice(i, 1); }
+  shake = Math.max(0, shake - dt * 12);
+
+  if (popT > 0) { popT -= dt; if (popT <= 0) cashEl.classList.remove('pop'); }
+  if (state === 'play' && frame % 3 === 0) updateHud();
+}
+
+// ---------- draw ----------
+let ox = 0, oy = 0; // camera offset in screen space for this frame
+const sx = (wx) => Math.round(wx - ox);
+const sy = (wy) => Math.round(wy - oy);
+function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+
+function drawZombie(z) {
+  const x = sx(z.x), y = sy(z.y), f = Math.floor(z.phase) % 2, d = z.dir;
+  const fl = z.flash > 0;
+  const skin = fl ? '#ffffff' : z.skin, shirt = fl ? '#ffffff' : z.shirt, pants = fl ? '#e8e8e8' : z.pants;
+  rect(x - 3, y - 1, 7, 2, 'rgba(0,0,0,0.35)');
+  rect(x - 2, y - 3 - (f ? 1 : 0), 1, 3, pants);
+  rect(x + 1, y - 3 - (f ? 0 : 1), 1, 3, pants);
+  const bob = f ? 0 : -1;
+  rect(x - 2, y - 7 + bob, 4, 4, shirt);
+  rect(x - 2, y - 4 + bob, 1, 1, '#00000033');
+  rect(d > 0 ? x + 2 : x - 4, y - 7 + bob, 2, 1, skin);
+  rect(x - 2, y - 10 + bob, 4, 3, skin);
+  rect(d > 0 ? x + 1 : x - 2, y - 9 + bob, 1, 1, fl ? '#ffffff' : '#ff4040');
+}
+
+function drawDecor(o) {
+  const x = sx(o.x), y = sy(o.y);
+  if (o.kind === 'tree') {
+    rect(x - 7, y - 1, 15, 3, 'rgba(0,0,0,0.3)');
+    rect(x - 1, y - 6, 3, 6, '#3b2a1c');
+    rect(x - 6, y - 17, 13, 10, '#1d3820');
+    rect(x - 5, y - 19, 11, 2, '#1d3820');
+    rect(x - 4, y - 7, 9, 1, '#16301a');
+    rect(x - 4, y - 18, 6, 4, '#2b5230');
+    rect(x - 3, y - 19, 3, 1, '#3a6a3c');
+  } else if (o.kind === 'bush') {
+    rect(x - 5, y - 1, 11, 2, 'rgba(0,0,0,0.3)');
+    rect(x - 4, y - 5, 9, 5, '#24452a');
+    rect(x - 3, y - 6, 6, 1, '#24452a');
+    rect(x - 3, y - 5, 3, 2, '#36633a');
+  } else {
+    rect(x - 4, y - 1, 9, 2, 'rgba(0,0,0,0.3)');
+    rect(x - 3, y - 4, 7, 4, '#5e6166');
+    rect(x - 2, y - 5, 5, 1, '#7e8186');
+    rect(x - 2, y - 4, 3, 1, '#9a9da2');
+  }
+}
+
+function drawHeli(hx, hy, f) {
+  const R = (dx, dy, w, h, c) => rect(f > 0 ? hx + dx : hx - dx - w, hy + dy, w, h, c);
+  // tail
+  R(-19, -2, 12, 2, '#33402f');
+  R(-20, -6, 2, 5, '#3b4a37');
+  const tr = Math.floor(rotor * 1.7) % 2;
+  R(-21, tr ? -8 : -5, 1, tr ? 6 : 3, '#9aa3a0');
+  // body
+  R(-7, -4, 14, 7, '#3b4a37');
+  R(-7, -4, 14, 1, '#56694f');
+  R(-6, 2, 12, 1, '#2a3528');
+  R(3, -3, 4, 3, '#7fc4d8');
+  R(4, -3, 2, 1, '#c8eef6');
+  R(-4, -2, 2, 2, '#2a3528');
+  // gun + skids
+  R(5, 3, 4, 1, '#1d211c');
+  R(-5, 3, 1, 2, '#1d211c'); R(4, 3, 1, 2, '#1d211c');
+  R(-7, 5, 14, 1, '#1d211c');
+  // rotor (squashed for the tilted view)
+  R(0, -6, 1, 2, '#1d211c');
+  for (let b = 0; b < 2; b++) {
+    const a = rotor + b * Math.PI / 2;
+    const cx = Math.cos(a) * 21, cy = Math.sin(a) * 6;
+    ctx.strokeStyle = 'rgba(30,34,30,0.75)';
+    line(hx - cx, hy - 6 - cy, hx + cx, hy - 6 + cy, 'rgba(25,28,25,0.8)');
+  }
+}
+function line(x0, y0, x1, y1, c) {
+  x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sxs = x0 < x1 ? 1 : -1, sys = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  ctx.fillStyle = c;
+  for (let n = 0; n < 200; n++) {
+    ctx.fillRect(x0, y0, 1, 1);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sxs; }
+    if (e2 <= dx) { err += dx; y0 += sys; }
+  }
+}
+
+function glow(g, x, y, r, a) {
+  const gr = g.createRadialGradient(x, y, 0, x, y, r);
+  gr.addColorStop(0, `rgba(0,0,0,${a})`);
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr;
+  g.fillRect(x - r, y - r, r * 2, r * 2);
+}
+
+function draw() {
+  const shx = shake ? Math.round((Math.random() - 0.5) * shake * 2) : 0;
+  const shy = shake ? Math.round((Math.random() - 0.5) * shake * 2) : 0;
+  ox = Math.round(cam.x - W / 2) + shx; oy = Math.round(cam.y - H / 2) + shy;
+
+  // ground
+  const c0x = Math.floor(ox / CH), c1x = Math.floor((ox + W) / CH);
+  const c0y = Math.floor(oy / CH), c1y = Math.floor((oy + H) / CH);
+  for (let cy = c0y; cy <= c1y; cy++) for (let cx = c0x; cx <= c1x; cx++) {
+    ctx.drawImage(chunk(cx, cy).can, cx * CH - ox, cy * CH - oy);
+  }
+  // decals
+  for (const d of decals) {
+    const x = d.x - ox, y = d.y - oy;
+    if (x < -10 || y < -10 || x > W + 10 || y > H + 10) continue;
+    for (const p of d.px) { ctx.fillStyle = p[4]; ctx.fillRect(x + p[0], y + p[1], p[2], p[3]); }
+  }
+  // brass casings on the ground
+  for (const c of casings) rect(sx(c.x), sy(c.y - c.z), 1, 1, '#e0b24a');
+
+  // y-sorted sprites
+  const list = [];
+  const g0x = Math.floor((ox - 20) / DG), g1x = Math.floor((ox + W + 20) / DG);
+  const g0y = Math.floor((oy - 10) / DG), g1y = Math.floor((oy + H + 30) / DG);
+  for (let gy = g0y; gy <= g1y; gy++) for (let gx = g0x; gx <= g1x; gx++) {
+    const o = decorAt(gx, gy);
+    if (o) list.push(o);
+  }
+  for (const z of zombies) {
+    const x = z.x - ox, y = z.y - oy;
+    if (x > -8 && y > -4 && x < W + 8 && y < H + 14) list.push(z);
+  }
+  list.sort((a, b) => a.y - b.y);
+  for (const o of list) o.kind ? drawDecor(o) : drawZombie(o);
+
+  // particles
+  for (const p of parts) {
+    if (p.spark) rect(sx(p.x) - 1, sy(p.y) - 1, 3, 3, p.col);
+    else rect(sx(p.x), sy(p.y - p.z), 1, 1, p.col);
+  }
+
+  // heli shadow + searchlight beam
+  const hsx = Math.round(W / 2) + shx * 0, hsy = Math.round(H / 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(hsx, hsy + 2, 14, 4, 0, 0, Math.PI * 2); ctx.fill();
+  const mx = Math.round(mouse.seen ? mouse.sx : W / 2 + 40), my = Math.round(mouse.seen ? mouse.sy : H / 2 + 20);
+
+  // night lighting
+  lctx.globalCompositeOperation = 'source-over';
+  lctx.clearRect(0, 0, W, H);
+  lctx.fillStyle = 'rgba(8,12,34,0.66)';
+  lctx.fillRect(0, 0, W, H);
+  lctx.globalCompositeOperation = 'destination-out';
+  glow(lctx, mx, my, 54, 0.95);
+  glow(lctx, mx, my, 30, 0.6);
+  glow(lctx, hsx, hsy, 40, 0.45);
+  for (const fl of flashes) glow(lctx, fl.x - ox, fl.y - oy, fl.r, 0.9 * fl.life / fl.max);
+  ctx.drawImage(lc, 0, 0);
+
+  // searchlight cone (additive)
+  const hx = Math.round(W / 2), hy = Math.round(H / 2 - ALT + Math.sin(time * 2.2) * 1.2);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = 'rgba(255,236,170,0.05)';
+  ctx.beginPath();
+  const ang = Math.atan2(my - hy, mx - hx) + Math.PI / 2;
+  ctx.moveTo(hx, hy + 3);
+  ctx.lineTo(mx + Math.cos(ang) * 34, my + Math.sin(ang) * 34);
+  ctx.lineTo(mx - Math.cos(ang) * 34, my - Math.sin(ang) * 34);
+  ctx.closePath(); ctx.fill();
+  // tracers + muzzle flash
+  for (const t of tracers) {
+    const k = t.t / t.dur, k0 = Math.max(0, k - 0.45);
+    line(t.x0 + (t.x1 - t.x0) * k0 - ox, t.y0 + (t.y1 - t.y0) * k0 - oy, t.x0 + (t.x1 - t.x0) * k - ox, t.y0 + (t.y1 - t.y0) * k - oy, '#ffd56a');
+  }
+  for (const fl of flashes) {
+    if (fl.r < 20) continue;
+    const x = Math.round(fl.x - ox), y = Math.round(fl.y - oy);
+    rect(x - 2, y - 1, 5, 3, '#ffb347'); rect(x - 1, y - 2, 3, 5, '#ffb347'); rect(x, y, 1, 1, '#fff6d0');
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  drawHeli(hx, hy, facing);
+
+  // crosshair
+  if (state === 'play' && mouse.seen && !mouse.touch) {
+    const c = '#f4f0dc';
+    rect(mx - 6, my, 4, 1, c); rect(mx + 3, my, 4, 1, c);
+    rect(mx, my - 6, 1, 4, c); rect(mx, my + 3, 1, 4, c);
+    rect(mx, my, 1, 1, '#ff5050');
+  }
+
+  // vignette
+  const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+}
+
+// ---------- loop ----------
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+updateHud();
+requestAnimationFrame(loop);
+})();
+</script>
