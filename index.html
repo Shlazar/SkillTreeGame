@@ -79,12 +79,12 @@ button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
     <div class="kills" id="kills">KILLS 0</div>
   </div>
 </div>
-<div class="hint" id="hint">WASD to fly · hold mouse to shoot</div>
+<div class="hint" id="hint">WASD to move camera · hold mouse to shoot</div>
 
 <div class="screen" id="titleScreen">
   <div class="card">
     <h1>SKY <span>REAPER</span></h1>
-    <p>The dead walk. You fly.</p>
+    <p>The dead walk. You watch from above.</p>
     <button id="startBtn">TAKE OFF</button>
   </div>
 </div>
@@ -188,15 +188,14 @@ function decorAt(cx, cy) {
 // ---------- state ----------
 const FUEL_MAX = 30;
 const cam = { x: 0, y: 0, vx: 0, vy: 0 };
-const ALT = 40;
-let frame = 0, time = 0, shake = 0, rotor = 0;
+let frame = 0, time = 0, shake = 0;
 let state = 'title';
 let fuel = FUEL_MAX, runTime = 0, cash = 0, kills = 0, best = 0;
 try { best = +localStorage.getItem('skyreaper.best') || 0; } catch (e) {}
-const zombies = [], decals = [], parts = [], tracers = [], flashes = [], casings = [];
+const zombies = [], decals = [], parts = [], tracers = [], flashes = [];
 const keys = {};
 const mouse = { sx: 0, sy: 0, down: false, seen: false, touch: false };
-let fireCd = 0, facing = 1;
+let fireCd = 0;
 
 const SHIRTS = ['#55698a', '#8a4848', '#7a6a48', '#4a5c48', '#6c4a7a', '#8a8070', '#3e5560'];
 const SKINS = ['#7fa36a', '#8fae74', '#6f9160', '#9bb27a'];
@@ -224,7 +223,7 @@ function initAudio() {
     noiseBuf = actx.createBuffer(1, actx.sampleRate * 1, actx.sampleRate);
     const ch = noiseBuf.getChannelData(0);
     for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
-    // rotor hum
+    // distant gunship engine drone
     const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
     const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 120;
     const g = actx.createGain(); g.gain.value = 0.12;
@@ -309,12 +308,9 @@ function killZombie(z) {
 }
 
 function fire() {
-  const gx = cam.x + facing * 7, gy = cam.y - ALT + 5;
   const tx = toWorldX(mouse.sx) + (Math.random() - 0.5) * 6;
   const ty = toWorldY(mouse.sy) + (Math.random() - 0.5) * 6;
-  tracers.push({ x0: gx, y0: gy, x1: tx, y1: ty, t: 0, dur: 0.07 });
-  flashes.push({ x: gx, y: gy, r: 26, life: 0.05, max: 0.05 });
-  casings.push({ x: cam.x + facing * 2, y: cam.y, z: ALT - 6, vx: -facing * (8 + Math.random() * 10), vy: (Math.random() - 0.5) * 8, vz: 5, life: 1.2 });
+  tracers.push({ x0: tx + (tx - cam.x) * 0.25 - 10, y0: ty - 90, x1: tx, y1: ty, t: 0, dur: 0.08 });
   if (!reduceMotion) shake = Math.min(2.2, shake + 0.6);
   sfx(1400 + Math.random() * 400, 0.06, 0.18, 0.8);
 }
@@ -340,8 +336,7 @@ function impact(x, y) {
 // ---------- update ----------
 function update(dt) {
   time += dt; frame++;
-  rotor += dt * 38;
-
+  
   // fly
   let ax = 0, ay = 0;
   if (state === 'play') {
@@ -365,8 +360,6 @@ function update(dt) {
   if (!ax) cam.vx *= drag;
   if (!ay) cam.vy *= drag;
   cam.x += cam.vx * dt; cam.y += cam.vy * dt;
-
-  if (mouse.seen) facing = mouse.sx >= W / 2 ? 1 : -1;
 
   // run timer
   if (state === 'play') {
@@ -417,12 +410,6 @@ function update(dt) {
       }
     }
     if (p.life <= 0) parts.splice(i, 1);
-  }
-  for (let i = casings.length - 1; i >= 0; i--) {
-    const c = casings[i];
-    c.life -= dt; c.x += c.vx * dt; c.y += c.vy * dt; c.z += c.vz * dt; c.vz -= 140 * dt;
-    if (c.z <= 0) { c.z = 0; c.vx = c.vy = 0; }
-    if (c.life <= 0) casings.splice(i, 1);
   }
   for (let i = flashes.length - 1; i >= 0; i--) { flashes[i].life -= dt; if (flashes[i].life <= 0) flashes.splice(i, 1); }
   shake = Math.max(0, shake - dt * 12);
@@ -475,33 +462,6 @@ function drawDecor(o) {
   }
 }
 
-function drawHeli(hx, hy, f) {
-  const R = (dx, dy, w, h, c) => rect(f > 0 ? hx + dx : hx - dx - w, hy + dy, w, h, c);
-  // tail
-  R(-19, -2, 12, 2, '#33402f');
-  R(-20, -6, 2, 5, '#3b4a37');
-  const tr = Math.floor(rotor * 1.7) % 2;
-  R(-21, tr ? -8 : -5, 1, tr ? 6 : 3, '#9aa3a0');
-  // body
-  R(-7, -4, 14, 7, '#3b4a37');
-  R(-7, -4, 14, 1, '#56694f');
-  R(-6, 2, 12, 1, '#2a3528');
-  R(3, -3, 4, 3, '#7fc4d8');
-  R(4, -3, 2, 1, '#c8eef6');
-  R(-4, -2, 2, 2, '#2a3528');
-  // gun + skids
-  R(5, 3, 4, 1, '#1d211c');
-  R(-5, 3, 1, 2, '#1d211c'); R(4, 3, 1, 2, '#1d211c');
-  R(-7, 5, 14, 1, '#1d211c');
-  // rotor (squashed for the tilted view)
-  R(0, -6, 1, 2, '#1d211c');
-  for (let b = 0; b < 2; b++) {
-    const a = rotor + b * Math.PI / 2;
-    const cx = Math.cos(a) * 21, cy = Math.sin(a) * 6;
-    ctx.strokeStyle = 'rgba(30,34,30,0.75)';
-    line(hx - cx, hy - 6 - cy, hx + cx, hy - 6 + cy, 'rgba(25,28,25,0.8)');
-  }
-}
 function line(x0, y0, x1, y1, c) {
   x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
   const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sxs = x0 < x1 ? 1 : -1, sys = y0 < y1 ? 1 : -1;
@@ -541,8 +501,6 @@ function draw() {
     if (x < -10 || y < -10 || x > W + 10 || y > H + 10) continue;
     for (const p of d.px) { ctx.fillStyle = p[4]; ctx.fillRect(x + p[0], y + p[1], p[2], p[3]); }
   }
-  // brass casings on the ground
-  for (const c of casings) rect(sx(c.x), sy(c.y - c.z), 1, 1, '#e0b24a');
 
   // y-sorted sprites
   const list = [];
@@ -565,47 +523,26 @@ function draw() {
     else rect(sx(p.x), sy(p.y - p.z), 1, 1, p.col);
   }
 
-  // heli shadow + searchlight beam
-  const hsx = Math.round(W / 2) + shx * 0, hsy = Math.round(H / 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.beginPath(); ctx.ellipse(hsx, hsy + 2, 14, 4, 0, 0, Math.PI * 2); ctx.fill();
   const mx = Math.round(mouse.seen ? mouse.sx : W / 2 + 40), my = Math.round(mouse.seen ? mouse.sy : H / 2 + 20);
 
-  // night lighting
+  // night lighting: the gun camera's light follows the aim
   lctx.globalCompositeOperation = 'source-over';
   lctx.clearRect(0, 0, W, H);
-  lctx.fillStyle = 'rgba(8,12,34,0.66)';
+  lctx.fillStyle = 'rgba(8,12,34,0.62)';
   lctx.fillRect(0, 0, W, H);
   lctx.globalCompositeOperation = 'destination-out';
-  glow(lctx, mx, my, 54, 0.95);
-  glow(lctx, mx, my, 30, 0.6);
-  glow(lctx, hsx, hsy, 40, 0.45);
+  glow(lctx, mx, my, 60, 0.9);
+  glow(lctx, mx, my, 30, 0.5);
   for (const fl of flashes) glow(lctx, fl.x - ox, fl.y - oy, fl.r, 0.9 * fl.life / fl.max);
   ctx.drawImage(lc, 0, 0);
 
-  // searchlight cone (additive)
-  const hx = Math.round(W / 2), hy = Math.round(H / 2 - ALT + Math.sin(time * 2.2) * 1.2);
+  // tracers rain down from the sky (the gunship is off-screen, above the camera)
   ctx.globalCompositeOperation = 'lighter';
-  ctx.fillStyle = 'rgba(255,236,170,0.05)';
-  ctx.beginPath();
-  const ang = Math.atan2(my - hy, mx - hx) + Math.PI / 2;
-  ctx.moveTo(hx, hy + 3);
-  ctx.lineTo(mx + Math.cos(ang) * 34, my + Math.sin(ang) * 34);
-  ctx.lineTo(mx - Math.cos(ang) * 34, my - Math.sin(ang) * 34);
-  ctx.closePath(); ctx.fill();
-  // tracers + muzzle flash
   for (const t of tracers) {
-    const k = t.t / t.dur, k0 = Math.max(0, k - 0.45);
+    const k = t.t / t.dur, k0 = Math.max(0, k - 0.35);
     line(t.x0 + (t.x1 - t.x0) * k0 - ox, t.y0 + (t.y1 - t.y0) * k0 - oy, t.x0 + (t.x1 - t.x0) * k - ox, t.y0 + (t.y1 - t.y0) * k - oy, '#ffd56a');
   }
-  for (const fl of flashes) {
-    if (fl.r < 20) continue;
-    const x = Math.round(fl.x - ox), y = Math.round(fl.y - oy);
-    rect(x - 2, y - 1, 5, 3, '#ffb347'); rect(x - 1, y - 2, 3, 5, '#ffb347'); rect(x, y, 1, 1, '#fff6d0');
-  }
   ctx.globalCompositeOperation = 'source-over';
-
-  drawHeli(hx, hy, facing);
 
   // crosshair
   if (state === 'play' && mouse.seen && !mouse.touch) {
@@ -619,6 +556,15 @@ function draw() {
   const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
   ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+
+  // gun camera frame
+  const fc = 'rgba(230,240,214,0.55)', m = 10, L = 14;
+  rect(m, m + 18, L, 1, fc); rect(m, m + 18, 1, L, fc);
+  rect(W - m - L, m + 18, L, 1, fc); rect(W - m - 1, m + 18, 1, L, fc);
+  rect(m, H - m - 12, L, 1, fc); rect(m, H - m - 12 - L, 1, L, fc);
+  rect(W - m - L, H - m - 12, L, 1, fc); rect(W - m - 1, H - m - 12 - L, 1, L, fc);
+  rect(Math.round(W / 2) - 3, Math.round(H / 2), 7, 1, 'rgba(230,240,214,0.25)');
+  rect(Math.round(W / 2), Math.round(H / 2) - 3, 1, 7, 'rgba(230,240,214,0.25)');
 }
 
 // ---------- loop ----------
