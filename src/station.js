@@ -114,8 +114,8 @@ function stationReward(st) {
     record.paid.station = true;
     G.surv++;
     G.stationReward = { kind: 'surv', x, y, t: G.t, amount: 1 };
-    floatText(x, y + 34, '+1 SURVIVOR', U.gold);
-    addTotal(x - st.side * 30, y + 10, 1, U.gold, true);
+    floatText(x, y + 34, '+1 SURVIVOR', U.amber);
+    addTotal(x - st.side * 30, y + 10, 1, U.amber, true);
     juicePop(x, y, true);
     SFX.saved();
     bankRun();

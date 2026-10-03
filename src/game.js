@@ -1131,7 +1131,10 @@ function step(dt) {
   if (G.result === 'lost') tr.v = Math.max(0, tr.v - 30 * dt);
   else if (G.result === 'won') tr.v = 0;
   else if (st && st.state === 'braking') {
-    tr.v = Math.min(tr.v, Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - st.stopS)) + 1.5);
+    // A zombie impact can slow the train below its stopping curve. Recover gently so an
+    // approach does not become a permanent crawl, while the same curve still prevents overshoot.
+    tr.v = Math.min(CFG.train.cruise, tr.v + CFG.train.accel * dt,
+      Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - st.stopS)) + 1.5);
     if (tr.s - st.stopS < 0.6) {
       tr.v = 0;
       trainStops(st);
