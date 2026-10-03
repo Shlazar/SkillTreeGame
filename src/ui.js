@@ -445,19 +445,49 @@ function drawTitle() {
   L.forEach((l, i) => text(l, cx, y + i * 11, U.faint, { align: 'center', outline: false }));
   text(ask ? 'ESC: GO BACK' : 'ENTER: ' + (prog ? 'CONTINUE' : 'PLAY'), cx, y + 42, U.faint, { align: 'center', outline: false });
 }
-// After the run: how it ended, then what it paid, row by row. Each row counts up with a tick, then
-// the total, the survivors (an icon each), a near miss, and the way back to the Depot.
-// The times (s after the summary opens) are worked out once; sounds play as each time passes.
+// A short leg summary: sources, the money kept, saved stars, and the way back to the Depot.
+// Times are seconds after it opens; each source counts up with a tick.
 function sumPlan(s) {
-  // [label, scrap, a short note on how it pays]
-  const p = s.pay, rows = [['ZOMBIES ' + fmt(s.kills), p.kills, '']];
-  if (p.loot) rows.push(['LOOT', p.loot, '']);
-  if (p.bonus) rows.push(['BONUS', p.bonus, 'FROM THE SKILL TREE']);
-  const t = rows.map((r, i) => 0.55 + i * 0.32), total = t[t.length - 1] + 0.45, surv = total + 0.7;
-  const icons = Math.min(s.surv, 12), ready = surv + (s.surv ? icons * 0.14 + 0.25 : 0) + 0.15;
+  const p = s.pay, rows = [['KILLS ' + fmt(s.kills), p.kills || 0]];
+  for (const [label, value] of [['LOOT', p.loot], ['WALLS', p.wall ?? p.walls], ['SILVER', p.silver], ['BONUS', p.bonus]]) {
+    if (value > 0) rows.push([label, value]);
+  }
+  const t = rows.map((r, i) => 0.3 + i * 0.18), total = t[t.length - 1] + 0.25;
+  const money = [{ key: 'scrap', label: 'TOTAL SCRAP', amount: s.scrap, color: U.blue, at: total }];
+  if (s.surv > 0 || SAVE.flags.survShown) money.push({ key: 'surv', label: 'SURVIVORS', amount: s.surv, color: U.amber, at: total + money.length * 0.14 });
+  if (s.gold > 0 || SAVE.flags.goldShown) money.push({ key: 'gold', label: 'GOLD', amount: s.gold, color: U.gold, at: total + money.length * 0.14 });
+  const stars = money[money.length - 1].at + 0.18, lines = stars + (s.hasStars ? 0.15 : 0);
   const ev = t.map((x) => [x, 'tick']).concat([[total, 'total']]);
-  for (let i = 0; i < icons; i++) ev.push([surv + i * 0.14, 'saved']);
-  return { rows, t, total, surv, icons, lines: ready + 0.3, end: ready + 0.5, ev };
+  for (const row of money) if (row.key !== 'scrap' && row.amount > 0) ev.push([row.at, row.key === 'surv' ? 'saved' : 'gold']);
+  if (s.hasStars && s.stars.some(Boolean)) ev.push([stars, 'tick']);
+  return { rows, t, money, total, stars, lines, end: lines + 0.35, ev };
+}
+// Geometry is shared with click tests. On short screens the row spacing tightens before notes
+// are bounded, so the money, stars and button always fit. Notes wrap at the panel's inner width.
+function summaryLayout(s, pl) {
+  const compact = H < 300, w = Math.min(W - 24, compact ? 288 : 264), inner = w - 32;
+  const heading = wrap('LEG ' + s.leg + ': ' + s.destination, inner);
+  const messages = [];
+  if (s.near) messages.push([s.near, U.amber]);
+  if (s.replay) messages.push(['REPLAY: SCRAP ONLY. NO NEW STARS.', U.blue]);
+  messages.push(['YOU KEEP EVERYTHING YOU EARNED.', U.dim]);
+  for (const line of s.wall || []) messages.push(line);
+  let notes = messages.flatMap(([message, color]) => wrap(message, inner).map((line) => [line, color]));
+  const rowStep = compact ? 10 : 12, moneyStep = compact ? 12 : 15, noteStep = compact ? 9 : 11;
+  const sources = 32 + heading.length * 10, money = sources + pl.rows.length * rowStep + 7;
+  const stars = money + pl.money.length * moneyStep, noteTop = stars + (s.hasStars ? 15 : 0) + 6;
+  const maxNotes = Math.max(1, Math.floor((H - 26 - noteTop - 28) / noteStep));
+  if (notes.length > maxNotes) {
+    notes = notes.slice(0, maxNotes);
+    let line = notes[notes.length - 1][0];
+    while (tw(line + '...') > inner) line = line.slice(0, -1);
+    notes[notes.length - 1][0] = line + '...';
+  }
+  const h = noteTop + notes.length * noteStep + 28;
+  const x = Math.round((W - w) / 2), y = Math.max(20, Math.round((H - h) / 2));
+  return { x, y, w, h, heading, notes, rowStep, moneyStep, noteStep,
+    sourcesY: y + sources, moneyY: y + money, starsY: y + stars, notesY: y + noteTop,
+    button: { x: Math.round(x + w / 2 - 70), y: y + h - 25, w: 140, h: 20 } };
 }
 // Enter or a click before the count is done shows it all at once.
 function sumSkip() {
@@ -471,65 +501,50 @@ function drawSummary() {
   ctx.fillStyle = 'rgba(5,6,8,0.66)';
   ctx.fillRect(0, 0, W, H);
   const s = G.sum, pl = s.plan || (s.plan = sumPlan(s)), t = realT - sumStart, won = s.result === 'won';
+  const layout = summaryLayout(s, pl), { x, y, w, h } = layout, cx = x + w / 2;
   while (s.sounds < pl.ev.length && t >= pl.ev[s.sounds][0]) {
     const e = pl.ev[s.sounds++][1];
     if (e === 'tick') SFX.tick();
     else if (e === 'total') SFX.total();
     else if (e === 'saved') SFX.saved();
-    else SFX.fanfare();
+    else if (e === 'gold') SFX.golden();
   }
-  const lines = s.wall.slice();
-  if (s.near) lines.push([s.near, U.amber]);
-  lines.push([s.surv ? 'YOU KEEP ALL YOUR SCRAP AND SURVIVORS.' : 'YOU KEEP ALL YOUR SCRAP.', U.dim]);
-  for (const g of tutSumLines()) lines.push(g);
-  for (const g of s.goal) lines.push(g);
-  const w = 264, h = 58 + pl.rows.length * 12 + 10 + 16 + (s.surv ? 16 : 0) + 10 + lines.length * 11 + 36;
-  const x = Math.round(W / 2 - w / 2), y = Math.max(20, Math.round(H / 2 - h / 2)), cx = x + w / 2;
   panel(x, y, w, h, '#0f1014');
   const quit = s.result === 'quit';
-  text(won ? 'LEG WON!' : quit ? 'LEG ENDED' : 'TRAIN LOST', cx, y + 10, won ? U.gold : quit ? U.ink : U.red, { align: 'center', scale: 2, drop: true });
-  text('LEG ' + G.leg + ': ' + legDef(G.leg).to.name, cx, y + 30, U.ink, { align: 'center' });
+  text(won ? 'LEG WON!' : quit ? 'LEG ENDED' : 'TRAIN LOST', cx, y + 9, won ? U.gold : quit ? U.ink : U.red, { align: 'center', scale: 2, drop: true });
+  layout.heading.forEach((line, i) => text(line, cx, y + 28 + i * 10, U.ink, { align: 'center' }));
   // the rows: what each kind of thing paid
-  let ry = y + 58;
   pl.rows.forEach((r, i) => {
     const u = clamp((t - pl.t[i]) / 0.22, 0, 1);
     if (t < pl.t[i]) return;
-    text(r[0], x + 18, ry + i * 12, U.dim);
-    if (r[2]) text(r[2], x + 26 + tw(r[0]), ry + i * 12, U.faint);
-    text('+' + fmt(Math.round(r[1] * u)), x + w - 18, ry + i * 12, u < 1 ? U.ink : U.blue, { align: 'right' });
+    const ry = layout.sourcesY + i * layout.rowStep;
+    text(r[0], x + 16, ry, U.dim);
+    text('+' + fmt(Math.round(r[1] * u)), x + w - 16, ry, u < 1 ? U.ink : U.blue, { align: 'right' });
   });
-  ry += pl.rows.length * 12 + 2;
   ctx.fillStyle = '#2e3139';
-  ctx.fillRect(x + 14, ry, w - 28, 1);
-  ry += 8;
-  // the total scrap, then the survivors
-  if (t >= pl.total) {
-    const u = ease(clamp((t - pl.total) / 0.5, 0, 1));
-    blit(ICON.scrap, x + 18, ry + 3);
-    text('SCRAP', x + 30, ry + 4, U.ink);
-    text('+' + fmt(Math.round(s.scrap * u)), x + w - 18, ry, U.blue, { align: 'right', scale: 2 });
-  }
-  ry += 16;
-  if (s.surv) {
-    if (t >= pl.surv) {
-      blit(ICON.surv, x + 18, ry + 4);
-      text('SURVIVORS', x + 30, ry + 4, U.ink);
-      const n = Math.min(pl.icons, Math.floor((t - pl.surv) / 0.14) + 1);
-      for (let i = 0; i < n; i++) blit(ICON.surv, x + 96 + i * 8, ry + 4);
-      text('+' + Math.min(s.surv, Math.round(s.surv * n / pl.icons)), x + w - 18, ry, U.amber, { align: 'right', scale: 2 });
+  ctx.fillRect(x + 14, layout.moneyY - 5, w - 28, 1);
+  pl.money.forEach((row, i) => {
+    if (t < row.at) return;
+    const ry = layout.moneyY + i * layout.moneyStep, icon = currencyIcon(row.key), u = ease(clamp((t - row.at) / 0.3, 0, 1));
+    blit(icon, x + 16, ry + Math.round((layout.moneyStep - icon.height) / 2));
+    text(row.label, x + 28, ry + 3, U.ink);
+    text('+' + fmt(Math.round(row.amount * u)), x + w - 16, ry, row.color, { align: 'right', scale: row.key === 'scrap' && H >= 300 ? 2 : 1 });
+  });
+  if (s.hasStars && t >= pl.stars) {
+    text('LEG STARS', x + 16, layout.starsY + 3, U.dim);
+    for (let i = 0; i < 3; i++) {
+      ctx.globalAlpha = s.stars[i] ? 1 : 0.2;
+      blit(ICON.star, x + w - 16 - (3 - i) * (ICON.star.width + 3), layout.starsY + 2);
     }
-    ry += 16;
+    ctx.globalAlpha = 1;
   }
-  ctx.fillStyle = '#2e3139';
-  ctx.fillRect(x + 14, ry + 2, w - 28, 1);
-  ry += 10;
   // a near miss, and the promise: nothing is lost
   ctx.globalAlpha = clamp((t - pl.lines) / 0.3, 0, 1);
-  lines.forEach((l, i) => text(l[0], cx, ry + i * 11, l[1], { align: 'center' }));
+  layout.notes.forEach(([line, color], i) => text(line, cx, layout.notesY + i * layout.noteStep, color, { align: 'center' }));
   ctx.globalAlpha = 1;
-  ry += lines.length * 11 + 6;
-  if (button(Math.round(cx - 70), ry, 140, 20, 'TO THE DEPOT', { primary: true })) toDepot();
-  text('ENTER', Math.round(cx + 76), ry + 7, U.faint, { outline: false });
+  const b = layout.button;
+  if (button(b.x, b.y, b.w, b.h, 'TO THE DEPOT', { primary: true })) toDepot();
+  text('ENTER', b.x + b.w + 6, b.y + 7, U.faint, { outline: false });
 }
 
 // ---------- the UI for the current mode

@@ -217,9 +217,11 @@ function endGame() {
   payBonus();
   bankRun();
   G.sum = {
-    result: G.result, km: km2(k), ride: km2(G.ride / CFG.line.km), kills: G.kills, pay: Object.assign({}, G.pay),
-    scrap: Math.floor(G.cash), surv: G.surv, gold: G.gold, stops: G.stopNames.slice(),
-    near: nearMiss(k), wall: wallStop(k), goal: summaryGoal(), sounds: 0
+    leg: G.leg, destination: legDef(G.leg).to.name, replay: G.replay,
+    stars: (SAVE.legs[G.leg]?.stars || [false, false, false]).slice(), hasStars: G.leg >= 3,
+    result: G.result, kills: G.kills, pay: Object.assign({}, G.pay),
+    scrap: Math.floor(G.cash), surv: G.surv, gold: G.gold,
+    near: nearMiss(k), wall: wallStop(k), sounds: 0
   };
 }
 // "Mill Town was 380 m away!": the next station, when the train was lost on the way to it.
@@ -228,11 +230,11 @@ function nearMiss(k) {
   const st = G.stations.find((s) => s.state === 'ahead' || s.state === 'braking');
   if (!st) return '';
   const m = kmAt(st.stopS) - k;
-  return m < 0.7 ? st.name + ' WAS ' + fmtM(Math.max(0.01, m)) + ' AWAY!' : '';
+  return st.name + ' WAS ' + fmt(Math.max(10, Math.round(m * 100) * 10)) + ' M AWAY!';
 }
 // The summary's lines for a run lost at a Dead Wall, or after one that cost the train a quarter of
 // its health or more (with no station since): what happened, and what gets you through (without the
-// Turbo Ram: buy it; with it: save it for the wall, press E there, or more armor when it ran into the
+// Turbo Ram: buy it; with it: save it for the wall, or more armor when it ran into the
 // wall and the train still broke). [] for any other run.
 function wallStop(k) {
   if (G.result !== 'lost') return [];
@@ -243,7 +245,7 @@ function wallStop(k) {
     say = 'THE DEAD WALL COST THE TRAIN ' + Math.round(w.hpIn - w.hpOut) + ' HP.';
   }
   const tip = !G.up.ram ? 'TURBO RAM SMASHES THROUGH IT.' : w.rammed ? 'MORE ARMOR WOULD GET YOU THROUGH.'
-    : w.ready ? 'PRESS E AT THE WALL TO RAM IT!' : 'SAVE YOUR TURBO RAM FOR IT.';
+    : w.ready ? 'RAM THE WALL TO BREAK THROUGH!' : 'SAVE YOUR TURBO RAM FOR IT.';
   return [[say, U.red], [tip, U.ink]];
 }
 // km as metres for the screen: 340 M (to the nearest 10 m), 1.25 KM from 1 km up
