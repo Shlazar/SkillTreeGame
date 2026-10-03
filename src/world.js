@@ -11,6 +11,10 @@ const CH = 128;
 const GR = ['#1e2a24', '#243226', '#2b3928', '#323f29', '#3a472b', '#44502e'].map(hexRgb);
 const DR = ['#2a2521', '#332b24', '#3c3229', '#463b2f', '#514435'].map(hexRgb);
 const PLOW = ['#251e19', '#2f2620', '#3a3027', '#46392d'].map(hexRgb);
+// dry grass (ochre olive), green crop rows and golden stubble fields
+const DRY = ['#2a2c20', '#343424', '#3f3d27', '#4b472b', '#57512f', '#625a33'].map(hexRgb);
+const CROP = ['#1e2a1a', '#2b3a22', '#3a4d2a', '#4c6232'].map(hexRgb);
+const STUB = ['#2e2a1e', '#383222', '#433b26', '#4f452b', '#5a4f30'].map(hexRgb);
 // ---------- the railway
 // It winds north for ever: its middle is at x = trackX(y), two gentle waves added together (the
 // steepest bend is under 30 degrees from north). trackSlope(y) = dx/dy, trackS(y) = the distance
@@ -75,21 +79,40 @@ function groundPix(X, Y, out) {
   const gv = vnoise(wx / 56, wy / 56, 33) * 0.7 + n2 * 0.3;
   const dirt = vnoise(wx / 40, wy / 40, 34) + (th - 0.5) * 0.1;
   let col;
-  if (dirt > 0.74) col = DR[clamp(Math.floor((gv - 0.3) / 0.4 * 2.5 + 1.2 + th - 0.5), 0, DR.length - 1)];
-  else col = GR[clamp(Math.floor((gv - 0.3) / 0.4 * 2.5 + 1.5 + (dirt > 0.68 ? -1 : 0) + th - 0.5), 0, GR.length - 1)];
-  // ploughed fields: furrows every 3 px, softened at the field edge
+  // (the shade steps are dithered by the 4x4 pattern mixed with noise: the pattern alone leaves
+  // dotted lines down the grass where a step is nearly flat)
+  const tn = th * 0.55 + hrnd(X, Y, 8) * 0.45;
+  if (dirt > 0.74) col = DR[clamp(Math.floor((gv - 0.3) / 0.4 * 2.5 + 1.2 + tn - 0.5), 0, DR.length - 1)];
+  else {
+    // grass: patches gone dry and yellow, single blades catching the light (with a shadow under)
+    let gi = Math.floor((gv - 0.3) / 0.4 * 2.5 + 1.5 + (dirt > 0.68 ? -1 : 0) + tn - 0.5);
+    const bl = hrnd(X, Y, 3) < 0.06 ? 1 : hrnd(X, Y - 1, 3) < 0.06 ? -1 : 0;
+    gi = clamp(gi + bl, 0, GR.length - 1);
+    col = vnoise(wx / 70, wy / 70, 38) > 0.64 + (th - 0.5) * 0.04 ? DRY[gi] : GR[gi];
+  }
+  // fields: ploughed earth with furrows every 4 px, green crop rows or golden stubble, softened
+  // at the field edge
   const fv = fieldAt(X, Y);
   if (fv > 0.63 + (th - 0.5) * 0.02) {
-    const a = fieldDir(X, Y), u = X * Math.cos(a) + Y * Math.sin(a);
+    const a = fieldDir(X, Y), u = X * Math.cos(a) + Y * Math.sin(a), kind = vnoise(X / 700 + 3, Y / 700 - 7, 39);
     const row = mod(Math.floor(u), 4) === 0 ? 0 : 1, edge = fv < 0.66;
-    col = PLOW[clamp(row + (gv > 0.5 ? 1 : 0) + (edge ? 1 : 0) + (th > 0.85 ? 1 : 0), 0, 3)];
-    if (row && vnoise(X / 5, Y / 5, 37) > 0.74) col = GR[2];          // a few sprouts
+    if (kind < 0.4) {
+      col = PLOW[clamp(row + (gv > 0.5 ? 1 : 0) + (edge ? 1 : 0) + (th > 0.85 ? 1 : 0), 0, 3)];
+      if (row && vnoise(X / 5, Y / 5, 37) > 0.74) col = GR[2];          // a few sprouts
+    } else if (kind < 0.62) {
+      // crop rows: a green row, a dark gap, the leaves lit on one side
+      const r4 = mod(Math.floor(u), 4);
+      col = r4 === 0 ? PLOW[1] : CROP[clamp((r4 === 1 ? 3 : r4 === 2 ? 2 : 1) - (edge ? 1 : 0) - (hrnd(X, Y, 39) < 0.12 ? 1 : 0), 0, 3)];
+    } else {
+      // stubble: pale straw in thin rows
+      col = STUB[clamp((row ? 2 : 1) + (gv > 0.55 ? 1 : 0) + (hrnd(X, Y, 40) < 0.1 ? 1 : 0) - (edge ? 1 : 0), 0, 4)];
+    }
   }
   // farm tracks: a grassy crown, two muddy ruts, worn earth, a dithered edge
   const rd = roadDist(X, Y);
   if (rd < 8.5 + (th - 0.5) * 2) {
     if (rd < 1.4) col = GR[1];
-    else if (Math.abs(rd - 3.6) < 1.1) col = DR[0];
+    else if (Math.abs(rd - 3.6) < 1.1) col = (X + Y) % 3 === 0 ? DR[1] : DR[0];      // ruts with a tyre tread
     else col = DR[clamp(2 + (gv > 0.5 ? 1 : 0) + (th > 0.75 ? 1 : 0) - (rd > 6.5 ? 1 : 0), 0, 4)];
   }
   // the railway: a bed of gravel with a ragged edge, a sleeper every 6 px along the rails (lit
@@ -130,8 +153,8 @@ function plan(ci, cj) {
   pl = { props: [], flats: [], tufts: [], fires: [], block: [] };
   const take = (list) => list[(rng() * list.length) | 0];
   const put = (def, x, y, o) => {
-    // (nothing stands on a station's ground)
-    if (stationZone(x, y)) return null;
+    // (nothing stands on a station's ground or the Depot's)
+    if (stationZone(x, y) || depotZone(x, y)) return null;
     const p = Object.assign({ d: def, x: Math.round(x), y: Math.round(y) }, o || {});
     p.k = p.y;
     pl.props.push(p);
@@ -188,6 +211,7 @@ function plan(ci, cj) {
     const px = trackX(y) + 27;
     if (px >= X0 && px < X0 + CH) put(PROPS.pole[0], px, y);
   }
+  dressChunk(pl, ci, cj, rng, put, take);
   // grass tufts (they sway, so they are drawn live)
   for (let k = 0; k < 40 && pl.tufts.length < 16; k++) {
     const x = X0 + ((rng() * CH) | 0), y = Y0 + ((rng() * CH) | 0);
@@ -214,6 +238,7 @@ function bakeChunk(ci, cj) {
     d[i] = PIX[0]; d[i + 1] = PIX[1]; d[i + 2] = PIX[2]; d[i + 3] = 255;
   }
   g.putImageData(im, 0, 0);
+  paintYard(g, ci, cj);
   const rng = mulberry(hash32(Math.imul(ci, 2654435761) ^ Math.imul(cj, 40503) ^ 0xb4e));
   const r = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
   // grass specks in clusters, pebbles on bare earth, a few pale flowers
@@ -232,9 +257,33 @@ function bakeChunk(ci, cj) {
     if (vnoise((X0 + x) / 16, (Y0 + y) / 16, 31) < 0.6 || fieldAt(X0 + x, Y0 + y) > 0.62) continue;
     r(x, y, 1, 1, rng() < 0.5 ? '#a99b6e' : '#8f6f7a');
   }
+  // clusters of wild flowers (a stem under each), puddles on the tracks and bare earth, stones
+  for (let k = 0; k < 3; k++) {
+    const x = (rng() * CH) | 0, y = (rng() * CH) | 0, c = FLOWERS[(rng() * FLOWERS.length) | 0];
+    if (fieldAt(X0 + x, Y0 + y) > 0.6 || roadDist(X0 + x, Y0 + y) < 10 || nearRail(X0 + x, Y0 + y, 18) || rng() < 0.3) continue;
+    for (let f = 0; f < 5 + rng() * 6; f++) {
+      const fx = x + Math.round((rng() - 0.5) * 9), fy = y + Math.round((rng() - 0.5) * 6);
+      r(fx, fy + 1, 1, 1, '#1e2a1a');
+      r(fx, fy, 1, 1, rng() < 0.2 ? '#f0e6cc' : c);
+    }
+  }
+  for (let k = 0; k < 2; k++) {
+    const x = (rng() * CH) | 0, y = (rng() * CH) | 0, rd = roadDist(X0 + x, Y0 + y);
+    if (!(rd < 5 || vnoise((X0 + x) / 40, (Y0 + y) / 40, 34) > 0.76) || nearRail(X0 + x, Y0 + y, 20) || rng() < 0.4) continue;
+    const p = PUDDLE[(rng() * PUDDLE.length) | 0];
+    g.drawImage(p, x - (p.width >> 1), y - (p.height >> 1));
+  }
+  for (let k = 0; k < 6; k++) {
+    const x = (rng() * CH) | 0, y = (rng() * CH) | 0;
+    if (nearRail(X0 + x, Y0 + y, 16) || fieldAt(X0 + x, Y0 + y) > 0.62) continue;
+    r(x, y, 2, 1, '#5a5850'); r(x, y, 1, 1, '#8c8a80'); r(x, y + 1, 2, 1, '#1d1b18');
+  }
   // cast shadows of everything standing here or nearby, and the flat things themselves
   for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
     const pn = plan(ci + di, cj + dj);
+    // a soft dark ring of shade under each tree's crown, then the cast shadows
+    g.globalAlpha = 0.3;
+    for (const p of pn.props) if (p.d.tree) { const s = softShadow(p.d.spr.width); g.drawImage(s, p.x - (s.width >> 1) - X0 + 2, p.y - (s.height >> 1) - Y0 + 1); }
     g.globalAlpha = 0.42;
     for (const p of pn.props) g.drawImage(p.d.sh, p.x - p.d.ax - X0, p.y - 1 - Y0);
     for (const f of pn.flats) g.drawImage(f.d.sh, f.x - f.d.ax - X0, f.y - 1 - Y0);
@@ -310,4 +359,40 @@ function blockersNear(x, y, out) {
     for (let k = 0; k < b.length; k += 3) if (Math.abs(b[k] - x) < 16 && Math.abs(b[k + 1] - y) < 16) out.push(b[k], b[k + 1], b[k + 2]);
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ ground details */
+// wild flower colours: white, yellow, purple, poppy red
+const FLOWERS = ['#e8e2cc', '#e3c04b', '#a87ab8', '#c8432e'];
+// PUDDLE: a few puddles of rain water: muddy rim, dark water, the sky caught along the far edge
+const PUDDLE = [];
+(function () {
+  for (const [w, h, sd] of [[9, 4, 1], [13, 5, 2], [7, 3, 3], [16, 6, 4]]) {
+    const rg = mulberry(sd * 31);
+    const [c, g] = mk(w + 2, h + 2);
+    for (let y = 0; y < h + 2; y++) for (let x = 0; x < w + 2; x++) {
+      const dx = (x - (w + 1) / 2) / (w / 2 + 1), dy = (y - (h + 1) / 2) / (h / 2 + 1), d = dx * dx + dy * dy + (rg() - 0.5) * 0.25;
+      if (d > 1) continue;
+      g.fillStyle = d > 0.62 ? '#231d18' : dy < -0.25 ? (d > 0.3 ? '#6f8aa6' : '#4a6078') : d < 0.25 ? '#1c2630' : '#26323c';
+      g.fillRect(x, y, 1, 1);
+    }
+    PUDDLE.push(c);
+  }
+})();
+// A soft round shade w px across (dithered toward its edge), for under the trees.
+const SOFT = new Map();
+function softShadow(w) {
+  w = Math.max(6, Math.round(w * 0.9));
+  let c = SOFT.get(w);
+  if (!c) {
+    const h = Math.max(3, Math.round(w * 0.5));
+    c = pix(w, h, (r) => {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const d = Math.hypot((x + 0.5) / w * 2 - 1, (y + 0.5) / h * 2 - 1);
+        if (d < 1 && (1 - d) * 1.6 > bayer(x, y)) r(x, y, 1, 1, '#000');
+      }
+    });
+    SOFT.set(w, c);
+  }
+  return c;
 }

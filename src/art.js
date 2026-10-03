@@ -309,12 +309,28 @@ function light(x, y, rad, col, a) {
   ctx.globalAlpha = clamp(a == null ? 1 : a, 0, 1);
   blit(glow(col), Math.round(x - rad), Math.round(y - rad), Math.round(rad * 2), Math.round(rad * 2));
 }
-// Filled pixel circle.
+// Filled pixel circle. From radius 3 up it is drawn once into a small canvas (kept per colour and
+// radius) and copied from there: a blast or a cloud of smoke is many of them every frame.
+const PCIRC = new Map();
 function pcirc(x, y, r, col) {
   if (r < 0.5) return;
-  ctx.fillStyle = col;
   x = Math.round(x); y = Math.round(y);
   const R = Math.round(r);
+  if (R >= 3 && R <= 24) {
+    const key = col + R;
+    let c = PCIRC.get(key);
+    if (!c) {
+      if (PCIRC.size > 600) PCIRC.clear();
+      let g;
+      [c, g] = mk(R * 2 + 1, R * 2 + 1);
+      g.fillStyle = col;
+      for (let dy = -R; dy <= R; dy++) { const w = Math.floor(Math.sqrt(R * R - dy * dy + R * 0.5)); g.fillRect(R - w, R + dy, w * 2 + 1, 1); }
+      PCIRC.set(key, c);
+    }
+    ctx.drawImage(c, x - R, y - R);
+    return;
+  }
+  ctx.fillStyle = col;
   for (let dy = -R; dy <= R; dy++) {
     const w = Math.floor(Math.sqrt(R * R - dy * dy + R * 0.5));
     ctx.fillRect(x - w, y + dy, w * 2 + 1, 1);

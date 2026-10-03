@@ -49,21 +49,21 @@ function bakeOverlays() {
   [VIG, g] = mk(W, H);
   gr = g.createRadialGradient(W * 0.5, H * 0.46, H * 0.3, W * 0.5, H * 0.5, Math.max(W, H) * 0.62);
   gr.addColorStop(0, 'rgba(0,0,0,0)');
-  gr.addColorStop(1, 'rgba(0,0,0,0.6)');
+  gr.addColorStop(1, 'rgba(0,0,0,0.66)');
   g.fillStyle = gr;
   g.fillRect(0, 0, W, H);
-  // warm top left to cool bottom right
+  // warm top left (the low sun) to cool, moody shade bottom right
   [GRADE, g] = mk(W, H);
   gr = g.createLinearGradient(0, 0, W, H);
-  gr.addColorStop(0, 'rgba(255,186,120,1)');
-  gr.addColorStop(0.45, 'rgba(128,128,128,1)');
-  gr.addColorStop(1, 'rgba(70,96,150,1)');
+  gr.addColorStop(0, 'rgba(255,176,104,1)');
+  gr.addColorStop(0.45, 'rgba(136,126,116,1)');
+  gr.addColorStop(1, 'rgba(62,84,140,1)');
   g.fillStyle = gr;
   g.fillRect(0, 0, W, H);
   // warm sun haze from above the top edge
   [HAZE, g] = mk(W, H);
   gr = g.createRadialGradient(W * 0.47, -60, 10, W * 0.47, -60, Math.max(330, W * 0.52));
-  gr.addColorStop(0, 'rgba(255,196,130,0.16)');
+  gr.addColorStop(0, 'rgba(255,192,124,0.2)');
   gr.addColorStop(1, 'rgba(255,196,130,0)');
   g.fillStyle = gr;
   g.fillRect(0, 0, W, H);
@@ -125,7 +125,7 @@ function gather(ci0, cj0, ci1, cj1) {
 
 // ---------- pieces
 function zImg(z) {
-  const fr = z.S.walk[(z.anim | 0) & 1];
+  const fr = z.S.walk[(z.anim | 0) & 3];
   if (z.flash > 0) return z.left ? fr.wf : fr.w;
   if (thermal) return z.left ? fr.hf : fr.h;
   return z.left ? fr.nf : fr.n;
@@ -148,6 +148,7 @@ function drawZombie(z) {
 // survivors ride on the flatcar, standing on its deck; with the flatcar gun, it stands at the front
 // and two of them stay at the back. While the Turbo Ram runs the engine glows orange.
 function drawCar(i) {
+  if (i) drawCoupler(i);
   const t = TRAIN[i], c = G.tr.cars[i], a = angIdx(c.ang);
   const img = thermal ? t.h[a] : G.tr.hit[i] > 0 ? carRed(t, a) : t.n[a], x0 = Math.round(c.cx) - img.ox, y0 = Math.round(c.cy) - img.oy;
   blit(img, x0, y0);
@@ -197,8 +198,8 @@ function drawGunRound(r) {
 // The train's shadow: each car's footprint, moved away from the sun by its height.
 function drawTrainShadow() {
   for (let i = 0; i < CAR.n; i++) {
-    const c = G.tr.cars[i], h = TRAIN[i].tall;
-    blit(FOOT[angIdx(c.ang)], Math.round(c.cx + h * SUNX) - 18, Math.round(c.cy + h * SUNY) - 18);
+    const c = G.tr.cars[i];
+    blit(TRAIN[i].foot[angIdx(c.ang)], Math.round(c.cx) - 18, Math.round(c.cy) - 18);
   }
 }
 // A survivor on foot: waiting by the station house, running for the train (a green marker over
@@ -258,9 +259,10 @@ function drawBodies() {
     const S = b.S;
     if (b.fall) {
       if (b.age < 0.07) blit(S.walk[0].w, Math.round(b.x - S.ax), Math.round(b.y - S.ay - b.z));
+      else if (b.age < 0.16 && !thermal) blit(S.tilt, Math.round(b.x - S.tilt.width / 2), Math.round(b.y - S.tilt.height * 0.7 - b.z));
       else blit(thermal ? S.deadH : S.dead, Math.round(b.x - S.dax), Math.round(b.y - S.day - b.z));
     } else {
-      const img = (thermal ? S.spinH : S.spin)[mod(Math.round(b.rot / (TAU / 4)), 4)];
+      const n = S.spin.length, img = (thermal ? S.spinH : S.spin)[mod(Math.round(b.rot / (TAU / n)), n)];
       blit(img, Math.round(b.x - img.width / 2), Math.round(b.y - b.z - 5 - img.height / 2));
     }
   }
@@ -385,11 +387,12 @@ function render() {
     ctx.fillRect(G.camX - 8, G.camY - 8, W + 16, H + 16);
   }
   drawTufts(ci0, cj0, ci1, cj1);
+  drawGroundLife();
   drawShellMarks();
   // shadows of the dead, and of bodies in the air
   ctx.globalAlpha = thermal ? 0.2 : 0.32;
   for (const z of VZ) {
-    const S = z.S, fr = S.walk[(z.anim | 0) & 1];
+    const S = z.S, fr = S.walk[(z.anim | 0) & 3];
     blit(z.left ? fr.sf : fr.s, Math.round(z.x - S.ax), Math.round(z.y - 1 - S.shp));
   }
   drawTrainShadow();
@@ -441,6 +444,7 @@ function render() {
   drawParts(false);
   drawBooms();
   drawBodies();
+  drawJuice();
   // glows (added light)
   ctx.globalCompositeOperation = 'lighter';
   drawLights();
@@ -471,8 +475,10 @@ function render() {
   drawRounds();
   drawZaps();
   drawTowerFx();
+  drawJuiceTop();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
+  drawSky();
   if (!thermal) {
     drawMist();
     drawClouds();
