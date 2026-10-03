@@ -4808,7 +4808,6 @@ const STOP_OFF = CAR.L + CAR.gap + CAR.L / 2;
 // Stop km is the engine nose's rail position; the house/platform sits STOP_OFF behind it.
 function stopRailS(def) { return sAtKm(def.km); }
 function stopHouseS(def) { return stopRailS(def) + STOP_OFF; }
-const stopDef = (id) => (id === 'depot' ? DEPOT : STATIONS.find((d) => d.id === id) || null);
 
 // Scenery coordinates around a stop -> the world. The rails lie between columns 6 and 7, and the
 // house lies beside rows 3 and 4. dressStop() also uses these positions for its props.
@@ -7713,7 +7712,9 @@ function drawTension() {
 // titleAsk = NEW GAME was clicked: the title asks before it wipes the save
 let titleAsk = false;
 function titleGo() {
-  if (!titleAsk) toDepot('tree');
+  if (titleAsk) return;
+  if (hasProgress()) toDepot('tree');
+  else startGame(1);
 }
 function drawTitle() {
   ctx.fillStyle = 'rgba(5,6,8,0.35)';
@@ -7729,7 +7730,7 @@ function drawTitle() {
   ctx.fillStyle = '#8a6a2a';
   ctx.fillRect(cx - 110, py + 46, 220, 1);
   text('FLY ESCORT FOR THE LAST TRAIN.', cx, py + 54, U.dim, { align: 'center' });
-  text('EVERY RUN PAYS. GET A LITTLE FURTHER EACH TIME.', cx, py + 64, U.dim, { align: 'center' });
+  text('EVERY LEG PAYS. REACH THE NEXT STATION.', cx, py + 64, U.dim, { align: 'center' });
   let y = py + 82;
   if (ask) {
     // NEW GAME: ask first
@@ -7738,7 +7739,7 @@ function drawTitle() {
     if (button(cx - 122, y + 26, 120, 20, 'YES, START OVER', { danger: true })) {
       newSave();
       titleAsk = false;
-      toDepot('tree');
+      titleGo();
     }
     if (button(cx + 2, y + 26, 120, 20, 'NO, GO BACK')) titleAsk = false;
     y += 58;
@@ -7747,10 +7748,10 @@ function drawTitle() {
     if (button(cx - 75, y + 26, 150, 20, 'NEW GAME')) titleAsk = true;
     y += 52;
     // what you have so far
-    const best = 'BEST ' + SAVE.best.toFixed(2) + ' KM', width = currencyLayout(SAVE, 0).end + tw(best);
+    const progress = SAVE.leg > 12 ? 'DEMO COMPLETE' : 'LEG ' + SAVE.leg + ' OF 12', width = currencyLayout(SAVE, 0).end + tw(progress);
     const counters = currencyLayout(SAVE, Math.round(cx - width / 2));
     drawCurrencyCounters(counters, y - 3, {}, false);
-    text(best, counters.end, y + 3, U.dim, { outline: false });
+    text(progress, counters.end, y + 3, U.dim, { outline: false });
     y += 20;
   } else {
     if (button(cx - 75, y, 150, 20, 'PLAY', { primary: true })) titleGo();
@@ -7880,9 +7881,8 @@ function drawUI() {
 }
 
 // depot.js - the save, and the Depot: the screen between runs. SAVE is everything kept from run to
-// run, one object in this browser's storage. The Depot screen has a top bar (your scrap and
-// survivors and gold as they are revealed, the SKILL TREE tab, your best km), the tree panel, and a bottom bar
-// (where the next run starts, and START RUN). The title demo keeps running behind it, dimmed.
+// run, one object in this browser's storage. The Depot shows revealed money, the station line,
+// the skill tree, and a button to ride the next leg or replay an old one for scrap.
 
 // ---------- the save
 const SAVE_KEY = 'sky-reaper-save-1', SAVE_V = 2;
@@ -7890,16 +7890,11 @@ const SAVE_KEY = 'sky-reaper-save-1', SAVE_V = 2;
 // legs keeps wins, three stars and paid gold item ids by leg. rescues are lifted survivors;
 // rescueDue are missed survivors waiting to wave again. chest = none/locked/opened (0/1/2).
 // hangar holds the two plane slot ids, or null for an empty slot. nodes = skill tree levels by id.
-// The old route fields stay until the leg route replaces every reader. towers, house = what is
-// built at each station, and the survivors waiting in each station house. reached = stations the
-// train has stopped at (a run can start there), held = stations held at least once. best = the
-// furthest km. runs = runs started. start = where the next run starts. seen = tutorial prompts
-// already shown. flags = one-off things done.
+// runs = rides started. seen = tutorial prompts already shown. flags = one-off things done.
 function freshSave() {
   return {
     v: SAVE_V, scrap: 0, surv: 0, gold: 0, leg: 1, legs: {}, rescues: [], rescueDue: [], chest: 0,
-    hangar: [null, null], nodes: {}, towers: {}, house: {}, reached: [], held: [], best: 0, runs: 0,
-    start: 'depot', seen: {}, flags: {}
+    hangar: [null, null], nodes: {}, runs: 0, seen: {}, flags: {}
   };
 }
 let SAVE = freshSave();
@@ -7913,7 +7908,6 @@ function loadSave() {
     o = null;
   }
   if (!o || typeof o !== 'object' || Array.isArray(o) || o.v !== SAVE_V) return false;
-  const num = (v) => (typeof v === 'number' && isFinite(v) && v > 0 ? v : 0);
   const obj = (m) => (m && typeof m === 'object' && !Array.isArray(m) ? m : {});
   const integer = (v, min, max, fallback) => typeof v === 'number' && isFinite(v) ? clamp(Math.floor(v), min, max) : fallback;
   const money = (v) => integer(v, 0, Number.MAX_SAFE_INTEGER, 0);
@@ -7926,7 +7920,6 @@ function loadSave() {
     return map;
   };
   const rescueIds = (a) => Array.isArray(a) ? [...new Set(a.filter((id) => typeof id === 'string' && id.length > 0))] : [];
-  const ids = (a) => (Array.isArray(a) ? a.filter((id, i) => STATIONS.some((d) => d.id === id) && a.indexOf(id) === i) : []);
   SAVE.scrap = money(o.scrap);
   SAVE.surv = money(o.surv);
   SAVE.gold = money(o.gold);
@@ -7947,21 +7940,13 @@ function loadSave() {
     const id = planes[i];
     if (['a10', 'f4', 'b52'].includes(id) && !SAVE.hangar.includes(id)) SAVE.hangar[i] = id;
   }
-  SAVE.best = num(o.best);
   SAVE.runs = money(o.runs);
-  SAVE.reached = ids(o.reached);
-  SAVE.held = ids(o.held);
-  // a station held is a station reached
-  for (const id of SAVE.held) if (!SAVE.reached.includes(id)) SAVE.reached.push(id);
-  SAVE.start = typeof o.start === 'string' && stopDef(o.start) ? o.start : 'depot';
   // skill tree levels: known nodes only, never above their top level
   for (const [k, v] of Object.entries(obj(o.nodes))) {
     if (!Object.prototype.hasOwnProperty.call(NODE, k)) continue;
     const l = integer(v, 0, maxLv(NODE[k]), 0);
     if (l) SAVE.nodes[k] = l;
   }
-  SAVE.towers = obj(o.towers);
-  SAVE.house = obj(o.house);
   SAVE.seen = boolMap(o.seen);
   SAVE.flags = boolMap(o.flags);
   return true;
@@ -7974,6 +7959,8 @@ function saveSave() {
 // Wipe everything and start over.
 function newSave() {
   SAVE = freshSave();
+  depotLeg = 1;
+  depotLoss = '';
   saveSave();
   resetTree();
 }
@@ -7984,24 +7971,14 @@ const hasProgress = () => SAVE.runs > 0 || SAVE.scrap > 0 || SAVE.surv > 0 || SA
   SAVE.rescues.length > 0 || SAVE.rescueDue.length > 0 || SAVE.chest > 0 || SAVE.hangar.some(Boolean);
 // the level of skill tree node id (0 = not bought)
 const lv = (id) => SAVE.nodes[id] | 0;
-// The starts on offer: the Depot, then every station reached, up the line.
-function startsOpen() {
-  return ['depot'].concat(STATIONS.filter((d) => SAVE.reached.includes(d.id)).map((d) => d.id));
-}
-function pickStart(dir) {
-  const list = startsOpen(), i = Math.max(0, list.indexOf(SAVE.start));
-  if (list.length < 2) return;
-  SAVE.start = list[mod(i + dir, list.length)];
-  saveSave();
-  SFX.ui();
-}
-
 // ---------- the Depot screen
-// depotTab = the open tab: only 'tree' for now.
-let depotTab = 'tree';
+// Selection and the last loss belong to this screen, not to the saved furthest leg.
+let depotTab = 'tree', depotLeg = 1, depotLoss = '';
 // Go to the Depot (from the title the demo behind it goes on; after a run a new one starts).
 function toDepot(tab) {
+  if (G && !G.demo) depotLoss = G.result === 'lost' ? 'THE TRAIN BROKE. YOU KEEP ' + fmt(Math.floor(G.cash)) + ' SCRAP.' : '';
   if (!G || !G.demo) newGame(true);
+  depotLeg = Math.min(SAVE.leg, 12);
   mode = 'depot';
   paused = false;
   SHOWN.scrap = SHOWN.surv = SHOWN.gold = -1;
@@ -8011,22 +7988,24 @@ function toDepot(tab) {
 function setTab() {
   depotTab = 'tree';
 }
-// Keys on the Depot screen: ENTER starts, left / right pick the start, ESC goes back to the title.
+// Keys on the Depot screen: ENTER rides the selection, ESC goes back to the title.
 // TAB does nothing while there is only one panel.
 function depotKey(k) {
   if (treeKey(k)) return;
-  if (k === 'Enter') startGame(SAVE.start);
-  else if (k === 'ArrowLeft') pickStart(-1);
-  else if (k === 'ArrowRight') pickStart(1);
+  if (k === 'Enter') {
+    const state = depotRouteState();
+    startGame(state.selected, state.replay);
+  }
   else if (k === 'Escape') toTitle();
 }
 function drawDepot() {
   // the demo behind, dimmed
   ctx.fillStyle = 'rgba(5,6,8,0.62)';
   ctx.fillRect(0, 0, W, H);
-  const y0 = 19, y1 = H - 29;
+  const y0 = 63, y1 = H - 45;
   drawTreeTab(y0, y1);
   drawDepotTop();
+  drawDepotRoute();
   drawDepotBottom();
   drawTutTags();
   drawBanners();
@@ -8104,52 +8083,101 @@ function drawDepotTop() {
   // the tree tab in the middle
   const tw0 = narrow ? 66 : 84, tx = Math.max(counters.end + 4, Math.round((W - tw0) / 2));
   if (depotTabBtn(tx, tw0, narrow ? 'TREE' : 'SKILL TREE', depotTab === 'tree', false, false)) setTab('tree');
-  // the best run
-  const b = SAVE.best.toFixed(2) + ' KM', bw = tw(b);
-  if (W - bw - 6 > tx + tw0 + 8) {
-    text(b, W - 6, 6, SAVE.best > 0 ? U.ink : U.faint, { align: 'right' });
-    if (!narrow) text('BEST', W - 12 - bw, 6, U.dim, { align: 'right' });
-    tipAt(W - bw - 40, 0, bw + 40, 18, [['YOUR BEST RUN', U.ink], ['THE FURTHEST THE TRAIN HAS GOT,', U.dim], ['IN KM FROM THE DEPOT.', U.dim]]);
+}
+// A compact line of thirteen stops; each leg's midpoint is its click target.
+function depotRouteState() {
+  const current = Math.min(SAVE.leg, 12), pad = W < 500 ? 18 : 28, step = (W - pad * 2) / 12;
+  if (!legDef(depotLeg) || depotLeg !== current && !SAVE.legs[depotLeg]?.won) depotLeg = current;
+  const replay = !!SAVE.legs[depotLeg]?.won;
+  return {
+    selected: depotLeg, replay,
+    startLabel: replay ? 'REPLAY: SCRAP ONLY' : 'RIDE TO ' + legDef(depotLeg).to.name,
+    loss: depotLoss,
+    legs: LEGS.map((l) => ({ n: l.n, x: Math.round(pad + (l.n - 0.5) * step), y: 43,
+      won: !!SAVE.legs[l.n]?.won, selectable: l.n === current || !!SAVE.legs[l.n]?.won }))
+  };
+}
+function depotStartRect() {
+  const w = Math.min(W - 12, Math.max(122, tw(depotRouteState().startLabel) + 22));
+  return { x: W - w - 6, y: H - 26, w, h: 22 };
+}
+function drawDepotRoute() {
+  const state = depotRouteState(), pad = W < 500 ? 18 : 28, step = (W - pad * 2) / 12;
+  const stopX = (n) => Math.round(pad + n * step), current = Math.min(SAVE.leg, 12);
+  ctx.fillStyle = '#0b0e14';
+  ctx.fillRect(0, 19, W, 44);
+  ctx.fillStyle = '#24272e';
+  ctx.fillRect(0, 62, W, 1);
+  text('LEG ' + state.selected + ': ' + legDef(state.selected).to.name, 8, 24, U.ink);
+  text(state.replay ? 'SCRAP ONLY' : SAVE.leg > 12 ? 'DEMO COMPLETE' : 'NEXT STATION', W - 8, 24, state.replay ? U.blue : U.dim, { align: 'right' });
+  for (const leg of state.legs) {
+    const x0 = stopX(leg.n - 1), x1 = stopX(leg.n), chosen = leg.n === state.selected;
+    const color = chosen ? U.gold : leg.n === current ? U.amber : leg.won ? U.blue : U.faint;
+    if (chosen) {
+      ctx.fillStyle = '#242014';
+      ctx.fillRect(x0 + 3, 33, x1 - x0 - 6, 26);
+    }
+    ctx.fillStyle = color;
+    ctx.fillRect(x0 + 4, 43, x1 - x0 - 8, 1);
+    text(leg.n, leg.x, 34, color, { align: 'center', outline: false });
+    if (leg.won && leg.n >= 3) {
+      const stars = SAVE.legs[leg.n].stars, sw = ICON.star.width, sx = leg.x - Math.floor((sw * 3 + 2) / 2);
+      for (let i = 0; i < 3; i++) {
+        ctx.globalAlpha = stars[i] ? 1 : 0.2;
+        blit(ICON.star, sx + i * (sw + 1), 51);
+      }
+      ctx.globalAlpha = 1;
+    }
+    const hover = M.inside && (inR(M.x, M.y, x0 + 3, 32, x1 - x0 - 6, 27) || inR(M.x, M.y, x1 - 5, 36, 10, 13));
+    if (leg.selectable && hover) cursor = 'pointer';
+    if (leg.selectable && (clicked(x0 + 3, 32, x1 - x0 - 6, 27) || clicked(x1 - 5, 36, 10, 13))) depotLeg = leg.n;
+    tipAt(x0 + 3, 32, x1 - x0 - 6, 27, [['LEG ' + leg.n + ': ' + legDef(leg.n).to.name, color],
+      [leg.won ? 'REPLAY: SCRAP ONLY.' : leg.selectable ? 'RIDE TO THE NEXT STATION.' : 'REACH THE PREVIOUS STATION FIRST.', U.dim]]);
+  }
+  for (let n = 0; n < STOPS.length; n++) {
+    const d = STOPS[n], x = stopX(n), reached = n === 0 || !!SAVE.legs[n]?.won, color = reached ? U.blue : U.faint;
+    if (d.kind === 'end') {
+      ctx.globalAlpha = reached ? 1 : 0.45;
+      blit(ICON.flag, x - 3, 37);
+      ctx.globalAlpha = 1;
+    } else if (d.kind === 'big') {
+      frame(x - 3, 40, 7, 7, '#07080a');
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 2, 41, 5, 5);
+      ctx.fillStyle = '#0b0e14';
+      ctx.fillRect(x - 1, 42, 3, 3);
+    } else {
+      ctx.fillStyle = '#07080a';
+      ctx.fillRect(x - 3, 42, 7, 3);
+      ctx.fillRect(x - 1, 40, 3, 7);
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 2, 43, 5, 1);
+      ctx.fillRect(x, 41, 1, 5);
+    }
+    tipAt(x - 5, 38, 10, 11, [[d.name, color], [n === 0 ? 'DEPARTURE DEPOT' : d.kind === 'big' ? 'SURVIVOR CAMP' : d.kind === 'small' ? 'GOLD STOP' : 'END OF THE DEMO', U.dim]]);
   }
 }
-// What the bottom bar says between the start picker and START RUN.
+// The bottom row gives context without covering the ride button.
 function depotHint() {
+  if (depotRouteState().replay) return ['SCRAP ONLY: NO GOLD OR SURVIVORS.', U.blue];
   const tut = tutHint();
   if (tut) return tut;
   const th = treeHint();
   if (th) return th;
-  return ['ENTER: START RUN.', U.faint];
+  return ['ENTER: RIDE TO THE NEXT STATION.', U.faint];
 }
 function drawDepotBottom() {
-  const y = H - 28;
+  const y = H - 44, state = depotRouteState(), leg = legDef(state.selected), start = depotStartRect();
   ctx.fillStyle = 'rgba(6,7,9,0.94)';
-  ctx.fillRect(0, y, W, 28);
+  ctx.fillRect(0, y, W, 44);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, y, W, 1);
-  // START FROM [<] DEPOT 0.0 KM [>]
-  const list = startsOpen(), d = stopDef(list[Math.max(0, list.indexOf(SAVE.start))]), many = list.length > 1;
-  let x = 8;
-  if (W >= 420) {
-    text('START FROM', x, y + 11, U.dim);
-    x += tw('START FROM') + 6;
-  }
-  if (button(x, y + 6, 15, 16, '<', { off: !many })) pickStart(-1);
-  x += 17;
-  const nw = 104;
-  panel(x, y + 6, nw, 16, '#0b0c0f');
-  const name = d.name, km = d.km.toFixed(1) + ' KM', w2 = tw(name) + 6 + tw(km), nx = Math.round(x + nw / 2 - w2 / 2);
-  text(name, nx, y + 11, U.ink);
-  text(km, nx + tw(name) + 6, y + 11, U.dim);
-  tipAt(x, y + 6, nw, 16, many ? [['START FROM', U.ink], ['LEFT / RIGHT: PICK WHERE THE RUN STARTS.', U.dim]]
-    : [['START FROM', U.ink], ['REACH A STATION TO START RUNS THERE.', U.dim]]);
-  x += nw + 2;
-  if (button(x, y + 6, 15, 16, '>', { off: !many })) pickStart(1);
-  x += 15;
-  // START RUN, and the hint between
-  const bw = 100, bx = W - bw - 6;
-  if (button(bx, y + 4, bw, 20, 'START RUN', { primary: true })) startGame(SAVE.start);
+  const message = state.loss || (SAVE.leg > 12 ? 'DEMO COMPLETE. PICK AN OLD LEG TO REPLAY FOR SCRAP.'
+    : 'LEG ' + leg.n + ': ' + leg.from.name + ' TO ' + leg.to.name);
+  text(message, 8, y + 6, state.loss ? U.red : U.dim);
+  if (button(start.x, start.y, start.w, start.h, state.startLabel, { primary: true })) startGame(state.selected, state.replay);
   const [hint, hc] = depotHint(), hw = tw(hint);
-  if (hw < bx - x - 16) text(hint, Math.round((x + bx) / 2), y + 11, hc, { align: 'center' });
+  text(hw < start.x - 16 ? hint : state.replay ? 'REPLAY: SCRAP ONLY' : 'ENTER: START', 8, start.y + 8, hw < start.x - 16 ? hc : U.faint);
 }
 // The SKILL TREE tab is drawn by drawTreeTab in tree.js.
 
@@ -9877,7 +9905,7 @@ function boot() {
     bot: (on) => { G.bot = !!on; if (!on) G.trigger = false; },
     pause: (p) => setPaused(!!p),
     hold: (h) => { hold = !!h; },
-    // the save: give(scrap, surv, gold) adds money, reach(id, held) marks a station reached (and held),
+    // the save: give(scrap, surv, gold) adds money,
     // save() is a copy of it, load() reads it again from storage, reset() wipes it (to the title)
     give: (scrap, surv, gold) => {
       for (const [key, value] of [['scrap', scrap], ['surv', surv], ['gold', gold]]) {
@@ -9886,12 +9914,6 @@ function boot() {
       }
       saveSave();
       return { scrap: SAVE.scrap, surv: SAVE.surv, gold: SAVE.gold };
-    },
-    reach: (id, held) => {
-      if (!STATIONS.some((d) => d.id === id)) return;
-      if (!SAVE.reached.includes(id)) SAVE.reached.push(id);
-      if (held && !SAVE.held.includes(id)) SAVE.held.push(id);
-      saveSave();
     },
     // the skill tree: node(id, l) sets a level (no price), buy(id) buys one level as a click does
     // (true when bought), nodeAt(id) = where the node is on screen with the tree tab open,
@@ -9952,7 +9974,7 @@ function boot() {
     },
     stats: () => ({
       mode, result: G.result, km: G.demo ? 0 : +DK().toFixed(3), kills: G.kills, cash: Math.floor(G.cash), runSurv: G.surv,
-      scrap: SAVE.scrap, survivors: SAVE.surv, best: SAVE.best, runs: SAVE.runs,
+      scrap: SAVE.scrap, survivors: SAVE.surv, gold: SAVE.gold, leg: G.leg, runs: SAVE.runs,
       pay: Object.assign({}, G.pay), hp: Math.round(G.tr.hp), max: G.tr.max, speed: +G.tr.v.toFixed(1),
       onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length, up: Object.assign({}, G.up),
       shots: G.shots, scavPaid: G.scavPaid, overheat: G.overheat, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),
@@ -10072,7 +10094,7 @@ function rollLoot() {
   const rng = mulberry(hash32(SAVE.runs * 7919 + 101)), k0 = kmAt(G.tr.startS), k1 = kmAt(G.goalS), c = LOOT.pile;
   const gate = (k) => k > k0 && k < k1;
   if (!SAVE.flags.gold && gate(LOOT.gold.km)) addFind('gold', LOOT.gold.km, LOOT.gold.off, LOOT.gold.side, LOOT.gold.pay);
-  if (SAVE.held.includes('farm') && !SAVE.flags.sos && gate(LOOT.sos.km)) addFind('sos', LOOT.sos.km, LOOT.sos.off, LOOT.sos.side, 0);
+  if (!SAVE.flags.sos && gate(LOOT.sos.km)) addFind('sos', LOOT.sos.km, LOOT.sos.off, LOOT.sos.side, 0);
   const stops = [0].concat(STATIONS.map((d) => d.km)), fixed = G.loot.slice();
   for (let i = Math.floor(k0 * CFG.line.km / c.every) + 1; i * c.every < k1 * CFG.line.km; i++) {
     const k = i * c.every / CFG.line.km, side = rng() < 0.5 ? -1 : 1, px = Math.round(lerp(c.near, c.far, rng())), on = rng() < c.fill;
@@ -10716,7 +10738,7 @@ function drawTipLine() {
   const t = TUT.tip;
   if (!t) return;
   const L = wrap(t.msg, W - 36), w = Math.max(...L.map((l) => tw(l))), p = t.at && t.at();
-  const y = (mode === 'depot' ? H - 48 : cardsTop() - 22) - (L.length - 1) * 10;
+  const y = (mode === 'depot' ? H - 60 : cardsTop() - 22) - (L.length - 1) * 10;
   const col = t.cur === 'scrap' ? U.blue : t.cur === 'surv' ? U.amber : U.gold;
   const aw = p ? 12 : 0, x = Math.round(W / 2 - (w + aw) / 2);
   ctx.globalAlpha = t.t < 0.15 ? t.t / 0.15 : t.t > 3.6 ? (4 - t.t) / 0.4 : 1;
@@ -10758,7 +10780,7 @@ const nodeNamed = (name) => NODES.find((n) => n.name === name);
 function tutTag() {
   const tree = depotTab === 'tree';
   if (!lv('root')) return tree ? ['root', "CLICK THE TRAIN. IT'S FREE."] : null;
-  if (!SAVE.runs) return ['start', 'PRESS START RUN.'];
+  if (!SAVE.runs) return ['start', 'CHOOSE A LEG, THEN RIDE.'];
   const wi = NODE.winch;
   if (tree && wi && !lv('winch') && nodeState(wi) === 'buy') return ['winch', 'WINCH: SAVE SURVIVORS IN THE FIELD.'];
   return null;
@@ -10772,13 +10794,13 @@ function drawTutTags() {
   let x, y, ux, uy, ax, ay;
   if (id === 'start') {
     // over START RUN, which pulses
-    const bx = W - 106, by = H - 24;
+    const b = depotStartRect(), bx = b.x, by = b.y;
     ctx.globalAlpha = 0.5 + 0.5 * Math.sin(realT * 8);
-    frame(bx - 2, by - 2, 104, 24, '#ffd36a');
+    frame(bx - 2, by - 2, b.w + 4, b.h + 4, '#ffd36a');
     ctx.globalAlpha = 1;
-    x = clamp(bx + 50 - w / 2, 4, W - w - 4);
+    x = clamp(bx + b.w / 2 - w / 2, 4, W - w - 4);
     y = by - 12 - h + bob;
-    [ax, ay, ux, uy] = [bx + 50, y + h + 4, 0, 1];
+    [ax, ay, ux, uy] = [bx + b.w / 2, y + h + 4, 0, 1];
   } else {
     // beside the node: right, left, over or under it, on the side that covers the fewest other
     // nodes (and stays on the screen)
@@ -10786,7 +10808,7 @@ function drawTutTags() {
       [p.x + r, p.y - h / 2, -1, 0], [p.x - r - w, p.y - h / 2, 1, 0], [p.x - w / 2, p.y - r - h, 0, 1], [p.x - w / 2, p.y + r + 12, 0, -1]];
     let best = 1e9;
     for (const [sx, sy, dx, dy] of sides) {
-      let n = sx < 4 || sy < 22 || sx + w > W - 4 || sy + h > H - 32 ? 100 : 0;
+      let n = sx < 4 || sy < TREE.y0 + 3 || sx + w > W - 4 || sy + h > TREE.y1 - 3 ? 100 : 0;
       for (const o of NODES) {
         if (o.id === id || !shownAs(o)) continue;
         const q = nodeXY(o.id), a = halfOf(o) + 2;
@@ -10795,7 +10817,7 @@ function drawTutTags() {
       if (n < best) [best, x, y, ux, uy] = [n, sx, sy, dx, dy];
     }
     x += -ux * bob;
-    y = clamp(Math.round(y - uy * bob), 22, H - 32 - h);
+    y = clamp(Math.round(y - uy * bob), TREE.y0 + 3, TREE.y1 - 3 - h);
     ax = ux ? (ux < 0 ? x - 4 : x + w + 3) : p.x;
     ay = uy ? (uy < 0 ? y - 4 : y + h + 3) : p.y;
   }
@@ -11595,6 +11617,7 @@ Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assi
 
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  depotRoute: () => depotRouteState(),
   currencyState: () => ({ shown: { scrap: true, surv: !!SAVE.flags.survShown, gold: !!SAVE.flags.goldShown },
     x: { scrap: currencyX('scrap'), surv: currencyX('surv'), gold: currencyX('gold') }, chest: SAVE.chest, gold: SAVE.gold }),
   line: () => ({

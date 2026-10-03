@@ -365,7 +365,7 @@ function boot() {
     bot: (on) => { G.bot = !!on; if (!on) G.trigger = false; },
     pause: (p) => setPaused(!!p),
     hold: (h) => { hold = !!h; },
-    // the save: give(scrap, surv, gold) adds money, reach(id, held) marks a station reached (and held),
+    // the save: give(scrap, surv, gold) adds money,
     // save() is a copy of it, load() reads it again from storage, reset() wipes it (to the title)
     give: (scrap, surv, gold) => {
       for (const [key, value] of [['scrap', scrap], ['surv', surv], ['gold', gold]]) {
@@ -374,12 +374,6 @@ function boot() {
       }
       saveSave();
       return { scrap: SAVE.scrap, surv: SAVE.surv, gold: SAVE.gold };
-    },
-    reach: (id, held) => {
-      if (!STATIONS.some((d) => d.id === id)) return;
-      if (!SAVE.reached.includes(id)) SAVE.reached.push(id);
-      if (held && !SAVE.held.includes(id)) SAVE.held.push(id);
-      saveSave();
     },
     // the skill tree: node(id, l) sets a level (no price), buy(id) buys one level as a click does
     // (true when bought), nodeAt(id) = where the node is on screen with the tree tab open,
@@ -440,7 +434,7 @@ function boot() {
     },
     stats: () => ({
       mode, result: G.result, km: G.demo ? 0 : +DK().toFixed(3), kills: G.kills, cash: Math.floor(G.cash), runSurv: G.surv,
-      scrap: SAVE.scrap, survivors: SAVE.surv, best: SAVE.best, runs: SAVE.runs,
+      scrap: SAVE.scrap, survivors: SAVE.surv, gold: SAVE.gold, leg: G.leg, runs: SAVE.runs,
       pay: Object.assign({}, G.pay), hp: Math.round(G.tr.hp), max: G.tr.max, speed: +G.tr.v.toFixed(1),
       onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length, up: Object.assign({}, G.up),
       shots: G.shots, scavPaid: G.scavPaid, overheat: G.overheat, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),

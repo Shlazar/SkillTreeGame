@@ -394,7 +394,9 @@ function drawTension() {
 // titleAsk = NEW GAME was clicked: the title asks before it wipes the save
 let titleAsk = false;
 function titleGo() {
-  if (!titleAsk) toDepot('tree');
+  if (titleAsk) return;
+  if (hasProgress()) toDepot('tree');
+  else startGame(1);
 }
 function drawTitle() {
   ctx.fillStyle = 'rgba(5,6,8,0.35)';
@@ -410,7 +412,7 @@ function drawTitle() {
   ctx.fillStyle = '#8a6a2a';
   ctx.fillRect(cx - 110, py + 46, 220, 1);
   text('FLY ESCORT FOR THE LAST TRAIN.', cx, py + 54, U.dim, { align: 'center' });
-  text('EVERY RUN PAYS. GET A LITTLE FURTHER EACH TIME.', cx, py + 64, U.dim, { align: 'center' });
+  text('EVERY LEG PAYS. REACH THE NEXT STATION.', cx, py + 64, U.dim, { align: 'center' });
   let y = py + 82;
   if (ask) {
     // NEW GAME: ask first
@@ -419,7 +421,7 @@ function drawTitle() {
     if (button(cx - 122, y + 26, 120, 20, 'YES, START OVER', { danger: true })) {
       newSave();
       titleAsk = false;
-      toDepot('tree');
+      titleGo();
     }
     if (button(cx + 2, y + 26, 120, 20, 'NO, GO BACK')) titleAsk = false;
     y += 58;
@@ -428,10 +430,10 @@ function drawTitle() {
     if (button(cx - 75, y + 26, 150, 20, 'NEW GAME')) titleAsk = true;
     y += 52;
     // what you have so far
-    const best = 'BEST ' + SAVE.best.toFixed(2) + ' KM', width = currencyLayout(SAVE, 0).end + tw(best);
+    const progress = SAVE.leg > 12 ? 'DEMO COMPLETE' : 'LEG ' + SAVE.leg + ' OF 12', width = currencyLayout(SAVE, 0).end + tw(progress);
     const counters = currencyLayout(SAVE, Math.round(cx - width / 2));
     drawCurrencyCounters(counters, y - 3, {}, false);
-    text(best, counters.end, y + 3, U.dim, { outline: false });
+    text(progress, counters.end, y + 3, U.dim, { outline: false });
     y += 20;
   } else {
     if (button(cx - 75, y, 150, 20, 'PLAY', { primary: true })) titleGo();

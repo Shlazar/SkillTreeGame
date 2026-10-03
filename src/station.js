@@ -10,7 +10,6 @@ const STOP_OFF = CAR.L + CAR.gap + CAR.L / 2;
 // Stop km is the engine nose's rail position; the house/platform sits STOP_OFF behind it.
 function stopRailS(def) { return sAtKm(def.km); }
 function stopHouseS(def) { return stopRailS(def) + STOP_OFF; }
-const stopDef = (id) => (id === 'depot' ? DEPOT : STATIONS.find((d) => d.id === id) || null);
 
 // Scenery coordinates around a stop -> the world. The rails lie between columns 6 and 7, and the
 // house lies beside rows 3 and 4. dressStop() also uses these positions for its props.

@@ -97,7 +97,7 @@ function rollLoot() {
   const rng = mulberry(hash32(SAVE.runs * 7919 + 101)), k0 = kmAt(G.tr.startS), k1 = kmAt(G.goalS), c = LOOT.pile;
   const gate = (k) => k > k0 && k < k1;
   if (!SAVE.flags.gold && gate(LOOT.gold.km)) addFind('gold', LOOT.gold.km, LOOT.gold.off, LOOT.gold.side, LOOT.gold.pay);
-  if (SAVE.held.includes('farm') && !SAVE.flags.sos && gate(LOOT.sos.km)) addFind('sos', LOOT.sos.km, LOOT.sos.off, LOOT.sos.side, 0);
+  if (!SAVE.flags.sos && gate(LOOT.sos.km)) addFind('sos', LOOT.sos.km, LOOT.sos.off, LOOT.sos.side, 0);
   const stops = [0].concat(STATIONS.map((d) => d.km)), fixed = G.loot.slice();
   for (let i = Math.floor(k0 * CFG.line.km / c.every) + 1; i * c.every < k1 * CFG.line.km; i++) {
     const k = i * c.every / CFG.line.km, side = rng() < 0.5 ? -1 : 1, px = Math.round(lerp(c.near, c.far, rng())), on = rng() < c.fill;

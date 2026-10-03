@@ -292,7 +292,7 @@ function drawTipLine() {
   const t = TUT.tip;
   if (!t) return;
   const L = wrap(t.msg, W - 36), w = Math.max(...L.map((l) => tw(l))), p = t.at && t.at();
-  const y = (mode === 'depot' ? H - 48 : cardsTop() - 22) - (L.length - 1) * 10;
+  const y = (mode === 'depot' ? H - 60 : cardsTop() - 22) - (L.length - 1) * 10;
   const col = t.cur === 'scrap' ? U.blue : t.cur === 'surv' ? U.amber : U.gold;
   const aw = p ? 12 : 0, x = Math.round(W / 2 - (w + aw) / 2);
   ctx.globalAlpha = t.t < 0.15 ? t.t / 0.15 : t.t > 3.6 ? (4 - t.t) / 0.4 : 1;
@@ -334,7 +334,7 @@ const nodeNamed = (name) => NODES.find((n) => n.name === name);
 function tutTag() {
   const tree = depotTab === 'tree';
   if (!lv('root')) return tree ? ['root', "CLICK THE TRAIN. IT'S FREE."] : null;
-  if (!SAVE.runs) return ['start', 'PRESS START RUN.'];
+  if (!SAVE.runs) return ['start', 'CHOOSE A LEG, THEN RIDE.'];
   const wi = NODE.winch;
   if (tree && wi && !lv('winch') && nodeState(wi) === 'buy') return ['winch', 'WINCH: SAVE SURVIVORS IN THE FIELD.'];
   return null;
@@ -348,13 +348,13 @@ function drawTutTags() {
   let x, y, ux, uy, ax, ay;
   if (id === 'start') {
     // over START RUN, which pulses
-    const bx = W - 106, by = H - 24;
+    const b = depotStartRect(), bx = b.x, by = b.y;
     ctx.globalAlpha = 0.5 + 0.5 * Math.sin(realT * 8);
-    frame(bx - 2, by - 2, 104, 24, '#ffd36a');
+    frame(bx - 2, by - 2, b.w + 4, b.h + 4, '#ffd36a');
     ctx.globalAlpha = 1;
-    x = clamp(bx + 50 - w / 2, 4, W - w - 4);
+    x = clamp(bx + b.w / 2 - w / 2, 4, W - w - 4);
     y = by - 12 - h + bob;
-    [ax, ay, ux, uy] = [bx + 50, y + h + 4, 0, 1];
+    [ax, ay, ux, uy] = [bx + b.w / 2, y + h + 4, 0, 1];
   } else {
     // beside the node: right, left, over or under it, on the side that covers the fewest other
     // nodes (and stays on the screen)
@@ -362,7 +362,7 @@ function drawTutTags() {
       [p.x + r, p.y - h / 2, -1, 0], [p.x - r - w, p.y - h / 2, 1, 0], [p.x - w / 2, p.y - r - h, 0, 1], [p.x - w / 2, p.y + r + 12, 0, -1]];
     let best = 1e9;
     for (const [sx, sy, dx, dy] of sides) {
-      let n = sx < 4 || sy < 22 || sx + w > W - 4 || sy + h > H - 32 ? 100 : 0;
+      let n = sx < 4 || sy < TREE.y0 + 3 || sx + w > W - 4 || sy + h > TREE.y1 - 3 ? 100 : 0;
       for (const o of NODES) {
         if (o.id === id || !shownAs(o)) continue;
         const q = nodeXY(o.id), a = halfOf(o) + 2;
@@ -371,7 +371,7 @@ function drawTutTags() {
       if (n < best) [best, x, y, ux, uy] = [n, sx, sy, dx, dy];
     }
     x += -ux * bob;
-    y = clamp(Math.round(y - uy * bob), 22, H - 32 - h);
+    y = clamp(Math.round(y - uy * bob), TREE.y0 + 3, TREE.y1 - 3 - h);
     ax = ux ? (ux < 0 ? x - 4 : x + w + 3) : p.x;
     ay = uy ? (uy < 0 ? y - 4 : y + h + 3) : p.y;
   }

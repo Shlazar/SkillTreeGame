@@ -1,4 +1,4 @@
-// Run mode: version 2 saves round-trip safely, preserve legacy fields and reject old/broken saves.
+// Run mode: version 2 saves round-trip safely, drop obsolete route fields and reject broken saves.
 const saveKey = 'sky-reaper-save-1';
 const same = (actual, expected, label) => {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -20,7 +20,7 @@ for (const [key, value] of Object.entries({gold: 0, leg: 1, legs: {}, rescues: [
   same(fresh[key], value, 'Fresh ' + key);
 }
 for (const key of ['reached', 'held', 'best', 'start', 'towers', 'house']) {
-  if (!Object.prototype.hasOwnProperty.call(fresh, key)) throw new Error('Legacy field missing: ' + key);
+  if (Object.prototype.hasOwnProperty.call(fresh, key)) throw new Error('Obsolete field remains: ' + key);
 }
 const give = __sr.give(10, 1, 5);
 same(give, {scrap: 10, surv: 1, gold: 5}, 'give return');
@@ -38,13 +38,7 @@ const fixture = {
   chest: 1,
   hangar: ['a10', 'f4'],
   flags: {survShown: true, goldShown: true, silverSeen: true, boomSeen: true, rocketShown: true},
-  nodes: {root: 1, hdmg: 2},
-  reached: ['farm'],
-  held: ['farm'],
-  best: 1.5,
-  start: 'farm',
-  towers: {farm: [{t: 'nest', c: 4, r: 4, paid: 0}]},
-  house: {farm: 3}
+  nodes: {root: 1, hdmg: 2}
 };
 Object.assign(__sr.SAVE, fixture);
 __sr.give(0, 0, 0);
@@ -54,9 +48,16 @@ for (const key of ['leg', 'legs', 'rescues', 'rescueDue', 'chest', 'hangar', 'fl
 }
 const loaded = reload(persisted);
 if (!loaded.found) throw new Error('Valid v2 save was rejected');
-for (const key of ['scrap', 'surv', 'gold', 'leg', 'legs', 'rescues', 'rescueDue', 'chest', 'hangar', 'flags', 'nodes', 'reached', 'held', 'best', 'start', 'towers', 'house']) {
+for (const key of ['scrap', 'surv', 'gold', 'leg', 'legs', 'rescues', 'rescueDue', 'chest', 'hangar', 'flags', 'nodes']) {
   same(loaded.save[key], fixture[key], 'Round-trip ' + key);
 }
+const legacyV2 = reload({...persisted, reached: ['millbrook'], held: ['millbrook'], best: 5,
+  start: 'millbrook', towers: {millbrook: []}, house: {millbrook: 3}});
+if (!legacyV2.found) throw new Error('v2 with obsolete fields should still load');
+for (const key of ['reached', 'held', 'best', 'start', 'towers', 'house']) {
+  if (Object.prototype.hasOwnProperty.call(legacyV2.save, key)) throw new Error('Loaded obsolete field: ' + key);
+}
+same(legacyV2.save.leg, 5, 'Obsolete fields do not replace current leg');
 
 const malformed = reload({
   ...fresh,
@@ -83,11 +84,9 @@ same(malformed.save.rescueDue, [], 'Malformed pending rescues');
 same(malformed.save.hangar, ['b52', null], 'Hangar size, ids and duplicates');
 same(malformed.save.flags.survShown, true, 'Valid flag');
 if ('goldShown' in malformed.save.flags || 'rocketShown' in malformed.save.flags) throw new Error('Non-boolean flags survived');
-same(malformed.save.reached, [], 'Malformed reached');
-same(malformed.save.held, [], 'Malformed held');
-same(malformed.save.start, 'depot', 'Malformed start');
-same(malformed.save.towers, {}, 'Malformed towers');
-same(malformed.save.house, {}, 'Malformed houses');
+for (const key of ['reached', 'held', 'best', 'start', 'towers', 'house']) {
+  if (Object.prototype.hasOwnProperty.call(malformed.save, key)) throw new Error('Malformed legacy field survived: ' + key);
+}
 
 const resetCases = [];
 for (const [name, value, raw] of [
@@ -100,7 +99,7 @@ for (const [name, value, raw] of [
   const result = reload(value, raw);
   if (result.found) throw new Error(name + ' should not load as v2');
   same(result.save.v, 2, name + ' fresh version');
-  for (const key of ['scrap', 'surv', 'gold', 'leg', 'legs', 'rescues', 'rescueDue', 'chest', 'hangar', 'nodes', 'reached', 'held']) {
+  for (const key of ['scrap', 'surv', 'gold', 'leg', 'legs', 'rescues', 'rescueDue', 'chest', 'hangar', 'nodes']) {
     same(result.save[key], fresh[key], name + ' reset ' + key);
   }
   resetCases.push(name);
