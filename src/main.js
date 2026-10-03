@@ -19,6 +19,7 @@ cv.addEventListener('pointermove', (e) => {
   M.x = p.x;
   M.y = p.y;
   M.inside = true;
+  M.right = !!(e.buttons & 2);
 });
 cv.addEventListener('pointerleave', () => { M.inside = false; });
 cv.addEventListener('pointerdown', (e) => {
@@ -29,6 +30,8 @@ cv.addEventListener('pointerdown', (e) => {
   M.y = p.y;
   M.inside = true;
   if (e.button === 2) {
+    M.right = true;
+    try { cv.setPointerCapture(e.pointerId); } catch (_) { /* release still reaches the window */ }
     if (mode === 'depot') M.rpressed = true;
     if (mode === 'play' && !paused && strafeCancel()) return;
     if (mode === 'play' && !paused && p.y >= 19) heliRight(p.x, p.y);
@@ -62,6 +65,7 @@ cv.addEventListener('pointerup', (e) => {
   const p = toCanvas(e);
   M.x = p.x;
   M.y = p.y;
+  M.right = !!(e.buttons & 2);
   if (e.button !== 0) return;
   if (M.down) {
     M.down = false;
@@ -72,9 +76,14 @@ cv.addEventListener('pointerup', (e) => {
   else HUI.box = null;
 });
 cv.addEventListener('pointercancel', () => {
-  M.down = false;
+  M.down = M.right = false;
   if (G) G.trigger = false;
 });
+cv.addEventListener('lostpointercapture', () => { M.right = false; });
+// A release can land outside the canvas, or arrive as a move when another button stays held.
+addEventListener('pointerup', (e) => { if (!(e.buttons & 2)) M.right = false; });
+addEventListener('pointermove', (e) => { if (!(e.buttons & 2)) M.right = false; });
+addEventListener('pointercancel', () => { M.right = false; });
 cv.addEventListener('contextmenu', (e) => e.preventDefault());
 // the wheel zooms in and out one step (bigger or smaller pixels)
 cv.addEventListener('wheel', (e) => {
@@ -140,7 +149,7 @@ function setPaused(p) {
 function lostFocus() {
   for (const k in KEYS) KEYS[k] = false;
   if (G) G.trigger = false;
-  M.down = false;
+  M.down = M.right = false;
   if (mode === 'play') setPaused(true);
 }
 addEventListener('blur', lostFocus);

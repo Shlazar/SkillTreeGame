@@ -234,9 +234,11 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 - `ramState()`: `'none'`, `'lock'`, `'on'`, `'stop'`, `'charge'` or `'ready'`. It returns `'stop'` near a station stop or when the run has a result, so do not test cooldowns there.
 - `sound()`: `{ctx, roar, muted}`: whether audio is on and the Ram roar plays.
 
-### 5.8 Helicopters (src/test_h.js)
+### 5.8 Helicopters (src/test_h.js, src/test_f.js)
 
 - `rclick(x, y)`: a right click at game px (x, y), with one frame drawn.
+- `rightDown(x, y)`: dispatch a right-button pointer press at game px (defaults to screen centre). It gives the normal heli order and keeps the physical-button state held; returns `true`.
+- `rightUp(x, y)`: dispatch the right-button release (defaults to the current pointer position), clearing the held state; returns `false`. These calls do not draw or advance a frame.
 - `helis()`: each heli: `{name, x, y, dx, dy, hd, alt, sel, order, tgt, heat, hot, heR, sx, sy}` (dx/dy from the engine's nose, sx/sy on screen).
 - `lclick(x, y, shift)`: a left click at game px as a player does for heli control (`heliDown`/`heliUp`).
 - `drag(x0, y0, x1, y1)`: a left drag (selection box) from (x0, y0) to (x1, y1).
@@ -319,6 +321,8 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 - `treeArt()`: each current node's baked icon dimensions; a 12×12 drawing with its outline is 14×14.
 - `treeShown()`: the IDs currently revealed by parent ownership and currency/enemy discoveries, including full-game teases.
 - `scrapPops()`: visible positive scrap reward texts, their size, colour, and screen positions.
+- `gunVisual()`: read-only `{range: {radius, visible}, hits: [{x, y, scale, age}]}`. Radius and hit positions are world px, age is seconds, and scale is the fired heli bullet's damage multiplier.
+- `treeStats(id)`: read-only stat segment arrays used by the current node tooltip, including NOW/NEXT values and colours; returns `[]` for an unknown node.
 
 ### 5.15 Tutorial (src/tut.js)
 

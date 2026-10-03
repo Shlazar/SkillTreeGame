@@ -4,8 +4,9 @@
 // summary; the Depot is in depot.js). Buttons are drawn in the canvas too (from Ball x Archers).
 
 // M = the mouse in game pixels. pressed / released are true for one frame; px, py = where the
-// press started; used = this click was already handled; inside = the mouse is over the game.
-const M = { x: -99, y: -99, down: false, pressed: false, released: false, px: 0, py: 0, used: false, inside: false };
+// press started; right = the right button is held; used = this click was already handled;
+// inside = the mouse is over the game.
+const M = { x: -99, y: -99, down: false, right: false, pressed: false, released: false, px: 0, py: 0, used: false, inside: false };
 let cursor = 'default';
 
 // True when a button at (x, y, w, h) was clicked this frame.

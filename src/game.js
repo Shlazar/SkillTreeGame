@@ -927,13 +927,13 @@ function hitZombie(z, dmg, cause) {
 // ones it killed for the hit-stop.
 const NEAR = [], KILLED = [];
 function mgImpact(r) {
-  const x = r.bx, y = r.by, T = r.tgt, from = r.h ? [r.h.x, r.h.y] : null;
+  const x = r.bx, y = r.by, T = r.tgt, from = r.h ? [r.h.x, r.h.y] : null, dmg = r.dmg ?? heliDmg();
   let hits = 0;
   KILLED.length = 0;
-  if (T) T.pending = Math.max(0, T.pending - heliDmg());
+  if (T) T.pending = Math.max(0, T.pending - dmg);
   if (T && !T.dead && Math.hypot(T.x - x, (T.y - y) / FORE) < 6) {
     JUICE.from = from; // the blood flies away from the heli that shot
-    if (hitZombie(T)) KILLED.push(T);
+    if (hitZombie(T, dmg)) KILLED.push(T);
     hits++;
   }
   NEAR.length = 0;
@@ -947,7 +947,7 @@ function mgImpact(r) {
     if (hits >= CFG.mg.victims) break;
     if (!z.dead) {
       JUICE.from = from;
-      if (hitZombie(z)) KILLED.push(z);
+      if (hitZombie(z, dmg)) KILLED.push(z);
       hits++;
     }
   }
@@ -959,7 +959,7 @@ function mgImpact(r) {
   if (r.player) roundKills(KILLED);
   // the round lands: a spark of light, a few sparks and a little dust (no mark: the ground stays
   // clean for the blood)
-  hitSpark(x, y);
+  hitSpark(x, y, r.kind === 'heli' ? dmg : 1);
   if (!G.demo) SFX.pop();
 }
 // The look of a big blast (no damage): flash, fireball, rings, smoke, earth, sparks, fires, a crater.

@@ -842,10 +842,12 @@ function zombieBlast(x, y) {
 }
 
 // ---------- the heli's guns: no tracers, a muzzle flash and the hit
-// HITS = the sparks where rounds land: {x, y, t, s (seed)}
+// HITS = the sparks where rounds land: {x, y, t, s (seed), scale (this bullet's damage multiplier)}.
+// An optional scale keeps Viper damage upgrades from changing other weapons' hit effects.
 const HITS = [];
-function hitSpark(x, y) {
-  if (HITS.length < 60) HITS.push({ x, y, t: 0, s: (Math.random() * 1e6) | 0 });
+function hitSpark(x, y, scale = 1) {
+  scale = Math.max(1, scale);
+  if (HITS.length < 60) HITS.push({ x, y, t: 0, s: (Math.random() * 1e6) | 0, scale });
   for (let k = 0; k < 3; k++) {
     const a = rnd(TAU), s = rnd(25, 70);
     part({ x, y, z: 3, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(20, 60), g: 180, life: rnd(0.12, 0.28), max: 0.28,
@@ -879,9 +881,9 @@ function starFlash(x, y, s, len0, len1, k) {
 // The sparks of the hits (with 'lighter').
 function drawHits() {
   for (const h of HITS) {
-    const k = 1 - h.t / 0.09;
-    light(h.x, h.y - 2, 9, '#ffd27a', 0.6 * k);
-    starFlash(h.x, h.y - 2, h.s, 2, 5, k);
+    const k = 1 - h.t / 0.09, scale = h.scale;
+    light(h.x, h.y - 2, 9 * scale, '#ffd27a', 0.6 * k);
+    starFlash(h.x, h.y - 2, h.s, 2 * scale, 5 * scale, k);
   }
 }
 // Heli h's muzzle flash: a big star of light at its nose, longest along the barrel, and a glow

@@ -3653,13 +3653,13 @@ function hitZombie(z, dmg, cause) {
 // ones it killed for the hit-stop.
 const NEAR = [], KILLED = [];
 function mgImpact(r) {
-  const x = r.bx, y = r.by, T = r.tgt, from = r.h ? [r.h.x, r.h.y] : null;
+  const x = r.bx, y = r.by, T = r.tgt, from = r.h ? [r.h.x, r.h.y] : null, dmg = r.dmg ?? heliDmg();
   let hits = 0;
   KILLED.length = 0;
-  if (T) T.pending = Math.max(0, T.pending - heliDmg());
+  if (T) T.pending = Math.max(0, T.pending - dmg);
   if (T && !T.dead && Math.hypot(T.x - x, (T.y - y) / FORE) < 6) {
     JUICE.from = from; // the blood flies away from the heli that shot
-    if (hitZombie(T)) KILLED.push(T);
+    if (hitZombie(T, dmg)) KILLED.push(T);
     hits++;
   }
   NEAR.length = 0;
@@ -3673,7 +3673,7 @@ function mgImpact(r) {
     if (hits >= CFG.mg.victims) break;
     if (!z.dead) {
       JUICE.from = from;
-      if (hitZombie(z)) KILLED.push(z);
+      if (hitZombie(z, dmg)) KILLED.push(z);
       hits++;
     }
   }
@@ -3685,7 +3685,7 @@ function mgImpact(r) {
   if (r.player) roundKills(KILLED);
   // the round lands: a spark of light, a few sparks and a little dust (no mark: the ground stays
   // clean for the blood)
-  hitSpark(x, y);
+  hitSpark(x, y, r.kind === 'heli' ? dmg : 1);
   if (!G.demo) SFX.pop();
 }
 // The look of a big blast (no damage): flash, fireball, rings, smoke, earth, sparks, fires, a crater.
@@ -4791,10 +4791,12 @@ function zombieBlast(x, y) {
 }
 
 // ---------- the heli's guns: no tracers, a muzzle flash and the hit
-// HITS = the sparks where rounds land: {x, y, t, s (seed)}
+// HITS = the sparks where rounds land: {x, y, t, s (seed), scale (this bullet's damage multiplier)}.
+// An optional scale keeps Viper damage upgrades from changing other weapons' hit effects.
 const HITS = [];
-function hitSpark(x, y) {
-  if (HITS.length < 60) HITS.push({ x, y, t: 0, s: (Math.random() * 1e6) | 0 });
+function hitSpark(x, y, scale = 1) {
+  scale = Math.max(1, scale);
+  if (HITS.length < 60) HITS.push({ x, y, t: 0, s: (Math.random() * 1e6) | 0, scale });
   for (let k = 0; k < 3; k++) {
     const a = rnd(TAU), s = rnd(25, 70);
     part({ x, y, z: 3, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(20, 60), g: 180, life: rnd(0.12, 0.28), max: 0.28,
@@ -4828,9 +4830,9 @@ function starFlash(x, y, s, len0, len1, k) {
 // The sparks of the hits (with 'lighter').
 function drawHits() {
   for (const h of HITS) {
-    const k = 1 - h.t / 0.09;
-    light(h.x, h.y - 2, 9, '#ffd27a', 0.6 * k);
-    starFlash(h.x, h.y - 2, h.s, 2, 5, k);
+    const k = 1 - h.t / 0.09, scale = h.scale;
+    light(h.x, h.y - 2, 9 * scale, '#ffd27a', 0.6 * k);
+    starFlash(h.x, h.y - 2, h.s, 2 * scale, 5 * scale, k);
   }
 }
 // Heli h's muzzle flash: a big star of light at its nose, longest along the barrel, and a glow
@@ -5288,6 +5290,8 @@ Object.assign(SFX, {
 // turn = how fast it turns (radians per second), mast = px from its middle to the rotor mast,
 // nose = px from its middle to the gun's muzzle
 const HC = { alt: 34, low: 25, range: 150, sep: 40, look: 0.12, turn: 4, mast: 6, nose: 23, names: ['VIPER', 'VIPER 2', 'VIPER 3'] };
+// Range preview: seconds at departure, dot spacing in ground px, opacity (proposal)
+const HRING = { time: 3, gap: 8, alpha: 0.4 };
 // the escort slots round the engine: [px ahead of its nose, px right of the rails]
 const SLOTS = [[8, -40], [-58, 44], [-112, -44]];
 // the click and selection state: box = a drag that started at (x0, y0), arm = the 105 waits for a
@@ -5459,6 +5463,8 @@ function makeHelis() {
 }
 // how far the heli guns reach this run (HELI RANGE makes it more)
 const hRange = () => HC.range * (G.up.heliRange || 1);
+// A short range preview at departure, and while right click is held.
+const heliRangeVisible = () => mode === 'play' && !G.demo && !G.result && (G.run < HRING.time || M.right);
 // ground distance from heli h to zombie z (round the ellipse the view squashes, like queryEll)
 const hDist = (h, z) => Math.hypot(z.x - h.x, (z.y - h.y) / FORE);
 // The best target in reach of heli h (one the rounds in the air will not already kill), or null:
@@ -5578,10 +5584,10 @@ function updateHelis(dt) {
 }
 // One nose gun round at zombie z: it hits 0.07 s later where z will be, with the 25mm's burst.
 function heliShot(h, z) {
-  const T = CFG.mg.travel, s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU);
-  z.pending += heliDmg();
+  const T = CFG.mg.travel, s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU), dmg = heliDmg();
+  z.pending += dmg;
   G.rounds.push({ kind: 'heli', h, bx: z.x + z.vx * T + Math.cos(a) * s, by: z.y + z.vy * T + Math.sin(a) * s * FORE, tgt: z, age: 0, T,
-    side: 0, j: 0, player: true });
+    dmg, side: 0, j: 0, player: true });
   // (each shot's muzzle flash is a new star)
   h.flash = 0.07;
   h.fs = (Math.random() * 1e6) | 0;
@@ -5830,6 +5836,17 @@ function drawHeliGround() {
     for (let k = 0; k < 4; k++) {
       const b = a0 + k * Math.PI / 2;
       pl(ctx, cx, cy, cx + Math.cos(b) * R, cy + Math.sin(b) * R * FORE, '#000');
+    }
+    ctx.globalAlpha = 1;
+  }
+  // The gun's reach on the ground: faint, evenly spaced pixel dots, with no canvas path blur.
+  if (heliRangeVisible()) {
+    const R = hRange(), n = Math.ceil(TAU * R / HRING.gap);
+    ctx.globalAlpha = HRING.alpha;
+    ctx.fillStyle = '#8fd18a';
+    for (const h of G.helis) for (let k = 0; k < n; k++) {
+      const a = k / n * TAU;
+      ctx.fillRect(Math.round(h.x + Math.cos(a) * R), Math.round(h.y + Math.sin(a) * R * FORE), 1, 1);
     }
     ctx.globalAlpha = 1;
   }
@@ -7369,8 +7386,9 @@ function render() {
 // summary; the Depot is in depot.js). Buttons are drawn in the canvas too (from Ball x Archers).
 
 // M = the mouse in game pixels. pressed / released are true for one frame; px, py = where the
-// press started; used = this click was already handled; inside = the mouse is over the game.
-const M = { x: -99, y: -99, down: false, pressed: false, released: false, px: 0, py: 0, used: false, inside: false };
+// press started; right = the right button is held; used = this click was already handled;
+// inside = the mouse is over the game.
+const M = { x: -99, y: -99, down: false, right: false, pressed: false, released: false, px: 0, py: 0, used: false, inside: false };
 let cursor = 'default';
 
 // True when a button at (x, y, w, h) was clicked this frame.
@@ -9610,6 +9628,7 @@ cv.addEventListener('pointermove', (e) => {
   M.x = p.x;
   M.y = p.y;
   M.inside = true;
+  M.right = !!(e.buttons & 2);
 });
 cv.addEventListener('pointerleave', () => { M.inside = false; });
 cv.addEventListener('pointerdown', (e) => {
@@ -9620,6 +9639,8 @@ cv.addEventListener('pointerdown', (e) => {
   M.y = p.y;
   M.inside = true;
   if (e.button === 2) {
+    M.right = true;
+    try { cv.setPointerCapture(e.pointerId); } catch (_) { /* release still reaches the window */ }
     if (mode === 'depot') M.rpressed = true;
     if (mode === 'play' && !paused && strafeCancel()) return;
     if (mode === 'play' && !paused && p.y >= 19) heliRight(p.x, p.y);
@@ -9653,6 +9674,7 @@ cv.addEventListener('pointerup', (e) => {
   const p = toCanvas(e);
   M.x = p.x;
   M.y = p.y;
+  M.right = !!(e.buttons & 2);
   if (e.button !== 0) return;
   if (M.down) {
     M.down = false;
@@ -9663,9 +9685,14 @@ cv.addEventListener('pointerup', (e) => {
   else HUI.box = null;
 });
 cv.addEventListener('pointercancel', () => {
-  M.down = false;
+  M.down = M.right = false;
   if (G) G.trigger = false;
 });
+cv.addEventListener('lostpointercapture', () => { M.right = false; });
+// A release can land outside the canvas, or arrive as a move when another button stays held.
+addEventListener('pointerup', (e) => { if (!(e.buttons & 2)) M.right = false; });
+addEventListener('pointermove', (e) => { if (!(e.buttons & 2)) M.right = false; });
+addEventListener('pointercancel', () => { M.right = false; });
 cv.addEventListener('contextmenu', (e) => e.preventDefault());
 // the wheel zooms in and out one step (bigger or smaller pixels)
 cv.addEventListener('wheel', (e) => {
@@ -9731,7 +9758,7 @@ function setPaused(p) {
 function lostFocus() {
   for (const k in KEYS) KEYS[k] = false;
   if (G) G.trigger = false;
-  M.down = false;
+  M.down = M.right = false;
   if (mode === 'play') setPaused(true);
 }
 addEventListener('blur', lostFocus);
@@ -11644,6 +11671,28 @@ Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assi
 
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  // Real pointer events exercise the same held-state and order paths as the mouse.
+  rightDown: (sx = W / 2, sy = H / 2) => {
+    const r = cv.getBoundingClientRect();
+    cv.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 2, buttons: 2, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+      clientX: r.left + sx / W * r.width, clientY: r.top + sy / H * r.height }));
+    return M.right;
+  },
+  // Release the right button through the canvas input handler.
+  rightUp: (sx = M.x, sy = M.y) => {
+    const r = cv.getBoundingClientRect();
+    cv.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 2, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+      clientX: r.left + sx / W * r.width, clientY: r.top + sy / H * r.height }));
+    return M.right;
+  },
+  // The live gun effects, without advancing or drawing a frame.
+  gunVisual: () => ({ range: { radius: G ? hRange() : 0, visible: G ? heliRangeVisible() : false },
+    hits: HITS.map((h) => ({ x: h.x, y: h.y, scale: h.scale, age: h.t })) }),
+  // The exact stat segments that the node tooltip draws at its current level.
+  treeStats: (id) => {
+    const n = NODE[id];
+    return n ? [n.stat, n.stat2].filter(Boolean).map((s) => statSegs(s, lv(id), lv(id) >= maxLv(n))) : [];
+  },
   scrapPops: () => texts.filter((t) => t.c === U.blue && t.v?.startsWith('+'))
     .map((t) => ({ text: t.v, scale: t.s, x: t.x - G.camX, y: t.y - G.camY, color: t.c })),
   treeShown: () => NODES.filter((n) => shownAs(n) > 0).map((n) => n.id),

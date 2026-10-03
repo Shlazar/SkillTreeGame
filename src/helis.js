@@ -10,6 +10,8 @@
 // turn = how fast it turns (radians per second), mast = px from its middle to the rotor mast,
 // nose = px from its middle to the gun's muzzle
 const HC = { alt: 34, low: 25, range: 150, sep: 40, look: 0.12, turn: 4, mast: 6, nose: 23, names: ['VIPER', 'VIPER 2', 'VIPER 3'] };
+// Range preview: seconds at departure, dot spacing in ground px, opacity (proposal)
+const HRING = { time: 3, gap: 8, alpha: 0.4 };
 // the escort slots round the engine: [px ahead of its nose, px right of the rails]
 const SLOTS = [[8, -40], [-58, 44], [-112, -44]];
 // the click and selection state: box = a drag that started at (x0, y0), arm = the 105 waits for a
@@ -181,6 +183,8 @@ function makeHelis() {
 }
 // how far the heli guns reach this run (HELI RANGE makes it more)
 const hRange = () => HC.range * (G.up.heliRange || 1);
+// A short range preview at departure, and while right click is held.
+const heliRangeVisible = () => mode === 'play' && !G.demo && !G.result && (G.run < HRING.time || M.right);
 // ground distance from heli h to zombie z (round the ellipse the view squashes, like queryEll)
 const hDist = (h, z) => Math.hypot(z.x - h.x, (z.y - h.y) / FORE);
 // The best target in reach of heli h (one the rounds in the air will not already kill), or null:
@@ -300,10 +304,10 @@ function updateHelis(dt) {
 }
 // One nose gun round at zombie z: it hits 0.07 s later where z will be, with the 25mm's burst.
 function heliShot(h, z) {
-  const T = CFG.mg.travel, s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU);
-  z.pending += heliDmg();
+  const T = CFG.mg.travel, s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU), dmg = heliDmg();
+  z.pending += dmg;
   G.rounds.push({ kind: 'heli', h, bx: z.x + z.vx * T + Math.cos(a) * s, by: z.y + z.vy * T + Math.sin(a) * s * FORE, tgt: z, age: 0, T,
-    side: 0, j: 0, player: true });
+    dmg, side: 0, j: 0, player: true });
   // (each shot's muzzle flash is a new star)
   h.flash = 0.07;
   h.fs = (Math.random() * 1e6) | 0;
@@ -552,6 +556,17 @@ function drawHeliGround() {
     for (let k = 0; k < 4; k++) {
       const b = a0 + k * Math.PI / 2;
       pl(ctx, cx, cy, cx + Math.cos(b) * R, cy + Math.sin(b) * R * FORE, '#000');
+    }
+    ctx.globalAlpha = 1;
+  }
+  // The gun's reach on the ground: faint, evenly spaced pixel dots, with no canvas path blur.
+  if (heliRangeVisible()) {
+    const R = hRange(), n = Math.ceil(TAU * R / HRING.gap);
+    ctx.globalAlpha = HRING.alpha;
+    ctx.fillStyle = '#8fd18a';
+    for (const h of G.helis) for (let k = 0; k < n; k++) {
+      const a = k / n * TAU;
+      ctx.fillRect(Math.round(h.x + Math.cos(a) * R), Math.round(h.y + Math.sin(a) * R * FORE), 1, 1);
     }
     ctx.globalAlpha = 1;
   }

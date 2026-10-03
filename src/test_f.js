@@ -1,5 +1,27 @@
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  // Real pointer events exercise the same held-state and order paths as the mouse.
+  rightDown: (sx = W / 2, sy = H / 2) => {
+    const r = cv.getBoundingClientRect();
+    cv.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 2, buttons: 2, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+      clientX: r.left + sx / W * r.width, clientY: r.top + sy / H * r.height }));
+    return M.right;
+  },
+  // Release the right button through the canvas input handler.
+  rightUp: (sx = M.x, sy = M.y) => {
+    const r = cv.getBoundingClientRect();
+    cv.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 2, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+      clientX: r.left + sx / W * r.width, clientY: r.top + sy / H * r.height }));
+    return M.right;
+  },
+  // The live gun effects, without advancing or drawing a frame.
+  gunVisual: () => ({ range: { radius: G ? hRange() : 0, visible: G ? heliRangeVisible() : false },
+    hits: HITS.map((h) => ({ x: h.x, y: h.y, scale: h.scale, age: h.t })) }),
+  // The exact stat segments that the node tooltip draws at its current level.
+  treeStats: (id) => {
+    const n = NODE[id];
+    return n ? [n.stat, n.stat2].filter(Boolean).map((s) => statSegs(s, lv(id), lv(id) >= maxLv(n))) : [];
+  },
   scrapPops: () => texts.filter((t) => t.c === U.blue && t.v?.startsWith('+'))
     .map((t) => ({ text: t.v, scale: t.s, x: t.x - G.camX, y: t.y - G.camY, color: t.c })),
   treeShown: () => NODES.filter((n) => shownAs(n) > 0).map((n) => n.id),
