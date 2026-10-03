@@ -2474,6 +2474,12 @@ const SFX = {
     tone(150, 0.09, 'square', 0.032, 46);
     nz(0.025, 0.035, 'highpass', 3200);
   },
+  rocket() {
+    // A brief launch whoosh and a falling pitch keep the rocket distinct from the gun.
+    if (!gap('rocket', 70)) return;
+    nz(0.2, 0.09, 'bandpass', 1700, 0.8, 320);
+    tone(360, 0.18, 'sawtooth', 0.025, 90);
+  },
   pop() {
     // a 25mm round bursts on the ground
     if (!gap('pop', 32)) return;
@@ -3353,10 +3359,12 @@ function updateRounds(dt) {
   for (let i = rs.length - 1; i >= 0; i--) {
     const r = rs[i];
     r.age += dt;
+    if (r.kind === 'rocket') updateRocket(r, dt);
     if (r.age < r.T) continue;
     rs[i] = rs[rs.length - 1];
     rs.pop();
     if (r.kind === 'he') explode(r.bx, r.by, r.player);
+    else if (r.kind === 'rocket') rocketImpact(r);
     else mgImpact(r);
   }
 }
@@ -5582,12 +5590,16 @@ function updateHelis(dt) {
   for (let i = HUI.marks.length - 1; i >= 0; i--) if (realT - HUI.marks[i].t > 0.7) HUI.marks.splice(i, 1);
   updateHeShells();
 }
-// One nose gun round at zombie z: it hits 0.07 s later where z will be, with the 25mm's burst.
+// A nose-gun shot: an ordinary bullet lands almost at once, or Rockets replaces it with a blast.
+// Both keep the same muzzle flash and shot count.
 function heliShot(h, z) {
-  const T = CFG.mg.travel, s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU), dmg = heliDmg();
-  z.pending += dmg;
-  G.rounds.push({ kind: 'heli', h, bx: z.x + z.vx * T + Math.cos(a) * s, by: z.y + z.vy * T + Math.sin(a) * s * FORE, tgt: z, age: 0, T,
-    dmg, side: 0, j: 0, player: true });
+  const rocket = heliRocketShot(h, z);
+  if (!rocket) {
+    const T = CFG.mg.travel, s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU), dmg = heliDmg();
+    z.pending += dmg;
+    G.rounds.push({ kind: 'heli', h, bx: z.x + z.vx * T + Math.cos(a) * s, by: z.y + z.vy * T + Math.sin(a) * s * FORE, tgt: z, age: 0, T,
+      dmg, side: 0, j: 0, player: true });
+  }
   // (each shot's muzzle flash is a new star)
   h.flash = 0.07;
   h.fs = (Math.random() * 1e6) | 0;
@@ -5597,7 +5609,7 @@ function heliShot(h, z) {
     life: 0.9, max: 0.9, s: 1, c: pick(['#e3b04b', '#c9952f', '#f0c85a']), land: 1 });
   if (G.demo) return;
   G.shots++;
-  SFX.mg();
+  if (!rocket) SFX.mg();
 }
 // Dust kicked up by the rotor's downwash when it flies slow or low, and a faint haze from its exhausts.
 function heliDust(h, dt) {
@@ -5948,10 +5960,10 @@ function noseXY(h) {
   const [nx, ny] = turnXY(h.hd, 0, -HC.nose);
   return [h.x + nx, h.y - h.alt + ny - 1];
 }
-// A nose gun round: nothing is drawn in the air (the muzzle flash and the hit tell it all); a 105
-// shell is drawn on its way.
+// Ordinary bullets have no tracer. Rockets and the dormant 105 shells are drawn in flight.
 function drawHeliRound(r) {
-  if (r.kind === 'he') drawHeShell(r);
+  if (r.kind === 'rocket') drawRocket(r);
+  else if (r.kind === 'he') drawHeShell(r);
 }
 // A 105 shell on its way: up and over from the heli's side to the spot, a bright head, a smoke
 // trail behind it (left in updateHeShells).
@@ -6102,6 +6114,128 @@ function drawHeliCursor() {
     ctx.fillRect(mx + 8, my - 9, 2, 2);
     if (trainDist(wx, wy, G.tr.v * CFG.he.travel) < CFG.he.close + 4) text('DANGER CLOSE', mx, my + 12, U.red, { align: 'center' });
   }
+}
+
+// heliweap.js - the Viper's automatic weapons. A nose-gun shot can become a rocket, with a short
+// smoke trail and an area blast. Projectiles carry their own numbers and world launch position.
+// Friendly blasts use zombie damage helpers only, so they cannot hurt the train.
+
+const HWC = {
+  // Seconds without a rocket before the next nose-gun shot must become one.
+  rocketWait: 6,
+  // Flight seconds, blast radius/damage, arc height, smoke lifetime and hot streak spacing (proposal)
+  rocket: { travel: 0.25, radius: 16, damage: 6, arc: 12, smokeLife: [0.4, 0.6], streakStep: 0.005 }
+};
+// Lazy run state also works behind the title: a new G starts fresh counters without touching SAVE.
+// first/last/maxGap are game seconds since departure; shots includes ordinary bullets.
+const HW = { g: null };
+function heliWeaponState() {
+  if (HW.g !== G) Object.assign(HW, {
+    g: G, shots: 0, rockets: 0, first: null, last: 0, maxGap: 0,
+    forced: !G.demo && G.up.rocketChance > 0 && !SAVE.flags.rocketShown,
+    impacts: 0, kills: 0, lastImpact: null
+  });
+  return HW;
+}
+// Called for every nose-gun shot. True means a rocket replaced the ordinary bullet.
+function heliRocketShot(h, z) {
+  const state = heliWeaponState(), chance = G.up.rocketChance || 0, now = G.run;
+  state.shots++;
+  if (chance <= 0) return false;
+  const rolled = Math.random() < chance;
+  // The epsilon prevents an exact six-second cadence from slipping to the next .25 s shot.
+  const overdue = now - state.last >= HWC.rocketWait - 1e-9;
+  if (!state.forced && !overdue && !rolled) return false;
+
+  const c = HWC.rocket, [nx, ny] = turnXY(h.hd, 0, -HC.nose);
+  const r = { kind: 'rocket', h, tgt: z, sx: h.x + nx, sy: h.y + ny, sz: h.alt + 1,
+    bx: z.x + z.vx * c.travel, by: z.y + z.vy * c.travel, age: 0, T: c.travel,
+    dmg: c.damage, R: c.radius, arc: c.arc, player: true };
+  // Reserve the rocket's own blast damage, and release that same amount on impact.
+  z.pending += r.dmg;
+  G.rounds.push(r);
+  state.rockets++;
+  if (state.first === null) state.first = now;
+  state.maxGap = Math.max(state.maxGap, now - state.last);
+  state.last = now;
+  state.forced = false;
+  if (!G.demo) {
+    if (!SAVE.flags.rocketShown) { SAVE.flags.rocketShown = true; saveSave(); }
+    SFX.rocket();
+  }
+  return true;
+}
+// World x/y and height: the launch coordinates are on the ground, with altitude applied once.
+function rocketAt(r, age = r.age) {
+  const u = clamp(age / r.T, 0, 1);
+  return [lerp(r.sx, r.bx, u), lerp(r.sy, r.by, u), lerp(r.sz, 0, u) + Math.sin(u * Math.PI) * r.arc];
+}
+// updateRounds advances age first. One small, short-lived smoke puff follows each step.
+function updateRocket(r, dt) {
+  const [x, y, z] = rocketAt(r), life = rnd(...HWC.rocket.smokeLife);
+  part({ x, y, z, vx: rnd(-3, 3), vy: rnd(-2, 2), vz: rnd(1, 4), g: 0,
+    life, max: life, s: 2, grow: 4, drag: 1.2, smoke: true,
+    c: pick(['rgba(176,168,158,0.6)', 'rgba(136,128,120,0.55)']) });
+}
+// A bright pixel head and a short streak, using the same rounded-pixel drawing as 105 shells.
+function drawRocket(r) {
+  const [x, y, z] = rocketAt(r), px = Math.round(x), py = Math.round(y - z);
+  let hx = px, hy = py;
+  for (let k = 1; k <= 6; k++) {
+    const [bx, by, bz] = rocketAt(r, Math.max(0, r.age - k * HWC.rocket.streakStep));
+    const tx = Math.round(bx), ty = Math.round(by - bz);
+    ctx.globalAlpha = 1 - k / 7;
+    pl(ctx, hx, hy, tx, ty, k < 3 ? '#ffd27a' : '#c9772f');
+    hx = tx;
+    hy = ty;
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = thermal ? '#ffffff' : '#fff6e0';
+  ctx.fillRect(px - 1, py - 1, 3, 2);
+  light(px, py, 12, '#ffd27a', 0.8);
+  ctx.globalAlpha = 1;
+}
+// A medium blast follows the existing strafeBlast recipe, without its random sound choice.
+function rocketBlast(x, y) {
+  addBoom(x, y - 1, rnd(13, 17), 7, 0.8, 8);
+  lights.push({ x, y, z: 4, r: rnd(44, 56), c: '#ffb060', life: 0.3, max: 0.3, a: 0.7 });
+  rings.push({ x, y, r0: 4, r1: 26, t: 0, T: 0.22, c: '#fff1c2', w: 2 });
+  for (let i = 0; i < 6; i++) {
+    const a = rnd(TAU), v = rnd(40, 90);
+    part({ x, y, z: 3, vx: Math.cos(a) * v, vy: Math.sin(a) * v * FORE, vz: rnd(30, 80), g: 200,
+      life: rnd(0.3, 0.5), max: 0.5, s: 1, c: pick(['#fff6e0', '#ffd27a', '#ff9a3a']), add: true, drag: 1.5 });
+  }
+  stampScorch(x, y, 1);
+  if (!G.demo) {
+    addShake(0.08);
+    SFX.boom();
+  }
+}
+// Lethal blast hits throw bodies from the actual centre; survivors of a hit use a gun cause.
+function rocketImpact(r) {
+  const state = heliWeaponState(), x = r.bx, y = r.by;
+  if (r.tgt) r.tgt.pending = Math.max(0, r.tgt.pending - r.dmg);
+  let hits = 0, killed = 0;
+  queryEll(x, y, r.R, (z, d) => {
+    if (z.gate && z.still) return;
+    hits++;
+    if (z.hp <= r.dmg) {
+      kill(z, 'he', x, y, d);
+      killed++;
+    } else {
+      JUICE.from = [x, y];
+      hitZombie(z, r.dmg, 'boom');
+      JUICE.from = null;
+    }
+  });
+  state.impacts++;
+  state.kills += killed;
+  state.lastImpact = { x, y, radius: r.R, damage: r.dmg, hits, kills: killed, t: G.run };
+  if (hits && r.player && !G.demo) {
+    G.hits++;
+    G.hitT = 0.12;
+  }
+  rocketBlast(x, y);
 }
 
 // juice.js - the extra kick of every hit, in the same pixel style as fx.js: blood sprayed away from
@@ -8479,7 +8613,7 @@ function treeUp(L, up) {
   up.rate *= hr;
   up.heat /= hr;
   return Object.assign(up, {
-    heliDmg: hd, heliRate: hr, heliRange: UP.hrange(L('hrange')),
+    heliDmg: hd, heliRate: hr, heliRange: UP.hrange(L('hrange')), rocketChance: UP.rockets(L('rockets')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
     ramTime: 0, ramCharge: 0, power: false,
@@ -11671,6 +11805,21 @@ Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assi
 
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  // Report only implemented unit systems; later weapons stay neutral until their own tasks.
+  units: () => G ? {
+    heli: { count: G.helis.length, damage: G.up.dmg, rate: G.up.rate, range: hRange(), winch: !!G.up.winch },
+    rockets: { chance: G.up.rocketChance || 0, enabled: !!G.up.rocketChance },
+    pods: null, hellfire: null, planes: [], cars: [], gadgets: []
+  } : null,
+  // Copy firing diagnostics and projectiles without exposing mutable targets or heli objects.
+  rockets: () => {
+    if (!G) return null;
+    const s = heliWeaponState();
+    return { shots: s.shots, rockets: s.rockets, first: s.first, last: s.last, maxGap: s.maxGap, forced: s.forced,
+      impacts: s.impacts, kills: s.kills, lastImpact: s.lastImpact ? { ...s.lastImpact } : null,
+      active: G.rounds.filter((r) => r.kind === 'rocket').map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz,
+        bx: r.bx, by: r.by, age: r.age, T: r.T, dmg: r.dmg, R: r.R, position: rocketAt(r) })) };
+  },
   // Real pointer events exercise the same held-state and order paths as the mouse.
   rightDown: (sx = W / 2, sy = H / 2) => {
     const r = cv.getBoundingClientRect();

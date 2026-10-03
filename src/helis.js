@@ -302,12 +302,16 @@ function updateHelis(dt) {
   for (let i = HUI.marks.length - 1; i >= 0; i--) if (realT - HUI.marks[i].t > 0.7) HUI.marks.splice(i, 1);
   updateHeShells();
 }
-// One nose gun round at zombie z: it hits 0.07 s later where z will be, with the 25mm's burst.
+// A nose-gun shot: an ordinary bullet lands almost at once, or Rockets replaces it with a blast.
+// Both keep the same muzzle flash and shot count.
 function heliShot(h, z) {
-  const T = CFG.mg.travel, s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU), dmg = heliDmg();
-  z.pending += dmg;
-  G.rounds.push({ kind: 'heli', h, bx: z.x + z.vx * T + Math.cos(a) * s, by: z.y + z.vy * T + Math.sin(a) * s * FORE, tgt: z, age: 0, T,
-    dmg, side: 0, j: 0, player: true });
+  const rocket = heliRocketShot(h, z);
+  if (!rocket) {
+    const T = CFG.mg.travel, s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU), dmg = heliDmg();
+    z.pending += dmg;
+    G.rounds.push({ kind: 'heli', h, bx: z.x + z.vx * T + Math.cos(a) * s, by: z.y + z.vy * T + Math.sin(a) * s * FORE, tgt: z, age: 0, T,
+      dmg, side: 0, j: 0, player: true });
+  }
   // (each shot's muzzle flash is a new star)
   h.flash = 0.07;
   h.fs = (Math.random() * 1e6) | 0;
@@ -317,7 +321,7 @@ function heliShot(h, z) {
     life: 0.9, max: 0.9, s: 1, c: pick(['#e3b04b', '#c9952f', '#f0c85a']), land: 1 });
   if (G.demo) return;
   G.shots++;
-  SFX.mg();
+  if (!rocket) SFX.mg();
 }
 // Dust kicked up by the rotor's downwash when it flies slow or low, and a faint haze from its exhausts.
 function heliDust(h, dt) {
@@ -668,10 +672,10 @@ function noseXY(h) {
   const [nx, ny] = turnXY(h.hd, 0, -HC.nose);
   return [h.x + nx, h.y - h.alt + ny - 1];
 }
-// A nose gun round: nothing is drawn in the air (the muzzle flash and the hit tell it all); a 105
-// shell is drawn on its way.
+// Ordinary bullets have no tracer. Rockets and the dormant 105 shells are drawn in flight.
 function drawHeliRound(r) {
-  if (r.kind === 'he') drawHeShell(r);
+  if (r.kind === 'rocket') drawRocket(r);
+  else if (r.kind === 'he') drawHeShell(r);
 }
 // A 105 shell on its way: up and over from the heli's side to the spot, a bright head, a smoke
 // trail behind it (left in updateHeShells).

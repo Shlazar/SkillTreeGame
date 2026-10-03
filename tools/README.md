@@ -323,6 +323,8 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 - `scrapPops()`: visible positive scrap reward texts, their size, colour, and screen positions.
 - `gunVisual()`: read-only `{range: {radius, visible}, hits: [{x, y, scale, age}]}`. Radius and hit positions are world px, age is seconds, and scale is the fired heli bullet's damage multiplier.
 - `treeStats(id)`: read-only stat segment arrays used by the current node tooltip, including NOW/NEXT values and colours; returns `[]` for an unknown node.
+- `units()`: the active heli's `{count, damage, rate, range, winch}` and Rockets `{chance, enabled}`. Unimplemented pods/Hellfire are `null`, and planes/cars/gadgets are empty lists until their tasks add those systems. Returns `null` without a game.
+- `rockets()`: firing diagnostics `{shots, rockets, first, last, maxGap, forced, impacts, kills, lastImpact, active}`. Shots count all nose-gun shots; timing is run seconds, and `first` is `null` before the first rocket. `forced` records whether the first-rocket guarantee is still due. Each active projectile copies `{sx, sy, sz, bx, by, age, T, dmg, R, position}`; `position` is `[worldX, worldY, height]`. Returns `null` without a game and does not advance time.
 
 ### 5.15 Tutorial (src/tut.js)
 

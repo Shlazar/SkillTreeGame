@@ -157,6 +157,12 @@ const SFX = {
     tone(150, 0.09, 'square', 0.032, 46);
     nz(0.025, 0.035, 'highpass', 3200);
   },
+  rocket() {
+    // A brief launch whoosh and a falling pitch keep the rocket distinct from the gun.
+    if (!gap('rocket', 70)) return;
+    nz(0.2, 0.09, 'bandpass', 1700, 0.8, 320);
+    tone(360, 0.18, 'sawtooth', 0.025, 90);
+  },
   pop() {
     // a 25mm round bursts on the ground
     if (!gap('pop', 32)) return;

@@ -3,7 +3,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-ORDER = ['core.js', 'art.js', 'sprites.js', 'world.js', 'land.js', 'fx.js', 'audio.js', 'game.js', 'horde.js', 'station.js', 'legs.js', 'skills.js', 'helis.js', 'juice.js', 'scenery.js', 'render.js', 'ui.js', 'depot.js', 'tree.js', 'planes.js', 'main.js', 'loot.js', 'tut.js', 'cannon.js', 'test_a.js', 'test_h.js', 'test_j.js', 'test_e.js', 'test_z.js', 'test_t.js', 'test_f.js']
+ORDER = ['core.js', 'art.js', 'sprites.js', 'world.js', 'land.js', 'fx.js', 'audio.js', 'game.js', 'horde.js', 'station.js', 'legs.js', 'skills.js', 'helis.js', 'heliweap.js', 'juice.js', 'scenery.js', 'render.js', 'ui.js', 'depot.js', 'tree.js', 'planes.js', 'main.js', 'loot.js', 'tut.js', 'cannon.js', 'test_a.js', 'test_h.js', 'test_j.js', 'test_e.js', 'test_z.js', 'test_t.js', 'test_f.js']
 
 shell = (ROOT / 'src' / 'shell.html').read_text()
 code = '\n'.join((ROOT / 'src' / name).read_text() for name in ORDER)
