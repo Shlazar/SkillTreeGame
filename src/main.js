@@ -49,8 +49,10 @@ cv.addEventListener('pointerdown', (e) => {
   if (mode !== 'play' || p.y < 19) return;
   // a click on the field goes on after a pause; otherwise it is the trigger
   if (paused) {
-    setPaused(false);
-    M.used = true;
+    if (!pauseHit(p.x, p.y)) {
+      setPaused(false);
+      M.used = true;
+    }
   } else G.trigger = true;
 });
 cv.addEventListener('pointerup', (e) => {
@@ -234,8 +236,10 @@ function oneFrame(dt) {
     M.inside = true;
   }
   try {
+    tutFrame(dt);
     render();
     drawUI();
+    drawFade();
   } catch (err) {
     if (!loop.rerr) {
       loop.rerr = 1;

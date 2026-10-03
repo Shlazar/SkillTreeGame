@@ -1274,6 +1274,7 @@ function streak(n) {
 // 'train' (run down) or 'ram' (the Turbo Ram). free = not the player's kill (no score).
 function kill(z, cause, cx, cy, dist, free) {
   if (z.dead) return;
+  if (typeof tutKill === 'function') tutKill(z, cause, free);
   z.dead = true;
   z.hp = 0;
   z.paid = 0;
