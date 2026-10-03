@@ -1,5 +1,7 @@
 # Sky Reaper: Demo Design (draft 1)
 
+> **OUTDATED.** The current design is [FINAL_DESIGN.md](FINAL_DESIGN.md). This file is kept only as history.
+
 Goal: a demo that takes 30 to 45 minutes. The full game comes later and takes 4 to 6 hours.
 
 > **Update:** the first 10 minutes are designed in detail in [FIRST_10_MIN.md](FIRST_10_MIN.md). Its section 1 lists what it changes here (the two panels, the Turbo Ram, the Dead Walls, new numbers and pacing).

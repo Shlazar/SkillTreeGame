@@ -1,5 +1,7 @@
 # Sky Reaper: The First 10 Minutes
 
+> **OUTDATED.** The current design is [FINAL_DESIGN.md](FINAL_DESIGN.md). This file is kept only as history.
+
 This is the plan for the first 10 minutes of the demo. It builds on DESIGN.md and adds your two new requests:
 - **Two panels between runs:** the SKILL TREE panel, and the STATION panel, a grid where you build your towers.
 - **Active skills.** The first one is **TURBO RAM**: the train goes very fast and kills every zombie in its way.
