@@ -1,8 +1,8 @@
 // scenery.js - more of the world: the sprites of broken fences, railway signs, relay boxes, hay
 // bales and tyres (land.js places some of them); the wires that sag between the telegraph poles (with their shadows); crows that sit in the fields
 // and fly up when the train, a blast or a shot comes near; and what makes the stations and the Depot
-// real places: a water tower, a name board, fences, sandbag walls, lamps, benches, crates and, at
-// the Depot, an engine shed, a fuel tank and a coal heap.
+// real places: a water tower, a name board, fences, sandbag walls, lamps, benches, crates, survivor
+// camps at big stations and, at the Depot, an engine shed, a fuel tank and a coal heap.
 // Hooks: initScenery (initSprites), dressStop (buildStop), updateScenery (step),
 // drawGroundLife (render, over the ground), drawSky (render, over everything in the world).
 
@@ -142,6 +142,37 @@ function coalSpr() {
   });
 }
 
+// A canvas tent with a bright left roof, shaded right flap and a dark open doorway.
+function campTentSpr(olive) {
+  const C = olive ? ['#3e563c', '#5b7656', '#87945f', '#b9c2cc'] : ['#7b5735', '#b08a3e', '#d8b562', '#f0d488'];
+  return pix(24, 18, (r, g) => {
+    r(2, 13, 20, 5, C[0]);
+    for (let y = 0; y < 15; y++) {
+      const half = Math.min(12, 2 + y);
+      r(12 - half, y, half, 1, C[2]); r(12, y, half, 1, C[1]);
+    }
+    r(10, 0, 4, 1, C[3]); r(2, 14, 20, 1, C[0]);
+    for (let y = 5; y < 18; y++) {
+      const half = Math.min(4, 1 + ((y - 5) >> 2));
+      r(12 - half, y, half * 2, 1, '#1c1e23');
+    }
+    r(8, 14, 1, 4, C[3]); r(15, 14, 1, 4, C[0]);
+    pl(g, 3, 9, 0, 17, '#d6cdb6'); pl(g, 21, 9, 23, 17, '#7b5735');
+    r(0, 17, 2, 1, '#3a2718'); r(22, 17, 2, 1, '#3a2718');
+  });
+}
+
+// A small steel fire barrel. Its two flame poses flicker without making particles.
+function campBarrelSpr(frame) {
+  return pix(9, 15, (r) => {
+    r(1, 7, 7, 8, '#434753'); r(1, 7, 2, 7, '#8b919c'); r(7, 8, 1, 7, '#2d3038');
+    r(0, 7, 9, 1, '#b4b9c1'); r(1, 10, 7, 1, '#1c1e23'); r(1, 13, 7, 1, '#1c1e23');
+    r(2, 6, 5, 2, '#c9772f'); r(2, 3 + frame, 2, 4 - frame, '#e2552f');
+    r(4, 1 - frame, 2, 7, '#ff8a3a'); r(5, 4, 2, 3, '#ffcf6a');
+    r(3, 5, 2, 2, '#fff1c2'); r(4, 2 + frame, 1, 4 - frame, '#ffcf6a');
+  });
+}
+
 function initScenery() {
   const rng = mulberry(909);
   PROPS.fence = [];
@@ -157,6 +188,27 @@ function initScenery() {
   SCN.shed = prop(shedSpr(), 14);
   SCN.fuel = prop(fuelSpr(), 6);
   SCN.coal = prop(coalSpr(), 4);
+  SCN.campTents = [false, true].map((olive) => {
+    const raw = campTentSpr(olive), d = prop(outline(raw, P.out), 0);
+    d.h = outline(hotSpr(raw, 55), '#161616');
+    return d;
+  });
+  SCN.campFire = [0, 1].map((f) => {
+    const raw = campBarrelSpr(f), d = prop(outline(raw, P.out), 0);
+    d.h = outline(hotSpr(raw, 185), '#161616');
+    return d;
+  });
+  SCN.campPeople = [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#e3b04b', '#b8876a']].map(([shirt, skin]) =>
+    [0, 1].map((f) => {
+      const raw = campPersonRaw(shirt, skin, f), d = prop(outline(raw, P.out), 0);
+      d.h = outline(hotSpr(raw, 215), '#161616');
+      return d;
+    }));
+  // Register every camp pose and its south-east cast shadow before the first frame.
+  for (const d of [...SCN.campTents, ...SCN.campFire, ...SCN.campPeople.flat()]) {
+    atl(d.spr); atl(d.sh);
+    if (d.h) atl(d.h);
+  }
   // the blast's marks, made now and not in the middle of the first blast
   blastRays();
   for (let r = 2; r <= 8; r++) poolSpr(r);
@@ -184,6 +236,14 @@ function dressStop(st) {
   for (const r of [-0.7, 8.7]) add(SCN.picket, 12.4, r);
   for (const r of [-1.3, 9.3]) add(SCN.bags, 8.1, r);
   for (const r of [-2.4, 10.4]) add(STATION.lamp, 8.3, r, { lamp: true });
+  if (!depot && st.def.kind === 'big') {
+    add(SCN.campTents[0], 12.4, 0);
+    add(SCN.campTents[1], 12.9, 7);
+    add(SCN.campFire[0], 11.9, 6, { campFire: 0.4 });
+    for (const [i, c, r] of [[0, 10.3, 6.9], [1, 13.3, 4.8], [2, 10.8, 0.1]]) {
+      add(SCN.campPeople[i][0], c, r, { campWave: i });
+    }
+  }
   if (!depot) return;
   // the Depot: an engine shed across the rails, a fuel tank, coal, crates, more lamps and sandbags
   add(SCN.shed, 3.2, 1.2);

@@ -274,6 +274,18 @@ function survivorRaw(shirt, skin, f, hat) {
   });
 }
 
+// A camp survivor, with an empty hand raised to greet the train. Two poses make the wave.
+function campPersonRaw(shirt, skin, wave) {
+  return pix(6, 9, (r) => {
+    r(1, 1, 3, 2, skin); r(1, 0, 3, 1, '#2e2620'); r(3, 2, 1, 1, lighten(skin, -40));
+    r(1, 3, 3, 3, shirt); r(1, 3, 1, 2, lighten(shirt, 40)); r(3, 4, 1, 2, lighten(shirt, -30));
+    r(0, 4, 1, 2, skin); r(1, 6, 3, 1, '#3a2a1e');
+    r(4, 3, 1, 1, shirt); r(4, 1 + wave, 1, 2, skin); r(5, wave, 1, 2, skin);
+    r(1, 7, 1, 1, '#2e3440'); r(3, 7, 1, 1, '#2e3440');
+    r(1, 8, 1, 1, '#14100c'); r(3, 8, 1, 1, '#14100c');
+  });
+}
+
 // ---------- the station halfway: a platform beside the rails, a small station house, lamps
 const STATION = {};
 function slabSpr() {

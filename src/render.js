@@ -37,6 +37,8 @@ function bakeOverlays() {
 // DL = everything standing, sorted by depth (k: the ground y of its front, or just in front of the
 // car for the dead holding on to the train). CARS = the train's cars as draw-list entries.
 const DL = [], TREES = [], VZ = [], FIRES = [], CARS = [];
+// One reward actor is reused while a survivor boards or the locked chest is presented.
+const STATION_REWARD_DRAW = { stationReward: true, x: 0, y: 0, k: 0, z: 0, age: 0, kind: '' };
 const byK = (a, b) => a.k - b.k;
 // Collect the props (from the chunk plans and the safe zone), the train and the living dead in
 // view, sorted by depth.
@@ -69,9 +71,29 @@ function gather(ci0, cj0, ci1, cj1) {
   for (const p of G.people) {
     if ((p.st === 'wait' || p.st === 'run' || p.st === 'grab') && p.x > x0 && p.x < x1 && p.y > y0 && p.y < y1 + 10) DL.push(p);
   }
+  gatherStationReward();
   // the dead: a crowd in the open is drawn in one go (drawHorde), the rest sorted in here (horde.js)
   gatherHorde(x0, x1, y0, y1);
   DL.sort(byK);
+}
+
+// Station rewards age with game time so the boarding moment can be frozen for a picture.
+function gatherStationReward() {
+  const q = G.stationReward;
+  if (!q || G.demo) return;
+  const age = G.t - q.t, o = STATION_REWARD_DRAW;
+  if (age < 0 || q.kind === 'surv' && age >= 1 || q.kind === 'chest' && age >= 2) return;
+  if (q.kind !== 'surv' && q.kind !== 'chest') return;
+  o.kind = q.kind; o.age = age; o.z = 0;
+  o.d = q.kind === 'chest' ? LART.gold : SCN.campPeople[0][0];
+  if (q.kind === 'surv') {
+    const c = G.tr.cars[1], side = G.station.side, u = clamp(age, 0, 1);
+    o.x = lerp(q.x, c.cx + c.nx * side * 9, u);
+    o.y = lerp(q.y, c.cy + c.ny * side * 9, u);
+    o.z = 3 * clamp((u - 0.75) / 0.25, 0, 1);
+  } else { o.x = q.x; o.y = q.y; }
+  o.k = o.y + 1;
+  DL.push(o);
 }
 
 // ---------- pieces
@@ -139,6 +161,21 @@ function drawPerson(p) {
     ctx.fillStyle = thermal ? '#ffffff' : grab ? (Math.sin(realT * 18) > 0 ? '#ff3a2a' : '#a8241a') : '#8fd18a';
     ctx.fillRect(x - 1, y - 14, 3, 1);
     ctx.fillRect(x, y - 13, 1, 1);
+  }
+}
+
+// The new passenger walks to the coach; Cornfield Halt presents its locked gold chest.
+function drawStationReward(o) {
+  const x = Math.round(o.x), y = Math.round(o.y);
+  if (o.kind === 'surv') {
+    const sv = SURV[4], f = (o.age * 8 | 0) & 1;
+    blit(sv.run[f][thermal ? 1 : 0], x - 2, y - 8 - Math.round(o.z));
+  } else {
+    const d = LART.gold;
+    ctx.globalAlpha = Math.min(1, (2 - o.age) / 0.25);
+    blit(d.spr, x - d.ax, y - d.ay);
+    blit(ICON.lock, x - (ICON.lock.width >> 1), y - 8);
+    ctx.globalAlpha = 1;
   }
 }
 // Bodies in the air: knocked over (fall) or thrown and turning (spin).
@@ -265,6 +302,10 @@ function render() {
     ctx.drawImage(fr.s, Math.round(z.x - S.ax), Math.round(z.y - 1 - S.shp));
   }
   drawTrainShadow();
+  if (DL.includes(STATION_REWARD_DRAW)) {
+    const o = STATION_REWARD_DRAW, d = o.kind === 'chest' ? LART.gold : SCN.campPeople[0][0];
+    blit(d.sh, Math.round(o.x) - d.ax, Math.round(o.y) - 1);
+  }
   ctx.globalAlpha = 0.25;
   for (const b of G.bodies) blit(BODYSH, Math.round(b.x - 4), Math.round(b.y - 2));
   ctx.globalAlpha = 1;
@@ -274,6 +315,10 @@ function render() {
   // see past it.
   const ax = G.camX + G.aimSX, ay = G.camY + G.aimSY, aiming = mode === 'play';
   for (const o of DL) {
+    if (o.stationReward) {
+      drawStationReward(o);
+      continue;
+    }
     if (o.isCar) {
       drawCar(o.i);
       continue;
@@ -286,7 +331,12 @@ function render() {
       drawZombie(o);
       continue;
     }
-    const d = o.d;
+    const d = o.campWave != null ? SCN.campPeople[o.campWave][(G.t * 2 + o.campWave * 0.7 | 0) & 1]
+      : o.campFire != null ? SCN.campFire[(G.t * 6 + o.campFire | 0) & 1] : o.d;
+    if (thermal && d.h) {
+      blit(d.h, o.x - d.ax, o.y - d.ay);
+      continue;
+    }
     if (aiming && d.tree && Math.abs(o.x - ax) < d.spr.width / 2 + 10 && ay > o.y - d.spr.height - 10 && ay < o.y + 6) {
       ctx.globalAlpha = 0.4;
       blit(d.spr, o.x - d.ax, o.y - d.ay);
@@ -322,6 +372,7 @@ function render() {
   ctx.globalCompositeOperation = 'lighter';
   drawLights();
   for (const f of FIRES) light(f.x, f.y - (f.big ? 6 : 3), f.big ? 22 : 14, '#ff9a4a', 0.45 + Math.sin(realT * 13 + f.seed) * 0.08);
+  for (const o of DL) if (o.campFire != null) light(o.x, o.y - 7, 12, '#ff9a4a', 0.25 + Math.sin(G.t * 13) * 0.04);
   // the train's headlights (in daylight their beam on the rails ahead only shows while the Turbo
   // Ram runs: bigger lights, beams that follow the bends, and the engine glows orange)
   if (G.result !== 'lost') {

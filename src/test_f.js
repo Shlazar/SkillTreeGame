@@ -6,6 +6,14 @@ Object.assign(window.__sr, {
       stars: l.stars, rescue: l.rescue, finale: l.finale, events: l.events.map((e) => ({ ...e })) }))
   }),
   leg: (n, replay) => { startGame(n, replay); return G.leg; },
+  win: () => { window.__sr.jump(8); },
+  setLeg: (n) => {
+    n = clamp(Math.floor(Number(n) || 1), 1, 13);
+    for (let i = 1; i < n; i++) legSave(i).won = true;
+    SAVE.leg = n;
+    saveSave();
+    return SAVE.leg;
+  },
   legState: () => ({ leg: G.leg, t: +G.run.toFixed(2), len: legDef(G.leg)?.len || 0,
     result: G.result, replay: G.replay, events: G.events.slice(),
     stars: (SAVE.legs[G.leg]?.stars || [false, false, false]).slice(),

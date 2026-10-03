@@ -101,7 +101,42 @@ function trainStops(st) {
   layoutTrain();
   st.state = 'done';
   G.stopNames.push(st.name);
+  stationReward(st);
   arrive();
+}
+
+// First arrival pays once. Store the reward before the ending so closing the page cannot lose it.
+function stationReward(st) {
+  if (G.demo || G.replay || st.def.kind === 'end') return;
+  const record = legSave(G.leg);
+  if (record.paid.station) return;
+  record.paid.station = true;
+  const x = st.door.x, y = st.door.y;
+  if (st.def.kind === 'big') {
+    G.surv++;
+    G.stationReward = { kind: 'surv', x, y, t: G.t, amount: 1 };
+    floatText(x, y + 34, '+1 SURVIVOR', U.gold);
+    addTotal(x - st.side * 30, y + 10, 1, U.gold, true);
+    juicePop(x, y, true);
+    SFX.saved();
+    bankRun();
+  } else if (G.leg === 2 && !SAVE.flags.goldShown) {
+    SAVE.chest = Math.max(SAVE.chest, 1);
+    G.stationReward = { kind: 'chest', x, y, t: G.t, amount: 6 };
+    floatText(x, y + 34, 'LOCKED GOLD CHEST', U.gold);
+    juicePop(x, y, true);
+    SFX.crate();
+    saveSave();
+  } else {
+    G.gold = (G.gold || 0) + 6;
+    G.banked.gold = (G.banked.gold || 0) + 6;
+    SAVE.gold += 6;
+    G.stationReward = { kind: 'gold', x, y, t: G.t, amount: 6 };
+    floatText(x, y + 34, '+6 GOLD', U.gold);
+    coinPop(x, y, 8);
+    SFX.golden();
+    saveSave();
+  }
 }
 
 // These helpers remain for the generic zombie and 105mm code that reads G.people. Stops no longer

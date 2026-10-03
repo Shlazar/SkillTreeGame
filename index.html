@@ -854,6 +854,18 @@ function survivorRaw(shirt, skin, f, hat) {
   });
 }
 
+// A camp survivor, with an empty hand raised to greet the train. Two poses make the wave.
+function campPersonRaw(shirt, skin, wave) {
+  return pix(6, 9, (r) => {
+    r(1, 1, 3, 2, skin); r(1, 0, 3, 1, '#2e2620'); r(3, 2, 1, 1, lighten(skin, -40));
+    r(1, 3, 3, 3, shirt); r(1, 3, 1, 2, lighten(shirt, 40)); r(3, 4, 1, 2, lighten(shirt, -30));
+    r(0, 4, 1, 2, skin); r(1, 6, 3, 1, '#3a2a1e');
+    r(4, 3, 1, 1, shirt); r(4, 1 + wave, 1, 2, skin); r(5, wave, 1, 2, skin);
+    r(1, 7, 1, 1, '#2e3440'); r(3, 7, 1, 1, '#2e3440');
+    r(1, 8, 1, 1, '#14100c'); r(3, 8, 1, 1, '#14100c');
+  });
+}
+
 // ---------- the station halfway: a platform beside the rails, a small station house, lamps
 const STATION = {};
 function slabSpr() {
@@ -4879,7 +4891,42 @@ function trainStops(st) {
   layoutTrain();
   st.state = 'done';
   G.stopNames.push(st.name);
+  stationReward(st);
   arrive();
+}
+
+// First arrival pays once. Store the reward before the ending so closing the page cannot lose it.
+function stationReward(st) {
+  if (G.demo || G.replay || st.def.kind === 'end') return;
+  const record = legSave(G.leg);
+  if (record.paid.station) return;
+  record.paid.station = true;
+  const x = st.door.x, y = st.door.y;
+  if (st.def.kind === 'big') {
+    G.surv++;
+    G.stationReward = { kind: 'surv', x, y, t: G.t, amount: 1 };
+    floatText(x, y + 34, '+1 SURVIVOR', U.gold);
+    addTotal(x - st.side * 30, y + 10, 1, U.gold, true);
+    juicePop(x, y, true);
+    SFX.saved();
+    bankRun();
+  } else if (G.leg === 2 && !SAVE.flags.goldShown) {
+    SAVE.chest = Math.max(SAVE.chest, 1);
+    G.stationReward = { kind: 'chest', x, y, t: G.t, amount: 6 };
+    floatText(x, y + 34, 'LOCKED GOLD CHEST', U.gold);
+    juicePop(x, y, true);
+    SFX.crate();
+    saveSave();
+  } else {
+    G.gold = (G.gold || 0) + 6;
+    G.banked.gold = (G.banked.gold || 0) + 6;
+    SAVE.gold += 6;
+    G.stationReward = { kind: 'gold', x, y, t: G.t, amount: 6 };
+    floatText(x, y + 34, '+6 GOLD', U.gold);
+    coinPop(x, y, 8);
+    SFX.golden();
+    saveSave();
+  }
 }
 
 // These helpers remain for the generic zombie and 105mm code that reads G.people. Stops no longer
@@ -6355,8 +6402,8 @@ function drawJuiceTop() {
 // scenery.js - more of the world: the sprites of broken fences, railway signs, relay boxes, hay
 // bales and tyres (land.js places some of them); the wires that sag between the telegraph poles (with their shadows); crows that sit in the fields
 // and fly up when the train, a blast or a shot comes near; and what makes the stations and the Depot
-// real places: a water tower, a name board, fences, sandbag walls, lamps, benches, crates and, at
-// the Depot, an engine shed, a fuel tank and a coal heap.
+// real places: a water tower, a name board, fences, sandbag walls, lamps, benches, crates, survivor
+// camps at big stations and, at the Depot, an engine shed, a fuel tank and a coal heap.
 // Hooks: initScenery (initSprites), dressStop (buildStop), updateScenery (step),
 // drawGroundLife (render, over the ground), drawSky (render, over everything in the world).
 
@@ -6496,6 +6543,37 @@ function coalSpr() {
   });
 }
 
+// A canvas tent with a bright left roof, shaded right flap and a dark open doorway.
+function campTentSpr(olive) {
+  const C = olive ? ['#3e563c', '#5b7656', '#87945f', '#b9c2cc'] : ['#7b5735', '#b08a3e', '#d8b562', '#f0d488'];
+  return pix(24, 18, (r, g) => {
+    r(2, 13, 20, 5, C[0]);
+    for (let y = 0; y < 15; y++) {
+      const half = Math.min(12, 2 + y);
+      r(12 - half, y, half, 1, C[2]); r(12, y, half, 1, C[1]);
+    }
+    r(10, 0, 4, 1, C[3]); r(2, 14, 20, 1, C[0]);
+    for (let y = 5; y < 18; y++) {
+      const half = Math.min(4, 1 + ((y - 5) >> 2));
+      r(12 - half, y, half * 2, 1, '#1c1e23');
+    }
+    r(8, 14, 1, 4, C[3]); r(15, 14, 1, 4, C[0]);
+    pl(g, 3, 9, 0, 17, '#d6cdb6'); pl(g, 21, 9, 23, 17, '#7b5735');
+    r(0, 17, 2, 1, '#3a2718'); r(22, 17, 2, 1, '#3a2718');
+  });
+}
+
+// A small steel fire barrel. Its two flame poses flicker without making particles.
+function campBarrelSpr(frame) {
+  return pix(9, 15, (r) => {
+    r(1, 7, 7, 8, '#434753'); r(1, 7, 2, 7, '#8b919c'); r(7, 8, 1, 7, '#2d3038');
+    r(0, 7, 9, 1, '#b4b9c1'); r(1, 10, 7, 1, '#1c1e23'); r(1, 13, 7, 1, '#1c1e23');
+    r(2, 6, 5, 2, '#c9772f'); r(2, 3 + frame, 2, 4 - frame, '#e2552f');
+    r(4, 1 - frame, 2, 7, '#ff8a3a'); r(5, 4, 2, 3, '#ffcf6a');
+    r(3, 5, 2, 2, '#fff1c2'); r(4, 2 + frame, 1, 4 - frame, '#ffcf6a');
+  });
+}
+
 function initScenery() {
   const rng = mulberry(909);
   PROPS.fence = [];
@@ -6511,6 +6589,27 @@ function initScenery() {
   SCN.shed = prop(shedSpr(), 14);
   SCN.fuel = prop(fuelSpr(), 6);
   SCN.coal = prop(coalSpr(), 4);
+  SCN.campTents = [false, true].map((olive) => {
+    const raw = campTentSpr(olive), d = prop(outline(raw, P.out), 0);
+    d.h = outline(hotSpr(raw, 55), '#161616');
+    return d;
+  });
+  SCN.campFire = [0, 1].map((f) => {
+    const raw = campBarrelSpr(f), d = prop(outline(raw, P.out), 0);
+    d.h = outline(hotSpr(raw, 185), '#161616');
+    return d;
+  });
+  SCN.campPeople = [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#e3b04b', '#b8876a']].map(([shirt, skin]) =>
+    [0, 1].map((f) => {
+      const raw = campPersonRaw(shirt, skin, f), d = prop(outline(raw, P.out), 0);
+      d.h = outline(hotSpr(raw, 215), '#161616');
+      return d;
+    }));
+  // Register every camp pose and its south-east cast shadow before the first frame.
+  for (const d of [...SCN.campTents, ...SCN.campFire, ...SCN.campPeople.flat()]) {
+    atl(d.spr); atl(d.sh);
+    if (d.h) atl(d.h);
+  }
   // the blast's marks, made now and not in the middle of the first blast
   blastRays();
   for (let r = 2; r <= 8; r++) poolSpr(r);
@@ -6538,6 +6637,14 @@ function dressStop(st) {
   for (const r of [-0.7, 8.7]) add(SCN.picket, 12.4, r);
   for (const r of [-1.3, 9.3]) add(SCN.bags, 8.1, r);
   for (const r of [-2.4, 10.4]) add(STATION.lamp, 8.3, r, { lamp: true });
+  if (!depot && st.def.kind === 'big') {
+    add(SCN.campTents[0], 12.4, 0);
+    add(SCN.campTents[1], 12.9, 7);
+    add(SCN.campFire[0], 11.9, 6, { campFire: 0.4 });
+    for (const [i, c, r] of [[0, 10.3, 6.9], [1, 13.3, 4.8], [2, 10.8, 0.1]]) {
+      add(SCN.campPeople[i][0], c, r, { campWave: i });
+    }
+  }
   if (!depot) return;
   // the Depot: an engine shed across the rails, a fuel tank, coal, crates, more lamps and sandbags
   add(SCN.shed, 3.2, 1.2);
@@ -6763,6 +6870,8 @@ function bakeOverlays() {
 // DL = everything standing, sorted by depth (k: the ground y of its front, or just in front of the
 // car for the dead holding on to the train). CARS = the train's cars as draw-list entries.
 const DL = [], TREES = [], VZ = [], FIRES = [], CARS = [];
+// One reward actor is reused while a survivor boards or the locked chest is presented.
+const STATION_REWARD_DRAW = { stationReward: true, x: 0, y: 0, k: 0, z: 0, age: 0, kind: '' };
 const byK = (a, b) => a.k - b.k;
 // Collect the props (from the chunk plans and the safe zone), the train and the living dead in
 // view, sorted by depth.
@@ -6795,9 +6904,29 @@ function gather(ci0, cj0, ci1, cj1) {
   for (const p of G.people) {
     if ((p.st === 'wait' || p.st === 'run' || p.st === 'grab') && p.x > x0 && p.x < x1 && p.y > y0 && p.y < y1 + 10) DL.push(p);
   }
+  gatherStationReward();
   // the dead: a crowd in the open is drawn in one go (drawHorde), the rest sorted in here (horde.js)
   gatherHorde(x0, x1, y0, y1);
   DL.sort(byK);
+}
+
+// Station rewards age with game time so the boarding moment can be frozen for a picture.
+function gatherStationReward() {
+  const q = G.stationReward;
+  if (!q || G.demo) return;
+  const age = G.t - q.t, o = STATION_REWARD_DRAW;
+  if (age < 0 || q.kind === 'surv' && age >= 1 || q.kind === 'chest' && age >= 2) return;
+  if (q.kind !== 'surv' && q.kind !== 'chest') return;
+  o.kind = q.kind; o.age = age; o.z = 0;
+  o.d = q.kind === 'chest' ? LART.gold : SCN.campPeople[0][0];
+  if (q.kind === 'surv') {
+    const c = G.tr.cars[1], side = G.station.side, u = clamp(age, 0, 1);
+    o.x = lerp(q.x, c.cx + c.nx * side * 9, u);
+    o.y = lerp(q.y, c.cy + c.ny * side * 9, u);
+    o.z = 3 * clamp((u - 0.75) / 0.25, 0, 1);
+  } else { o.x = q.x; o.y = q.y; }
+  o.k = o.y + 1;
+  DL.push(o);
 }
 
 // ---------- pieces
@@ -6865,6 +6994,21 @@ function drawPerson(p) {
     ctx.fillStyle = thermal ? '#ffffff' : grab ? (Math.sin(realT * 18) > 0 ? '#ff3a2a' : '#a8241a') : '#8fd18a';
     ctx.fillRect(x - 1, y - 14, 3, 1);
     ctx.fillRect(x, y - 13, 1, 1);
+  }
+}
+
+// The new passenger walks to the coach; Cornfield Halt presents its locked gold chest.
+function drawStationReward(o) {
+  const x = Math.round(o.x), y = Math.round(o.y);
+  if (o.kind === 'surv') {
+    const sv = SURV[4], f = (o.age * 8 | 0) & 1;
+    blit(sv.run[f][thermal ? 1 : 0], x - 2, y - 8 - Math.round(o.z));
+  } else {
+    const d = LART.gold;
+    ctx.globalAlpha = Math.min(1, (2 - o.age) / 0.25);
+    blit(d.spr, x - d.ax, y - d.ay);
+    blit(ICON.lock, x - (ICON.lock.width >> 1), y - 8);
+    ctx.globalAlpha = 1;
   }
 }
 // Bodies in the air: knocked over (fall) or thrown and turning (spin).
@@ -6991,6 +7135,10 @@ function render() {
     ctx.drawImage(fr.s, Math.round(z.x - S.ax), Math.round(z.y - 1 - S.shp));
   }
   drawTrainShadow();
+  if (DL.includes(STATION_REWARD_DRAW)) {
+    const o = STATION_REWARD_DRAW, d = o.kind === 'chest' ? LART.gold : SCN.campPeople[0][0];
+    blit(d.sh, Math.round(o.x) - d.ax, Math.round(o.y) - 1);
+  }
   ctx.globalAlpha = 0.25;
   for (const b of G.bodies) blit(BODYSH, Math.round(b.x - 4), Math.round(b.y - 2));
   ctx.globalAlpha = 1;
@@ -7000,6 +7148,10 @@ function render() {
   // see past it.
   const ax = G.camX + G.aimSX, ay = G.camY + G.aimSY, aiming = mode === 'play';
   for (const o of DL) {
+    if (o.stationReward) {
+      drawStationReward(o);
+      continue;
+    }
     if (o.isCar) {
       drawCar(o.i);
       continue;
@@ -7012,7 +7164,12 @@ function render() {
       drawZombie(o);
       continue;
     }
-    const d = o.d;
+    const d = o.campWave != null ? SCN.campPeople[o.campWave][(G.t * 2 + o.campWave * 0.7 | 0) & 1]
+      : o.campFire != null ? SCN.campFire[(G.t * 6 + o.campFire | 0) & 1] : o.d;
+    if (thermal && d.h) {
+      blit(d.h, o.x - d.ax, o.y - d.ay);
+      continue;
+    }
     if (aiming && d.tree && Math.abs(o.x - ax) < d.spr.width / 2 + 10 && ay > o.y - d.spr.height - 10 && ay < o.y + 6) {
       ctx.globalAlpha = 0.4;
       blit(d.spr, o.x - d.ax, o.y - d.ay);
@@ -7048,6 +7205,7 @@ function render() {
   ctx.globalCompositeOperation = 'lighter';
   drawLights();
   for (const f of FIRES) light(f.x, f.y - (f.big ? 6 : 3), f.big ? 22 : 14, '#ff9a4a', 0.45 + Math.sin(realT * 13 + f.seed) * 0.08);
+  for (const o of DL) if (o.campFire != null) light(o.x, o.y - 7, 12, '#ff9a4a', 0.25 + Math.sin(G.t * 13) * 0.04);
   // the train's headlights (in daylight their beam on the rails ahead only shows while the Turbo
   // Ram runs: bigger lights, beams that follow the bends, and the engine glows orange)
   if (G.result !== 'lost') {
@@ -11354,6 +11512,14 @@ Object.assign(window.__sr, {
       stars: l.stars, rescue: l.rescue, finale: l.finale, events: l.events.map((e) => ({ ...e })) }))
   }),
   leg: (n, replay) => { startGame(n, replay); return G.leg; },
+  win: () => { window.__sr.jump(8); },
+  setLeg: (n) => {
+    n = clamp(Math.floor(Number(n) || 1), 1, 13);
+    for (let i = 1; i < n; i++) legSave(i).won = true;
+    SAVE.leg = n;
+    saveSave();
+    return SAVE.leg;
+  },
   legState: () => ({ leg: G.leg, t: +G.run.toFixed(2), len: legDef(G.leg)?.len || 0,
     result: G.result, replay: G.replay, events: G.events.slice(),
     stars: (SAVE.legs[G.leg]?.stars || [false, false, false]).slice(),
