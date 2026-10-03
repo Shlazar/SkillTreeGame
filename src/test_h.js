@@ -39,7 +39,7 @@ Object.assign(window.__sr, {
     h.cmdT = realT;
   },
   heFire: (x, y) => heFire(G.camX + x, G.camY + y),
-  heArm: (on) => { HUI.arm = !!on; },
+  heArm: (on) => (HUI.arm = !!on && G.up.he),
   // boxFrom(x, y): the left button is held down from (x, y): a drag box shows to the mouse
   boxFrom: (x, y) => { HUI.box = { x0: x, y0: y, shift: false }; M.down = true; },
   heliMarks: () => HUI.marks.length

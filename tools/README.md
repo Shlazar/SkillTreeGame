@@ -201,7 +201,7 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 - `km(x)`: move the train to x km from the Depot. Stations and walls behind are marked passed, zombies are removed, and it does not pay. Does nothing on the title demo.
 - `bot(on)`: the autopilot plays (aims and pulls triggers). `bot(false)` also lets go of the trigger.
 
-### 5.5 Input (src/main.js, src/stationtab.js)
+### 5.5 Input (src/main.js, src/test_h.js)
 
 - `aim(x, y)`: put the mouse at game px (x, y).
 - `trigger(on)`: hold or release the fire trigger (play only).
@@ -244,7 +244,7 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 - `heliKey(k)`: a heli key: `'a'` selects all, `'1'`..`'9'` select one.
 - `order(i, kind, a, b)`: give heli i an order: `'attack'` (a = zombie), `'move'` (a, b = world px), `'escort'`.
 - `heFire(x, y)`: fire the 105 at screen pixel (x, y) (`heFire`).
-- `heArm(on)`: arm or disarm the 105 aim (`HUI.arm`).
+- `heArm(on)`: arm or disarm the retained 105 aim when owned; returns the state (always false in this demo).
 - `boxFrom(x, y)`: the left button is held from (x, y), so a drag box shows to the mouse.
 - `heliMarks()`: how many order marks are on the ground.
 
@@ -282,7 +282,7 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 - `hoverNode(id)`: move the tree view so the node is on the panel (`treeFocus`), then keep the mouse on it, even across frames (test_t.js overrides the main.js version).
 - `clickNode(id)`: move the view to the node, then click it (test_t.js overrides the main.js version).
 - `tree()`: `{id: "level state"}` for every node.
-- `treeNodes()`: `[{id, lv, max, st, cost, cur}]` for every node (test_t.js).
+- `treeNodes()`: `[{id, p, lv, max, st, cost, cur}]` for every node (test_t.js); `p` is the parent id, or null for the root.
 - `treeCam(x, y, z)`: put the tree view on cell (x, y) at zoom z at once. `treeCam()` returns the view now (test_t.js).
 - `treeZoom(d)`: zoom the tree one step, as the wheel or buttons do (test_t.js).
 - `treeState()`: `{drag, M, tab, mode}`: tree drag, mouse, Depot tab (test_t.js).

@@ -1,5 +1,5 @@
 // loot.js - the finds you fly out from the train for: scrap piles on car wrecks, supply crates in
-// burnt farms (the dead stand guard; they come only once the train has its flatcar gun), the golden
+// burnt farms (kept for the coming leg events), the golden
 // crate (once per save) and the stranded survivor on a bus roof (SOS, once per save, after Farm Stop
 // is held) that the Winch lifts. Any heli that flies over a find (right click it to send one) takes
 // it: it flies up to that heli and pays. G.loot = this run's finds, rolled in newGame().
@@ -98,7 +98,6 @@ function rollLoot() {
   const gate = (k) => k > k0 - 0.05;
   if (!SAVE.flags.gold && gate(LOOT.gold.km)) addFind('gold', LOOT.gold.km, LOOT.gold.off, LOOT.gold.side, LOOT.gold.pay);
   if (SAVE.held.includes('farm') && !SAVE.flags.sos && gate(LOOT.sos.km)) addFind('sos', LOOT.sos.km, LOOT.sos.off, LOOT.sos.side, 0);
-  if (G.up.gun) for (const [k, px, side] of CRATES) if (gate(k)) addFind('crate', k, px, side, k > LOOT.farKm ? LOOT.crate.payFar : LOOT.crate.pay);
   const stops = [0].concat(STATIONS.map((d) => d.km)), fixed = G.loot.slice();
   for (let i = 1; i * c.every < CFG.line.end * CFG.line.km; i++) {
     const k = i * c.every / CFG.line.km, side = rng() < 0.5 ? -1 : 1, px = Math.round(lerp(c.near, c.far, rng())), on = rng() < c.fill;

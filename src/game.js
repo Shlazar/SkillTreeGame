@@ -109,20 +109,20 @@ const UP = {
   nest: (l) => CFG.nest.rate + CFG.up.nest * l                       // NEST SPEED: MG nest rounds/s
 };
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
-// menus uses the plain numbers, but shows off the 105mm, rail cannon and Turbo Ram for now.
+// menus uses the plain numbers and shows off the Turbo Ram for now.
 // he, winch, ram, wire = owned; gun = the rail cannon's reload seconds (0 = none). One Viper flies.
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
   // (tree.js adds the newer nodes' numbers: treeUp)
   return treeUp(L, {
     hp: UP.hp(L('armor')), rate: UP.rate(L('feed')), heat: UP.heat(L('cool'), L('feed')), dmg: UP.dmg(L('heavy')),
-    he: demo || L('he') > 0, reload: UP.reload(L('reload')), fly: UP.fly(L('radio')), pickup: UP.pickup(L('magnet')),
+    he: false, reload: UP.reload(0), fly: UP.fly(L('radio')), pickup: UP.pickup(L('magnet')),
     helis: 1,
-    scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: demo || L('gun') > 0 ? UP.gun(L('gunspd')) : 0, ram: demo || L('ram') > 0,
+    scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: 0, ram: demo || L('ram') > 0,
     nest: UP.nest(L('nestspd')), wire: L('wire') > 0,
     // The first ring (skills.js): the cow catcher, 1 golden zombie in this many (0 = none),
     // and the armor level (its plates show on the engine)
-    cow: L('cow') > 0, gold: UP.gold(L('goldz')), armor: L('armor')
+    cow: false, gold: UP.gold(L('goldz')), armor: L('armor')
   });
 }
 // The train's full health.
@@ -662,8 +662,8 @@ function fireHE(player, tx, ty, h) {
     SFX.whistle(CFG.he.travel);
   }
 }
-// Space: the selected helis (or all) fire a 105 at the mouse. Nothing happens until the 105MM
-// CANNON is bought in the skill tree.
+// Retained for the full game: selected helis (or all) fire a 105 at the mouse when owned.
+// The demo has no 105 unlock and no keyboard binding for this helper.
 function tryHE() {
   if (mode !== 'play' || paused || !G.up.he) return;
   heFire(G.camX + G.aimSX, G.camY + G.aimSY);
@@ -1145,8 +1145,8 @@ function updateFireSpots(dt) {
 
 // ---------- the autopilot (the title demo, and tests through window.__sr.bot)
 // It shoots the dead on the train first, then the ones near the survivors, then the ones on the
-// rails nearest the engine, then whoever is nearest the train; the 105 goes to a crowd on the rails
-// well ahead of the train, and the Turbo Ram to a Dead Wall or a crowd on the rails.
+// rails nearest the engine, then whoever is nearest the train. The Turbo Ram tackles a Dead Wall
+// or a crowd on the rails.
 function autopilot(dt) {
   G.botT -= dt;
   if (G.botT <= 0 || !G.botZ || G.botZ.dead) {
@@ -1168,25 +1168,18 @@ function autopilot(dt) {
     }
     G.botZ = bestZ;
   }
-  let he = null;
-  for (const q of G.zombies) {
-    if (q.dead || q.st !== 1 || q.y - G.camY < 24 || q.y - G.camY > H) continue;
-    if (G.tr.s - trackLocal(q.x, q.y, TL).a > 110) { he = q; break; }
-  }
   // the Turbo Ram: at a Dead Wall, at PRESS E!, or when 6 or more dead stand on the rails ahead (but
   // not when a Dead Wall is less than 600 m ahead: it saves the Ram for that)
   if (ramState() === 'ready' && (G.prompt || wallAhead(130) || G.railAhead >= 6 && !wallAhead(1200))) tryRam(true);
-  return { z: G.botZ && !G.botZ.dead ? G.botZ : null, he };
+  return { z: G.botZ && !G.botZ.dead ? G.botZ : null };
 }
-// the title demo: the helis fight by themselves, and a 105 now and then
+// The title demo: the heli fights by itself and the bot handles the Ram.
 function attract(dt) {
-  const b = autopilot(dt);
-  if (b.he) botHE(b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel, false);
+  autopilot(dt);
 }
-// in play with the bot on: the helis fight by themselves; it fires the 105 and rams
+// In play with the bot on: the heli fights by itself and the bot handles the Ram.
 function botPlay(dt) {
-  const b = autopilot(dt);
-  if (b.he && G.up.he) botHE(b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel, true);
+  autopilot(dt);
 }
 
 // ---------- the ride

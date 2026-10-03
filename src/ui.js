@@ -252,7 +252,7 @@ function drawRadar() {
   ctx.globalAlpha = 1;
   text('N', cx, y0 + 2, U.faint, { align: 'center', outline: false });
 }
-// The cards, bottom left: one for each heli and the 105mm once it is bought (helis.js), then the
+// The cards, bottom left: the heli (helis.js), then the
 // Turbo Ram.
 function drawWeapons() {
   const y = H - 30;
@@ -457,7 +457,7 @@ function drawTitle() {
     y += 30;
   }
   const L = ['YOUR HELIS FIGHT BY THEMSELVES.  CLICK OR DRAG: SELECT.',
-    lv('he') ? 'RIGHT CLICK: ATTACK OR MOVE.  SPACE: 105MM.' : 'RIGHT CLICK: ATTACK OR MOVE.  A: ALL HELIS.',
+    'RIGHT CLICK: ATTACK OR MOVE.  A: SELECT HELI.',
     'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
   L.forEach((l, i) => text(l, cx, y + i * 11, U.faint, { align: 'center', outline: false }));
   text(ask ? 'ESC: GO BACK' : 'ENTER: ' + (prog ? 'CONTINUE' : 'PLAY'), cx, y + 42, U.faint, { align: 'center', outline: false });

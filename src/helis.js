@@ -2,8 +2,8 @@
 // itself: it escorts the train in a loose formation and its nose gun shoots the closest threat (the
 // dead on the train first, then the dead on the rails ahead, then the nearest). Select them (click,
 // drag a box, A, the number keys, double click) and right click: on a zombie = attack it until it
-// dies, on the ground = fly there and hold the spot, on the train = escort it again. SPACE (or the
-// 105MM card, then a click) fires the 105 from the selected helis (all of them when none is selected).
+// dies, on the ground = fly there and hold the spot, on the train = escort it again. The 105mm
+// helpers are retained for the full game, but that weapon is disabled in this demo.
 // The model is a pile of top-down slices like the train cars, made at HN headings; the main rotor is
 // a baked blur disc with blade flicks, the tail rotor flickers, the shadow falls south-east.
 
@@ -170,6 +170,9 @@ function escortAt(i) {
 }
 // The run's helis (G.up.helis of them), in their escort slots.
 function makeHelis() {
+  HUI.arm = false;
+  HUI.box = null;
+  HUI.cards.length = 0;
   G.helis = [];
   for (let i = 0; i < G.up.helis; i++) {
     const [x, y] = escortAt(i);
@@ -276,7 +279,7 @@ function updateHelis(dt) {
     // the 105 loads
     if (h.heR > 0) {
       h.heR = Math.max(0, h.heR - dt);
-      if (h.heR <= 0 && !G.demo && mode === 'play') readyNow = true;
+      if (G.up.he && h.heR <= 0 && !G.demo && mode === 'play') readyNow = true;
     }
     heat = Math.max(heat, h.heat);
     hot = hot || h.hot;
@@ -287,7 +290,8 @@ function updateHelis(dt) {
   G.heat = heat;
   G.overheat = hot;
   G.heReload = rel;
-  if (readyNow) {
+  if (!G.up.he) G.heQueue = false;
+  if (G.up.he && readyNow) {
     if (G.heQueue) {
       G.heQueue = false;
       heFire(G.camX + G.aimSX, G.camY + G.aimSY);
@@ -382,6 +386,7 @@ function heFire(tx, ty) {
 }
 // the title demo, the Depot's demo and the autopilot: one 105 from the first heli with it loaded
 function botHE(tx, ty, player) {
+  if (!G.up.he) return false;
   const h = G.helis.find((q) => q.heR <= 0);
   if (!h) return false;
   fireHE(player, tx, ty, h);
@@ -441,6 +446,7 @@ function clickHeli(h, shift) {
 // Left button down on the field (in play, not paused): the armed 105 fires, a card is clicked, or a
 // drag starts (a click on a heli selects it when the button comes up).
 function heliDown(x, y, shift) {
+  if (!G.up.he) HUI.arm = false;
   for (const c of HUI.cards) {
     if (!inR(x, y, c.x, c.y, c.w, c.ht)) continue;
     if (c.he) {
@@ -478,6 +484,7 @@ function heliUp(x, y) {
 // Right click at screen (x, y) with helis selected: a zombie = attack it, the train = escort it,
 // the ground = fly there and hold (more than one: round the spot, the first right on it).
 function heliRight(x, y) {
+  if (!G.up.he) HUI.arm = false;
   if (HUI.arm) {
     HUI.arm = false;
     return;

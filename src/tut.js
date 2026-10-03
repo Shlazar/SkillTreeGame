@@ -8,12 +8,12 @@
 
 // tasks / taskQ = the task lines shown and waiting; tip / tipQ = the tip shown and waiting; banQ =
 // banners waiting; labels = words over a zombie (BRUTE!); mode = the screen last frame (for the
-// fades and for what a new run resets); fade = the black over the screen (1 = all black); heR = the
-// 105mm's reload last frame; cardAt / card = the end-of-build card (when it opens, and its numbers); after = Depot
+// fades and for what a new run resets); fade = the black over the screen (1 = all black);
+// cardAt / card = the end-of-build card (when it opens, and its numbers); after = Depot
 // prompts to mark seen when the next run starts
 const TUT = {
   tasks: [], taskQ: [], tip: null, tipQ: [], banQ: [], labels: [], mode: '', fade: 1, fadeK: 1,
-  heR: 0, cardAt: 0, card: null, sum: [], after: new Set()
+  cardAt: 0, card: null, sum: [], after: new Set()
 };
 const seen = (k) => !!SAVE.seen[k];
 // Mark prompt k as shown. True the first time.
@@ -138,7 +138,6 @@ function tutNewRun() {
   TUT.tip = null;
   TUT.card = null;
   TUT.cardAt = 0;
-  if (G) TUT.heR = G.heReload;
   for (const k of TUT.after) see(k);
   TUT.after.clear();
 }
@@ -171,10 +170,7 @@ function tutChannels(dt) {
 }
 // What the run shows now that has a prompt (the ones no feature sends an event for).
 function tutLook(dt) {
-  const k = DK(), runs = SAVE.runs;
-  // a 105mm shell fired
-  if (G.heReload > TUT.heR + 0.01) tutCount('he');
-  TUT.heR = G.heReload;
+  const runs = SAVE.runs;
   // the first things to learn, right after the first run's Ram taste (or a moment into a run)
   // (the helis: select, send, select all)
   if (G.taste ? G.ram.crack > 0 && realT - G.ram.crack > 0.6 : G.run > 1.5) {
@@ -184,14 +180,10 @@ function tutLook(dt) {
     if (h) tip('p_auto', 'YOUR HELI FIGHTS BY ITSELF. RIGHT CLICK TO SEND IT.', () => [h.x - G.camX, h.y - h.alt - G.camY]);
   }
   if (G.overheat) tip('p_hot', 'TOO HOT! THE GUN COOLS DOWN BY ITSELF.', () => [40, cardsTop() + 13]);
-  if (G.up.gun && G.run > 3) tip('p_gun', 'YOUR RAIL CANNON GUARDS THE TRAIN. SEND A HELI FOR LOOT!', () => {
-    const [x, y] = gunXY();
-    return [x - G.camX, y - G.camY];
-  });
   // scrap piles: from 11 s into run 2 (once there is loot on the line)
   if (runs >= 2 && G.run > 11 && G.loot) task('t_piles', 'GRAB 3 SCRAP PILES', 3, 'pile');
   // the dead in view: a crowd on the rails, one on the train, a runner, a brute
-  let rail = 0, climb = null, runner = null, brute = null, railBrute = null;
+  let rail = 0, climb = null, runner = null, brute = null;
   for (const z of G.zombies) {
     if (z.dead || !inView(z)) continue;
     if (z.st === 1) rail++;
@@ -199,12 +191,10 @@ function tutLook(dt) {
     if (z.type === 1) runner = z;
     if (z.type === 2) {
       brute = brute || z;
-      if (z.st === 1) railBrute = z;
     }
   }
   if (rail >= 3) {
     task('t_track', 'SHOOT THE DEAD ON THE TRACK', 5, 'track');
-    if (G.up.he) task('t_he', 'SPACE: 105MM AT THE MOUSE', 1, 'he');
   }
   if (climb && runs >= 2) task('t_climb', 'SHOOT THE DEAD OFF THE TRAIN', 1, 'climber');
   if (runner && runs >= 2) bannerOnce('b_run', 'RUNNERS', 'FAST, BUT ONLY ' + CFG.types[1].hp + ' HP', U.amber);
@@ -213,7 +203,6 @@ function tutLook(dt) {
     label(brute, 'BRUTE!', U.red);
     tip('p_brute', 'BRUTES HAVE ' + CFG.types[2].hp + " HP. THE TRAIN CAN'T PUSH THEM.", at(brute));
   }
-  if (railBrute) tip('p_railbrute', 'BRUTE ON THE TRACK! USE THE 105MM OR THE RAM.', at(railBrute));
 }
 
 // ---------- drawing in the run
@@ -326,8 +315,6 @@ function tutTag() {
   const tree = depotTab === 'tree';
   if (!lv('root')) return tree ? ['root', "CLICK THE TRAIN. IT'S FREE."] : null;
   if (!SAVE.runs) return ['start', 'PRESS START RUN.'];
-  const he = NODE.he;
-  if (tree && he && !lv('he') && stationOpen() && nodeState(he) === 'buy') return ['he', 'BUY THE 105MM WITH ' + he.cost[0] + ' SURVIVORS.'];
   const wi = NODE.winch;
   if (tree && wi && !lv('winch') && nodeState(wi) === 'buy') return ['winch', 'WINCH: SAVE SURVIVORS IN THE FIELD.'];
   return null;
@@ -387,7 +374,6 @@ function drawPause() {
     return;
   }
   const L = ['YOUR HELIS FIGHT BY THEMSELVES.', 'CLICK OR DRAG: SELECT.  A: ALL.  1 2 3: ONE.', 'RIGHT CLICK: ATTACK, MOVE OR ESCORT.'];
-  if (G.up.he) L.push('SPACE: 105MM AT THE MOUSE.');
   if (G.up.ram) L.push('E: TURBO RAM.');
   if (G.up.strafe) L.push('Q: STRAFING RUN, THEN CLICK THE MAP.');
   L.push('T: CAMERA.  M: SOUND.  WHEEL: ZOOM.');

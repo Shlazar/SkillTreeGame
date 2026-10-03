@@ -2752,20 +2752,20 @@ const UP = {
   nest: (l) => CFG.nest.rate + CFG.up.nest * l                       // NEST SPEED: MG nest rounds/s
 };
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
-// menus uses the plain numbers, but shows off the 105mm, rail cannon and Turbo Ram for now.
+// menus uses the plain numbers and shows off the Turbo Ram for now.
 // he, winch, ram, wire = owned; gun = the rail cannon's reload seconds (0 = none). One Viper flies.
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
   // (tree.js adds the newer nodes' numbers: treeUp)
   return treeUp(L, {
     hp: UP.hp(L('armor')), rate: UP.rate(L('feed')), heat: UP.heat(L('cool'), L('feed')), dmg: UP.dmg(L('heavy')),
-    he: demo || L('he') > 0, reload: UP.reload(L('reload')), fly: UP.fly(L('radio')), pickup: UP.pickup(L('magnet')),
+    he: false, reload: UP.reload(0), fly: UP.fly(L('radio')), pickup: UP.pickup(L('magnet')),
     helis: 1,
-    scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: demo || L('gun') > 0 ? UP.gun(L('gunspd')) : 0, ram: demo || L('ram') > 0,
+    scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: 0, ram: demo || L('ram') > 0,
     nest: UP.nest(L('nestspd')), wire: L('wire') > 0,
     // The first ring (skills.js): the cow catcher, 1 golden zombie in this many (0 = none),
     // and the armor level (its plates show on the engine)
-    cow: L('cow') > 0, gold: UP.gold(L('goldz')), armor: L('armor')
+    cow: false, gold: UP.gold(L('goldz')), armor: L('armor')
   });
 }
 // The train's full health.
@@ -3305,8 +3305,8 @@ function fireHE(player, tx, ty, h) {
     SFX.whistle(CFG.he.travel);
   }
 }
-// Space: the selected helis (or all) fire a 105 at the mouse. Nothing happens until the 105MM
-// CANNON is bought in the skill tree.
+// Retained for the full game: selected helis (or all) fire a 105 at the mouse when owned.
+// The demo has no 105 unlock and no keyboard binding for this helper.
 function tryHE() {
   if (mode !== 'play' || paused || !G.up.he) return;
   heFire(G.camX + G.aimSX, G.camY + G.aimSY);
@@ -3788,8 +3788,8 @@ function updateFireSpots(dt) {
 
 // ---------- the autopilot (the title demo, and tests through window.__sr.bot)
 // It shoots the dead on the train first, then the ones near the survivors, then the ones on the
-// rails nearest the engine, then whoever is nearest the train; the 105 goes to a crowd on the rails
-// well ahead of the train, and the Turbo Ram to a Dead Wall or a crowd on the rails.
+// rails nearest the engine, then whoever is nearest the train. The Turbo Ram tackles a Dead Wall
+// or a crowd on the rails.
 function autopilot(dt) {
   G.botT -= dt;
   if (G.botT <= 0 || !G.botZ || G.botZ.dead) {
@@ -3811,25 +3811,18 @@ function autopilot(dt) {
     }
     G.botZ = bestZ;
   }
-  let he = null;
-  for (const q of G.zombies) {
-    if (q.dead || q.st !== 1 || q.y - G.camY < 24 || q.y - G.camY > H) continue;
-    if (G.tr.s - trackLocal(q.x, q.y, TL).a > 110) { he = q; break; }
-  }
   // the Turbo Ram: at a Dead Wall, at PRESS E!, or when 6 or more dead stand on the rails ahead (but
   // not when a Dead Wall is less than 600 m ahead: it saves the Ram for that)
   if (ramState() === 'ready' && (G.prompt || wallAhead(130) || G.railAhead >= 6 && !wallAhead(1200))) tryRam(true);
-  return { z: G.botZ && !G.botZ.dead ? G.botZ : null, he };
+  return { z: G.botZ && !G.botZ.dead ? G.botZ : null };
 }
-// the title demo: the helis fight by themselves, and a 105 now and then
+// The title demo: the heli fights by itself and the bot handles the Ram.
 function attract(dt) {
-  const b = autopilot(dt);
-  if (b.he) botHE(b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel, false);
+  autopilot(dt);
 }
-// in play with the bot on: the helis fight by themselves; it fires the 105 and rams
+// In play with the bot on: the heli fights by itself and the bot handles the Ram.
 function botPlay(dt) {
-  const b = autopilot(dt);
-  if (b.he && G.up.he) botHE(b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel, true);
+  autopilot(dt);
 }
 
 // ---------- the ride
@@ -5194,8 +5187,8 @@ Object.assign(SFX, {
 // itself: it escorts the train in a loose formation and its nose gun shoots the closest threat (the
 // dead on the train first, then the dead on the rails ahead, then the nearest). Select them (click,
 // drag a box, A, the number keys, double click) and right click: on a zombie = attack it until it
-// dies, on the ground = fly there and hold the spot, on the train = escort it again. SPACE (or the
-// 105MM card, then a click) fires the 105 from the selected helis (all of them when none is selected).
+// dies, on the ground = fly there and hold the spot, on the train = escort it again. The 105mm
+// helpers are retained for the full game, but that weapon is disabled in this demo.
 // The model is a pile of top-down slices like the train cars, made at HN headings; the main rotor is
 // a baked blur disc with blade flicks, the tail rotor flickers, the shadow falls south-east.
 
@@ -5362,6 +5355,9 @@ function escortAt(i) {
 }
 // The run's helis (G.up.helis of them), in their escort slots.
 function makeHelis() {
+  HUI.arm = false;
+  HUI.box = null;
+  HUI.cards.length = 0;
   G.helis = [];
   for (let i = 0; i < G.up.helis; i++) {
     const [x, y] = escortAt(i);
@@ -5468,7 +5464,7 @@ function updateHelis(dt) {
     // the 105 loads
     if (h.heR > 0) {
       h.heR = Math.max(0, h.heR - dt);
-      if (h.heR <= 0 && !G.demo && mode === 'play') readyNow = true;
+      if (G.up.he && h.heR <= 0 && !G.demo && mode === 'play') readyNow = true;
     }
     heat = Math.max(heat, h.heat);
     hot = hot || h.hot;
@@ -5479,7 +5475,8 @@ function updateHelis(dt) {
   G.heat = heat;
   G.overheat = hot;
   G.heReload = rel;
-  if (readyNow) {
+  if (!G.up.he) G.heQueue = false;
+  if (G.up.he && readyNow) {
     if (G.heQueue) {
       G.heQueue = false;
       heFire(G.camX + G.aimSX, G.camY + G.aimSY);
@@ -5574,6 +5571,7 @@ function heFire(tx, ty) {
 }
 // the title demo, the Depot's demo and the autopilot: one 105 from the first heli with it loaded
 function botHE(tx, ty, player) {
+  if (!G.up.he) return false;
   const h = G.helis.find((q) => q.heR <= 0);
   if (!h) return false;
   fireHE(player, tx, ty, h);
@@ -5633,6 +5631,7 @@ function clickHeli(h, shift) {
 // Left button down on the field (in play, not paused): the armed 105 fires, a card is clicked, or a
 // drag starts (a click on a heli selects it when the button comes up).
 function heliDown(x, y, shift) {
+  if (!G.up.he) HUI.arm = false;
   for (const c of HUI.cards) {
     if (!inR(x, y, c.x, c.y, c.w, c.ht)) continue;
     if (c.he) {
@@ -5670,6 +5669,7 @@ function heliUp(x, y) {
 // Right click at screen (x, y) with helis selected: a zombie = attack it, the train = escort it,
 // the ground = fly there and hold (more than one: round the spot, the first right on it).
 function heliRight(x, y) {
+  if (!G.up.he) HUI.arm = false;
   if (HUI.arm) {
     HUI.arm = false;
     return;
@@ -7422,7 +7422,7 @@ function drawRadar() {
   ctx.globalAlpha = 1;
   text('N', cx, y0 + 2, U.faint, { align: 'center', outline: false });
 }
-// The cards, bottom left: one for each heli and the 105mm once it is bought (helis.js), then the
+// The cards, bottom left: the heli (helis.js), then the
 // Turbo Ram.
 function drawWeapons() {
   const y = H - 30;
@@ -7627,7 +7627,7 @@ function drawTitle() {
     y += 30;
   }
   const L = ['YOUR HELIS FIGHT BY THEMSELVES.  CLICK OR DRAG: SELECT.',
-    lv('he') ? 'RIGHT CLICK: ATTACK OR MOVE.  SPACE: 105MM.' : 'RIGHT CLICK: ATTACK OR MOVE.  A: ALL HELIS.',
+    'RIGHT CLICK: ATTACK OR MOVE.  A: SELECT HELI.',
     'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
   L.forEach((l, i) => text(l, cx, y + i * 11, U.faint, { align: 'center', outline: false }));
   text(ask ? 'ESC: GO BACK' : 'ENTER: ' + (prog ? 'CONTINUE' : 'PLAY'), cx, y + 42, U.faint, { align: 'center', outline: false });
@@ -8072,25 +8072,10 @@ const NODES = [
     desc: 'HELI GUNS REACH FURTHER.', stat: ['GUN RANGE', (l) => metres(HC.range * UP.hrange(l))] },
   { id: 'radio', name: 'FAST ROTORS', k: 'up', p: 'hrange', x: -3.45, y: 2.75, cost: nodeCosts(20, 5, 1.6),
     desc: 'YOUR HELIS FLY FASTER.', stat: ['HELI SPEED', (l) => UP.fly(l) + ' PX/S'] },
-  { id: 'he', name: '105MM CANNON', k: 'big', p: 'hdmg', x: -4.75, y: 1.1, cost: [5], cur: 'surv', star: true,
-    desc: 'A BIG SHELL FOR BIG CROWDS.', stat: ['105MM', (l) => (l ? 'RELOAD ' + secs(UP.reload(0)) : 'NONE')],
-    stat2: ['FIRE WITH', () => 'SPACE, AT THE MOUSE'] },
-  { id: 'reload', name: 'FAST RELOAD', k: 'up', p: 'he', x: -6.05, y: 0.55, cost: [60, 120, 240],
-    desc: 'THE 105MM LOADS FASTER.', stat: ['105MM RELOAD', (l) => secs(UP.reload(l))] },
   // TRAIN (east)
   { id: 'armor', name: 'ARMOR', k: 'up', p: 'root', x: 1.7, y: 0, cost: nodeCosts(15, 10, 1.38),
     desc: 'STEEL PLATES: MORE TRAIN HEALTH.', stat: ['TRAIN HP', (l) => UP.hp(l)] },
-  { id: 'cow', name: 'COW CATCHER', k: 'spec', p: 'armor', x: 3.1, y: 0.75, cost: [60],
-    desc: 'A STEEL PLOW THROWS ZOMBIES ASIDE.', stat: ['WALKERS SLOW THE TRAIN', (l) => (l ? 'NO' : 'YES')],
-    stat2: ['BRUTES', () => 'STILL STOP THE TRAIN'] },
-  { id: 'gun', name: 'RAIL CANNON', k: 'big', p: 'cow', x: 4.5, y: 0.2, cost: [250], star: true,
-    desc: 'ONE SHOT KILLS A WHOLE LINE OF DEAD.', stat: ['RELOAD', (l) => (l ? secs(UP.gun(0)) : 'NONE')],
-    stat2: ['RANGE', () => 'THE WHOLE SCREEN'] },
-  { id: 'gunspd', name: 'GUN SPEED', k: 'up', p: 'gun', x: 5.5, y: -0.95, cost: [80, 160, 320],
-    desc: 'THE RAIL CANNON RELOADS FASTER.', stat: ['RELOAD', (l) => secs(UP.gun(l))] },
-  { id: 'power', name: 'POWER SHOT', k: 'spec', p: 'gun', x: 5.95, y: 0.6, cost: [150],
-    desc: 'EVERY 3RD CANNON SHOT IS HUGE.', stat: ['3RD SHOT', (l) => (l ? '3X WIDER' : 'NORMAL')] },
-  { id: 'ram', name: 'TURBO RAM', k: 'big', p: 'gun', x: 5.0, y: 1.65, cost: [350], star: true,
+  { id: 'ram', name: 'TURBO RAM', k: 'big', p: 'armor', x: 5.0, y: 1.65, cost: [350], star: true,
     desc: 'PRESS E: SMASH THROUGH THE DEAD.',
     stat: ['TURBO RAM', (l) => (l ? CFG.ram.dur + ' S AT ' + Math.round(CFG.ram.speed / CFG.train.cruise) + '× SPEED' : 'NONE')],
     stat2: ['FULL AGAIN AFTER', () => CFG.ram.charge + ' KILLS'] },
@@ -8098,10 +8083,6 @@ const NODES = [
     desc: 'THE TURBO RAM LASTS LONGER.', stat: ['RAM LASTS', (l) => secs(CFG.ram.dur + UP.ramTime(l))] },
   { id: 'charge', name: 'RAM CHARGE', k: 'up', p: 'ram', x: 4.6, y: 3.0, cost: nodeCosts(40, 5, 1.6),
     desc: 'FEWER KILLS FILL THE RAM AGAIN.', stat: ['FULL AGAIN AFTER', (l) => CFG.ram.charge - UP.ramCharge(l) + ' KILLS'] },
-  { id: 'autoram', name: 'AUTO RAM', k: 'big', p: 'ramtime', x: 7.65, y: 2.0, cost: [0], later: true, star: true,
-    desc: 'THE TRAIN RAMS BY ITSELF.' },
-  { id: 'horn', name: 'SHOCK HORN', k: 'big', p: 'gunspd', x: 6.8, y: -1.35, cost: [0], later: true, star: true,
-    desc: 'BLAST THE DEAD OFF THE TRAIN.' },
   // LOOT (north)
   { id: 'bonus', name: 'BONUS SCRAP', k: 'up', p: 'root', x: 0, y: -1.6, cost: nodeCosts(20, 10, 1.4),
     desc: 'MORE SCRAP AT THE END OF A RUN.', stat: ['RUN BONUS', (l) => '+' + UP.bonus(l)] },
@@ -8199,7 +8180,7 @@ function treeUp(L, up) {
     heliDmg: hd, heliRate: hr, heliRange: UP.hrange(L('hrange')),
     bonus: UP.bonus(L('bonus')), bonusP: UP.bonusP(L('bonusP')),
     boom: UP.boom(L('boom')), boomR: UP.boomR(L('boomR')), silver: UP.silver(L('silver')),
-    ramTime: UP.ramTime(L('ramtime')), ramCharge: UP.ramCharge(L('charge')), power: L('power') > 0,
+    ramTime: UP.ramTime(L('ramtime')), ramCharge: UP.ramCharge(L('charge')), power: false,
     strafe: L('strafe') ? 1 + L('strafeN') : 0, strafeW: UP.strafeW(L('strafeW')), strafeD: UP.strafeD(L('strafeD')),
     strafeBomb: L('strafeB') > 0, twin: L('twin') > 0
   });
@@ -9517,8 +9498,7 @@ addEventListener('keydown', (e) => {
   if (mode === 'play') {
     // (with reduced motion PRESS E! stops the game: any other key goes on without the Ram)
     if (G.prompt && REDUCED && k !== 'e') G.prompt = null;
-    if (k === ' ') tryHE();
-    else if (k === 'e') { if (!paused) tryRam(); }
+    if (k === 'e') { if (!paused) tryRam(); }
     else if (k === 'q') { if (!paused) tryStrafe(); }
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
     else if (!paused) heliKey(k);
@@ -9527,8 +9507,7 @@ addEventListener('keydown', (e) => {
     else if (k === 'Escape') titleAsk = false;
   } else if (mode === 'depot') depotKey(k);
   else if (mode === 'summary') {
-    // ENTER or ESC: show it all, then go to the Depot. Not SPACE (it fires the 105mm, and may still
-    // be mashed as the train goes), and nothing in the first moment after the summary opens.
+    // ENTER or ESC: show it all, then go to the Depot, after the opening moment.
     if ((k === 'Enter' || k === 'Escape') && realT - sumStart > 0.6 && !sumSkip()) toDepot();
   }
 });
@@ -9879,7 +9858,7 @@ function boot() {
 boot();
 
 // loot.js - the finds you fly out from the train for: scrap piles on car wrecks, supply crates in
-// burnt farms (the dead stand guard; they come only once the train has its flatcar gun), the golden
+// burnt farms (kept for the coming leg events), the golden
 // crate (once per save) and the stranded survivor on a bus roof (SOS, once per save, after Farm Stop
 // is held) that the Winch lifts. Any heli that flies over a find (right click it to send one) takes
 // it: it flies up to that heli and pays. G.loot = this run's finds, rolled in newGame().
@@ -9978,7 +9957,6 @@ function rollLoot() {
   const gate = (k) => k > k0 - 0.05;
   if (!SAVE.flags.gold && gate(LOOT.gold.km)) addFind('gold', LOOT.gold.km, LOOT.gold.off, LOOT.gold.side, LOOT.gold.pay);
   if (SAVE.held.includes('farm') && !SAVE.flags.sos && gate(LOOT.sos.km)) addFind('sos', LOOT.sos.km, LOOT.sos.off, LOOT.sos.side, 0);
-  if (G.up.gun) for (const [k, px, side] of CRATES) if (gate(k)) addFind('crate', k, px, side, k > LOOT.farKm ? LOOT.crate.payFar : LOOT.crate.pay);
   const stops = [0].concat(STATIONS.map((d) => d.km)), fixed = G.loot.slice();
   for (let i = 1; i * c.every < CFG.line.end * CFG.line.km; i++) {
     const k = i * c.every / CFG.line.km, side = rng() < 0.5 ? -1 : 1, px = Math.round(lerp(c.near, c.far, rng())), on = rng() < c.fill;
@@ -10338,12 +10316,12 @@ Object.assign(window.__sr, {
 
 // tasks / taskQ = the task lines shown and waiting; tip / tipQ = the tip shown and waiting; banQ =
 // banners waiting; labels = words over a zombie (BRUTE!); mode = the screen last frame (for the
-// fades and for what a new run resets); fade = the black over the screen (1 = all black); heR = the
-// 105mm's reload last frame; cardAt / card = the end-of-build card (when it opens, and its numbers); after = Depot
+// fades and for what a new run resets); fade = the black over the screen (1 = all black);
+// cardAt / card = the end-of-build card (when it opens, and its numbers); after = Depot
 // prompts to mark seen when the next run starts
 const TUT = {
   tasks: [], taskQ: [], tip: null, tipQ: [], banQ: [], labels: [], mode: '', fade: 1, fadeK: 1,
-  heR: 0, cardAt: 0, card: null, sum: [], after: new Set()
+  cardAt: 0, card: null, sum: [], after: new Set()
 };
 const seen = (k) => !!SAVE.seen[k];
 // Mark prompt k as shown. True the first time.
@@ -10468,7 +10446,6 @@ function tutNewRun() {
   TUT.tip = null;
   TUT.card = null;
   TUT.cardAt = 0;
-  if (G) TUT.heR = G.heReload;
   for (const k of TUT.after) see(k);
   TUT.after.clear();
 }
@@ -10501,10 +10478,7 @@ function tutChannels(dt) {
 }
 // What the run shows now that has a prompt (the ones no feature sends an event for).
 function tutLook(dt) {
-  const k = DK(), runs = SAVE.runs;
-  // a 105mm shell fired
-  if (G.heReload > TUT.heR + 0.01) tutCount('he');
-  TUT.heR = G.heReload;
+  const runs = SAVE.runs;
   // the first things to learn, right after the first run's Ram taste (or a moment into a run)
   // (the helis: select, send, select all)
   if (G.taste ? G.ram.crack > 0 && realT - G.ram.crack > 0.6 : G.run > 1.5) {
@@ -10514,14 +10488,10 @@ function tutLook(dt) {
     if (h) tip('p_auto', 'YOUR HELI FIGHTS BY ITSELF. RIGHT CLICK TO SEND IT.', () => [h.x - G.camX, h.y - h.alt - G.camY]);
   }
   if (G.overheat) tip('p_hot', 'TOO HOT! THE GUN COOLS DOWN BY ITSELF.', () => [40, cardsTop() + 13]);
-  if (G.up.gun && G.run > 3) tip('p_gun', 'YOUR RAIL CANNON GUARDS THE TRAIN. SEND A HELI FOR LOOT!', () => {
-    const [x, y] = gunXY();
-    return [x - G.camX, y - G.camY];
-  });
   // scrap piles: from 11 s into run 2 (once there is loot on the line)
   if (runs >= 2 && G.run > 11 && G.loot) task('t_piles', 'GRAB 3 SCRAP PILES', 3, 'pile');
   // the dead in view: a crowd on the rails, one on the train, a runner, a brute
-  let rail = 0, climb = null, runner = null, brute = null, railBrute = null;
+  let rail = 0, climb = null, runner = null, brute = null;
   for (const z of G.zombies) {
     if (z.dead || !inView(z)) continue;
     if (z.st === 1) rail++;
@@ -10529,12 +10499,10 @@ function tutLook(dt) {
     if (z.type === 1) runner = z;
     if (z.type === 2) {
       brute = brute || z;
-      if (z.st === 1) railBrute = z;
     }
   }
   if (rail >= 3) {
     task('t_track', 'SHOOT THE DEAD ON THE TRACK', 5, 'track');
-    if (G.up.he) task('t_he', 'SPACE: 105MM AT THE MOUSE', 1, 'he');
   }
   if (climb && runs >= 2) task('t_climb', 'SHOOT THE DEAD OFF THE TRAIN', 1, 'climber');
   if (runner && runs >= 2) bannerOnce('b_run', 'RUNNERS', 'FAST, BUT ONLY ' + CFG.types[1].hp + ' HP', U.amber);
@@ -10543,7 +10511,6 @@ function tutLook(dt) {
     label(brute, 'BRUTE!', U.red);
     tip('p_brute', 'BRUTES HAVE ' + CFG.types[2].hp + " HP. THE TRAIN CAN'T PUSH THEM.", at(brute));
   }
-  if (railBrute) tip('p_railbrute', 'BRUTE ON THE TRACK! USE THE 105MM OR THE RAM.', at(railBrute));
 }
 
 // ---------- drawing in the run
@@ -10656,8 +10623,6 @@ function tutTag() {
   const tree = depotTab === 'tree';
   if (!lv('root')) return tree ? ['root', "CLICK THE TRAIN. IT'S FREE."] : null;
   if (!SAVE.runs) return ['start', 'PRESS START RUN.'];
-  const he = NODE.he;
-  if (tree && he && !lv('he') && stationOpen() && nodeState(he) === 'buy') return ['he', 'BUY THE 105MM WITH ' + he.cost[0] + ' SURVIVORS.'];
   const wi = NODE.winch;
   if (tree && wi && !lv('winch') && nodeState(wi) === 'buy') return ['winch', 'WINCH: SAVE SURVIVORS IN THE FIELD.'];
   return null;
@@ -10717,7 +10682,6 @@ function drawPause() {
     return;
   }
   const L = ['YOUR HELIS FIGHT BY THEMSELVES.', 'CLICK OR DRAG: SELECT.  A: ALL.  1 2 3: ONE.', 'RIGHT CLICK: ATTACK, MOVE OR ESCORT.'];
-  if (G.up.he) L.push('SPACE: 105MM AT THE MOUSE.');
   if (G.up.ram) L.push('E: TURBO RAM.');
   if (G.up.strafe) L.push('Q: STRAFING RUN, THEN CLICK THE MAP.');
   L.push('T: CAMERA.  M: SOUND.  WHEEL: ZOOM.');
@@ -11343,7 +11307,7 @@ Object.assign(window.__sr, {
     h.cmdT = realT;
   },
   heFire: (x, y) => heFire(G.camX + x, G.camY + y),
-  heArm: (on) => { HUI.arm = !!on; },
+  heArm: (on) => (HUI.arm = !!on && G.up.he),
   // boxFrom(x, y): the left button is held down from (x, y): a drag box shows to the mouse
   boxFrom: (x, y) => { HUI.box = { x0: x, y0: y, shift: false }; M.down = true; },
   heliMarks: () => HUI.marks.length
@@ -11484,7 +11448,7 @@ Object.assign(window.__sr, {
     return callStrafe(G.camX + sx, G.camY + sy, a / l, b / l);
   },
   strafeState: () => (srSync(), { left: STRAF.left, arm: STRAF.arm, jets: STRAF.jets.length, bombs: STRAF.bombs.length, up: G.up.strafe }),
-  treeNodes: () => NODES.map((n) => ({ id: n.id, lv: lv(n.id), max: maxLv(n), st: nodeState(n), cost: n.cost, cur: n.cur || 'scrap' }))
+  treeNodes: () => NODES.map((n) => ({ id: n.id, p: n.p || null, lv: lv(n.id), max: maxLv(n), st: nodeState(n), cost: n.cost, cur: n.cur || 'scrap' }))
 });
 // fx() = how many effects are alive; fxDrop(name) empties one list (tests: what a frame costs)
 Object.assign(window.__sr, {

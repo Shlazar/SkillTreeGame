@@ -115,8 +115,7 @@ addEventListener('keydown', (e) => {
   if (mode === 'play') {
     // (with reduced motion PRESS E! stops the game: any other key goes on without the Ram)
     if (G.prompt && REDUCED && k !== 'e') G.prompt = null;
-    if (k === ' ') tryHE();
-    else if (k === 'e') { if (!paused) tryRam(); }
+    if (k === 'e') { if (!paused) tryRam(); }
     else if (k === 'q') { if (!paused) tryStrafe(); }
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
     else if (!paused) heliKey(k);
@@ -125,8 +124,7 @@ addEventListener('keydown', (e) => {
     else if (k === 'Escape') titleAsk = false;
   } else if (mode === 'depot') depotKey(k);
   else if (mode === 'summary') {
-    // ENTER or ESC: show it all, then go to the Depot. Not SPACE (it fires the 105mm, and may still
-    // be mashed as the train goes), and nothing in the first moment after the summary opens.
+    // ENTER or ESC: show it all, then go to the Depot, after the opening moment.
     if ((k === 'Enter' || k === 'Escape') && realT - sumStart > 0.6 && !sumSkip()) toDepot();
   }
 });
