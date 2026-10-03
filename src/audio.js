@@ -209,10 +209,46 @@ const SFX = {
     tone(784, 0.22, 'triangle', 0.045, null, 0.16);
   },
   warn() {
-    // low fuel: two low, urgent notes
+    // the train is nearly lost: two low, urgent notes
     if (!gap('warn', 250)) return;
     tone(196, 0.16, 'square', 0.03, 185);
     tone(196, 0.2, 'square', 0.03, 165, 0.2);
+  },
+  horn() {
+    // the train's horn: three sawtooth notes of a chord, a little flat at first, through a low-pass filter
+    const a = Au.ctx;
+    if (!a || Au.muted) return;
+    const t = a.currentTime, f = a.createBiquadFilter(), g = a.createGain();
+    f.type = 'lowpass';
+    f.frequency.value = 1400;
+    f.Q.value = 0.8;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + 0.08);
+    g.gain.setValueAtTime(0.05, t + 0.75);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+    for (const fr of [311, 370, 466]) {
+      const o = a.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(fr * 0.97, t);
+      o.frequency.linearRampToValueAtTime(fr, t + 0.12);
+      o.connect(f);
+      o.start(t);
+      o.stop(t + 1.15);
+    }
+    f.connect(g);
+    g.connect(Au.master);
+  },
+  clack() {
+    // the wheels over a rail joint
+    nz(0.03, 0.02, 'bandpass', 2200, 3);
+    nz(0.03, 0.016, 'bandpass', 1800, 3, null, 0.09);
+  },
+  crush(big) {
+    // the engine runs one down
+    if (!gap('crush', 40)) return;
+    nz(0.14, big ? 0.12 : 0.07, 'lowpass', 600, 0.8, 120);
+    tone(big ? 70 : 110, 0.1, 'triangle', 0.05, 50);
+    nz(0.06, 0.04, 'bandpass', rnd(400, 700), 1.5);
   },
   radio() {
     // a burst of radio static and a beep

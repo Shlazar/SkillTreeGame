@@ -70,13 +70,11 @@ cv.addEventListener('wheel', (e) => {
   }
 }, { passive: false });
 
-const KEYS = {};
 const keyName = (e) => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = keyName(e);
-  if (k === ' ' || k.startsWith('Arrow')) e.preventDefault();
-  KEYS[k] = true;
+  if (k === ' ') e.preventDefault();
   if (e.repeat) return;
   audioInit();
   if (k === 'm') {
@@ -101,18 +99,8 @@ addEventListener('keydown', (e) => {
     else if (k === 'Escape') toTitle();
   }
 });
-addEventListener('keyup', (e) => { KEYS[keyName(e)] = false; });
-// WASD or the arrow keys slide the view
-function keyPan() {
-  const x = (KEYS.d || KEYS.ArrowRight ? 1 : 0) - (KEYS.a || KEYS.ArrowLeft ? 1 : 0);
-  const y = (KEYS.s || KEYS.ArrowDown ? 1 : 0) - (KEYS.w || KEYS.ArrowUp ? 1 : 0);
-  const l = Math.hypot(x, y) || 1;
-  G.pan[0] = mode === 'play' && !paused ? x / l : 0;
-  G.pan[1] = mode === 'play' && !paused ? y / l : 0;
-}
-// pause when the window loses focus or the tab is hidden; let go of every key
+// pause when the window loses focus or the tab is hidden; let go of the trigger
 function lostFocus() {
-  for (const k in KEYS) KEYS[k] = false;
   if (G) G.trigger = false;
   M.down = false;
   if (mode === 'play') paused = true;
@@ -148,7 +136,6 @@ function loop(now) {
     FPS.lastWorst = FPS.worst;
     FPS.n = FPS.sum = FPS.worst = FPS.t = 0;
   }
-  keyPan();
   // hit-stop: slow motion while slowT lasts
   let ts = 1;
   if (slowT > 0) {
@@ -230,7 +217,16 @@ function boot() {
     trigger: (on) => { G.trigger = !!on && mode === 'play'; },
     he: () => tryHE(),
     thermal: (k) => setThermal(k),
-    fuel: (f) => { G.fuel = f; },
+    // hp(v): set the train's health. goal(px): move the train to px before the safe zone.
+    hp: (v) => { G.tr.hp = G.tr.hpShown = v; },
+    goal: (px) => {
+      const d = G.tr.front - (G.goalY + px);
+      G.tr.front -= d;
+      G.camY -= d;
+      for (const z of G.zombies) z.y -= d;
+    },
+    // bot(on): the autopilot plays (it aims and pulls the triggers)
+    bot: (on) => { G.bot = !!on; if (!on) G.trigger = false; },
     pause: (p) => { paused = !!p; },
     hold: (h) => { hold = !!h; },
     // bench(n): draw n frames at once; the average ms per frame
@@ -243,7 +239,8 @@ function boot() {
       return (performance.now() - t) / n;
     },
     stats: () => ({
-      mode, kills: G.kills, cash: Math.round(G.cash), fuel: +G.fuel.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length,
+      mode, result: G.result, kills: G.kills, cash: Math.round(G.cash), hp: Math.round(G.tr.hp), speed: +G.tr.v.toFixed(1),
+      left: Math.round(G.tr.front - G.goalY), onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length,
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
       W, H, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), lock: !!G.lock, heat: +G.heat.toFixed(2)
     })

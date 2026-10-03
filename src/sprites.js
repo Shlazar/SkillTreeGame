@@ -1,7 +1,8 @@
 // sprites.js - every sprite is drawn in code at startup (no image files).
 // Inside: the palettes (P for pixel art, U for the UI), the zombie drawings (dWalker, dRunner,
-// dBrute) with their colour sets, makeZSet() that builds a zombie's frames, the props (trees,
-// bushes, rocks, stumps, wrecks, barrels, crates, ruined walls) and the icons.
+// dBrute) with their colour sets, makeZSet() that builds a zombie's frames, the train (engine and
+// four cars, the survivors on the flatcar), the props (trees, bushes, rocks, stumps, wrecks, barrels,
+// crates, ruined walls, telegraph poles), the safe zone (wall, gate, watchtowers) and the icons.
 //
 // A zombie drawing takes (r, f, c): r = rectangle painter r(x, y, w, h, color) from pix(),
 // f = walk frame 0 or 1, c = its colours. Inside, o() is like r() but moves up 1 px on frame 1
@@ -149,6 +150,120 @@ function makeZSet(w, h, draw, pal, shw) {
 // ZS[type] = the colour variants of each type (0 walker, 1 runner, 2 brute)
 const ZS = [[], [], []];
 
+// ---------- the train
+// Seen from above and behind (it runs up the screen): the roof, then the rear end wall below it.
+// Each drawing is 16 x 37: rows 0-27 the roof, rows 28-36 the end wall with the wheels at the bottom.
+// The flatcar is low: its deck starts at row 6. The sun is in the north-west, so left edges are lit.
+function wheels(r) {
+  r(0, 35, 16, 2, '#0b0c0e');
+  r(2, 35, 3, 1, '#2a2d33');
+  r(11, 35, 3, 1, '#2a2d33');
+}
+function dLoco(r) {
+  const B = ['#151b24', '#243042', '#34445c', '#4b5f7d'];
+  // the nose: rounded, two headlights, warning stripes
+  r(3, 0, 10, 1, B[2]); r(1, 1, 14, 1, B[2]); r(0, 2, 16, 4, B[1]);
+  r(0, 2, 1, 4, B[2]); r(15, 2, 1, 4, B[0]); r(1, 3, 14, 1, B[2]);
+  r(4, 0, 1, 1, '#fff1c2'); r(11, 0, 1, 1, '#fff1c2');
+  for (let x = 1; x < 15; x += 2) r(x, 4, 1, 1, '#c9772f');
+  // the cab: a raised roof with glass round it
+  r(0, 6, 16, 8, B[2]); r(1, 7, 14, 6, B[3]); r(1, 7, 14, 1, '#6d82a3');
+  r(2, 6, 12, 1, '#1b2836'); r(3, 6, 2, 1, '#6f8aa6');
+  r(0, 8, 1, 4, '#1b2836'); r(15, 8, 1, 4, '#1b2836');
+  r(7, 9, 2, 2, B[1]);
+  // the long hood between two walkways, an exhaust stack and two radiator fans
+  r(0, 14, 16, 14, '#2a2d33');
+  for (let y = 15; y < 28; y += 2) { r(0, y, 1, 1, '#4a4e57'); r(15, y, 1, 1, '#1a1c20'); }
+  r(2, 14, 12, 14, B[1]); r(2, 14, 2, 14, B[2]); r(13, 14, 1, 14, B[0]); r(2, 14, 12, 1, B[3]);
+  r(2, 17, 1, 9, '#c9772f'); r(13, 17, 1, 9, '#8a5020');
+  r(7, 15, 2, 2, '#07080a'); r(6, 15, 1, 2, B[0]); r(9, 15, 1, 2, B[0]);
+  for (const fy of [19, 23]) {
+    r(6, fy, 4, 3, '#14171c'); r(7, fy, 2, 3, '#3a3e48'); r(6, fy + 1, 4, 1, '#3a3e48'); r(7, fy + 1, 2, 1, '#14171c');
+  }
+  // the rear: a handrail, a door, two tail lights
+  r(0, 28, 16, 7, B[0]); r(0, 28, 16, 1, '#8b919c'); r(1, 29, 1, 6, B[1]);
+  r(6, 29, 4, 6, '#0d1118'); r(7, 30, 2, 2, '#26303f');
+  r(2, 30, 1, 1, '#d0553f'); r(13, 30, 1, 1, '#d0553f');
+  wheels(r);
+}
+function dCoach(r) {
+  const C = ['#18221a', '#2a3a2a', '#3e563c', '#5b7656'];
+  // a rounded roof with vents along the ridge
+  r(0, 0, 16, 28, C[1]);
+  r(0, 0, 1, 28, C[2]); r(1, 0, 2, 28, C[3]); r(3, 0, 1, 28, C[2]);
+  r(12, 0, 2, 28, C[0]); r(14, 0, 2, 28, '#121a14');
+  r(0, 0, 16, 1, C[3]); r(0, 27, 16, 1, C[0]);
+  for (const vy of [4, 11, 18, 24]) { r(7, vy, 2, 2, '#121a14'); r(7, vy, 2, 1, C[3]); }
+  // the end wall: a door with a lit window, two small windows
+  r(0, 28, 16, 7, '#22301f'); r(0, 28, 16, 1, C[2]);
+  r(5, 29, 6, 6, '#141c13'); r(6, 30, 4, 2, '#ffcf6a'); r(6, 30, 1, 1, '#fff1c2');
+  r(2, 31, 2, 2, '#ffcf6a'); r(12, 31, 2, 2, '#e8913a');
+  wheels(r);
+}
+function dFlat(r) {
+  // a low deck of planks with sandbags round it, a crate and ammo boxes
+  r(0, 6, 16, 28, '#4f3a26');
+  for (let y = 7; y < 34; y += 3) r(0, y, 16, 1, '#3a2718');
+  r(0, 6, 1, 28, '#6b5038');
+  const bag = (x, y) => { r(x, y, 3, 2, '#8f805f'); r(x, y, 3, 1, '#b3a27a'); r(x + 2, y + 1, 1, 1, '#5e533c'); };
+  for (let y = 7; y < 32; y += 3) { bag(0, y); bag(13, y); }
+  for (let x = 3; x < 13; x += 3) { bag(x, 5); bag(x, 31); }
+  r(5, 9, 5, 4, '#7b5735'); r(5, 9, 5, 1, '#a38558'); r(7, 9, 1, 4, '#3a2718');
+  r(6, 26, 4, 2, '#46523a'); r(6, 26, 4, 1, '#5c6b48');
+  r(0, 33, 16, 2, '#2a2420');
+  wheels(r);
+}
+function dBox(r) {
+  const R = ['#2e120f', '#4e1d18', '#6c2c22', '#8a3d2c'];
+  // a roof with ribs and a wooden catwalk down the middle
+  r(0, 0, 16, 28, R[1]); r(0, 0, 2, 28, R[2]); r(0, 0, 1, 28, R[3]); r(14, 0, 2, 28, R[0]);
+  r(0, 0, 16, 1, R[3]);
+  for (let y = 3; y < 28; y += 4) r(1, y, 14, 1, R[0]);
+  r(6, 0, 4, 28, '#5b3f27');
+  for (let y = 1; y < 28; y += 2) r(6, y, 4, 1, '#4a3220');
+  r(6, 0, 1, 28, '#7b5735');
+  // the end wall: ribs, a ladder, the brake wheel
+  r(0, 28, 16, 7, R[1]); r(0, 28, 16, 1, R[3]);
+  for (let x = 2; x < 16; x += 3) r(x, 29, 1, 6, R[0]);
+  for (let y = 29; y < 35; y += 2) r(12, y, 3, 1, '#8b919c');
+  r(2, 29, 3, 3, '#1a1a1a'); r(3, 30, 1, 1, '#626875');
+  wheels(r);
+}
+function dTank(r) {
+  // a fuel tank lying along the track, lit on the left, with a red band and a dome hatch
+  r(0, 0, 16, 2, '#2a2420'); r(0, 26, 16, 2, '#2a2420');
+  const col = ['#2b2e35', '#434753', '#626875', '#8b919c', '#b4b9c1'];
+  const sh = [0, 1, 4, 4, 3, 3, 3, 3, 3, 3, 2, 2, 2, 1, 1, 0];
+  for (let x = 0; x < 16; x++) {
+    const inset = x === 0 || x === 15 ? 2 : x === 1 || x === 14 ? 1 : 0;
+    r(x, 1 + inset, 1, 26 - inset * 2, col[sh[x]]);
+  }
+  r(0, 9, 16, 2, '#9a3326'); r(0, 9, 3, 1, '#c8432e');
+  r(6, 13, 4, 4, '#434753'); r(7, 13, 2, 1, '#b4b9c1'); r(6, 14, 1, 2, '#8b919c'); r(7, 14, 2, 2, '#626875');
+  // the round end of the tank above the frame
+  for (let y = 0; y < 7; y++) {
+    const hw = Math.round(Math.sqrt(Math.max(0, 1 - Math.pow((y - 3) / 3.6, 2))) * 7.5);
+    r(8 - hw, 28 + y, hw * 2, 1, y < 2 ? '#626875' : y < 5 ? '#434753' : '#2b2e35');
+  }
+  r(3, 29, 2, 1, '#b4b9c1');
+  wheels(r);
+}
+// TRAIN[k] = one car (0 = the engine): n = normal, h = hot (thermal camera), red = taking damage,
+// tall = how high it stands (for its shadow).
+const TRAIN = [];
+// The survivors on the flatcar: [x, y] of their feet on the car sprite, and their sprites.
+const RIDERS = [[5, 16], [11, 20], [4, 25], [10, 12]];
+const SURV = [];
+// a survivor with a rifle, 4 x 7
+function survivorRaw(shirt, skin) {
+  return pix(4, 7, (r) => {
+    r(0, 0, 3, 2, skin); r(0, 0, 3, 1, '#2e2620');
+    r(0, 2, 3, 3, shirt); r(0, 2, 1, 3, '#d8cfb6');
+    r(3, 1, 1, 3, '#1a1a1a');
+    r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20');
+  });
+}
+
 // ---------- props
 // Pine, h px tall. pal = [dark, mid, light]; the lit side is on the left (from Ball x Archers).
 function pineSpr(h, rng, pal) {
@@ -292,7 +407,43 @@ function wallSpr(w, rng) {
 function prop(spr, block, extra) {
   return Object.assign({ spr, sh: castShadow(spr), ax: spr.width >> 1, ay: spr.height - 1, block: block || 0 }, extra || {});
 }
-const PROPS = { pine: [], oak: [], fall: [], dead: [], bush: [], rock: [], big: [], stump: [], wreck: [], burnt: [], barrel: [], crate: [], wall: [] };
+const PROPS = { pine: [], oak: [], fall: [], dead: [], bush: [], rock: [], big: [], stump: [], wreck: [], burnt: [], barrel: [], crate: [], wall: [], pole: [] };
+// a telegraph pole: a crossbar with two glass insulators
+function poleSpr() {
+  return pix(5, 22, (r) => {
+    r(2, 2, 1, 20, '#4a3828'); r(0, 2, 5, 1, '#2a1d13');
+    r(0, 1, 1, 1, '#b4b9c1'); r(4, 1, 1, 1, '#b4b9c1'); r(2, 21, 1, 1, '#2a1d13');
+  });
+}
+
+// ---------- the safe zone at the end of the line: a concrete wall with barbed wire, a gate, towers
+const SAFE = {};
+function wallBlockSpr(rng) {
+  return pix(16, 12, (r) => {
+    r(0, 3, 16, 3, '#8f897c'); r(0, 3, 16, 1, '#aaa392');
+    r(0, 6, 16, 6, '#5a564e'); r(0, 6, 16, 1, '#6b675e'); r(15, 6, 1, 6, '#3e3b35'); r(0, 11, 16, 1, '#2e2c28');
+    r(8, 6, 1, 5, '#3e3b35');
+    for (let k = 0; k < 4; k++) r((rng() * 15) | 0, 7 + ((rng() * 4) | 0), 1, 1, '#4a4740');
+    for (let x = 0; x < 16; x++) r(x, x % 4 === 0 ? 0 : x % 2 ? 1 : 2, 1, 1, '#7d838c');
+  });
+}
+function towerSpr() {
+  return pix(16, 36, (r, g) => {
+    r(2, 14, 2, 22, '#3b2a1c'); r(12, 14, 2, 22, '#2a1d13'); r(2, 14, 1, 22, '#5b4632');
+    pl(g, 3, 16, 12, 33, '#2a1d13'); pl(g, 12, 16, 3, 33, '#3b2a1c');
+    r(0, 6, 16, 9, '#5b3f27'); r(0, 6, 16, 1, '#7b5735'); r(0, 6, 1, 9, '#7b5735'); r(15, 6, 1, 9, '#3a2718');
+    r(2, 8, 12, 3, '#1a1410');
+    r(6, 8, 2, 3, '#46523a'); r(6, 8, 2, 1, '#5c6b48');
+    r(0, 0, 16, 6, '#3a2718'); r(1, 0, 14, 1, '#5b3f27'); r(0, 1, 2, 5, '#4a3220');
+    r(10, 9, 3, 2, '#e8e2cc'); r(13, 9, 1, 2, '#fff1c2');
+  });
+}
+function pillarSpr() {
+  return pix(6, 16, (r) => {
+    r(0, 2, 6, 14, '#6b675e'); r(0, 0, 6, 3, '#8f897c'); r(0, 0, 6, 1, '#aaa392'); r(5, 2, 1, 14, '#3e3b35');
+    r(0, 15, 6, 1, '#2e2c28'); r(1, 6, 4, 1, '#c9772f'); r(1, 9, 4, 1, '#c9772f');
+  });
+}
 
 // ---------- icons
 const ICON = {};
@@ -321,6 +472,24 @@ function initSprites() {
   for (let k = 0; k < 2; k++) PROPS.barrel.push(prop(barrelSpr(rng), 3));
   PROPS.crate.push(prop(crateSpr(), 4));
   for (let k = 0; k < 8; k++) PROPS.wall.push(prop(wallSpr(10 + ((rng() * 12) | 0), rng), 0, { wall: true }));
+  PROPS.pole.push(prop(poleSpr(), 0));
+  // the train: [drawing, height, warmth on the thermal camera]
+  TRAIN.length = 0;
+  for (const [draw, tall, heat] of [[dLoco, 9, 150], [dCoach, 9, 95], [dFlat, 3, 60], [dBox, 9, 75], [dTank, 9, 55]]) {
+    const raw = pix(16, 37, (r) => draw(r));
+    const n = selOut(rimLight(raw, '#e8e2cc', 0.18));
+    TRAIN.push({ n, h: outline(hotSpr(raw, heat), '#161616'), red: tint(n, '#ff4a30', 0.45), tall });
+  }
+  SURV.length = 0;
+  for (const [shirt, skin] of [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#5c6b40', '#b8876a'], ['#7d776b', '#d1a582']]) {
+    const raw = survivorRaw(shirt, skin);
+    SURV.push({ n: outline(raw, '#07080a'), h: outline(hotSpr(raw, 215), '#161616') });
+  }
+  // the safe zone
+  SAFE.blocks = [];
+  for (let k = 0; k < 4; k++) SAFE.blocks.push(prop(wallBlockSpr(rng), 0));
+  SAFE.tower = prop(towerSpr(), 0);
+  SAFE.pillar = prop(pillarSpr(), 0);
   // icons
   ICON.coin = outline(pix(5, 5, (r) => {
     r(1, 0, 3, 1, '#e8bd55'); r(0, 1, 5, 3, '#d9a33a'); r(1, 4, 3, 1, '#a8761f'); r(1, 1, 1, 2, '#f6dc8e'); r(3, 2, 1, 2, '#a8761f');
@@ -328,14 +497,15 @@ function initSprites() {
   ICON.skull = outline(pix(5, 5, (r) => {
     r(0, 0, 5, 3, P.bone); r(1, 3, 3, 2, P.bone); r(1, 1, 1, 1, P.dk); r(3, 1, 1, 1, P.dk); r(2, 3, 1, 1, '#8a826f');
   }), P.out);
-  ICON.fuel = outline(pix(5, 6, (r) => {
-    r(0, 1, 5, 5, '#b8402e'); r(0, 1, 1, 5, '#e06a4f'); r(4, 2, 1, 4, '#7a2a22'); r(1, 0, 2, 1, '#8b919c'); r(1, 3, 3, 1, '#e8913a');
-  }), P.out);
-  ICON.zed = outline(pix(5, 5, (r) => {
-    r(0, 0, 5, 5, '#808f69'); r(0, 0, 5, 1, '#a6b388'); r(3, 1, 1, 1, P.em); r(1, 1, 1, 1, '#3f4a37'); r(1, 3, 3, 1, '#3f4a37');
-  }), P.out);
   ICON.mg = outline(pix(3, 7, (r) => {
     r(0, 2, 3, 5, '#b8862f'); r(0, 2, 1, 5, '#e3b04b'); r(1, 0, 1, 2, '#b4b9c1'); r(0, 1, 3, 1, '#8b919c');
+  }), P.out);
+  ICON.train = outline(pix(7, 6, (r) => {
+    r(0, 0, 7, 5, '#465469'); r(0, 0, 7, 1, '#6d82a3'); r(1, 1, 5, 2, '#9fd3f2'); r(1, 3, 1, 1, '#fff1c2'); r(5, 3, 1, 1, '#fff1c2');
+    r(0, 5, 7, 1, '#151b24');
+  }), P.out);
+  ICON.flag = outline(pix(5, 7, (r) => {
+    r(0, 0, 1, 7, '#8b919c'); r(1, 0, 4, 3, '#56c2a8'); r(1, 2, 4, 1, '#2f7a68');
   }), P.out);
   ICON.he = outline(pix(5, 9, (r) => {
     r(0, 3, 5, 6, '#626875'); r(0, 3, 1, 6, '#8b919c'); r(1, 1, 3, 2, '#b8862f'); r(2, 0, 1, 1, '#e3b04b'); r(0, 7, 5, 1, '#b8862f');

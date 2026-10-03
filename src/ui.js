@@ -1,6 +1,7 @@
 // ui.js - everything drawn over the world, in screen pixels: the gun sight and lock brackets, the
-// top bar, the weapon cards, coins, banners, hints, the low fuel edge, and the screens (title,
-// pause, summary). Buttons are drawn in the canvas too (from Ball x Archers).
+// top bar (cash, kills, the train's health, the way to the safe zone), warnings, the weapon cards,
+// coins, banners, hints, the red edge when the train is nearly lost, and the screens (title, pause,
+// summary). Buttons are drawn in the canvas too (from Ball x Archers).
 
 // M = the mouse in game pixels. pressed / released are true for one frame; px, py = where the
 // press started; used = this click was already handled; inside = the mouse is over the game.
@@ -86,6 +87,10 @@ function drawSight() {
     ctx.fillStyle = thermal ? '#ffffff' : U.gold;
     ctx.fillRect(x + 7, y - 8, 2, 2);
   }
+  // the 105 would hit the train too
+  if (G.heReload <= 0 && trainDist(G.camX + G.aimSX, G.camY + G.aimSY, G.tr.v * CFG.he.travel) < CFG.he.close + 4) {
+    text('DANGER CLOSE', x, y + 17, U.red, { align: 'center' });
+  }
   // gun heat: a small bar under the sight while the 25mm is warm
   if (G.heat > 0.15) {
     const hw = 13;
@@ -120,14 +125,32 @@ function drawHUD() {
   // kills
   ctx.drawImage(ICON.skull, 80, 5);
   text(fmt(G.kills), 90, 6 - (G.killBump > 0.5 ? 1 : 0), U.ink);
-  // fuel: red and blinking when it runs low
-  const low = G.fuel < 10, fw = Math.min(180, W - 300), fx = Math.round(W / 2 - fw / 2);
-  ctx.drawImage(ICON.fuel, fx - 12, 5);
-  bar(fx, 6, fw, 6, G.fuel / CFG.fuel, '#1a1716', low ? '#b8402e' : '#b8862f', low ? '#e06a4f' : '#e3b04b');
-  if (!low || Math.floor(realT * 4) % 2 === 0) text(Math.ceil(G.fuel) + 'S', fx + fw + 5, 6, low ? U.red : U.dim);
-  // the horde
-  ctx.drawImage(ICON.zed, W - 82, 5);
-  text(fmt(G.zombies.length), W - 72, 6, U.dim);
+  // the train's health: green, then amber, then red; the part just lost shows pale for a moment
+  const tr = G.tr, f = tr.hp / CFG.train.hp, hx = 150, hw = clamp(Math.round(W * 0.18), 50, 120);
+  ctx.drawImage(ICON.train, hx - 12, 5);
+  bar(hx, 6, hw, 6, tr.hpShown / CFG.train.hp, '#1a1716', '#d8cfb8');
+  ctx.fillStyle = f < 0.35 ? '#b8402e' : f < 0.65 ? '#c9862f' : '#6f9a4f';
+  ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 6);
+  ctx.fillStyle = f < 0.35 ? '#e06a4f' : f < 0.65 ? '#e8b05a' : '#9cc777';
+  ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 1);
+  // the way to the safe zone: the line, the train on it, the flag and the distance left
+  if (!G.demo) {
+    const px = hx + hw + 20, pw = W - 96 - px, left = Math.max(0, Math.round((tr.front - G.goalY) / 2));
+    const k = clamp((tr.start - tr.front) / (tr.start - G.goalY), 0, 1);
+    if (pw >= 40) {
+      ctx.fillStyle = '#2e3139';
+      ctx.fillRect(px, 9, pw, 1);
+      ctx.fillStyle = '#b8862f';
+      ctx.fillRect(px, 9, Math.round(pw * k), 1);
+      for (let t = 0; t <= 4; t++) ctx.fillRect(px + Math.round(pw * t / 4), 8, 1, 3);
+      ctx.fillStyle = '#07080a';
+      ctx.fillRect(px + Math.round(pw * k) - 2, 6, 5, 7);
+      ctx.fillStyle = '#e8dfc8';
+      ctx.fillRect(px + Math.round(pw * k) - 1, 7, 3, 5);
+      ctx.drawImage(ICON.flag, px + pw + 4, 4);
+    }
+    text(left + 'M', W - 30, 6, U.dim, { align: 'right' });
+  }
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) paused = !paused;
   if (Au.muted) text('MUTE', W - 4, 22, U.faint, { align: 'right' });
   // kill streak: the count and the time left to keep it going
@@ -137,6 +160,27 @@ function drawHUD() {
     bar(5, 33, 52, 2, 1 - st / 1.6, '#1a1716', '#e3b04b');
   }
 }
+// warnings under the top bar: the track ahead is blocked, the dead are on the train
+function drawWarnings() {
+  if (G.result) return;
+  const blink = Math.floor(realT * 3) % 2 === 0;
+  let y = 24;
+  if (G.blocked) {
+    // a red arrow over the track, pointing down at the train
+    const ax = Math.round(RAIL_X - G.camX), on = blink ? '#ff3a2a' : '#a8241a';
+    ctx.fillStyle = '#07080a';
+    ctx.fillRect(ax - 5, y - 1, 11, 6);
+    ctx.fillRect(ax - 3, y + 5, 7, 2);
+    ctx.fillStyle = on;
+    ctx.fillRect(ax - 4, y, 9, 2);
+    ctx.fillRect(ax - 3, y + 2, 7, 2);
+    ctx.fillRect(ax - 2, y + 4, 5, 1);
+    ctx.fillRect(ax - 1, y + 5, 3, 1);
+    text('THE DEAD ARE ON THE TRACK', ax + 10, y, on);
+    y += 11;
+  }
+  if (G.onTrain > 0) text(G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', W / 2, y, blink ? U.red : '#a8241a', { align: 'center' });
+}
 function drawWeapons() {
   const y = H - 30, rdy = G.heReload <= 0;
   card(4, y, 96, 26, ICON.mg, '25MM', G.overheat ? 'OVERHEAT' : 'L-CLICK', G.overheat ? U.red : U.faint, G.heat,
@@ -145,19 +189,20 @@ function drawWeapons() {
     rdy ? '#e3b04b' : '#7a6a50');
   text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 5, H - 11, U.faint, { align: 'right' });
 }
-// first seconds of a sortie: how to play
+// first seconds of a run: how to play
 function drawHint() {
-  const a = clamp((9 - G.run) / 1.5, 0, 1);
-  if (a <= 0 || G.run < 1.2) return;
+  const a = clamp((10 - G.run) / 1.5, 0, 1);
+  if (a <= 0 || G.run < 1.2 || G.result) return;
   ctx.globalAlpha = a;
-  text('HOLD LEFT CLICK: 25MM GUN.   RIGHT CLICK OR SPACE: 105MM CANNON.', W / 2, H - 58, U.ink, { align: 'center' });
-  text('WASD OR THE SCREEN EDGE: MOVE.   T: THERMAL CAMERA.', W / 2, H - 47, U.dim, { align: 'center' });
+  text('KEEP THE DEAD OFF THE TRAIN AND OFF THE TRACK AHEAD.', W / 2, H - 58, U.ink, { align: 'center' });
+  text('HOLD LEFT CLICK: 25MM.   RIGHT CLICK OR SPACE: 105MM.   T: THERMAL.', W / 2, H - 47, U.dim, { align: 'center' });
   ctx.globalAlpha = 1;
 }
-// red screen edge while the fuel runs out
+// red screen edge while the train is nearly lost
 function drawTension() {
-  if (mode !== 'play' || G.fuel >= 10) return;
-  let a = 0.3 + 0.5 * (1 - G.fuel / 10);
+  const f = G.tr.hp / CFG.train.hp;
+  if (mode !== 'play' || G.result || f >= 0.35) return;
+  let a = 0.3 + 0.5 * (1 - f / 0.35);
   if (!REDUCED) a *= 0.7 + 0.3 * Math.sin(realT * 7);
   ctx.fillStyle = '#c0301f';
   for (let k = 0; k < 3; k++) {
@@ -168,7 +213,6 @@ function drawTension() {
     ctx.fillRect(W - 1 - k, k, 1, H - 2 * k);
   }
   ctx.globalAlpha = 1;
-  if (Math.floor(realT * 2.5) % 2 === 0) text('BINGO FUEL', W / 2, 26, U.red, { align: 'center' });
 }
 
 // ---------- screens
@@ -181,38 +225,39 @@ function drawPause() {
 function drawTitle() {
   ctx.fillStyle = 'rgba(5,6,8,0.35)';
   ctx.fillRect(0, 0, W, H);
-  const cx = Math.round(W / 2), pw = 300, ph = 238, px = cx - pw / 2, py = Math.round(H / 2 - ph / 2);
+  // the menu sits left of the train (on a wide enough screen)
+  const cx = Math.round(W >= 560 ? W * 0.36 : W / 2), pw = 300, ph = 238, px = cx - pw / 2, py = Math.round(H / 2 - ph / 2);
   ctx.fillStyle = 'rgba(8,9,11,0.78)';
   ctx.fillRect(px, py, pw, ph);
   frame(px, py, pw, ph, '#2e3139');
   text('SKY REAPER', cx, py + 18, U.ink, { align: 'center', scale: 3, drop: true });
   ctx.fillStyle = '#8a6a2a';
   ctx.fillRect(cx - 110, py + 46, 220, 1);
-  text('YOUR GUNSHIP OVER THE ENDLESS DEAD.', cx, py + 54, U.dim, { align: 'center' });
-  text('60 SECONDS OF FUEL. KILL ALL YOU CAN.', cx, py + 64, U.dim, { align: 'center' });
+  text('GET THE TRAIN TO THE SAFE ZONE.', cx, py + 54, U.dim, { align: 'center' });
+  text('KEEP THE DEAD OFF IT AND OFF THE TRACK.', cx, py + 64, U.dim, { align: 'center' });
   if (button(cx - 75, py + 82, 150, 20, 'START MISSION', { primary: true })) startGame();
   if (button(cx - 75, py + 108, 150, 20, 'CAMERA: ' + CAMS[thermal])) setThermal((thermal + 1) % 3);
   if (best.kills > 0) {
-    const s = 'BEST ' + fmt(best.kills) + ' KILLS', w = tw(s) + 10;
+    const s = 'BEST ' + fmt(best.kills) + ' KILLS' + (best.safe ? '   ' + best.safe + ' SAFE' : ''), w = tw(s) + 10;
     ctx.drawImage(ICON.skull, cx - w / 2, py + 140);
     text(s, cx - w / 2 + 10, py + 141, U.gold, { outline: false });
   }
   const L = ['MOUSE: AIM. IT LOCKS ON THE NEAREST ZOMBIE.', 'HOLD LEFT CLICK: 25MM.  RIGHT CLICK / SPACE: 105MM.',
-    'WASD: MOVE.  T: THERMAL.  WHEEL: ZOOM.  M: SOUND.'];
+    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
   L.forEach((l, i) => text(l, cx, py + 160 + i * 11, U.faint, { align: 'center', outline: false }));
   text('ENTER TO START', cx, py + 205, U.faint, { align: 'center', outline: false });
 }
-// After the fuel runs out: the numbers count up.
+// After the run: safe or lost, and the numbers count up.
 function drawSummary() {
   ctx.fillStyle = 'rgba(5,6,8,0.66)';
   ctx.fillRect(0, 0, W, H);
-  const s = G.sum, w = 248, h = 206, x = Math.round(W / 2 - w / 2), y = Math.round(H / 2 - h / 2);
+  const s = G.sum, w = 248, h = 206, x = Math.round(W / 2 - w / 2), y = Math.round(H / 2 - h / 2), safe = s.result === 'safe';
   panel(x, y, w, h, '#0f1014');
-  text('MISSION OVER', x + w / 2, y + 12, U.ink, { align: 'center', scale: 2 });
+  text(safe ? 'TRAIN SAFE' : 'TRAIN LOST', x + w / 2, y + 12, safe ? U.gold : U.red, { align: 'center', scale: 2 });
   if (s.newBest) text('NEW BEST', x + w / 2, y + 30, U.gold, { align: 'center' });
   const k = ease(clamp((realT - sumStart - 0.3) / 1.4, 0, 1));
-  const rows = [['ZOMBIES KILLED', fmt(Math.round(s.kills * k))], ['BEST STREAK', fmt(Math.round(s.streak * k))],
-    ['BIGGEST BLAST', fmt(Math.round(s.blast * k))], ['ROUNDS ON TARGET', Math.round(s.acc * k) + '%']];
+  const rows = [['ZOMBIES KILLED', fmt(Math.round(s.kills * k))], ['TRAIN HEALTH', Math.round(s.hp * k) + '%'],
+    ['BEST STREAK', fmt(Math.round(s.streak * k))], ['BIGGEST BLAST', fmt(Math.round(s.blast * k))]];
   rows.forEach((r, i) => {
     text(r[0], x + 20, y + 44 + i * 15, U.dim);
     text(r[1], x + w - 20, y + 44 + i * 15, U.ink, { align: 'right' });
@@ -223,7 +268,7 @@ function drawSummary() {
   text('CASH EARNED', x + 30, y + 116, U.ink);
   text('$' + fmt(Math.round(s.cash * clamp((realT - sumStart - 1.5) / 0.8, 0, 1))), x + w - 20, y + 116, U.gold, { align: 'right' });
   text('BEST ' + fmt(best.kills) + ' KILLS', x + w - 20, y + 130, U.faint, { align: 'right' });
-  if (button(x + 16, y + h - 32, 104, 20, 'FLY AGAIN', { primary: true })) startGame();
+  if (button(x + 16, y + h - 32, 104, 20, safe ? 'NEXT TRAIN' : 'TRY AGAIN', { primary: true })) startGame();
   if (button(x + w - 120, y + h - 32, 104, 20, 'TITLE')) toTitle();
 }
 
@@ -237,6 +282,7 @@ function drawUI() {
   drawHUD();
   drawCoins();
   if (mode === 'play' || mode === 'ending') {
+    drawWarnings();
     drawWeapons();
     drawHint();
     drawBanners();
