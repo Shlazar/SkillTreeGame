@@ -69,22 +69,24 @@ function addBoom(x, y, R, n, T, cap, delay) {
   booms.push({ x, y, r: R, t: -(delay || 0), T, cap: cap || 7, pf });
 }
 
-// A floating "+N" over (x, y) ("-N" when neg: damage). A total close to a recent one of the same
-// color adds up instead.
-function addTotal(x, y, v, c, big, neg) {
+// A floating "+N" over (x, y) ("-N" when neg: damage). size can be a numeric text scale or the old
+// small/large boolean. A nearby total of the same color adds up and keeps the larger scale.
+function addTotal(x, y, v, c, size, neg) {
   const sign = neg ? '-' : '+';
+  const scale = typeof size === 'number' ? Math.max(1, Math.round(size)) : size ? 2 : 1;
+  const big = scale > 1;
   for (const t of texts) {
     if (t.tot && t.c === c && t.sign === sign && t.life > t.max * 0.35 && Math.abs(t.x - x) < 24 && Math.abs(t.y - y) < 18) {
       t.val += v;
       t.v = sign + fmt(t.val);
       t.life = t.max;
       t.hot = 0.05;
-      if (t.val >= 20) t.s = 2;
+      t.s = Math.max(t.s, scale, t.val >= 20 ? 2 : 1);
       return;
     }
   }
   if (texts.length >= 40) return;
-  texts.push({ tot: true, sign, x, y, z: 16, vz: big ? 40 : 28, vx: 0, s: big ? 2 : 1, c, val: v, v: sign + fmt(v),
+  texts.push({ tot: true, sign, x, y, z: 16, vz: big ? 40 : 28, vx: 0, s: scale, c, val: v, v: sign + fmt(v),
     life: big ? 1 : 0.75, max: big ? 1 : 0.75, hot: 0.06 });
 }
 // A word that floats up from (x, y), like OVERHEAT.

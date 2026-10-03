@@ -75,7 +75,7 @@ Object.assign(UP, {
   b52Blast: (l) => 1 + 0.2 * l,
   fireBombs: (l) => l > 0,
   b52Charge: (l) => 1 + l,
-  salvageCrew: (l) => 1 + 0.08 * l,
+  salvageCrew: (l) => 0.08 * l,
   silverHunt: (l) => l,
   boomHunt: (l) => l,
   goldHunt: (l) => l
@@ -172,7 +172,7 @@ const NODES = [
   teaseNode('ac130', 'AC-130', 'bombRun', 1.5, 7.5),
   // SALVAGE: west
   scrapNode('magnet', 'SCRAP MAGNET', 'root', -1.5, 0, 'A', 5, 'LOOT PICKUP REACH GROWS BY 25%.', ['PICKUP', (l) => metres(UP.pickup(l))]),
-  scrapNode('salvageCrew', 'SALVAGE CREW', 'magnet', -3, 0, 'D', 4, 'EARN 8% MORE SCRAP FROM EVERYTHING.', ['SCRAP', (l) => pctS(UP.salvageCrew(l))]),
+  scrapNode('salvageCrew', 'SALVAGE CREW', 'magnet', -3, 0, 'D', 4, 'EARN 8% MORE SCRAP FROM EVERYTHING.', ['SCRAP', (l) => pctS(1 + UP.salvageCrew(l))]),
   scrapNode('silverHunt', 'SILVER HUNT', 'salvageCrew', -4.5, -1.5, 'E', 3, 'FIND MORE SILVER ZOMBIES.', ['HUNT LEVEL', UP.silverHunt]),
   scrapNode('boomHunt', 'BOOM HUNT', 'salvageCrew', -4.5, 1.5, 'E', 3, 'FIND MORE EXPLOSIVE ZOMBIES.', ['HUNT LEVEL', UP.boomHunt]),
   scrapNode('goldHunt', 'GOLD HUNT', 'silverHunt', -6, -1.5, 'F', 3, 'FIND MORE GOLDEN ZOMBIES.', ['EXTRA GOLDEN', UP.goldHunt])
@@ -216,6 +216,7 @@ function treeUp(L, up) {
   up.heat /= hr;
   return Object.assign(up, {
     heliDmg: hd, heliRate: hr, heliRange: UP.hrange(L('hrange')),
+    salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
     ramTime: 0, ramCharge: 0, power: false,
     strafe: 0, strafeW: JETC.half, strafeD: JETC.dmg, strafeBomb: false, twin: false

@@ -165,10 +165,8 @@ function takeLoot(f, h) {
 // It reached heli h: the pay, a chime, coins to the counter.
 function lootPaid(f, h) {
   const gx = h.x, gy = h.y - h.alt + 14, big = f.kind !== 'pile';
-  G.cash += f.pay;
-  G.pay.loot += f.pay;
-  G.cashPulse = 1;
-  addTotal(gx, gy - 14, f.pay, U.blue, big);
+  const pay = payLootScrap(f.pay);
+  if (pay > 0) addTotal(gx, gy - 14, pay, U.blue, scrapPopScale(big));
   coinPop(gx, gy, f.kind === 'gold' ? 16 : big ? 8 : 4);
   const n = f.kind === 'gold' ? 14 : big ? 7 : 4;
   currencyCoins('scrap', gx, gy, n);
@@ -181,7 +179,7 @@ function lootPaid(f, h) {
     bankRun();
   } else if (f.kind === 'crate') SFX.crate();
   else SFX.coin();
-  lootTut(f.kind + '_taken', { pay: f.pay });
+  lootTut(f.kind + '_taken', { pay });
 }
 // The guards: placed when the train comes near, standing still until the heli is close (or one of
 // them is shot).

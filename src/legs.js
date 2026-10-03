@@ -46,10 +46,7 @@ function payGold(itemId, amount, scrapIfNot) {
   scrapIfNot = Math.max(0, Math.floor(scrapIfNot));
   const record = legSave(G.leg);
   if (G.replay || record.won || Object.prototype.hasOwnProperty.call(record.paid, itemId)) {
-    out.scrap = scrapIfNot;
-    G.cash += scrapIfNot;
-    G.pay.loot += scrapIfNot;
-    if (scrapIfNot) G.cashPulse = 1;
+    out.scrap = payLootScrap(scrapIfNot);
   } else if (amount) {
     Object.defineProperty(record.paid, itemId, { value: true, enumerable: true, writable: true, configurable: true });
     out.gold = amount;

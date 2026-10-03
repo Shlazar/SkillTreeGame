@@ -318,6 +318,7 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 - `treeOverlap()`: pairs of nodes less than 1.2 cells apart; a valid tree returns `[]`.
 - `treeArt()`: each current node's baked icon dimensions; a 12×12 drawing with its outline is 14×14.
 - `treeShown()`: the IDs currently revealed by parent ownership and currency/enemy discoveries, including full-game teases.
+- `scrapPops()`: visible positive scrap reward texts, their size, colour, and screen positions.
 
 ### 5.15 Tutorial (src/tut.js)
 

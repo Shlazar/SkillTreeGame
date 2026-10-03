@@ -86,6 +86,7 @@ const UP = {
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
 // menus uses the plain numbers and shows off the Turbo Ram for now.
 // he, winch, ram = owned; gun = the rail cannon's reload seconds (0 = none). One Viper flies.
+// salvage is the extra share of every scrap reward; treeUp reads the crew's level.
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
   // (tree.js adds the newer nodes' numbers: treeUp)
@@ -102,6 +103,22 @@ function runUp(demo) {
 function maxHP() {
   return UP.hp(lv('armor'));
 }
+// Loot and gold items' scrap alternatives share a fractional pot, separate from killAcc.
+// Apply Salvage Crew once here; bankRun only stores the whole scrap already paid.
+function payLootScrap(base) {
+  if (!(base > 0)) return 0;
+  G.lootAcc += base * (1 + G.up.salvage);
+  const pay = Math.floor(G.lootAcc + 1e-9);
+  G.lootAcc = Math.max(0, G.lootAcc - pay);
+  G.cash += pay;
+  G.pay.loot += pay;
+  if (pay) G.cashPulse = 1;
+  return pay;
+}
+// Scrap pops keep their old small/large size, plus one size when Salvage Crew is active.
+function scrapPopScale(big) {
+  return (big ? 2 : 1) + (G.up.salvage > 0 ? 1 : 0);
+}
 
 // ---------- a run
 // demo = the battle behind the menus. A real ride starts 60 rail px after its departure stop.
@@ -114,7 +131,9 @@ function newGame(demo, number, replay) {
   for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
     demo: !!demo, leg: leg ? leg.n : 0, replay: !!replay, events: [], t: 0, run: 0, endT: 0, result: '', up,
-    kills: 0, cash: 0, gold: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0, scavAcc: 0, scavPaid: 0,
+    kills: 0, cash: 0, gold: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
+    // Legacy debug fields stay zero until the final cleanup; Salvage Crew uses the pay pots below.
+    scavAcc: 0, scavPaid: 0,
     trigger: false, mgCd: 0, heat: 0, overheat: false, heReload: 0, heQueue: false, hitT: 0, muzzle: [0, 0],
     // the train: s = distance along the rails of the engine's nose (it falls as the train runs north),
     // v = speed, hp / max = its health now and when whole, hit[k] = car k flashes red, fx / fy = the
@@ -130,7 +149,8 @@ function newGame(demo, number, replay) {
     camX: 0, camY: 0, aimSX: W / 2, aimSY: H / 2,
     lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
-    spawnCd: 0, waveCd: null, waves: 0, killAcc: 0, railCd: rnd(4, 6), onTrain: 0, blocked: false, decalT: 0, sum: null,
+    // Fractions from boosted kills and finds carry forward to the next reward in that group.
+    spawnCd: 0, waveCd: null, waves: 0, killAcc: 0, lootAcc: 0, railCd: rnd(4, 6), onTrain: 0, blocked: false, decalT: 0, sum: null,
     // this run's scrap by where it came from (the summary lists them), the survivors aboard, the px
     // the train has ridden, the furthest km, and what is already in the save
     pay: { kills: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0, gold: 0 },
@@ -697,7 +717,7 @@ function ramStart() {
   kick(0, -2.5);
   SFX.ramGo(r.dur + CFG.ram.ease);
 }
-// The scrap of the Ram's kills not shown yet pops off the engine's nose as one gold +N, thrown out
+// The scrap of the Ram's kills not shown yet pops off the engine's nose as one blue +N, thrown out
 // to the left (the kill count is on the right). One each 0.2 s at most: the train leaves them
 // behind in a neat line, never on top of each other.
 const RAM_POP = 0.2;
@@ -707,6 +727,7 @@ function popRam() {
   floatText(c.x0 - 6, c.y0 - 6, v, U.blue);
   const t = texts[texts.length - 1];
   if (t && t.v === v) {
+    t.s = scrapPopScale(false);
     t.vx = -rnd(42, 58);
     t.vz = rnd(20, 28);
     t.life = t.max = 0.6;
@@ -816,22 +837,15 @@ function kill(z, cause, cx, cy, dist, free) {
   const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160, ram = cause === 'ram';
   // every kill but the Ram's own fills the Ram again
   if (!ram && !free) chargeRam();
-  // what it pays: its value (twice that for the Ram) times CFG.pay.kill (golden ones pay in full),
-  // plus SCAVENGER's share (kept as whole scrap; the rest waits for the next kill)
+  // Its value (twice for the Ram) times kill pay, then Salvage Crew's extra share.
+  // Whole scrap pays now; the fraction waits for the next scored kill.
   let pay = 0;
   if (sc) {
     const base = z.value * (ram ? CFG.ram.pay : 1) * (z.gold ? 1 : CFG.pay.kill);
-    G.killAcc += base;
+    G.killAcc += base * (1 + G.up.salvage);
     pay = Math.floor(G.killAcc + 1e-9);
     G.killAcc -= pay;
     if (cause === 'gun') G.gun.kills++;
-    if (G.up.scav) {
-      G.scavAcc += base * G.up.scav;
-      const e = Math.floor(G.scavAcc + 1e-9);
-      G.scavAcc -= e;
-      G.scavPaid += e;
-      pay += e;
-    }
     if (!SAVE.flags.scrapEarned) { SAVE.flags.scrapEarned = true; saveSave(); }
     G.kills++;
     G.cash += pay;
@@ -863,7 +877,7 @@ function kill(z, cause, cx, cy, dist, free) {
       if (ram) {
         G.ram.pop += pay;
         if (G.t - G.ram.popT >= RAM_POP) popRam();
-      } else if (pay) addTotal(z.x, z.y - S.h, pay, U.blue, !!z.gold);
+      } else if (pay) addTotal(z.x, z.y - S.h, pay, U.blue, scrapPopScale(!!z.gold));
     }
   } else if (z.st === 2 && room) {
     // shot off the train: knocked off its side (or off the nose), with the train's speed
@@ -871,14 +885,14 @@ function kill(z, cause, cx, cy, dist, free) {
     bs.push(s ? { S, x: z.x, y: z.y, z: 3, vx: c.nx * s * v + c.dx * tv, vy: c.ny * s * v + c.dy * tv, vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 }
       : { S, x: z.x, y: z.y, z: 3, vx: c.dx * (v + tv), vy: c.dy * (v + tv), vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 });
     blood(z.x, z.y, z.big ? 14 : 8, S.h * 0.6);
-    if (sc && pay) addTotal(z.x, z.y - S.h, pay, U.blue, !!z.gold);
+    if (sc && pay) addTotal(z.x, z.y - S.h, pay, U.blue, scrapPopScale(!!z.gold));
     if (!G.demo) SFX.splat();
   } else {
     // a gun kill (a heli round, the flatcar gun, a blast of an explosive
     // zombie): the body bursts into a red splat that stays. In a horde only the big ones show
     // their scrap; the rest go to the counter as coins now and then.
     popKill(z, cause);
-    if (sc && pay && (z.big || z.gold || z.silver)) addTotal(z.x, z.y - S.h, pay, U.blue, !!z.gold);
+    if (sc && pay && (z.big || z.gold || z.silver)) addTotal(z.x, z.y - S.h, pay, U.blue, scrapPopScale(!!z.gold));
     if (!G.demo) SFX.splat();
   }
   z.paid = pay;
@@ -1014,7 +1028,7 @@ function explode(x, y, player) {
   }
   if (player && scoring()) {
     G.bestBlast = Math.max(G.bestBlast, killed);
-    if (killed) addTotal(x, y - 10, value, U.blue, true);
+    if (value > 0) addTotal(x, y - 10, value, U.blue, scrapPopScale(true));
     if (killed >= 4) {
       const name = killed >= 25 ? 'MASSACRE' : killed >= 12 ? 'CARNAGE' : 'MULTI KILL';
       banner(name + ' ×' + killed, '+' + value + ' SCRAP', killed >= 12 ? '#ff7a4a' : U.amber, 2);
