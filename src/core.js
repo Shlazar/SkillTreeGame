@@ -100,6 +100,8 @@ const U = {
   uK: { value: KPX },
   uTime: { value: 0 },
   uThermal: { value: 0 },
+  uCursor: { value: new THREE.Vector2(-1e4, -1e4) },     // the crosshair, art pixels from the bottom left
+  uCutR: { value: 26 },
 };
 function initRenderer(canvas) {
   let renderer;
@@ -217,9 +219,11 @@ const GLSL_NOISE = `
 const GLSL_GB = GLSL_NOISE + GLSL_PAL + `
   uniform int uPass;
   uniform vec3 uCR, uCU, uCV, uLD, uT;
-  uniform vec2 uPix;
-  uniform float uK, uTime, uThermal;
+  uniform vec2 uPix, uCursor;
+  uniform float uK, uTime, uThermal, uCutR;
   vec2 gpix() { return floor(gl_FragCoord.xy) + uPix; }
+  // leaves thin out round the crosshair, so nothing under a tree is hidden from the gunner
+  bool cutHere() { vec2 d = gl_FragCoord.xy - uCursor; return dot(d, d) < uCutR * uCutR && bayer4(gl_FragCoord.xy) < 0.75; }
   float phash(float s) { return hash12(gpix() * 0.7071 + s * 17.31); }
   vec3 tex(vec3 c, float t) { return c * (t > 0.5 ? 1.13 : t < -0.5 ? 0.8 : 1.0); }
   vec4 gOut(vec3 alb, float cls, vec3 n, vec3 P, float heat) {
@@ -243,7 +247,7 @@ const GLSL_BILL = `
     }
     vec2 o = (corner * size - anchor) / uK;
     vec3 up = isFlat > 0.5 ? normalize(vec3(-uCV.x, 0.0, -uCV.z)) / ${SE.toFixed(6)} : vec3(0.0, 1.0 / ${CE.toFixed(6)}, 0.0);
-    return A + R * o.x + up * o.y;
+    return A + R * o.x + up * o.y + (isFlat > 0.5 || uPass == 2 ? vec3(0.0) : uCV * 0.04);
   }
 `;
 

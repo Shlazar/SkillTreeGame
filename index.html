@@ -127,7 +127,7 @@
   @media (prefers-reduced-motion: reduce) { .banner.show { animation-duration: 0.01s; } .warn.on { animation: none; } }
 </style>
 
-<canvas id="gl" role="img" aria-label="Sky Reaper. A gunship's view of a town at night, full of zombies."></canvas>
+<canvas id="gl" role="img" aria-label="Sky Reaper. A gunship's view of a burnt-out town at night, full of zombies."></canvas>
 <canvas id="hud"></canvas>
 <div class="loading" id="loading" role="status">Building the world…</div>
 
@@ -162,20 +162,20 @@
 <div class="overlay" id="titleScreen">
   <div class="card">
     <h1>Sky <span>Reaper</span></h1>
-    <p>A gunship over a town at night. The dead are walking.<br>Kill as many as you can before the fuel runs out.</p>
+    <p>A gunship over a burnt-out town at night. The dead are walking.<br>Kill as many as you can before the fuel runs out.</p>
     <div class="modes" role="group" aria-label="Camera">
       <button type="button" id="modeColour" aria-pressed="true">Colour</button>
       <button type="button" id="modeThermal" aria-pressed="false">Thermal B&amp;W</button>
     </div>
     <div class="controls">
-      <kbd>Mouse</kbd><span>Aim (click once to lock the mouse)</span>
-      <kbd>Hold left click</kbd><span>25mm gun</span>
+      <kbd>Mouse</kbd><span>Aim: the sight locks onto the nearest zombie</span>
+      <kbd>Hold left click</kbd><span>25mm gun, one zombie per round</span>
       <kbd>Right click · Space</kbd><span>105mm cannon</span>
-      <kbd>WASD</kbd><span>Move the camera</span>
+      <kbd>WASD · screen edge</kbd><span>Move the camera</span>
       <kbd>Wheel · Z</kbd><span>Zoom</span>
       <kbd>T</kbd><span>Colour or thermal camera</span>
       <kbd>B</kbd><span>Thermal: white or black hot</span>
-      <kbd>Esc</kbd><span>Free the mouse · pause</span>
+      <kbd>Esc</kbd><span>Pause</span>
     </div>
     <p id="noGl" hidden>The game did not start. It needs WebGL 2: turn on hardware acceleration in your browser, then reload.</p>
     <div class="buttons"><button class="primary" id="startBtn" type="button">Start mission</button></div>
@@ -184,7 +184,7 @@
 <div class="overlay" id="pauseScreen" hidden>
   <div class="card">
     <h2>Paused</h2>
-    <p>Resume takes the mouse back. Esc frees it again.</p>
+    <p>Esc or P to keep flying.</p>
     <div class="buttons"><button class="primary" id="resumeBtn" type="button">Resume</button><button id="quitBtn" type="button">End mission</button></div>
   </div>
 </div>
@@ -309,6 +309,8 @@ const U = {
   uK: { value: KPX },
   uTime: { value: 0 },
   uThermal: { value: 0 },
+  uCursor: { value: new THREE.Vector2(-1e4, -1e4) },     // the crosshair, art pixels from the bottom left
+  uCutR: { value: 26 },
 };
 function initRenderer(canvas) {
   let renderer;
@@ -426,9 +428,11 @@ const GLSL_NOISE = `
 const GLSL_GB = GLSL_NOISE + GLSL_PAL + `
   uniform int uPass;
   uniform vec3 uCR, uCU, uCV, uLD, uT;
-  uniform vec2 uPix;
-  uniform float uK, uTime, uThermal;
+  uniform vec2 uPix, uCursor;
+  uniform float uK, uTime, uThermal, uCutR;
   vec2 gpix() { return floor(gl_FragCoord.xy) + uPix; }
+  // leaves thin out round the crosshair, so nothing under a tree is hidden from the gunner
+  bool cutHere() { vec2 d = gl_FragCoord.xy - uCursor; return dot(d, d) < uCutR * uCutR && bayer4(gl_FragCoord.xy) < 0.75; }
   float phash(float s) { return hash12(gpix() * 0.7071 + s * 17.31); }
   vec3 tex(vec3 c, float t) { return c * (t > 0.5 ? 1.13 : t < -0.5 ? 0.8 : 1.0); }
   vec4 gOut(vec3 alb, float cls, vec3 n, vec3 P, float heat) {
@@ -452,7 +456,7 @@ const GLSL_BILL = `
     }
     vec2 o = (corner * size - anchor) / uK;
     vec3 up = isFlat > 0.5 ? normalize(vec3(-uCV.x, 0.0, -uCV.z)) / ${SE.toFixed(6)} : vec3(0.0, 1.0 / ${CE.toFixed(6)}, 0.0);
-    return A + R * o.x + up * o.y;
+    return A + R * o.x + up * o.y + (isFlat > 0.5 || uPass == 2 ? vec3(0.0) : uCV * 0.04);
   }
 `;
 
@@ -478,11 +482,12 @@ function runPass(mat, rt) {
   R3.renderer.render(PASS.scene, PASS.cam);
 }
 
-/* The endless world, in 150 m field cells. Each cell's crop, pond, hedges, houses, cars and lamps
+/* The endless world, in 150 m field cells. Each cell's crop, pond, hedges, ruins, cars and lamps
  * come from a hash of its coordinates, so any part of the world rebuilds the same. Towns sit on the
- * highway crossings. Everything is painted pixel by pixel in its shader: buildings stand on a
- * half-metre grid and their details are measured in art pixels (0.25 m along a wall, VU up it), so
- * every window, plank and shingle row lands on whole pixels. */
+ * highway crossings; their houses are gone, burnt down to floors and stubs of wall that hide nothing.
+ * Everything is painted pixel by pixel in its shader: ruins stand on a half-metre grid and their
+ * details are measured in art pixels (0.25 m along a wall, VU up it), so every brick row lands on
+ * whole pixels. */
 
 const CELL = 150, FT = 64;
 const HU = 0.25, VU = 1 / (KPX * CE);          // one art pixel along a wall, and up it
@@ -691,137 +696,21 @@ const POOL_HEAD = GLSL_GB + GLSL_SRC + `
   const float HU = ${HU.toFixed(4)}, VU = ${VU.toFixed(6)};
   float h1(float a, float b) { return hash12(vec2(a * 1.731 + b * 0.37, b * 2.113 - a * 0.71)); }
 `;
-// walls of houses (kind 0), garages (1), sheds (2) and barns (3)
-const WALL_FRAG = POOL_HEAD + `
-  vec3 wallCol(float i) {
-    if (i < 0.5) return P_plaster; if (i < 1.5) return P_sidingW; if (i < 2.5) return P_sidingB; if (i < 3.5) return P_sidingY;
-    if (i < 4.5) return P_sidingG; if (i < 5.5) return P_brick; if (i < 6.5) return P_woodLt; return vec3(0.54, 0.23, 0.18);
-  }
-  void main() {
-    if (uPass == 2) { gl_FragColor = gOut(vec3(0.0), 0.0, vec3(0.0), vW, 0.0); return; }
-    float kind = vB.w, seed = vC.x, wc = vC.y, flags = vC.z, wheat = vC.w;
-    bool burning = mod(flags, 2.0) > 0.5, frontPlusZ = mod(floor(flags / 2.0), 2.0) > 0.5;
-    vec3 n = normalize(vNw), P = vW;
-    float r = phash(seed), t = 0.0, cls = 200.0, heat = wheat;
-    if (vN.y > 0.5) {                                                 // a flat roof
-      vec3 c = r < 0.5 ? P_asphaltDk : P_asphalt;
-      gl_FragColor = gOut(tex(c, r > 0.92 ? -1.0 : 0.0), 200.0, n, P, 0.3 + srcHeat(P) * 0.6);
-      return;
-    }
-    bool endw = abs(vN.x) > 0.5;
-    float hw = endw ? vB.z * 0.5 : vB.x * 0.5;
-    float ax = floor(((endw ? vL.z : vL.x) + hw) / HU), wpx = floor(hw * 2.0 / HU + 0.5);  // pixels along the wall
-    float ay = floor(vL.y / VU), hpx = floor(vB.y / VU + 0.5);                                   // pixels up it
-    float face = endw ? (vN.x > 0.0 ? 2.0 : 3.0) : (vN.z > 0.0 ? 0.0 : 1.0);
-    bool front = !endw && ((vN.z > 0.0) == frontPlusZ);
-    vec3 col = wallCol(wc);
-    if (kind > 2.5) {                                                 // barn: red boards, white trim, a big X door
-      col = wallCol(7.0); t = mod(ax, 3.0) < 1.0 ? -1.0 : 0.0;
-      if (ax < 1.0 || ax > wpx - 2.0 || ay > hpx - 2.0) { col = P_trim; t = 0.0; }
-      if (!endw && front && abs(ax - wpx * 0.5) < 9.0 && ay < 16.0) {
-        float u = ax - (wpx * 0.5 - 9.0), v = ay;
-        col = wallCol(7.0) * 0.85; t = 0.0;
-        if (u < 1.0 || u > 16.0 || v > 14.0 || abs(u - v * 18.0 / 15.0) < 1.0 || abs(u - (17.0 - v * 18.0 / 15.0)) < 1.0) col = P_trim;
-      }
-    } else if (kind > 1.5) {                                          // shed: vertical planks and a door
-      col = mod(ax, 3.0) < 1.0 ? P_woodDk : P_wood; heat = 0.33;
-      if (front && abs(ax - wpx * 0.5) < 2.5 && ay < 9.0) { col = P_woodDk; if (ay > 7.0 || abs(ax - wpx * 0.5) > 1.5) col = P_wood * 0.8; }
-    } else {
-      if (wc > 4.5 && wc < 5.5) {                                     // brick, mortar every third row
-        col = h1(floor(ax / 2.0 + mod(ay, 2.0) * 0.5), ay) < 0.35 ? P_brickDk : P_brick;
-        if (mod(ay, 3.0) < 1.0) col = mix(P_brick, P_concrete, 0.45);
-      } else if (wc > 0.5) {                                          // clapboard siding
-        if (mod(ay, 3.0) < 1.0) t = -1.0;
-      } else if (r < 0.06) t = -1.0;                                  // plaster
-      if (ax < 1.0 || ax > wpx - 2.0) { col = P_trim; t = 0.0; }      // corner boards
-      if (ay < 2.0) { col = P_concreteDk; t = mod(ax, 6.0) < 1.0 ? -1.0 : 0.0; }    // the foundation
-      if (kind > 0.5) {                                               // garage: a sectional door to the street
-        heat = 0.36;
-        float gu = ax - (floor(wpx * 0.5) - 6.0);
-        if (front && gu >= 0.0 && gu < 12.0 && ay < 11.0) {
-          col = P_trim * 0.92; t = mod(ay, 3.0) < 1.0 ? -1.0 : 0.0;
-          if (gu < 1.0 || gu > 10.5 || ay > 9.5) { col = P_concreteDk; t = 0.0; }
-        }
-      } else {                                                        // house: windows on two floors, a door at the front
-        float nw = endw ? 1.0 : max(1.0, floor((wpx - 4.0) / 10.0));
-        float slot = floor((wpx - 4.0) / nw), k = clamp(floor((ax - 2.0) / slot), 0.0, nw - 1.0);
-        float wx = endw ? floor(wpx * 0.5) - 3.0 : 2.0 + k * slot + floor((slot - 6.0) * 0.5);
-        float u = ax - wx, fl = ay < 13.0 ? 0.0 : 1.0, v = ay - (fl < 0.5 ? 5.0 : 17.0);
-        bool two = hpx >= 26.0;
-        bool doorHere = front && fl < 0.5 && k == floor(nw * 0.5);
-        if (doorHere) {
-          if (u > 0.5 && u < 5.5 && ay >= 2.0 && ay < 12.0) {
-            col = h1(seed, 3.0) < 0.5 ? P_woodDk : (h1(seed, 4.0) < 0.5 ? P_carR : P_carB);
-            if (u < 1.5 || u > 4.5 || ay > 10.5) col = P_trim;
-            if (u > 3.5 && u < 4.5 && ay > 5.5 && ay < 6.5) col = P_paintY;   // the handle
-            t = 0.0; heat = 0.4;
-          }
-        } else if (u >= 0.0 && u < 6.0 && v >= 0.0 && v < 7.0 && (fl < 0.5 || two)) {
-          float wi = k + fl * 7.0 + face * 13.0;
-          bool lit = h1(seed, wi) < 0.33;
-          t = 0.0;
-          if (u < 1.0 || u > 4.5 || v > 5.5) col = P_trim;                     // frame
-          else if (v < 1.0) col = P_trim * 1.05;                              // sill
-          else if (burning) {
-            float fl2 = 0.65 + 0.35 * hash12(vec2(wi, floor(uTime * 12.0)));
-            col = mix(P_fireGlow, vec3(1.0, 0.95, 0.7), v / 6.0); cls = 70.0 + 50.0 * fl2; heat = 1.25;
-          } else if (lit) {
-            col = mix(P_winGlow, vec3(1.0, 0.93, 0.75), v / 6.0); cls = 56.0; heat = 0.5;
-          } else {
-            col = P_glass; cls = 220.0; heat = 0.25; if (v > 4.0) t = 1.0;
-          }
-        } else if (burning && ay > 5.0) {
-          float soot = smoothstep(0.35, 0.8, vnoise(vec2(ax * 0.3, ay * 0.2) + seed)) * smoothstep(4.0, 14.0, ay);
-          col *= 1.0 - 0.75 * soot;
-        }
-      }
-    }
-    heat += srcHeat(P) * 0.7;
-    if (burning) heat = max(heat, 0.5);
-    gl_FragColor = gOut(tex(col, t), cls, n, P, heat);
-  }`;
-// gable roofs: shingle courses, a ridge cap, the gable ends in the wall colour
-const ROOF_FRAG = POOL_HEAD + `
-  vec3 wallCol(float i) {
-    if (i < 0.5) return P_plaster; if (i < 1.5) return P_sidingW; if (i < 2.5) return P_sidingB; if (i < 3.5) return P_sidingY;
-    if (i < 4.5) return P_sidingG; if (i < 5.5) return P_brick; if (i < 6.5) return P_woodLt; return vec3(0.54, 0.23, 0.18);
-  }
-  void main() {
-    if (uPass == 2) { gl_FragColor = gOut(vec3(0.0), 0.0, vec3(0.0), vW, 0.0); return; }
-    float seed = vC.x, wc = vC.y, rc = vC.z;
-    bool burning = vC.w > 0.5;
-    vec3 n = normalize(vNw), P = vW, col;
-    float t = 0.0, heat = 0.3, cls = 200.0;
-    if (abs(vN.x) > 0.5) {                                            // gable end: boards like the walls
-      col = wallCol(wc); float ay = floor(vL.y / VU);
-      if (wc > 0.5 && mod(ay, 3.0) < 1.0) t = -1.0;
-      if (vL.y < VU) col = P_trim;
-      heat = 0.4;
-    } else {
-      vec3 a = rc < 0.5 ? P_slate : rc < 1.5 ? P_roofR : rc < 2.5 ? P_roofB : P_shingle;
-      vec3 b = rc < 0.5 ? P_slateDk : rc < 1.5 ? P_roofRDk : rc < 2.5 ? P_roofBDk : P_shingleDk;
-      float course = floor((vB.y - vL.y) / VU / 2.0), tab = floor((vL.x / HU + mod(course, 2.0) * 1.5) / 3.0);
-      col = h1(course + seed, tab) < 0.3 ? b : a;
-      if (mod((vB.y - vL.y) / VU, 2.0) > 1.0) t = -1.0;                 // the shadow line under each course
-      if (vB.y - vL.y < VU * 1.5) { col = b * 0.85; t = 0.0; }          // ridge cap
-      if (vL.y < VU) { col = P_trim * 0.8; t = 0.0; }                   // fascia
-      if (burning) {
-        float hole = vnoise(vL.xz * 0.9 + seed + floor(uTime * 3.0) * 0.07);
-        if (hole > 0.7) { col = mix(P_fireGlow, vec3(1.0, 0.9, 0.6), hole - 0.7); cls = 90.0; heat = 1.3; }
-        else col *= 0.45;
-      }
-    }
-    heat += srcHeat(P) * 0.7;
-    gl_FragColor = gOut(tex(col, t), cls, n, P, heat);
-  }`;
 // props in boxes; kind: 0 plain, 1 chimney, 2 fence, 3 car body, 4 car cabin, 5 air conditioner,
-// 6 pool, 7 lamp head, 8 timber, 9 bale wrap, 10 mailbox
+// 6 pool, 7 lamp head, 8 timber, 9 bale wrap, 10 mailbox, 11 floor slab, 12 broken wall, 13 rubble
 const BOX_FRAG = POOL_HEAD + `
   vec3 plain(float i) {
     if (i < 0.5) return P_concrete; if (i < 1.5) return P_iron; if (i < 2.5) return P_wood; if (i < 3.5) return P_steel; return P_trim;
   }
   vec3 carCol(float i) {
     if (i < 0.5) return P_carR; if (i < 1.5) return P_carB; if (i < 2.5) return P_carC; if (i < 3.5) return P_carG; if (i < 4.5) return P_carW; return P_carK;
+  }
+  vec3 wallCol(float i) {
+    if (i < 0.5) return P_plaster; if (i < 1.5) return P_sidingW; if (i < 2.5) return P_sidingB; if (i < 3.5) return P_sidingY;
+    if (i < 4.5) return P_sidingG; if (i < 5.5) return P_brick; if (i < 6.5) return P_woodLt; return vec3(0.54, 0.23, 0.18);
+  }
+  vec3 debrisCol(float i) {
+    if (i < 0.5) return P_brick; if (i < 1.5) return P_plaster; if (i < 2.5) return P_wood; if (i < 3.5) return P_soot; return P_concrete;
   }
   void main() {
     float kind = vB.w, seed = vC.x, p1 = vC.y, p2 = vC.z, p3 = vC.w;
@@ -830,7 +719,32 @@ const BOX_FRAG = POOL_HEAD + `
     bool top = vN.y > 0.5, endw = abs(vN.x) > 0.5;
     float ax = floor(((endw ? vL.z : vL.x) + (endw ? vB.z : vB.x) * 0.5) / HU), ay = floor(vL.y / VU);
     if (uPass == 2 && kind > 5.5 && kind < 6.5) discard;             // a pool casts no shadow
-    if (kind > 9.5) { col = P_steel; heat = 0.3; }
+    if (kind > 12.5) {                                                // rubble
+      col = debrisCol(p1); t = r < 0.25 ? -1.0 : r > 0.85 ? 1.0 : 0.0; heat = 0.34;
+    } else if (kind > 11.5) {                                         // what is left of a wall: a jagged top, scorched
+      if (top) discard;
+      float hpx = floor(vB.y / VU + 0.5);
+      float jag = floor(h1(floor(ax / 2.0), seed) * 4.0) + (h1(ax, seed + 1.0) < 0.3 ? 1.0 : 0.0);
+      if (ay >= hpx - jag) discard;
+      col = wallCol(p1);
+      if (p1 > 4.5 && p1 < 5.5) { col = h1(floor(ax / 2.0 + mod(ay, 2.0) * 0.5), ay) < 0.35 ? P_brickDk : P_brick; if (mod(ay, 3.0) < 1.0) col = mix(P_brick, P_concrete, 0.45); }
+      else if (p1 > 6.5) t = mod(ax, 3.0) < 1.0 ? -1.0 : 0.0;
+      else if (p1 > 0.5 && mod(ay, 3.0) < 1.0) t = -1.0;
+      col *= 1.0 - 0.6 * smoothstep(0.4, 0.8, vnoise(vec2(ax * 0.35, ay * 0.4) + seed));
+      if (ay >= hpx - jag - 1.0) col *= 0.72;
+      heat = 0.36;
+    } else if (kind > 10.5) {                                         // a floor slab: tiles or boards, ash and soot
+      if (top) {
+        bool boards = h1(seed, 2.0) < 0.5;
+        vec2 q = floor(vL.xz / (boards ? vec2(1.0, 0.25) : vec2(0.5, 0.5)));
+        col = boards ? (mod(q.y, 2.0) < 1.0 ? P_wood : P_woodDk) : (mod(q.x + q.y, 2.0) < 1.0 ? P_concrete : P_trim * 0.85);
+        float burn = smoothstep(0.3, 0.7, vnoise(vL.xz * 0.35 + seed)) * (p1 > 0.5 ? 1.0 : 0.35);
+        col = mix(col, P_soot, burn * 0.85);
+        if (r > 0.94) col = P_ash;
+        if (r < 0.04) col = debrisCol(mod(seed, 5.0));
+        heat = 0.33 + burn * 0.03;
+      } else { col = P_concreteDk; heat = 0.34; }
+    } else if (kind > 9.5) { col = P_steel; heat = 0.3; }
     else if (kind > 8.5) { col = P_hay; heat = 0.37; }
     else if (kind > 7.5) { col = P_woodDk; t = r < 0.2 ? -1.0 : 0.0; heat = 0.3; }
     else if (kind > 6.5) {                                            // street lamp: iron hood, glowing glass below
@@ -883,6 +797,7 @@ const CYL_FRAG = POOL_HEAD + `
 // conifers: three tiers of needles
 const CONE_FRAG = POOL_HEAD + `
   void main() {
+    if (uPass < 2 && cutHere()) discard;
     float seed = vC.x;
     vec3 n = normalize(vNw), P = vW;
     float band = vnoise(vec2(atan(vL.z, vL.x) * 2.5 + seed, vL.y * 1.4));
@@ -917,6 +832,7 @@ const BALL_FRAG = GLSL_GB + GLSL_SRC + `
     float rim = 0.86 + 0.14 * vnoise(vec2(ang * 2.6 + seed * 7.0, seed));
     float d2 = dot(q, q);
     if (d2 > rim * rim) discard;
+    if (uPass < 2 && cutHere()) discard;
     float z = sqrt(rim * rim - d2);
     vec3 nn = normalize(R * q.x + Up * q.y + V * z);
     vec3 P = vS.xyz + (R * q.x + Up * q.y * vK.w + V * z) * vS.w;
@@ -952,26 +868,9 @@ function pool(name, geo, frag, max, vert) {
   POOLS[name] = { mesh, A, n: 0, max, geo: g };
   return mesh;
 }
-function gableGeo() {
-  // a unit gable roof: base x, z in [-0.5, 0.5] at y 0, ridge along x at y 1
-  const v = [], nm = [];
-  const tri = (a, b, c) => {
-    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-    const nx = ab[1] * ac[2] - ab[2] * ac[1], ny = ab[2] * ac[0] - ab[0] * ac[2], nz = ab[0] * ac[1] - ab[1] * ac[0], l = Math.hypot(nx, ny, nz) || 1;
-    for (const p of [a, b, c]) { v.push(...p); nm.push(nx / l, ny / l, nz / l); }
-  };
-  const A = [-0.5, 0, 0.5], B = [0.5, 0, 0.5], C = [0.5, 0, -0.5], D = [-0.5, 0, -0.5], E = [-0.5, 1, 0], F = [0.5, 1, 0];
-  tri(A, B, F); tri(A, F, E); tri(C, D, E); tri(C, E, F); tri(B, C, F); tri(D, A, E);
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nm, 3));
-  return g;
-}
 const unitBox = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
 const SCENERY = new THREE.Group();
 SCENERY.add(
-  pool('wall', unitBox, WALL_FRAG, 2400),
-  pool('roof', gableGeo(), ROOF_FRAG, 2400),
   pool('box', unitBox, BOX_FRAG, 16000),
   pool('cylV', new THREE.CylinderGeometry(1, 1, 1, 8).translate(0, 0.5, 0), CYL_FRAG, 9000),
   pool('cylH', new THREE.CylinderGeometry(1, 1, 1, 10).rotateX(Math.PI / 2), CYL_FRAG, 6000),
@@ -988,6 +887,7 @@ const wires = new THREE.LineSegments(wireGeo, new THREE.ShaderMaterial({
   fragmentShader: GLSL_GB + 'varying vec3 vW; void main() { if (uPass == 2) discard; gl_FragColor = gOut(P_iron * 0.7, 200.0, vec3(0.0, 1.0, 0.0), vW, 0.28); }',
 }));
 wires.frustumCulled = false;
+wires.renderOrder = 10;            // after the dead, so a wire overhead never counts as hiding one
 SCENERY.add(wires);
 
 function put(name, x, y, z, yaw, sx, sy, sz, kind, seed, p1, p2, p3) {
@@ -1016,7 +916,7 @@ function cellContent(ci, cj) {
   if (c) return c;
   const f = fieldOf(ci, cj), rng = mulberry(hash32(ci * 7919 + 17) ^ hash32(cj * 104729 + 5) ^ 0x2f6d);
   const x0 = ci * CELL, z0 = cj * CELL;
-  c = { trees: [], houses: [], cars: [], poles: [], bales: [], props: [], lamps: [], fences: [], block: [] };
+  c = { trees: [], cars: [], poles: [], bales: [], props: [], lamps: [], fences: [], fires: [], block: [] };
   const town = f.type === 5;
   const clear = (x, z, m) => hwDist(x, z) > 7 + m && (town || trackDist(x, z) > 4 + m);
   const tree = (x, z, s, kind) => {
@@ -1025,14 +925,34 @@ function cellContent(ci, cj) {
     c.trees.push({ x, z, s: s * (0.8 + rng() * 0.5), kind, heat: 0.36 + rng() * 0.04, seed: Math.floor(rng() * 1000) });
     c.block.push(x, z, 0.8);
   };
-  // a house: walls, roof, chimney; corners on the half-metre grid, heights in whole pixels
-  const house = (cx, cz, w, d, h, yaw, o) => {
-    w = snapH(w); d = snapH(d); h = snapV(h);
-    const x = snapH(cx - w / 2) + w / 2, z = snapH(cz - d / 2) + d / 2;
-    c.houses.push(Object.assign({ x, z, w, d, h, yaw, seed: Math.floor(rng() * 1000), wc: Math.floor(rng() * 6), rc: Math.floor(rng() * 4),
-      roofH: snapV(Math.min(w, d) * 0.3 + 0.6), burning: false, front: 1, kind: 0, heat: 0.39 + rng() * 0.05, lit: rng() < 0.6 }, o || {}));
-    c.block.push(x, z, Math.max(w, d) / 2 + 0.3);
-    return c.houses[c.houses.length - 1];
+  // what is left of a house: the floor slab, stubs of wall with gaps, rubble, sometimes the chimney.
+  // Nothing taller than a person, so nothing hides the dead or stops them.
+  const ruin = (cx, cz, w, d, o) => {
+    o = o || {};
+    w = snapH(w); d = snapH(d);
+    const x = snapH(cx - w / 2) + w / 2, z = snapH(cz - d / 2) + d / 2, seed = Math.floor(rng() * 1000);
+    const wc = o.wc !== undefined ? o.wc : Math.floor(rng() * 6), T = 0.25;
+    c.props.push(['box', x, 0, z, 0, w, 0.15, d, 11, seed, o.burning || rng() < 0.5 ? 1 : 0]);
+    for (const side of [0, 1, 2, 3]) {
+      const along = side < 2 ? w : d;
+      let u = 0;
+      while (u < along - 0.5) {
+        const len = snapH(Math.min(along - u, 1.5 + rng() * 4)), gap = rng() < 0.45 ? snapH(1 + rng() * 2) : 0;
+        const h = snapV(0.5 + rng() * (o.tall || 1.2));
+        if (len >= 0.5 && rng() < 0.85) {
+          const m = u + len / 2 - along / 2;
+          if (side < 2) c.props.push(['box', x + m, 0.15, z + (side ? 1 : -1) * (d / 2 - T / 2), 0, len, h, T, 12, seed + side * 7 + u, wc]);
+          else c.props.push(['box', x + (side === 3 ? 1 : -1) * (w / 2 - T / 2), 0.15, z + m, 0, T, h, len, 12, seed + side * 7 + u, wc]);
+        }
+        u += len + gap;
+      }
+    }
+    for (let k = 0; k < 3 + Math.floor(rng() * 4); k++) {
+      const sz = 0.3 + rng() * 0.6;
+      c.props.push(['box', x + (rng() - 0.5) * w * 0.8, 0.15, z + (rng() - 0.5) * d * 0.8, rng() * TAU, sz * (1 + rng()), sz * 0.7, sz, 13, seed + k, Math.floor(rng() * 5)]);
+    }
+    if (rng() < 0.5 && !o.tall) c.props.push(['box', snapH(x + w * 0.25), 0.15, snapH(z), 0, 1, snapV(1.2 + rng() * 1.2), 1, 1, seed]);
+    if (o.burning) c.fires.push({ x, y: 0.6, z, seed, big: false });
   };
   if (f.type === 4) {                                            // a wood
     const n = 34 + Math.floor(rng() * 14);
@@ -1046,27 +966,17 @@ function cellContent(ci, cj) {
         for (let k = 0; k < 3; k++) {
           const lx = bx + 6 + 21 * k, at = (u, v) => [lx + u, front + dir * v];      // u across the lot, v back from the sidewalk
           if (!clear(...at(10.5, 15), 15) || rng() < 0.06) continue;
-          const w = 10 + Math.floor(rng() * 7) * 0.5, d = 8 + Math.floor(rng() * 6) * 0.5, hh = rng() < 0.55 ? 5.5 : 3.3;
+          const w = 10 + Math.floor(rng() * 7) * 0.5, d = 8 + Math.floor(rng() * 6) * 0.5;
           const [hx, hz] = at(2 + w / 2, 5 + d / 2);
-          const H = house(hx, hz, w, d, hh, 0, { front: dir > 0 ? 0 : 1, burning: rng() < 0.035 });
-          const [gx, gz] = at(17.25, 18);                                        // the garage at the end of the drive
-          c.props.push(['wall', snapH(gx), 0, snapH(gz), 0, 4.5, snapV(3), 6, 1, H.seed, H.wc, H.front * 2, 0.36]);
-          c.block.push(gx, gz, 3.2);
+          ruin(hx, hz, w, d, { burning: rng() < 0.07 });
           if (rng() < 0.55) {
             const [cx, cz] = at(17.25, 9.5 + rng() * 1.5);
             c.cars.push({ x: cx, z: cz, yaw: Math.PI / 2, state: rng() < 0.3 ? 'warm' : 'cold', paint: Math.floor(rng() * 6) });
             c.block.push(cx, cz, 2.4);
           }
-          if (rng() < 0.6) { const [ax, az] = at(1, 5 + d * 0.6); c.props.push(['box', ax, 0, az, 0, 0.9, 0.9, 0.9, 5, 0, 0, 0, 0]); }
-          if (rng() < 0.35) tree(...at(3 + rng() * 9, 1.5 + rng() * 2), 0.75);                                           // front yard
-          for (let n = rng() < 0.75 ? 1 + Math.floor(rng() * 2) : 0; n > 0; n--) tree(...at(2 + rng() * 17, 25 + rng() * 9), 0.9);
-          if (rng() < 0.3) {
-            const [sx, sz] = at(3 + rng() * 14, 31);
-            const sh = { x: snapH(sx), z: snapH(sz) };
-            c.props.push(['wall', sh.x, 0, sh.z, 0, 3, snapV(2.2), 2.5, 2, Math.floor(rng() * 999), 0, (dir > 0 ? 0 : 2), 0.33]);
-            c.props.push(['roof', sh.x, snapV(2.2), sh.z, 0, 3.5, snapV(1.0), 3, 2, 0, 6, 3, 0]);
-            c.block.push(sh.x, sh.z, 2);
-          } else if (rng() < 0.25) { const [px, pz] = at(10, 27); c.props.push(['box', snapH(px), 0, snapH(pz), 0, 8, 0.05, 4, 6, Math.floor(rng() * 99), 0, 0, 0]); }
+          if (rng() < 0.18) tree(...at(3 + rng() * 9, 1.5 + rng() * 2), 0.75);                                           // front yard
+          if (rng() < 0.5) tree(...at(2 + rng() * 17, 26 + rng() * 8), 0.9);
+          if (rng() < 0.22) { const [px, pz] = at(10, 27); c.props.push(['box', snapH(px), 0, snapH(pz), 0, 8, 0.05, 4, 6, Math.floor(rng() * 99), 0, 0, 0]); }
           // fences: down the side of the lot and along the back
           const fh = 1.2, fz0 = front + dir * 13, fz1 = front + dir * 31.5, fs = Math.floor(rng() * 99);
           c.fences.push([lx, (fz0 + fz1) / 2, 0.12, Math.abs(fz1 - fz0), fh, fs]);
@@ -1092,13 +1002,13 @@ function cellContent(ci, cj) {
       tree(x, z, 0.85);
     }
   }
-  // a farmstead: house, barn, a car, trees
+  // a burnt-out farmstead: house, barn, a car, trees
   if (f.type < 4 && !f.pond && rnd(ci, cj, 5) < 0.12) {
     const hx = x0 + 40 + rng() * 70, hz = z0 + 40 + rng() * 70;
     if (clear(hx, hz, 22)) {
       const turn = rng() < 0.5;
-      house(hx, hz, turn ? 8 : 11, turn ? 11 : 8, 5.5, 0, { front: rng() < 0.5 ? 0 : 1, wc: Math.floor(rng() * 7), rc: rng() < 0.5 ? 0 : 1 });
-      house(hx + (turn ? 0 : 24), hz + (turn ? 24 : 0), turn ? 12 : 20, turn ? 20 : 12, 7.3, 0, { kind: 3, wc: 7, rc: 0, heat: 0.33 + rng() * 0.03, lit: false });
+      ruin(hx, hz, turn ? 8 : 11, turn ? 11 : 8, { wc: Math.floor(rng() * 7), burning: rng() < 0.2 });
+      ruin(hx + (turn ? 0 : 24), hz + (turn ? 24 : 0), turn ? 12 : 20, turn ? 20 : 12, { wc: 7, tall: 1.6 });
       for (let k = 0; k < 2 + Math.floor(rng() * 3); k++) tree(hx + (rng() - 0.5) * 50, hz + (rng() - 0.5) * 50, 1.1);
       if (rng() < 0.7) {
         const cx = hx + (turn ? 9 : 0), cz = hz + (turn ? 0 : 10);
@@ -1174,16 +1084,7 @@ function rebuildScenery(cx, cz) {
         }
       }
     }
-    for (const b of c.houses) {
-      const flags = (b.burning ? 1 : 0) + (b.front ? 2 : 0);
-      put('wall', b.x, 0, b.z, b.yaw, b.w, b.h, b.d, b.kind, b.seed, b.wc, flags, b.burning ? 0.5 : b.heat);
-      put('roof', b.x, b.h, b.z, b.yaw, b.w + 1, b.kind === 3 ? snapV(4.5) : b.roofH, b.d + 1, b.kind === 3 ? 3 : 0, b.seed, b.wc, b.rc, b.burning ? 1 : 0);
-      if (b.kind === 0) {
-        put('box', snapH(b.x + b.w * 0.25), b.h, snapH(b.z), 0, 1, b.roofH + snapV(1.2), 1, 1, b.seed);   // a chimney
-        if (b.lit && !b.burning) L.push({ x: b.x, y: 2.2, z: b.z + (b.front ? -1 : 1) * (b.d / 2 + 1.5), r: 9, c: [1, 0.62, 0.3], I: 0.9, kind: 'window', air: 0.3 });
-      }
-      if (b.burning) ACTIVE.fires.push({ x: b.x, y: b.h + 1, z: b.z, seed: b.seed, big: true });
-    }
+    for (const f of c.fires) ACTIVE.fires.push(f);
     for (const p of c.props) put(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12]);
     for (const f of c.fences) put('box', f[0], 0, f[1], 0, f[2], f[4], f[3], 2, f[5]);
     for (const v of c.cars) {
@@ -1439,6 +1340,9 @@ const zombieMat = new THREE.ShaderMaterial({
       bool flip = zB.x > 0.5;
       vec2 anchor = vec2(flip ? rect.z - anc.x : anc.x, anc.y);
       vec3 P = billboard(zA.xyz, rect.zw, anchor, corner, zB.y);
+      #ifdef XRAY
+        P += uCV * 0.7;          // only something well in front (a tree, a car) counts as hiding it
+      #endif
       vUv = (rect.xy + vec2(flip ? 1.0 - corner.x : corner.x, corner.y) * rect.zw) / vec2(${ATLAS_W}.0, ${ATLAS_H}.0);
       vB = zB; vC = zC; vW = P;
       gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
@@ -1482,6 +1386,24 @@ const zombieMat = new THREE.ShaderMaterial({
 });
 const zombieMesh = new THREE.Mesh(zGeo, zombieMat);
 zombieMesh.frustumCulled = false;
+// the parts of the dead hidden behind trees or wrecks, drawn again as a dim glowing silhouette
+const zombieXray = new THREE.Mesh(zGeo, new THREE.ShaderMaterial({
+  uniforms: zombieMat.uniforms, depthFunc: THREE.GreaterDepth, depthWrite: false, defines: { XRAY: 1 },
+  vertexShader: zombieMat.vertexShader,
+  fragmentShader: GLSL_GB + `
+    uniform sampler2D tAtlas;
+    varying vec2 vUv; varying vec4 vB, vC; varying vec3 vW;
+    void main() {
+      vec4 a = texture2D(tAtlas, vUv);
+      if (a.a < 0.5 || vB.y > 0.5) discard;
+      bool rim = floor(a.r * 255.0 + 0.5) > 14.5;                   // the outline, and a light fill
+      if (!rim && bayer4(gl_FragCoord.xy) > 0.25) discard;
+      gl_FragColor = gOut(rim ? vec3(1.0, 0.62, 0.42) : vec3(1.0, 0.85, 0.65), rim ? 18.0 : 10.0, uCV, vW, vC.w * 0.85);
+    }`,
+}));
+zombieXray.frustumCulled = false;
+// drawn after the scenery and before the other zombies, so only scenery (not the crowd) hides anyone
+zombieXray.renderOrder = 8; zombieMesh.renderOrder = 9;
 
 // one sprite: world feet (x, y, z), frame in the set, flip, flat, fade, flash, colours, heat
 let zN = 0;
@@ -1522,7 +1444,7 @@ function writeZombies(live, dying, now) {
   zGeo.instanceCount = zN;
   ZA.needsUpdate = true; ZB.needsUpdate = true; ZC.needsUpdate = true;
 }
-function initZombies() { R3.scene.add(zombieMesh); }
+function initZombies() { R3.scene.add(zombieMesh, zombieXray); }
 
 /* Effects, drawn into the G-buffer like everything else so the night lights them: fire and sparks
  * glow, smoke is a dithered cloud the moon and the flames light, earth and gore are chunks of pixels.
@@ -1609,7 +1531,7 @@ class Particles {
           if (kind < 1.5 || kind > 3.5) {                       // smoke and dust: dithered, thinner at the rim
             float cover = a * (1.0 - r * r * 0.7) * (uThermal > 0.5 && kind < 1.5 ? 0.45 : 1.0);   // the camera sees through smoke
             if (bayer4(g + floor(seed * 4.0)) > cover) discard;
-            vec3 col = kind < 1.5 ? mix(vec3(0.3, 0.29, 0.3), vec3(0.62, 0.6, 0.6), vC.w) : vec3(0.55, 0.45, 0.34);
+            vec3 col = kind < 1.5 ? mix(vec3(0.3, 0.29, 0.3), vec3(0.62, 0.6, 0.6), vC.w) : vC.w > 1.5 ? vec3(0.5, 0.07, 0.06) : vec3(0.55, 0.45, 0.34);
             col *= 0.85 + 0.3 * vnoise(vQ * 0.6 + seed * 5.0);
             gl_FragColor = gOut(col, 210.0, n, P + n * vR / uK * 0.5, vB.y);
             return;
@@ -2226,15 +2148,17 @@ function renderFrame(f) {
   if (f.thermal) renderThermal(f); else renderColour(f);
 }
 
-/* The game: a gunship over an endless countryside at night, guns trained on the middle of the
- * picture. Every round leaves the aircraft (below the bottom of the screen) and takes a second or
- * so to fall into the target. Units are metres and seconds. */
+/* The game: a gunship over an endless countryside at night. The crosshair follows the mouse and
+ * locks onto the zombie nearest it; the 25mm leads its target and, held down over a crowd, spreads
+ * its rounds one per zombie. Every round leaves the aircraft (below the bottom of the screen) and
+ * falls into its target a moment later. Units are metres and seconds. */
 
 const CFG = {
   fuel: 60,
-  pan: 70,                                   // m/s with WASD
-  mg: { rate: 12, travel: 0.83, spread: 1.6, splash: 2.6, victims: 4, heatPer: 0.035, cool: 0.45 },
-  he: { reload: 2.6, travel: 1.56, kill: 11, hurt: 18 },
+  pan: 70,                                   // m/s with WASD or the screen edge
+  lockPx: 26,                                // art pixels round the crosshair that a zombie is locked within
+  mg: { rate: 12, travel: 0.5, spread: 1.4, splash: 2.6, victims: 4, heatPer: 0.025, cool: 0.55 },
+  he: { reload: 2.4, travel: 1.2, kill: 11, hurt: 18 },
   pop: { start: 160, perSec: 8, max: 700 },
   types: [
     { hp: 1, speed: [1.1, 1.7], value: 1, heat: [0.86, 0.97], run: false },
@@ -2254,42 +2178,59 @@ function createGame() {
     S.trigger = false; S.mgCd = 0; S.mgHeat = 0; S.overheat = false; S.heReload = 0; S.hitT = 0;
     if (!keepPlace || !S.T) { const [x, z] = startSpot(); S.T = new THREE.Vector3(x, 0, z); S.C = new THREE.Vector3(x, 0, z); }
     S.pan = [0, 0]; S.panV = [0, 0];
-    S.locked = S.locked || false; S.free = S.free || false; S.cursor = S.cursor || { x: 0.5, y: 0.5 }; S.aim = new THREE.Vector3(); S.aimOK = false;
-    S.shake = 0;
-    S.zombies = []; S.dying = []; S.rounds = []; S.flames = []; S.events = []; S.spawnCd = 0; S.attractT = 1.5; S.burst = null; S.nextId = 1;
+    S.cursor = S.cursor || { x: 0.5, y: 0.5, inside: false }; S.cursorArt = [0, 0]; S.aim = new THREE.Vector3(); S.aimOK = false;
+    S.lock = null; S.shake = 0;
+    S.zombies = []; S.dying = []; S.rounds = []; S.flames = []; S.events = []; S.pops = []; S.marks = [];
+    S.streak = { n: 0, t: -9, best: 0 };
+    S.spawnCd = 0; S.attractT = 1.5; S.burst = null; S.nextId = 1;
     S.viewR = 130;
   }
 
   /* ------------------------------------------------------------ camera */
   const AP = [0, 0];
   function updateCamera(dt) {
-    // WASD slides the view; with a free cursor, pushing it to an edge does too
+    // WASD slides the view, and so does the crosshair held near an edge of the screen
     let px = S.pan[0], py = S.pan[1];
-    if (S.free && S.mode === 'play') {
+    if (S.mode === 'play' && S.cursor.inside) {
       const ex = S.cursor.x * 2 - 1, ey = S.cursor.y * 2 - 1;
-      px = clamp(px + Math.sign(ex) * smoothstep(0.7, 0.97, Math.abs(ex)), -1, 1);
-      py = clamp(py + Math.sign(ey) * smoothstep(0.7, 0.97, Math.abs(ey)), -1, 1);
+      px = clamp(px + Math.sign(ex) * smoothstep(0.88, 0.99, Math.abs(ex)), -1, 1);
+      py = clamp(py + Math.sign(ey) * smoothstep(0.85, 0.99, Math.abs(ey)), -1, 1);
     }
     const sp = CFG.pan * 2 / VIEW.S, k = Math.min(1, dt * 6);
     S.panV[0] += ((CR.x * px - G_UP.x * py) * sp - S.panV[0]) * k;
     S.panV[1] += ((CR.z * px - G_UP.z * py) * sp - S.panV[1]) * k;
     S.T.x += S.panV[0] * dt; S.T.z += S.panV[1] * dt;
-    // the pack's meeting point trails the view
+    // the packs' meeting point trails the view
     const kc = Math.min(1, dt * 0.25);
     S.C.x += (S.T.x - S.C.x) * kc; S.C.z += (S.T.z - S.C.z) * kc;
     // a kick from the guns, in whole art pixels
     const j = S.shake * 1.6;
     setView(S.T.x + (R() - 0.5) * j / KPX * 2, S.T.z + (R() - 0.5) * j / KPX * 2);
     VIEW.aim.copy(S.T);
-    if (S.locked || S.mode !== 'play') { S.aim.copy(S.T); S.aimOK = true; }
-    else { groundAtArt(S.cursor.x * VIEW.dw / VIEW.S, S.cursor.y * VIEW.dh / VIEW.S, S.aim); S.aimOK = true; }
+    // the crosshair: under the mouse in play, the middle of the view otherwise
+    if (S.mode === 'play') { S.cursorArt[0] = S.cursor.x * VIEW.dw / VIEW.S; S.cursorArt[1] = S.cursor.y * VIEW.dh / VIEW.S; }
+    else { S.cursorArt[0] = VIEW.W / 2; S.cursorArt[1] = VIEW.H / 2; }
+    groundAtArt(S.cursorArt[0], S.cursorArt[1], S.aim);
+    S.aimOK = true;
+    U.uCursor.value.set(S.mode === 'play' ? S.cursorArt[0] : -1e4, VIEW.H - S.cursorArt[1]);
     S.viewR = Math.hypot(VIEW.W / 2 / KPX, VIEW.H / 2 / (KPX * SE)) + 8;
-    void AP;
   }
-  // the mouse moved (dx, dy) art pixels while locked: move the aim with it across the ground
-  function look(dx, dy) {
-    S.T.x += CR.x * dx / KPX - G_UP.x * dy / (KPX * SE);
-    S.T.z += CR.z * dx / KPX - G_UP.z * dy / (KPX * SE);
+  // The zombie nearest the crosshair on screen. Ones the rounds already in the air will kill are
+  // passed over for any other near the sight (a little wider than the lock), so a burst held over a
+  // crowd spreads one round per zombie; a lone target that is already done for still gets the rest.
+  function findLock() {
+    const keep = S.lock && !S.lock.dead ? S.lock : null, r1 = CFG.lockPx * CFG.lockPx, r2 = r1 * 5;
+    let fresh = null, fd = r2, done = null, dd = r1;
+    for (const z of S.zombies) {
+      toArt(z.x, 0, z.z, AP);
+      const dx = AP[0] - S.cursorArt[0], dy = AP[1] - (z.big ? 12 : 8) - S.cursorArt[1];
+      let d2 = dx * dx + dy * dy;
+      if (d2 > r2) continue;
+      if (z === keep) d2 *= 0.45;
+      if ((z.pending || 0) < z.hp) { const w = d2 > r1 ? d2 * 1.5 : d2; if (w < fd) { fd = w; fresh = z; } }
+      else if (d2 < dd) { dd = d2; done = z; }
+    }
+    S.lock = fresh || done;
   }
 
   /* --------------------------------------------------------- the horde */
@@ -2303,7 +2244,7 @@ function createGame() {
   function makeZombie(x, z, type, pack) {
     const T = CFG.types[type];
     return {
-      id: S.nextId++, x, z, type, hp: T.hp, value: T.value, run: T.run, big: type === 2,
+      id: S.nextId++, x, z, type, hp: T.hp, value: T.value, run: T.run, big: type === 2, pending: 0, vx: 0, vz: 0,
       speed: T.speed[0] + R() * (T.speed[1] - T.speed[0]), heat: T.heat[0] + R() * (T.heat[1] - T.heat[0]),
       skin: Math.floor(R() * 4), shirt: Math.floor(R() * 6), pants: Math.floor(R() * 3), right: R() < 0.5,
       phase: R() * TAU, seed: R(), flash: 0,
@@ -2349,7 +2290,8 @@ function createGame() {
       const w = Math.sin(z.wob) * (z.run ? 0.25 : 0.45), cw = Math.cos(w), sw = Math.sin(w);
       const ux = (dx * cw - dz * sw) / d, uz = (dx * sw + dz * cw) / d;
       const sp = z.speed * (d < 4 ? 0.1 : 1) * (z.flash > 0 ? 0.3 : 1);
-      z.x += ux * sp * dt; z.z += uz * sp * dt;
+      z.vx = ux * sp; z.vz = uz * sp;
+      z.x += z.vx * dt; z.z += z.vz * dt;
       const sx = ux * CR.x + uz * CR.z;
       if (Math.abs(sx) > 0.25) z.right = sx > 0;
       z.vis = sp;
@@ -2357,7 +2299,7 @@ function createGame() {
       if (z.flash > 0) z.flash -= dt;
       if (Math.hypot(z.x - S.T.x, z.z - S.T.z) > S.viewR * 3 + 120) z.gone = true;
     }
-    // spacing in the crowd, and round houses, cars and trees
+    // spacing in the crowd, and round trees and cars
     grid = new Map();
     for (const z of S.zombies) {
       const k = gk(Math.floor(z.x / GC), Math.floor(z.z / GC));
@@ -2396,21 +2338,37 @@ function createGame() {
 
   /* ------------------------------------------------------------- death */
   function scoring() { return S.mode === 'play' || S.mode === 'ending'; }
+  // blood sprays away from the gun (up the screen) and to the sides
   function blood(x, z, n, up) {
     for (let k = 0; k < n; k++) {
-      const a = R() * TAU, v = 1 + R() * 3;
-      chunk(x, 1 + R() * 0.8, z, Math.cos(a) * v, up * (0.5 + R()), Math.sin(a) * v, { life: 0.5 + R() * 0.4, s0: 0.09, h0: 0.95, h1: 0.5, grav: 9, col: 2 });
+      const a = R() * TAU, v = 1 + R() * 3.5, f = 1.5 + R() * 2.5;
+      chunk(x, 1 + R() * 0.9, z, Math.cos(a) * v + G_UP.x * f, up * (0.6 + R()), Math.sin(a) * v + G_UP.z * f,
+        { life: 0.45 + R() * 0.45, s0: 0.08 + R() * 0.07, h0: 0.95, h1: 0.5, grav: 11, col: R() < 0.7 ? 2 : 1 });
+    }
+  }
+  function streak(n) {
+    if (S.t - S.streak.t > 1.6) S.streak.n = 0;
+    const before = S.streak.n;
+    S.streak.n += n; S.streak.t = S.t; S.streak.best = Math.max(S.streak.best, S.streak.n);
+    for (const [m, bonus] of [[10, 5], [25, 15], [50, 30], [100, 60], [200, 120]]) if (before < m && S.streak.n >= m && scoring()) {
+      S.cash += bonus;
+      S.events.push({ type: 'streak', n: m, bonus });
     }
   }
   function kill(z, cause, cx, cz, dist) {
     if (z.dead) return;
     z.dead = true;
-    if (scoring()) { S.kills++; S.cash += z.value; }
-    S.events.push({ type: 'kill' });
+    if (S.lock === z) S.lock = null;
+    if (scoring()) { S.kills++; S.cash += z.value; streak(1); }
+    S.events.push({ type: 'kill', cause });
+    S.marks.push({ x: z.x, z: z.z, t: 0, big: z.big });
     if (cause === 'mg') {
-      S.dying.push(Object.assign(z, { mode: 'fall', t: 0, flash: 0.08 }));
-      blood(z.x, z.z, 6, 3);
-      addDecal(2, z.x + (R() - 0.5), z.z + (R() - 0.5), 1.4 + R(), 0.72, S.t);
+      S.dying.push(Object.assign(z, { mode: 'fall', t: 0, flash: 0.1 }));
+      z.x += G_UP.x * 0.35; z.z += G_UP.z * 0.35;                 // knocked back by the hit
+      blood(z.x, z.z, z.big ? 18 : 11, 3.5);
+      dust(z.x, 1.1, z.z, G_UP.x * 1.5, 0.6, G_UP.z * 1.5, { life: 0.55, s0: 0.35, s1: 1.1, h0: 0.7, h1: 0.4, a: 0.75, drag: 3, col: 2 });
+      addDecal(2, z.x + G_UP.x * 0.8 + (R() - 0.5), z.z + G_UP.z * 0.8 + (R() - 0.5), 2.2 + R() * 1.2, 0.75, S.t);
+      if (scoring()) S.pops.push({ x: z.x, z: z.z, text: '+' + z.value, t: 0, big: false });
       return;
     }
     let dx = z.x - cx, dz = z.z - cz;
@@ -2418,10 +2376,17 @@ function createGame() {
     dx /= l; dz /= l;
     S.dying.push(Object.assign(z, { mode: 'thrown', t: 0, y: 1.2, vx: dx * v, vy: 7 + f * 13 + R() * 4, vz: dz * v, flash: 0.1 }));
     z.right = dx * CR.x + dz * CR.z > 0;
+    blood(z.x, z.z, 6, 6);
     if (f > 0.5) for (let k = 0; k < 6; k++) {
       const a = R() * TAU, s = 4 + R() * 9;
       chunk(z.x, 1, z.z, Math.cos(a) * s, 6 + R() * 10, Math.sin(a) * s, { life: 1 + R() * 0.8, s0: 0.14, h0: 0.95, h1: 0.45, grav: 14, col: 1 });
     }
+  }
+  // a 25mm round meets a zombie
+  function hitZombie(zb) {
+    zb.hp -= 1; zb.flash = 0.12;
+    if (zb.hp <= 0) kill(zb, 'mg', zb.x, zb.z, 0);
+    else { blood(zb.x, zb.z, 4, 2.5); zb.x += G_UP.x * 0.25; zb.z += G_UP.z * 0.25; S.events.push({ type: 'hit' }); }
   }
   function updateDying(dt) {
     for (const z of S.dying) {
@@ -2444,35 +2409,47 @@ function createGame() {
   }
 
   /* ----------------------------------------------------------- weapons */
+  // where a zombie will be when a round fired now arrives
+  const lead = (z, t, out) => out.set(z.x + z.vx * t, 0, z.z + z.vz * t);
   function fireMG(target, player) {
-    const b = new THREE.Vector3().copy(target), s = CFG.mg.spread * Math.sqrt(R()), ang = R() * TAU;
-    b.x += Math.cos(ang) * s; b.z += Math.sin(ang) * s; b.y = 0;
-    S.rounds.push({ kind: 'mg', side: 1, b, age: 0, travel: CFG.mg.travel, dist: 1250, streak: 80, player });
-    if (player) { S.shots++; S.mgHeat = Math.min(1, S.mgHeat + CFG.mg.heatPer); S.shake = Math.min(1.2, S.shake + 0.07); S.events.push({ type: 'mg' }); }
+    let b, tgt = null;
+    if (player && S.lock) {
+      tgt = S.lock;
+      b = lead(tgt, CFG.mg.travel, new THREE.Vector3());
+      const s = 0.2 * Math.sqrt(R()), a = R() * TAU;
+      b.x += Math.cos(a) * s; b.z += Math.sin(a) * s;
+      tgt.pending = (tgt.pending || 0) + 1;            // spoken for: the next round goes elsewhere
+    } else {
+      b = new THREE.Vector3().copy(target);
+      const s = CFG.mg.spread * Math.sqrt(R()), a = R() * TAU;
+      b.x += Math.cos(a) * s; b.z += Math.sin(a) * s; b.y = 0;
+    }
+    S.rounds.push({ kind: 'mg', side: 1, b, target: tgt, age: 0, travel: CFG.mg.travel, dist: 1250, streak: 80, player });
+    if (player) { S.shots++; S.mgHeat = Math.min(1, S.mgHeat + CFG.mg.heatPer); S.shake = Math.min(1.2, S.shake + 0.06); S.events.push({ type: 'mg' }); }
   }
   function fireHE(target, player) {
-    const b = new THREE.Vector3().copy(target);
+    const b = player && S.lock ? lead(S.lock, CFG.he.travel, new THREE.Vector3()) : new THREE.Vector3().copy(target);
     b.y = 0;
     S.rounds.push({ kind: 'he', side: -1, b, age: 0, travel: CFG.he.travel, dist: 1250, streak: 50, player });
     if (player) { S.heReload = CFG.he.reload; S.shake = Math.min(1.6, S.shake + 0.9); S.events.push({ type: 'cannon' }); }
   }
   function mgImpact(r) {
-    const x = r.b.x, z = r.b.z;
+    const x = r.b.x, z = r.b.z, T = r.target;
     let hits = 0;
-    nearby(x, z, CFG.mg.splash, (zb) => {
-      if (hits >= CFG.mg.victims) return;
-      hits++;
-      zb.hp -= 1; zb.flash = 0.1;
-      blood(zb.x, zb.z, 2, 2);
-      if (zb.hp <= 0) kill(zb, 'mg', x, z, 0);
-    });
+    if (T) T.pending = Math.max(0, (T.pending || 0) - 1);
+    if (T && !T.dead && Math.hypot(T.x - x, T.z - z) < 2.4) { hitZombie(T); hits++; }   // a locked round finds its mark
+    // then the splash, nearest first
+    const near = [];
+    nearby(x, z, CFG.mg.splash, (zb, d) => { if (zb !== T) near.push([d, zb]); });
+    near.sort((a, b) => a[0] - b[0]);
+    for (const [, zb] of near) { if (hits >= CFG.mg.victims) break; if (!zb.dead) { hitZombie(zb); hits++; } }
     if (hits && r.player) { S.hits++; S.hitT = 0.15; }
     fire(x, 0.6, z, 0, 0.5, 0, { life: 0.08, s0: 1.1, s1: 1.5, h0: 1, h1: 0.7 });
     for (let k = 0; k < 5; k++) {
       const a = R() * TAU, v = 6 + R() * 12;
       spark(x, 0.3, z, Math.cos(a) * v, 3 + R() * 9, Math.sin(a) * v, { life: 0.2 + R() * 0.25, h0: 1, h1: 0.3, grav: 20 });
     }
-    for (let k = 0; k < 4; k++) {
+    if (!hits) for (let k = 0; k < 4; k++) {
       const a = R() * TAU, v = 1.5 + R() * 4;
       chunk(x, 0.3, z, Math.cos(a) * v, 3 + R() * 6, Math.sin(a) * v, { life: 0.7 + R() * 0.5, s0: 0.12, h0: 0.38, grav: 16, col: 0 });
     }
@@ -2480,6 +2457,7 @@ function createGame() {
     addDecal(1, x, z, 1.8 + R() * 0.8, 0.85, S.t);
     addHeat(x, z, 2.6, 0.5, 1.4);
     addLight(x, 1.2, z, 7, [1, 0.75, 0.4], 2.4, 0.07);
+    S.events.push({ type: 'impact', hits, x, z });
   }
   function explode(x, z, player) {
     let killed = 0, value = 0;
@@ -2535,6 +2513,7 @@ function createGame() {
     S.events.push({ type: 'boom', kills: killed, x, z });
     if (player && scoring() && killed) {
       S.bestBlast = Math.max(S.bestBlast, killed);
+      S.pops.push({ x, z, text: '+' + value, t: 0, big: true });
       if (killed >= 4) S.events.push({ type: 'multi', kills: killed, value });
     }
   }
@@ -2545,7 +2524,7 @@ function createGame() {
     }
     S.rounds = S.rounds.filter((r) => !r.done);
   }
-  // burning wrecks and houses: tongues of fire and a column of smoke; little fires left by blasts
+  // burning wrecks and ruins: tongues of fire and a column of smoke; little fires left by blasts
   function updateFires(dt) {
     for (const f of S.flames) {
       f.life -= dt;
@@ -2583,22 +2562,31 @@ function createGame() {
     S.t += dt;
     U.uTime.value = S.t;
     if (S.mode !== 'play') S.pan[0] = S.pan[1] = 0;
+    updateCamera(dt);
     if (S.mode === 'play') {
       S.run += dt; S.fuel -= dt;
+      findLock();
       S.mgHeat = Math.max(0, S.mgHeat - CFG.mg.cool * dt * (S.trigger && !S.overheat ? 0.25 : 1));
       if (S.mgHeat >= 1) { S.overheat = true; S.events.push({ type: 'overheat' }); }
       if (S.overheat && S.mgHeat < 0.35) S.overheat = false;
       if (S.trigger && !S.overheat && S.aimOK) {
         S.mgCd -= dt;
-        while (S.mgCd <= 0 && !S.overheat) { fireMG(S.aim, true); S.mgCd += 1 / CFG.mg.rate; if (S.mgHeat >= 1) { S.overheat = true; S.events.push({ type: 'overheat' }); } }
+        while (S.mgCd <= 0 && !S.overheat) {
+          fireMG(S.aim, true); S.mgCd += 1 / CFG.mg.rate;
+          findLock();
+          if (S.mgHeat >= 1) { S.overheat = true; S.events.push({ type: 'overheat' }); }
+        }
       } else S.mgCd = Math.max(0, S.mgCd - dt);
       S.heReload = Math.max(0, S.heReload - dt);
-      if (S.fuel <= 0) { S.fuel = 0; S.mode = 'ending'; S.endT = 0; S.trigger = false; S.events.push({ type: 'fuelout' }); }
-    } else if (S.mode === 'title') attract(dt);
+      if (S.fuel <= 0) { S.fuel = 0; S.mode = 'ending'; S.endT = 0; S.trigger = false; S.lock = null; S.events.push({ type: 'fuelout' }); }
+    } else if (S.mode === 'title') { S.lock = null; attract(dt); }
     else if (S.mode === 'ending') { S.endT += dt; if (S.endT > 1.4) S.mode = 'over'; }
     S.hitT = Math.max(0, S.hitT - dt);
     S.shake = Math.max(0, S.shake - dt * 2.5);
-    updateCamera(dt);
+    for (const p of S.pops) p.t += dt;
+    S.pops = S.pops.filter((p) => p.t < 1);
+    for (const m of S.marks) m.t += dt;
+    S.marks = S.marks.filter((m) => m.t < 0.35);
     updateWorld(S.T.x, S.T.z);
     updateZombies(dt);
     updateRounds(dt);
@@ -2613,7 +2601,7 @@ function createGame() {
 
   reset(false);
   return {
-    S, update, look,
+    S, update,
     start() {
       reset(true);
       S.mode = 'play';
@@ -2687,12 +2675,13 @@ function drawHud(S, dt, opts) {
   c.setTransform(HUD.dpr, 0, 0, HUD.dpr, 0, 0);
   c.clearRect(0, 0, w, h);
   c.lineCap = 'square';
-  // the reticle: in the middle when the mouse is locked, else under the cursor
-  const kk = VIEW.S / HUD.dpr;
-  const ax = opts.locked ? VIEW.W / 2 * kk : S.cursor.x * w, ay = opts.locked ? VIEW.H / 2 * kk : S.cursor.y * h;
+  const kk = VIEW.S / HUD.dpr;                                     // page pixels per art pixel
+  const ax = S.cursorArt[0] * kk, ay = S.cursorArt[1] * kk;        // the crosshair
   const ready = S.heReload <= 0;
   if (thermal) drawThermalHud(c, S, dt, opts, w, h, s, t);
   if (!opts.live) return;
+  const k = Math.max(2, kk);                                       // pixel size of the colour overlay
+  const at = (x, y) => [Math.round(x / k), Math.round(y / k)];
   // shells on their way down: a marker and the seconds to impact
   for (const r of S.rounds) {
     if (r.kind !== 'he' || !r.player) continue;
@@ -2702,47 +2691,98 @@ function drawHud(S, dt, opts) {
       seg(c, [x - q, yy, x, yy - q, x, yy - q, x + q, yy, x + q, yy, x, yy + q, x, yy + q, x - q, yy], INK, 1.3);
       txt(c, left.toFixed(1), x + q + 6 * s, yy + 4 * s, 12, 'left', DIM);
     } else {
-      const k = VIEW.S / HUD.dpr, px = Math.round(x / k), py = Math.round(yy / k);
+      const [px, py] = at(x, yy);
       pixelRing(c, px, py, Math.round(q / k) + 2, false, 'rgba(255,170,90,0.9)', k);
     }
   }
+  // the locked zombie: brackets round its sprite
+  if (S.lock && !S.lock.dead) {
+    const z = S.lock, [fx, fy] = toPage(z.x, 0, z.z), hw = (z.big ? 12 : 8) * kk, top = (z.big ? 29 : 20) * kk;
+    if (thermal) {
+      const x0 = fx - hw - 3 * s, x1 = fx + hw + 3 * s, y0 = fy - top - 3 * s, y1 = fy + 3 * s, L = 6 * s;
+      seg(c, [x0, y0, x0 + L, y0, x0, y0, x0, y0 + L, x1, y0, x1 - L, y0, x1, y0, x1, y0 + L,
+        x0, y1, x0 + L, y1, x0, y1, x0, y1 - L, x1, y1, x1 - L, y1, x1, y1, x1, y1 - L], INK, 1.5);
+    } else {
+      const p = (Math.sin(t * 18) > 0 ? 0 : 1), [x0, y0] = at(fx - hw, fy - top), [x1, y1] = at(fx + hw, fy);
+      const col = '#ff6a4a', a = x0 - 2 - p, b = x1 + 2 + p, cTop = y0 - 2 - p, cBot = y1 + 2 + p;
+      for (const [sx, sy, dx, dy] of [[a, cTop, 1, 1], [b, cTop, -1, 1], [a, cBot, 1, -1], [b, cBot, -1, -1]]) {
+        pixelLine(c, sx, sy, sx + dx * 3, sy, col, k);
+        pixelLine(c, sx, sy, sx, sy + dy * 3, col, k);
+      }
+    }
+  }
+  // a big one's health, while it is locked or hurt
+  for (const z of S.zombies) {
+    if (!z.big || (z.hp >= CFG.types[2].hp && z !== S.lock)) continue;
+    const [fx, fy] = toPage(z.x, 0, z.z), f = Math.max(0, z.hp) / CFG.types[2].hp;
+    if (thermal) { c.fillStyle = SHADOW; c.fillRect(fx - 12 * s, fy - 33 * kk, 24 * s, 4 * s); c.fillStyle = INK; c.fillRect(fx - 12 * s, fy - 33 * kk, 24 * s * f, 4 * s); }
+    else {
+      const [px, py] = at(fx, fy - 32 * kk);
+      c.fillStyle = 'rgba(8,10,20,0.8)'; c.fillRect((px - 6) * k, py * k, 13 * k, 2 * k);
+      c.fillStyle = f > 0.5 ? '#9be36a' : f > 0.25 ? '#ffd176' : '#ff5a4a'; c.fillRect((px - 6) * k, py * k, Math.max(1, Math.round(13 * f)) * k, k);
+    }
+  }
+  // kills: a red cross where each one fell, and the cash it brought floating up
+  for (const m of S.marks) {
+    const [fx, fy] = toPage(m.x, 0, m.z), cy = fy - (m.big ? 12 : 8) * kk, r = (2 + m.t * 14) * (thermal ? s * 1.4 : 1);
+    if (thermal) seg(c, [fx - r, cy - r, fx + r, cy + r, fx - r, cy + r, fx + r, cy - r], INK, 1.5);
+    else {
+      const [px, py] = at(fx, cy), q = Math.round(r / 2) + 1, col = m.t < 0.12 ? '#ffffff' : '#ff4a3a';
+      pixelLine(c, px - q, py - q, px + q, py + q, col, k); pixelLine(c, px - q, py + q, px + q, py - q, col, k);
+    }
+  }
+  for (const p of S.pops) {
+    const [fx, fy] = toPage(p.x, 0, p.z), rise = (p.big ? 34 : 24) + p.t * 22, size = (p.big ? 13 : 8) * Math.max(1.4, kk);
+    c.globalAlpha = p.t > 0.65 ? (1 - p.t) / 0.35 : 1;
+    c.font = thermal ? `${Math.round(size * 0.9)}px 'Share Tech Mono', monospace` : `600 ${Math.round(size)}px 'Pixelify Sans', monospace`;
+    c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+    c.lineWidth = 3; c.strokeStyle = SHADOW; c.strokeText(p.text, fx, fy - rise * kk / 2);
+    c.fillStyle = thermal ? INK : p.big ? '#ffb56a' : '#ffd176'; c.fillText(p.text, fx, fy - rise * kk / 2);
+    c.globalAlpha = 1;
+  }
+  // the reticle
   if (thermal) {
-    const g = 7 * s, l = 22 * s, R = 36 * s;
+    const g = 5 * s, l = 14 * s, R = 22 * s;
     seg(c, [ax - g - l, ay, ax - g, ay, ax + g, ay, ax + g + l, ay, ax, ay - g - l, ax, ay - g, ax, ay + g, ax, ay + g + l], INK, 1.5);
     c.lineWidth = 3.5; c.strokeStyle = SHADOW;
-    for (let k = 0; k < 4; k++) { c.beginPath(); c.arc(ax, ay, R, k * Math.PI / 2 + 0.22, (k + 1) * Math.PI / 2 - 0.22); c.stroke(); }
-    c.lineWidth = 1.5; c.strokeStyle = DIM;
-    for (let k = 0; k < 4; k++) { c.beginPath(); c.arc(ax, ay, R, k * Math.PI / 2 + 0.22, (k + 1) * Math.PI / 2 - 0.22); c.stroke(); }
+    for (let q = 0; q < 4; q++) { c.beginPath(); c.arc(ax, ay, R, q * Math.PI / 2 + 0.25, (q + 1) * Math.PI / 2 - 0.25); c.stroke(); }
+    c.lineWidth = 1.5; c.strokeStyle = S.lock ? INK : DIM;
+    for (let q = 0; q < 4; q++) { c.beginPath(); c.arc(ax, ay, R, q * Math.PI / 2 + 0.25, (q + 1) * Math.PI / 2 - 0.25); c.stroke(); }
     if (S.mgHeat > 0.01) {
       c.lineWidth = 3 * s; c.strokeStyle = S.overheat && Math.floor(t * 6) % 2 ? DIM : INK;
       c.beginPath(); c.arc(ax, ay, R + 6 * s, Math.PI * 0.75, Math.PI * 0.75 + Math.PI * 0.5 * S.mgHeat); c.stroke();
     }
-    const B = 64 * s, bl = 14 * s, col = ready ? INK : FAINT;
-    seg(c, [ax - B, ay - B, ax - B + bl, ay - B, ax - B, ay - B, ax - B, ay - B + bl, ax + B, ay - B, ax + B - bl, ay - B, ax + B, ay - B, ax + B, ay - B + bl,
-      ax - B, ay + B, ax - B + bl, ay + B, ax - B, ay + B, ax - B, ay + B - bl, ax + B, ay + B, ax + B - bl, ay + B, ax + B, ay + B, ax + B, ay + B - bl], col, 1.5);
-    if (!ready) { c.lineWidth = 2; c.strokeStyle = INK; c.beginPath(); c.arc(ax, ay, B * 0.72, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - S.heReload / CFG.he.reload)); c.stroke(); }
+    if (!ready) { c.lineWidth = 2; c.strokeStyle = INK; c.beginPath(); c.arc(ax, ay, R + 12 * s, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - S.heReload / CFG.he.reload)); c.stroke(); }
     if (S.hitT > 0) {
-      const a = 12 * s, b2 = 20 * s;
+      const a = 9 * s, b2 = 15 * s;
       seg(c, [ax - a, ay - a, ax - b2, ay - b2, ax + a, ay - a, ax + b2, ay - b2, ax - a, ay + a, ax - b2, ay + b2, ax + a, ay + a, ax + b2, ay + b2], INK, 2);
     }
+    if (S.streak.n >= 3 && t - S.streak.t < 1.6) txt(c, '×' + S.streak.n, ax + R + 16 * s, ay - R + 4 * s, 18, 'left');
   } else {
     // a pixel reticle on the art grid: a broken ring, a dot, the 105 ring filling as it loads
-    const k = Math.max(2, VIEW.S / HUD.dpr), px = Math.round(ax / k), py = Math.round(ay / k), dark = 'rgba(8,10,20,0.7)';
-    for (const [ox, oy] of [[1, 0], [0, 1]]) pixelRing(c, px + ox, py + oy, 9, true, dark, k);
-    pixelRing(c, px, py, 9, true, S.overheat ? (Math.floor(t * 6) % 2 ? '#ff5a4a' : '#ffd0c8') : '#f4f1e6', k);
+    const [px, py] = at(ax, ay), dark = 'rgba(8,10,20,0.7)', lit = S.lock ? '#ffffff' : '#f4f1e6';
+    for (const [ox, oy] of [[1, 0], [0, 1]]) pixelRing(c, px + ox, py + oy, 8, true, dark, k);
+    pixelRing(c, px, py, 8, true, S.overheat ? (Math.floor(t * 6) % 2 ? '#ff5a4a' : '#ffd0c8') : lit, k);
     c.fillStyle = dark; c.fillRect((px + 1) * k, (py + 1) * k, k, k);
-    c.fillStyle = '#ffd176'; c.fillRect(px * k, py * k, k, k);
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) pixelLine(c, px + dx * 12, py + dy * 12, px + dx * 15, py + dy * 15, '#f4f1e6', k);
+    c.fillStyle = S.lock ? '#ff6a4a' : '#ffd176'; c.fillRect(px * k, py * k, k, k);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) pixelLine(c, px + dx * 11, py + dy * 11, px + dx * 13, py + dy * 13, lit, k);
     if (!ready) {
       const n = 48, fill = 1 - S.heReload / CFG.he.reload;
       c.fillStyle = '#ffb56a';
-      for (let i = 0; i < n * fill; i++) { const a = -Math.PI / 2 + (i / n) * TAU; c.fillRect(Math.round(px + Math.cos(a) * 18) * k, Math.round(py + Math.sin(a) * 18) * k, k, k); }
+      for (let i = 0; i < n * fill; i++) { const a = -Math.PI / 2 + (i / n) * TAU; c.fillRect(Math.round(px + Math.cos(a) * 16) * k, Math.round(py + Math.sin(a) * 16) * k, k, k); }
     }
-    if (S.hitT > 0) for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) pixelLine(c, px + dx * 5, py + dy * 5, px + dx * 7, py + dy * 7, '#ff5a4a', k);
+    if (S.hitT > 0) for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) pixelLine(c, px + dx * 4, py + dy * 4, px + dx * 6, py + dy * 6, '#ff5a4a', k);
     if (S.mgHeat > 0.02) {
       const n = 40, fill = S.mgHeat;
       c.fillStyle = S.mgHeat > 0.75 ? '#ff5a4a' : '#8fc9ed';
-      for (let i = 0; i < n * fill * 0.25; i++) { const a = Math.PI * 0.75 + (i / n) * TAU; c.fillRect(Math.round(px + Math.cos(a) * 13) * k, Math.round(py + Math.sin(a) * 13) * k, k, k); }
+      for (let i = 0; i < n * fill * 0.25; i++) { const a = Math.PI * 0.75 + (i / n) * TAU; c.fillRect(Math.round(px + Math.cos(a) * 11) * k, Math.round(py + Math.sin(a) * 11) * k, k, k); }
+    }
+    if (S.streak.n >= 3 && t - S.streak.t < 1.6) {
+      const size = Math.round(9 * k), tx = (px + 14) * k, ty = (py - 8) * k;
+      c.font = `600 ${size}px 'Pixelify Sans', monospace`; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+      c.lineWidth = 3; c.strokeStyle = SHADOW; c.strokeText('×' + S.streak.n, tx, ty);
+      c.fillStyle = S.streak.n >= 25 ? '#ff6a4a' : S.streak.n >= 10 ? '#ffb56a' : '#ffd176'; c.fillText('×' + S.streak.n, tx, ty);
+      c.fillStyle = 'rgba(255,209,118,0.85)'; c.fillRect(tx, ty + 3 * k / 2, size * 1.6 * (1 - (t - S.streak.t) / 1.6), k);
     }
   }
   if (opts.hint && thermal) txt(c, opts.hint, w / 2, h - 40 * s, 15, 'center', DIM);
@@ -2819,7 +2859,7 @@ function drawThermalHud(c, S, dt, opts, w, h, s, t) {
 const $ = (id) => document.getElementById(id);
 const glCanvas = $('gl'), hudCanvas = $('hud');
 let game = null, GS = null, mode = 'title', thermal = false, invert = false, flash = 0, staticV = 0, last = performance.now(), acc = 0;
-let lockFailed = false, wantLock = false, unlockAt = -1e9, touched = false, skipMoves = 0, slowT = 0;
+let slowT = 0;
 let best = 0, bank = 0;
 const DBG = { hold: false, noStatic: false };      // ?debug: hold the simulation still, no static (tests)
 try {
@@ -2887,6 +2927,11 @@ const SFX = {
   ui() { sTone('square', 660, 990, 0.07, 0.04); },
   radio() { sNoise('bandpass', 1800, 1800, 0.8, 0.6, 0.12); },
   click() { sNoise('highpass', 4000, 4000, 1, 0.03, 0.08); sTone('square', 220, 180, 0.05, 0.03); },
+  // a kill: a wet thump and the crisp tick of a confirmed hit
+  splat() { sNoise('bandpass', 760, 260, 1.1, 0.1, 0.26); sTone('square', 1500, 1500, 0.03, 0.035); },
+  tick() { sTone('square', 1900, 1900, 0.025, 0.03); },
+  puff() { sNoise('lowpass', 900, 300, 0.7, 0.06, 0.05); },
+  streak() { sTone('square', 660, 990, 0.12, 0.05); sTone('square', 990, 1320, 0.14, 0.05, 0.1); },
 };
 
 /* --------------------------------------------------------------- setup */
@@ -2921,32 +2966,15 @@ function setMode(next) {
   if (next !== 'play') { game.trigger(false); game.setPan(0, 0); }
   last = performance.now(); acc = 0;
 }
-// Mouse-look needs pointer lock. Where the page may not take the mouse (some embeds), aim with the
-// cursor instead. A refusal just after Esc is only the browser's cool-down, so that one doesn't count.
-function lockFail() { if (performance.now() - unlockAt > 1600) lockFailed = true; }
-function lockMouse() {
-  if (lockFailed || !glCanvas.requestPointerLock) { if (!glCanvas.requestPointerLock) lockFailed = true; return; }
-  wantLock = true;
-  try {
-    const p = glCanvas.requestPointerLock();
-    if (p && p.catch) p.catch(lockFail);
-  } catch (e) { lockFail(); }
-}
 function start() {
   audioInit(); SFX.ui(); SFX.radio();
   game.start();
   staticV = 0.85;
   setMode('play');
-  lockMouse();
 }
-function pause() {
-  if (mode !== 'play') return;
-  setMode('paused');
-  if (document.pointerLockElement) document.exitPointerLock();
-}
-function resume() { setMode('play'); lockMouse(); }
+function pause() { if (mode === 'play') setMode('paused'); }
+function resume() { setMode('play'); }
 function showOver() {
-  if (document.pointerLockElement) document.exitPointerLock();
   const isBest = GS.kills > best;
   if (isBest) { best = GS.kills; save('skyreaper.px.best', best); }
   bank += GS.cash; save('skyreaper.px.bank', bank);
@@ -2971,31 +2999,18 @@ function updatePan() {
   const l = Math.hypot(x, y) || 1;
   game.setPan(x / l, y / l);
 }
-document.addEventListener('pointerlockchange', () => {
-  GS.locked = document.pointerLockElement === glCanvas;
-  if (GS.locked) skipMoves = 2;      // the first moves after the lock carry the cursor's jump to the centre
-  else { unlockAt = performance.now(); game.trigger(false); }
-  if (!GS.locked && mode === 'play' && wantLock) pause();      // Esc frees the mouse: pause
-});
-document.addEventListener('pointerlockerror', lockFail);
+// the crosshair is the mouse: no lock, no extra click
 addEventListener('mousemove', (e) => {
-  if (mode !== 'play' && mode !== 'title') return;
-  if (GS.locked) {
-    const dx = e.movementX || 0, dy = e.movementY || 0;
-    if (skipMoves > 0) { skipMoves--; return; }
-    if (Math.abs(dx) > innerWidth * 0.3 || Math.abs(dy) > innerHeight * 0.3) return;   // a spurious jump, not a hand
-    const k = (devicePixelRatio || 1) / VIEW.S;
-    if (mode === 'play') game.look(dx * k, dy * k);
-    return;
-  }
   GS.cursor.x = clamp(e.clientX / innerWidth, 0, 1); GS.cursor.y = clamp(e.clientY / innerHeight, 0, 1);
+  GS.cursor.inside = true;
 });
+document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) GS.cursor.inside = false; });
 // mouse buttons come through mousedown: a second button pressed while one is held is no pointerdown
 glCanvas.addEventListener('mousedown', (e) => {
   if (mode !== 'play') return;
   audioInit();
   e.preventDefault();
-  if (!GS.locked && !lockFailed) { lockMouse(); return; }      // the first click takes the mouse
+  GS.cursor.x = clamp(e.clientX / innerWidth, 0, 1); GS.cursor.y = clamp(e.clientY / innerHeight, 0, 1);
   if (e.button === 2) game.fireHE();
   else if (e.button === 0) game.trigger(true);
 });
@@ -3003,7 +3018,7 @@ addEventListener('mouseup', (e) => { if (e.button === 0) game.trigger(false); })
 // touch: the finger aims and holds the 25mm, the round button fires the 105
 glCanvas.addEventListener('pointerdown', (e) => {
   if (mode !== 'play' || e.pointerType === 'mouse') return;
-  audioInit(); touched = true;
+  audioInit();
   GS.cursor.x = e.clientX / innerWidth; GS.cursor.y = e.clientY / innerHeight;
   game.trigger(true);
   e.preventDefault();
@@ -3026,7 +3041,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyT' && !e.repeat) { setThermal(!thermal); SFX.click(); return; }
   if (e.code === 'KeyB' && !e.repeat) { invert = !invert; save('skyreaper.px.bht', invert ? 1 : 0); if (!thermal) setThermal(true); SFX.click(); return; }
   if (e.code === 'KeyZ' && !e.repeat && mode === 'play') { zoom(zoomStep >= 1 ? -2 : 1); return; }
-  if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat) { if (mode === 'play') pause(); else if (mode === 'paused' && e.code === 'KeyP') resume(); return; }
+  if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat) { if (mode === 'play') pause(); else if (mode === 'paused') resume(); return; }
   if (e.code === 'Enter' && !e.repeat && (mode === 'title' || mode === 'over') && !$('startBtn').disabled) { start(); return; }
   if (/^(Key[WASD]|Arrow)/.test(e.code)) { keys.add(e.code); if (mode === 'play') updatePan(); e.preventDefault(); }
 });
@@ -3042,7 +3057,7 @@ $('modeThermal').addEventListener('click', () => { setThermal(true); SFX.click()
 $('btn105').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); audioInit(); game.fireHE(); });
 
 /* --------------------------------------------------------------- events */
-let lastPop = 0;
+let lastPop = 0, lastPuff = 0;
 function banner(text) {
   showBanner(text);
   const b = $('banner');
@@ -3056,7 +3071,10 @@ function handleEvents() {
       const near = Math.hypot(ev.x - GS.T.x, ev.z - GS.T.z) < GS.viewR;
       SFX.boom(near ? 1 : 0.35);
       if (near) flash = Math.max(flash, thermal ? 0.12 : 0.08);
-    } else if (ev.type === 'kill') { if (GS.t - lastPop > 0.08) { lastPop = GS.t; SFX.pop(); } }
+    } else if (ev.type === 'kill') { if (GS.t - lastPop > 0.045) { lastPop = GS.t; ev.cause === 'mg' ? SFX.splat() : SFX.pop(); } }
+    else if (ev.type === 'hit') SFX.tick();
+    else if (ev.type === 'impact') { if (!ev.hits && GS.t - lastPuff > 0.06) { lastPuff = GS.t; SFX.puff(); } }
+    else if (ev.type === 'streak') { SFX.streak(); banner('STREAK ×' + ev.n + '   +$' + ev.bonus); }
     else if (ev.type === 'multi') banner((ev.kills >= 25 ? 'MASSACRE ×' : ev.kills >= 12 ? 'CARNAGE ×' : 'MULTI KILL ×') + ev.kills + '   +$' + ev.value);
     else if (ev.type === 'overheat') SFX.overheat();
     else if (ev.type === 'fuelout') SFX.radio();
@@ -3096,7 +3114,6 @@ function frame(now) {
     if (steps === 6) acc = 0;
   }
   handleEvents();
-  GS.free = lockFailed || touched;
   if (mode === 'play') {
     staticV = Math.max(0, staticV - dt * 1.4);
     if (GS.fuel < 10 && GS.fuel > 0 && Math.ceil(GS.fuel) !== lastBeep) { lastBeep = Math.ceil(GS.fuel); SFX.beep(); }
@@ -3106,9 +3123,8 @@ function frame(now) {
   flash = Math.max(0, flash - dt * 1.2);
   if (DBG.noStatic) staticV = 0;
   renderFrame({ time: GS.t, dt, thermal, invert, flash, static: staticV });
-  const hint = mode !== 'play' ? '' : !GS.locked && !lockFailed ? 'CLICK TO TAKE THE GUNS · ESC TO PAUSE'
-    : GS.free && GS.run < 8 ? 'AIM WITH THE CURSOR · PUSH IT TO AN EDGE TO MOVE' : '';
-  drawHud(GS, dt, { live: mode === 'play' || mode === 'paused', locked: GS.locked || mode !== 'play', thermal, invert, hint, zoomLabel: zoomLabel() });
+  const hint = mode === 'play' && GS.run < 6 ? 'HOLD LEFT CLICK ON THE DEAD · THE SIGHT LOCKS ON · RIGHT CLICK FOR THE 105' : '';
+  drawHud(GS, dt, { live: mode === 'play' || mode === 'paused', thermal, invert, hint, zoomLabel: zoomLabel() });
   if (!thermal && (mode === 'play' || mode === 'paused')) {
     updatePanels();
     const h = $('hint');
@@ -3125,7 +3141,7 @@ if (!initRenderer(glCanvas)) {
   $('noGl').hidden = false; $('startBtn').disabled = true; $('loading').hidden = true;
 } else {
   initLook(); initWorld(); initZombies(); initFx(); initHud(hudCanvas);
-  NOCAST.push(ground, decalMesh, tracerMesh, wires);
+  NOCAST.push(ground, decalMesh, tracerMesh, wires, zombieXray);
   game = createGame(); GS = game.S;
   layout();
   setThermal(thermal);
@@ -3133,7 +3149,7 @@ if (!initRenderer(glCanvas)) {
   setMode('title');
   game.update(1 / 60);
   game.spawnScatter(220);
-  if (/[?&]debug/.test(location.search)) window.__sr = { game, GS, R3, MAT, U, DBG, VIEW, PART, ACTIVE, setThermal, zoom, layout };
+  if (/[?&]debug/.test(location.search)) window.__sr = { game, GS, R3, MAT, U, DBG, VIEW, PART, ACTIVE, setThermal, zoom, layout, toArt };
   $('loading').hidden = true;
   requestAnimationFrame(frame);
 }

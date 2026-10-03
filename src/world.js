@@ -1,8 +1,9 @@
-/* The endless world, in 150 m field cells. Each cell's crop, pond, hedges, houses, cars and lamps
+/* The endless world, in 150 m field cells. Each cell's crop, pond, hedges, ruins, cars and lamps
  * come from a hash of its coordinates, so any part of the world rebuilds the same. Towns sit on the
- * highway crossings. Everything is painted pixel by pixel in its shader: buildings stand on a
- * half-metre grid and their details are measured in art pixels (0.25 m along a wall, VU up it), so
- * every window, plank and shingle row lands on whole pixels. */
+ * highway crossings; their houses are gone, burnt down to floors and stubs of wall that hide nothing.
+ * Everything is painted pixel by pixel in its shader: ruins stand on a half-metre grid and their
+ * details are measured in art pixels (0.25 m along a wall, VU up it), so every brick row lands on
+ * whole pixels. */
 
 const CELL = 150, FT = 64;
 const HU = 0.25, VU = 1 / (KPX * CE);          // one art pixel along a wall, and up it
@@ -211,137 +212,21 @@ const POOL_HEAD = GLSL_GB + GLSL_SRC + `
   const float HU = ${HU.toFixed(4)}, VU = ${VU.toFixed(6)};
   float h1(float a, float b) { return hash12(vec2(a * 1.731 + b * 0.37, b * 2.113 - a * 0.71)); }
 `;
-// walls of houses (kind 0), garages (1), sheds (2) and barns (3)
-const WALL_FRAG = POOL_HEAD + `
-  vec3 wallCol(float i) {
-    if (i < 0.5) return P_plaster; if (i < 1.5) return P_sidingW; if (i < 2.5) return P_sidingB; if (i < 3.5) return P_sidingY;
-    if (i < 4.5) return P_sidingG; if (i < 5.5) return P_brick; if (i < 6.5) return P_woodLt; return vec3(0.54, 0.23, 0.18);
-  }
-  void main() {
-    if (uPass == 2) { gl_FragColor = gOut(vec3(0.0), 0.0, vec3(0.0), vW, 0.0); return; }
-    float kind = vB.w, seed = vC.x, wc = vC.y, flags = vC.z, wheat = vC.w;
-    bool burning = mod(flags, 2.0) > 0.5, frontPlusZ = mod(floor(flags / 2.0), 2.0) > 0.5;
-    vec3 n = normalize(vNw), P = vW;
-    float r = phash(seed), t = 0.0, cls = 200.0, heat = wheat;
-    if (vN.y > 0.5) {                                                 // a flat roof
-      vec3 c = r < 0.5 ? P_asphaltDk : P_asphalt;
-      gl_FragColor = gOut(tex(c, r > 0.92 ? -1.0 : 0.0), 200.0, n, P, 0.3 + srcHeat(P) * 0.6);
-      return;
-    }
-    bool endw = abs(vN.x) > 0.5;
-    float hw = endw ? vB.z * 0.5 : vB.x * 0.5;
-    float ax = floor(((endw ? vL.z : vL.x) + hw) / HU), wpx = floor(hw * 2.0 / HU + 0.5);  // pixels along the wall
-    float ay = floor(vL.y / VU), hpx = floor(vB.y / VU + 0.5);                                   // pixels up it
-    float face = endw ? (vN.x > 0.0 ? 2.0 : 3.0) : (vN.z > 0.0 ? 0.0 : 1.0);
-    bool front = !endw && ((vN.z > 0.0) == frontPlusZ);
-    vec3 col = wallCol(wc);
-    if (kind > 2.5) {                                                 // barn: red boards, white trim, a big X door
-      col = wallCol(7.0); t = mod(ax, 3.0) < 1.0 ? -1.0 : 0.0;
-      if (ax < 1.0 || ax > wpx - 2.0 || ay > hpx - 2.0) { col = P_trim; t = 0.0; }
-      if (!endw && front && abs(ax - wpx * 0.5) < 9.0 && ay < 16.0) {
-        float u = ax - (wpx * 0.5 - 9.0), v = ay;
-        col = wallCol(7.0) * 0.85; t = 0.0;
-        if (u < 1.0 || u > 16.0 || v > 14.0 || abs(u - v * 18.0 / 15.0) < 1.0 || abs(u - (17.0 - v * 18.0 / 15.0)) < 1.0) col = P_trim;
-      }
-    } else if (kind > 1.5) {                                          // shed: vertical planks and a door
-      col = mod(ax, 3.0) < 1.0 ? P_woodDk : P_wood; heat = 0.33;
-      if (front && abs(ax - wpx * 0.5) < 2.5 && ay < 9.0) { col = P_woodDk; if (ay > 7.0 || abs(ax - wpx * 0.5) > 1.5) col = P_wood * 0.8; }
-    } else {
-      if (wc > 4.5 && wc < 5.5) {                                     // brick, mortar every third row
-        col = h1(floor(ax / 2.0 + mod(ay, 2.0) * 0.5), ay) < 0.35 ? P_brickDk : P_brick;
-        if (mod(ay, 3.0) < 1.0) col = mix(P_brick, P_concrete, 0.45);
-      } else if (wc > 0.5) {                                          // clapboard siding
-        if (mod(ay, 3.0) < 1.0) t = -1.0;
-      } else if (r < 0.06) t = -1.0;                                  // plaster
-      if (ax < 1.0 || ax > wpx - 2.0) { col = P_trim; t = 0.0; }      // corner boards
-      if (ay < 2.0) { col = P_concreteDk; t = mod(ax, 6.0) < 1.0 ? -1.0 : 0.0; }    // the foundation
-      if (kind > 0.5) {                                               // garage: a sectional door to the street
-        heat = 0.36;
-        float gu = ax - (floor(wpx * 0.5) - 6.0);
-        if (front && gu >= 0.0 && gu < 12.0 && ay < 11.0) {
-          col = P_trim * 0.92; t = mod(ay, 3.0) < 1.0 ? -1.0 : 0.0;
-          if (gu < 1.0 || gu > 10.5 || ay > 9.5) { col = P_concreteDk; t = 0.0; }
-        }
-      } else {                                                        // house: windows on two floors, a door at the front
-        float nw = endw ? 1.0 : max(1.0, floor((wpx - 4.0) / 10.0));
-        float slot = floor((wpx - 4.0) / nw), k = clamp(floor((ax - 2.0) / slot), 0.0, nw - 1.0);
-        float wx = endw ? floor(wpx * 0.5) - 3.0 : 2.0 + k * slot + floor((slot - 6.0) * 0.5);
-        float u = ax - wx, fl = ay < 13.0 ? 0.0 : 1.0, v = ay - (fl < 0.5 ? 5.0 : 17.0);
-        bool two = hpx >= 26.0;
-        bool doorHere = front && fl < 0.5 && k == floor(nw * 0.5);
-        if (doorHere) {
-          if (u > 0.5 && u < 5.5 && ay >= 2.0 && ay < 12.0) {
-            col = h1(seed, 3.0) < 0.5 ? P_woodDk : (h1(seed, 4.0) < 0.5 ? P_carR : P_carB);
-            if (u < 1.5 || u > 4.5 || ay > 10.5) col = P_trim;
-            if (u > 3.5 && u < 4.5 && ay > 5.5 && ay < 6.5) col = P_paintY;   // the handle
-            t = 0.0; heat = 0.4;
-          }
-        } else if (u >= 0.0 && u < 6.0 && v >= 0.0 && v < 7.0 && (fl < 0.5 || two)) {
-          float wi = k + fl * 7.0 + face * 13.0;
-          bool lit = h1(seed, wi) < 0.33;
-          t = 0.0;
-          if (u < 1.0 || u > 4.5 || v > 5.5) col = P_trim;                     // frame
-          else if (v < 1.0) col = P_trim * 1.05;                              // sill
-          else if (burning) {
-            float fl2 = 0.65 + 0.35 * hash12(vec2(wi, floor(uTime * 12.0)));
-            col = mix(P_fireGlow, vec3(1.0, 0.95, 0.7), v / 6.0); cls = 70.0 + 50.0 * fl2; heat = 1.25;
-          } else if (lit) {
-            col = mix(P_winGlow, vec3(1.0, 0.93, 0.75), v / 6.0); cls = 56.0; heat = 0.5;
-          } else {
-            col = P_glass; cls = 220.0; heat = 0.25; if (v > 4.0) t = 1.0;
-          }
-        } else if (burning && ay > 5.0) {
-          float soot = smoothstep(0.35, 0.8, vnoise(vec2(ax * 0.3, ay * 0.2) + seed)) * smoothstep(4.0, 14.0, ay);
-          col *= 1.0 - 0.75 * soot;
-        }
-      }
-    }
-    heat += srcHeat(P) * 0.7;
-    if (burning) heat = max(heat, 0.5);
-    gl_FragColor = gOut(tex(col, t), cls, n, P, heat);
-  }`;
-// gable roofs: shingle courses, a ridge cap, the gable ends in the wall colour
-const ROOF_FRAG = POOL_HEAD + `
-  vec3 wallCol(float i) {
-    if (i < 0.5) return P_plaster; if (i < 1.5) return P_sidingW; if (i < 2.5) return P_sidingB; if (i < 3.5) return P_sidingY;
-    if (i < 4.5) return P_sidingG; if (i < 5.5) return P_brick; if (i < 6.5) return P_woodLt; return vec3(0.54, 0.23, 0.18);
-  }
-  void main() {
-    if (uPass == 2) { gl_FragColor = gOut(vec3(0.0), 0.0, vec3(0.0), vW, 0.0); return; }
-    float seed = vC.x, wc = vC.y, rc = vC.z;
-    bool burning = vC.w > 0.5;
-    vec3 n = normalize(vNw), P = vW, col;
-    float t = 0.0, heat = 0.3, cls = 200.0;
-    if (abs(vN.x) > 0.5) {                                            // gable end: boards like the walls
-      col = wallCol(wc); float ay = floor(vL.y / VU);
-      if (wc > 0.5 && mod(ay, 3.0) < 1.0) t = -1.0;
-      if (vL.y < VU) col = P_trim;
-      heat = 0.4;
-    } else {
-      vec3 a = rc < 0.5 ? P_slate : rc < 1.5 ? P_roofR : rc < 2.5 ? P_roofB : P_shingle;
-      vec3 b = rc < 0.5 ? P_slateDk : rc < 1.5 ? P_roofRDk : rc < 2.5 ? P_roofBDk : P_shingleDk;
-      float course = floor((vB.y - vL.y) / VU / 2.0), tab = floor((vL.x / HU + mod(course, 2.0) * 1.5) / 3.0);
-      col = h1(course + seed, tab) < 0.3 ? b : a;
-      if (mod((vB.y - vL.y) / VU, 2.0) > 1.0) t = -1.0;                 // the shadow line under each course
-      if (vB.y - vL.y < VU * 1.5) { col = b * 0.85; t = 0.0; }          // ridge cap
-      if (vL.y < VU) { col = P_trim * 0.8; t = 0.0; }                   // fascia
-      if (burning) {
-        float hole = vnoise(vL.xz * 0.9 + seed + floor(uTime * 3.0) * 0.07);
-        if (hole > 0.7) { col = mix(P_fireGlow, vec3(1.0, 0.9, 0.6), hole - 0.7); cls = 90.0; heat = 1.3; }
-        else col *= 0.45;
-      }
-    }
-    heat += srcHeat(P) * 0.7;
-    gl_FragColor = gOut(tex(col, t), cls, n, P, heat);
-  }`;
 // props in boxes; kind: 0 plain, 1 chimney, 2 fence, 3 car body, 4 car cabin, 5 air conditioner,
-// 6 pool, 7 lamp head, 8 timber, 9 bale wrap, 10 mailbox
+// 6 pool, 7 lamp head, 8 timber, 9 bale wrap, 10 mailbox, 11 floor slab, 12 broken wall, 13 rubble
 const BOX_FRAG = POOL_HEAD + `
   vec3 plain(float i) {
     if (i < 0.5) return P_concrete; if (i < 1.5) return P_iron; if (i < 2.5) return P_wood; if (i < 3.5) return P_steel; return P_trim;
   }
   vec3 carCol(float i) {
     if (i < 0.5) return P_carR; if (i < 1.5) return P_carB; if (i < 2.5) return P_carC; if (i < 3.5) return P_carG; if (i < 4.5) return P_carW; return P_carK;
+  }
+  vec3 wallCol(float i) {
+    if (i < 0.5) return P_plaster; if (i < 1.5) return P_sidingW; if (i < 2.5) return P_sidingB; if (i < 3.5) return P_sidingY;
+    if (i < 4.5) return P_sidingG; if (i < 5.5) return P_brick; if (i < 6.5) return P_woodLt; return vec3(0.54, 0.23, 0.18);
+  }
+  vec3 debrisCol(float i) {
+    if (i < 0.5) return P_brick; if (i < 1.5) return P_plaster; if (i < 2.5) return P_wood; if (i < 3.5) return P_soot; return P_concrete;
   }
   void main() {
     float kind = vB.w, seed = vC.x, p1 = vC.y, p2 = vC.z, p3 = vC.w;
@@ -350,7 +235,32 @@ const BOX_FRAG = POOL_HEAD + `
     bool top = vN.y > 0.5, endw = abs(vN.x) > 0.5;
     float ax = floor(((endw ? vL.z : vL.x) + (endw ? vB.z : vB.x) * 0.5) / HU), ay = floor(vL.y / VU);
     if (uPass == 2 && kind > 5.5 && kind < 6.5) discard;             // a pool casts no shadow
-    if (kind > 9.5) { col = P_steel; heat = 0.3; }
+    if (kind > 12.5) {                                                // rubble
+      col = debrisCol(p1); t = r < 0.25 ? -1.0 : r > 0.85 ? 1.0 : 0.0; heat = 0.34;
+    } else if (kind > 11.5) {                                         // what is left of a wall: a jagged top, scorched
+      if (top) discard;
+      float hpx = floor(vB.y / VU + 0.5);
+      float jag = floor(h1(floor(ax / 2.0), seed) * 4.0) + (h1(ax, seed + 1.0) < 0.3 ? 1.0 : 0.0);
+      if (ay >= hpx - jag) discard;
+      col = wallCol(p1);
+      if (p1 > 4.5 && p1 < 5.5) { col = h1(floor(ax / 2.0 + mod(ay, 2.0) * 0.5), ay) < 0.35 ? P_brickDk : P_brick; if (mod(ay, 3.0) < 1.0) col = mix(P_brick, P_concrete, 0.45); }
+      else if (p1 > 6.5) t = mod(ax, 3.0) < 1.0 ? -1.0 : 0.0;
+      else if (p1 > 0.5 && mod(ay, 3.0) < 1.0) t = -1.0;
+      col *= 1.0 - 0.6 * smoothstep(0.4, 0.8, vnoise(vec2(ax * 0.35, ay * 0.4) + seed));
+      if (ay >= hpx - jag - 1.0) col *= 0.72;
+      heat = 0.36;
+    } else if (kind > 10.5) {                                         // a floor slab: tiles or boards, ash and soot
+      if (top) {
+        bool boards = h1(seed, 2.0) < 0.5;
+        vec2 q = floor(vL.xz / (boards ? vec2(1.0, 0.25) : vec2(0.5, 0.5)));
+        col = boards ? (mod(q.y, 2.0) < 1.0 ? P_wood : P_woodDk) : (mod(q.x + q.y, 2.0) < 1.0 ? P_concrete : P_trim * 0.85);
+        float burn = smoothstep(0.3, 0.7, vnoise(vL.xz * 0.35 + seed)) * (p1 > 0.5 ? 1.0 : 0.35);
+        col = mix(col, P_soot, burn * 0.85);
+        if (r > 0.94) col = P_ash;
+        if (r < 0.04) col = debrisCol(mod(seed, 5.0));
+        heat = 0.33 + burn * 0.03;
+      } else { col = P_concreteDk; heat = 0.34; }
+    } else if (kind > 9.5) { col = P_steel; heat = 0.3; }
     else if (kind > 8.5) { col = P_hay; heat = 0.37; }
     else if (kind > 7.5) { col = P_woodDk; t = r < 0.2 ? -1.0 : 0.0; heat = 0.3; }
     else if (kind > 6.5) {                                            // street lamp: iron hood, glowing glass below
@@ -403,6 +313,7 @@ const CYL_FRAG = POOL_HEAD + `
 // conifers: three tiers of needles
 const CONE_FRAG = POOL_HEAD + `
   void main() {
+    if (uPass < 2 && cutHere()) discard;
     float seed = vC.x;
     vec3 n = normalize(vNw), P = vW;
     float band = vnoise(vec2(atan(vL.z, vL.x) * 2.5 + seed, vL.y * 1.4));
@@ -437,6 +348,7 @@ const BALL_FRAG = GLSL_GB + GLSL_SRC + `
     float rim = 0.86 + 0.14 * vnoise(vec2(ang * 2.6 + seed * 7.0, seed));
     float d2 = dot(q, q);
     if (d2 > rim * rim) discard;
+    if (uPass < 2 && cutHere()) discard;
     float z = sqrt(rim * rim - d2);
     vec3 nn = normalize(R * q.x + Up * q.y + V * z);
     vec3 P = vS.xyz + (R * q.x + Up * q.y * vK.w + V * z) * vS.w;
@@ -472,26 +384,9 @@ function pool(name, geo, frag, max, vert) {
   POOLS[name] = { mesh, A, n: 0, max, geo: g };
   return mesh;
 }
-function gableGeo() {
-  // a unit gable roof: base x, z in [-0.5, 0.5] at y 0, ridge along x at y 1
-  const v = [], nm = [];
-  const tri = (a, b, c) => {
-    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-    const nx = ab[1] * ac[2] - ab[2] * ac[1], ny = ab[2] * ac[0] - ab[0] * ac[2], nz = ab[0] * ac[1] - ab[1] * ac[0], l = Math.hypot(nx, ny, nz) || 1;
-    for (const p of [a, b, c]) { v.push(...p); nm.push(nx / l, ny / l, nz / l); }
-  };
-  const A = [-0.5, 0, 0.5], B = [0.5, 0, 0.5], C = [0.5, 0, -0.5], D = [-0.5, 0, -0.5], E = [-0.5, 1, 0], F = [0.5, 1, 0];
-  tri(A, B, F); tri(A, F, E); tri(C, D, E); tri(C, E, F); tri(B, C, F); tri(D, A, E);
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nm, 3));
-  return g;
-}
 const unitBox = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
 const SCENERY = new THREE.Group();
 SCENERY.add(
-  pool('wall', unitBox, WALL_FRAG, 2400),
-  pool('roof', gableGeo(), ROOF_FRAG, 2400),
   pool('box', unitBox, BOX_FRAG, 16000),
   pool('cylV', new THREE.CylinderGeometry(1, 1, 1, 8).translate(0, 0.5, 0), CYL_FRAG, 9000),
   pool('cylH', new THREE.CylinderGeometry(1, 1, 1, 10).rotateX(Math.PI / 2), CYL_FRAG, 6000),
@@ -508,6 +403,7 @@ const wires = new THREE.LineSegments(wireGeo, new THREE.ShaderMaterial({
   fragmentShader: GLSL_GB + 'varying vec3 vW; void main() { if (uPass == 2) discard; gl_FragColor = gOut(P_iron * 0.7, 200.0, vec3(0.0, 1.0, 0.0), vW, 0.28); }',
 }));
 wires.frustumCulled = false;
+wires.renderOrder = 10;            // after the dead, so a wire overhead never counts as hiding one
 SCENERY.add(wires);
 
 function put(name, x, y, z, yaw, sx, sy, sz, kind, seed, p1, p2, p3) {
@@ -536,7 +432,7 @@ function cellContent(ci, cj) {
   if (c) return c;
   const f = fieldOf(ci, cj), rng = mulberry(hash32(ci * 7919 + 17) ^ hash32(cj * 104729 + 5) ^ 0x2f6d);
   const x0 = ci * CELL, z0 = cj * CELL;
-  c = { trees: [], houses: [], cars: [], poles: [], bales: [], props: [], lamps: [], fences: [], block: [] };
+  c = { trees: [], cars: [], poles: [], bales: [], props: [], lamps: [], fences: [], fires: [], block: [] };
   const town = f.type === 5;
   const clear = (x, z, m) => hwDist(x, z) > 7 + m && (town || trackDist(x, z) > 4 + m);
   const tree = (x, z, s, kind) => {
@@ -545,14 +441,34 @@ function cellContent(ci, cj) {
     c.trees.push({ x, z, s: s * (0.8 + rng() * 0.5), kind, heat: 0.36 + rng() * 0.04, seed: Math.floor(rng() * 1000) });
     c.block.push(x, z, 0.8);
   };
-  // a house: walls, roof, chimney; corners on the half-metre grid, heights in whole pixels
-  const house = (cx, cz, w, d, h, yaw, o) => {
-    w = snapH(w); d = snapH(d); h = snapV(h);
-    const x = snapH(cx - w / 2) + w / 2, z = snapH(cz - d / 2) + d / 2;
-    c.houses.push(Object.assign({ x, z, w, d, h, yaw, seed: Math.floor(rng() * 1000), wc: Math.floor(rng() * 6), rc: Math.floor(rng() * 4),
-      roofH: snapV(Math.min(w, d) * 0.3 + 0.6), burning: false, front: 1, kind: 0, heat: 0.39 + rng() * 0.05, lit: rng() < 0.6 }, o || {}));
-    c.block.push(x, z, Math.max(w, d) / 2 + 0.3);
-    return c.houses[c.houses.length - 1];
+  // what is left of a house: the floor slab, stubs of wall with gaps, rubble, sometimes the chimney.
+  // Nothing taller than a person, so nothing hides the dead or stops them.
+  const ruin = (cx, cz, w, d, o) => {
+    o = o || {};
+    w = snapH(w); d = snapH(d);
+    const x = snapH(cx - w / 2) + w / 2, z = snapH(cz - d / 2) + d / 2, seed = Math.floor(rng() * 1000);
+    const wc = o.wc !== undefined ? o.wc : Math.floor(rng() * 6), T = 0.25;
+    c.props.push(['box', x, 0, z, 0, w, 0.15, d, 11, seed, o.burning || rng() < 0.5 ? 1 : 0]);
+    for (const side of [0, 1, 2, 3]) {
+      const along = side < 2 ? w : d;
+      let u = 0;
+      while (u < along - 0.5) {
+        const len = snapH(Math.min(along - u, 1.5 + rng() * 4)), gap = rng() < 0.45 ? snapH(1 + rng() * 2) : 0;
+        const h = snapV(0.5 + rng() * (o.tall || 1.2));
+        if (len >= 0.5 && rng() < 0.85) {
+          const m = u + len / 2 - along / 2;
+          if (side < 2) c.props.push(['box', x + m, 0.15, z + (side ? 1 : -1) * (d / 2 - T / 2), 0, len, h, T, 12, seed + side * 7 + u, wc]);
+          else c.props.push(['box', x + (side === 3 ? 1 : -1) * (w / 2 - T / 2), 0.15, z + m, 0, T, h, len, 12, seed + side * 7 + u, wc]);
+        }
+        u += len + gap;
+      }
+    }
+    for (let k = 0; k < 3 + Math.floor(rng() * 4); k++) {
+      const sz = 0.3 + rng() * 0.6;
+      c.props.push(['box', x + (rng() - 0.5) * w * 0.8, 0.15, z + (rng() - 0.5) * d * 0.8, rng() * TAU, sz * (1 + rng()), sz * 0.7, sz, 13, seed + k, Math.floor(rng() * 5)]);
+    }
+    if (rng() < 0.5 && !o.tall) c.props.push(['box', snapH(x + w * 0.25), 0.15, snapH(z), 0, 1, snapV(1.2 + rng() * 1.2), 1, 1, seed]);
+    if (o.burning) c.fires.push({ x, y: 0.6, z, seed, big: false });
   };
   if (f.type === 4) {                                            // a wood
     const n = 34 + Math.floor(rng() * 14);
@@ -566,27 +482,17 @@ function cellContent(ci, cj) {
         for (let k = 0; k < 3; k++) {
           const lx = bx + 6 + 21 * k, at = (u, v) => [lx + u, front + dir * v];      // u across the lot, v back from the sidewalk
           if (!clear(...at(10.5, 15), 15) || rng() < 0.06) continue;
-          const w = 10 + Math.floor(rng() * 7) * 0.5, d = 8 + Math.floor(rng() * 6) * 0.5, hh = rng() < 0.55 ? 5.5 : 3.3;
+          const w = 10 + Math.floor(rng() * 7) * 0.5, d = 8 + Math.floor(rng() * 6) * 0.5;
           const [hx, hz] = at(2 + w / 2, 5 + d / 2);
-          const H = house(hx, hz, w, d, hh, 0, { front: dir > 0 ? 0 : 1, burning: rng() < 0.035 });
-          const [gx, gz] = at(17.25, 18);                                        // the garage at the end of the drive
-          c.props.push(['wall', snapH(gx), 0, snapH(gz), 0, 4.5, snapV(3), 6, 1, H.seed, H.wc, H.front * 2, 0.36]);
-          c.block.push(gx, gz, 3.2);
+          ruin(hx, hz, w, d, { burning: rng() < 0.07 });
           if (rng() < 0.55) {
             const [cx, cz] = at(17.25, 9.5 + rng() * 1.5);
             c.cars.push({ x: cx, z: cz, yaw: Math.PI / 2, state: rng() < 0.3 ? 'warm' : 'cold', paint: Math.floor(rng() * 6) });
             c.block.push(cx, cz, 2.4);
           }
-          if (rng() < 0.6) { const [ax, az] = at(1, 5 + d * 0.6); c.props.push(['box', ax, 0, az, 0, 0.9, 0.9, 0.9, 5, 0, 0, 0, 0]); }
-          if (rng() < 0.35) tree(...at(3 + rng() * 9, 1.5 + rng() * 2), 0.75);                                           // front yard
-          for (let n = rng() < 0.75 ? 1 + Math.floor(rng() * 2) : 0; n > 0; n--) tree(...at(2 + rng() * 17, 25 + rng() * 9), 0.9);
-          if (rng() < 0.3) {
-            const [sx, sz] = at(3 + rng() * 14, 31);
-            const sh = { x: snapH(sx), z: snapH(sz) };
-            c.props.push(['wall', sh.x, 0, sh.z, 0, 3, snapV(2.2), 2.5, 2, Math.floor(rng() * 999), 0, (dir > 0 ? 0 : 2), 0.33]);
-            c.props.push(['roof', sh.x, snapV(2.2), sh.z, 0, 3.5, snapV(1.0), 3, 2, 0, 6, 3, 0]);
-            c.block.push(sh.x, sh.z, 2);
-          } else if (rng() < 0.25) { const [px, pz] = at(10, 27); c.props.push(['box', snapH(px), 0, snapH(pz), 0, 8, 0.05, 4, 6, Math.floor(rng() * 99), 0, 0, 0]); }
+          if (rng() < 0.18) tree(...at(3 + rng() * 9, 1.5 + rng() * 2), 0.75);                                           // front yard
+          if (rng() < 0.5) tree(...at(2 + rng() * 17, 26 + rng() * 8), 0.9);
+          if (rng() < 0.22) { const [px, pz] = at(10, 27); c.props.push(['box', snapH(px), 0, snapH(pz), 0, 8, 0.05, 4, 6, Math.floor(rng() * 99), 0, 0, 0]); }
           // fences: down the side of the lot and along the back
           const fh = 1.2, fz0 = front + dir * 13, fz1 = front + dir * 31.5, fs = Math.floor(rng() * 99);
           c.fences.push([lx, (fz0 + fz1) / 2, 0.12, Math.abs(fz1 - fz0), fh, fs]);
@@ -612,13 +518,13 @@ function cellContent(ci, cj) {
       tree(x, z, 0.85);
     }
   }
-  // a farmstead: house, barn, a car, trees
+  // a burnt-out farmstead: house, barn, a car, trees
   if (f.type < 4 && !f.pond && rnd(ci, cj, 5) < 0.12) {
     const hx = x0 + 40 + rng() * 70, hz = z0 + 40 + rng() * 70;
     if (clear(hx, hz, 22)) {
       const turn = rng() < 0.5;
-      house(hx, hz, turn ? 8 : 11, turn ? 11 : 8, 5.5, 0, { front: rng() < 0.5 ? 0 : 1, wc: Math.floor(rng() * 7), rc: rng() < 0.5 ? 0 : 1 });
-      house(hx + (turn ? 0 : 24), hz + (turn ? 24 : 0), turn ? 12 : 20, turn ? 20 : 12, 7.3, 0, { kind: 3, wc: 7, rc: 0, heat: 0.33 + rng() * 0.03, lit: false });
+      ruin(hx, hz, turn ? 8 : 11, turn ? 11 : 8, { wc: Math.floor(rng() * 7), burning: rng() < 0.2 });
+      ruin(hx + (turn ? 0 : 24), hz + (turn ? 24 : 0), turn ? 12 : 20, turn ? 20 : 12, { wc: 7, tall: 1.6 });
       for (let k = 0; k < 2 + Math.floor(rng() * 3); k++) tree(hx + (rng() - 0.5) * 50, hz + (rng() - 0.5) * 50, 1.1);
       if (rng() < 0.7) {
         const cx = hx + (turn ? 9 : 0), cz = hz + (turn ? 0 : 10);
@@ -694,16 +600,7 @@ function rebuildScenery(cx, cz) {
         }
       }
     }
-    for (const b of c.houses) {
-      const flags = (b.burning ? 1 : 0) + (b.front ? 2 : 0);
-      put('wall', b.x, 0, b.z, b.yaw, b.w, b.h, b.d, b.kind, b.seed, b.wc, flags, b.burning ? 0.5 : b.heat);
-      put('roof', b.x, b.h, b.z, b.yaw, b.w + 1, b.kind === 3 ? snapV(4.5) : b.roofH, b.d + 1, b.kind === 3 ? 3 : 0, b.seed, b.wc, b.rc, b.burning ? 1 : 0);
-      if (b.kind === 0) {
-        put('box', snapH(b.x + b.w * 0.25), b.h, snapH(b.z), 0, 1, b.roofH + snapV(1.2), 1, 1, b.seed);   // a chimney
-        if (b.lit && !b.burning) L.push({ x: b.x, y: 2.2, z: b.z + (b.front ? -1 : 1) * (b.d / 2 + 1.5), r: 9, c: [1, 0.62, 0.3], I: 0.9, kind: 'window', air: 0.3 });
-      }
-      if (b.burning) ACTIVE.fires.push({ x: b.x, y: b.h + 1, z: b.z, seed: b.seed, big: true });
-    }
+    for (const f of c.fires) ACTIVE.fires.push(f);
     for (const p of c.props) put(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12]);
     for (const f of c.fences) put('box', f[0], 0, f[1], 0, f[2], f[4], f[3], 2, f[5]);
     for (const v of c.cars) {

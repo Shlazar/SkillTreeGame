@@ -83,7 +83,7 @@ class Particles {
           if (kind < 1.5 || kind > 3.5) {                       // smoke and dust: dithered, thinner at the rim
             float cover = a * (1.0 - r * r * 0.7) * (uThermal > 0.5 && kind < 1.5 ? 0.45 : 1.0);   // the camera sees through smoke
             if (bayer4(g + floor(seed * 4.0)) > cover) discard;
-            vec3 col = kind < 1.5 ? mix(vec3(0.3, 0.29, 0.3), vec3(0.62, 0.6, 0.6), vC.w) : vec3(0.55, 0.45, 0.34);
+            vec3 col = kind < 1.5 ? mix(vec3(0.3, 0.29, 0.3), vec3(0.62, 0.6, 0.6), vC.w) : vC.w > 1.5 ? vec3(0.5, 0.07, 0.06) : vec3(0.55, 0.45, 0.34);
             col *= 0.85 + 0.3 * vnoise(vQ * 0.6 + seed * 5.0);
             gl_FragColor = gOut(col, 210.0, n, P + n * vR / uK * 0.5, vB.y);
             return;

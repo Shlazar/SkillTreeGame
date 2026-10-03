@@ -176,6 +176,9 @@ const zombieMat = new THREE.ShaderMaterial({
       bool flip = zB.x > 0.5;
       vec2 anchor = vec2(flip ? rect.z - anc.x : anc.x, anc.y);
       vec3 P = billboard(zA.xyz, rect.zw, anchor, corner, zB.y);
+      #ifdef XRAY
+        P += uCV * 0.7;          // only something well in front (a tree, a car) counts as hiding it
+      #endif
       vUv = (rect.xy + vec2(flip ? 1.0 - corner.x : corner.x, corner.y) * rect.zw) / vec2(${ATLAS_W}.0, ${ATLAS_H}.0);
       vB = zB; vC = zC; vW = P;
       gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
@@ -219,6 +222,24 @@ const zombieMat = new THREE.ShaderMaterial({
 });
 const zombieMesh = new THREE.Mesh(zGeo, zombieMat);
 zombieMesh.frustumCulled = false;
+// the parts of the dead hidden behind trees or wrecks, drawn again as a dim glowing silhouette
+const zombieXray = new THREE.Mesh(zGeo, new THREE.ShaderMaterial({
+  uniforms: zombieMat.uniforms, depthFunc: THREE.GreaterDepth, depthWrite: false, defines: { XRAY: 1 },
+  vertexShader: zombieMat.vertexShader,
+  fragmentShader: GLSL_GB + `
+    uniform sampler2D tAtlas;
+    varying vec2 vUv; varying vec4 vB, vC; varying vec3 vW;
+    void main() {
+      vec4 a = texture2D(tAtlas, vUv);
+      if (a.a < 0.5 || vB.y > 0.5) discard;
+      bool rim = floor(a.r * 255.0 + 0.5) > 14.5;                   // the outline, and a light fill
+      if (!rim && bayer4(gl_FragCoord.xy) > 0.25) discard;
+      gl_FragColor = gOut(rim ? vec3(1.0, 0.62, 0.42) : vec3(1.0, 0.85, 0.65), rim ? 18.0 : 10.0, uCV, vW, vC.w * 0.85);
+    }`,
+}));
+zombieXray.frustumCulled = false;
+// drawn after the scenery and before the other zombies, so only scenery (not the crowd) hides anyone
+zombieXray.renderOrder = 8; zombieMesh.renderOrder = 9;
 
 // one sprite: world feet (x, y, z), frame in the set, flip, flat, fade, flash, colours, heat
 let zN = 0;
@@ -259,4 +280,4 @@ function writeZombies(live, dying, now) {
   zGeo.instanceCount = zN;
   ZA.needsUpdate = true; ZB.needsUpdate = true; ZC.needsUpdate = true;
 }
-function initZombies() { R3.scene.add(zombieMesh); }
+function initZombies() { R3.scene.add(zombieMesh, zombieXray); }

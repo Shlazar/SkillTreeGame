@@ -127,7 +127,7 @@
   @media (prefers-reduced-motion: reduce) { .banner.show { animation-duration: 0.01s; } .warn.on { animation: none; } }
 </style>
 
-<canvas id="gl" role="img" aria-label="Sky Reaper. A gunship's view of a town at night, full of zombies."></canvas>
+<canvas id="gl" role="img" aria-label="Sky Reaper. A gunship's view of a burnt-out town at night, full of zombies."></canvas>
 <canvas id="hud"></canvas>
 <div class="loading" id="loading" role="status">Building the world…</div>
 
@@ -162,20 +162,20 @@
 <div class="overlay" id="titleScreen">
   <div class="card">
     <h1>Sky <span>Reaper</span></h1>
-    <p>A gunship over a town at night. The dead are walking.<br>Kill as many as you can before the fuel runs out.</p>
+    <p>A gunship over a burnt-out town at night. The dead are walking.<br>Kill as many as you can before the fuel runs out.</p>
     <div class="modes" role="group" aria-label="Camera">
       <button type="button" id="modeColour" aria-pressed="true">Colour</button>
       <button type="button" id="modeThermal" aria-pressed="false">Thermal B&amp;W</button>
     </div>
     <div class="controls">
-      <kbd>Mouse</kbd><span>Aim (click once to lock the mouse)</span>
-      <kbd>Hold left click</kbd><span>25mm gun</span>
+      <kbd>Mouse</kbd><span>Aim: the sight locks onto the nearest zombie</span>
+      <kbd>Hold left click</kbd><span>25mm gun, one zombie per round</span>
       <kbd>Right click · Space</kbd><span>105mm cannon</span>
-      <kbd>WASD</kbd><span>Move the camera</span>
+      <kbd>WASD · screen edge</kbd><span>Move the camera</span>
       <kbd>Wheel · Z</kbd><span>Zoom</span>
       <kbd>T</kbd><span>Colour or thermal camera</span>
       <kbd>B</kbd><span>Thermal: white or black hot</span>
-      <kbd>Esc</kbd><span>Free the mouse · pause</span>
+      <kbd>Esc</kbd><span>Pause</span>
     </div>
     <p id="noGl" hidden>The game did not start. It needs WebGL 2: turn on hardware acceleration in your browser, then reload.</p>
     <div class="buttons"><button class="primary" id="startBtn" type="button">Start mission</button></div>
@@ -184,7 +184,7 @@
 <div class="overlay" id="pauseScreen" hidden>
   <div class="card">
     <h2>Paused</h2>
-    <p>Resume takes the mouse back. Esc frees it again.</p>
+    <p>Esc or P to keep flying.</p>
     <div class="buttons"><button class="primary" id="resumeBtn" type="button">Resume</button><button id="quitBtn" type="button">End mission</button></div>
   </div>
 </div>

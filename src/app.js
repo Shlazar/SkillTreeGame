@@ -2,7 +2,7 @@
 const $ = (id) => document.getElementById(id);
 const glCanvas = $('gl'), hudCanvas = $('hud');
 let game = null, GS = null, mode = 'title', thermal = false, invert = false, flash = 0, staticV = 0, last = performance.now(), acc = 0;
-let lockFailed = false, wantLock = false, unlockAt = -1e9, touched = false, skipMoves = 0, slowT = 0;
+let slowT = 0;
 let best = 0, bank = 0;
 const DBG = { hold: false, noStatic: false };      // ?debug: hold the simulation still, no static (tests)
 try {
@@ -70,6 +70,11 @@ const SFX = {
   ui() { sTone('square', 660, 990, 0.07, 0.04); },
   radio() { sNoise('bandpass', 1800, 1800, 0.8, 0.6, 0.12); },
   click() { sNoise('highpass', 4000, 4000, 1, 0.03, 0.08); sTone('square', 220, 180, 0.05, 0.03); },
+  // a kill: a wet thump and the crisp tick of a confirmed hit
+  splat() { sNoise('bandpass', 760, 260, 1.1, 0.1, 0.26); sTone('square', 1500, 1500, 0.03, 0.035); },
+  tick() { sTone('square', 1900, 1900, 0.025, 0.03); },
+  puff() { sNoise('lowpass', 900, 300, 0.7, 0.06, 0.05); },
+  streak() { sTone('square', 660, 990, 0.12, 0.05); sTone('square', 990, 1320, 0.14, 0.05, 0.1); },
 };
 
 /* --------------------------------------------------------------- setup */
@@ -104,32 +109,15 @@ function setMode(next) {
   if (next !== 'play') { game.trigger(false); game.setPan(0, 0); }
   last = performance.now(); acc = 0;
 }
-// Mouse-look needs pointer lock. Where the page may not take the mouse (some embeds), aim with the
-// cursor instead. A refusal just after Esc is only the browser's cool-down, so that one doesn't count.
-function lockFail() { if (performance.now() - unlockAt > 1600) lockFailed = true; }
-function lockMouse() {
-  if (lockFailed || !glCanvas.requestPointerLock) { if (!glCanvas.requestPointerLock) lockFailed = true; return; }
-  wantLock = true;
-  try {
-    const p = glCanvas.requestPointerLock();
-    if (p && p.catch) p.catch(lockFail);
-  } catch (e) { lockFail(); }
-}
 function start() {
   audioInit(); SFX.ui(); SFX.radio();
   game.start();
   staticV = 0.85;
   setMode('play');
-  lockMouse();
 }
-function pause() {
-  if (mode !== 'play') return;
-  setMode('paused');
-  if (document.pointerLockElement) document.exitPointerLock();
-}
-function resume() { setMode('play'); lockMouse(); }
+function pause() { if (mode === 'play') setMode('paused'); }
+function resume() { setMode('play'); }
 function showOver() {
-  if (document.pointerLockElement) document.exitPointerLock();
   const isBest = GS.kills > best;
   if (isBest) { best = GS.kills; save('skyreaper.px.best', best); }
   bank += GS.cash; save('skyreaper.px.bank', bank);
@@ -154,31 +142,18 @@ function updatePan() {
   const l = Math.hypot(x, y) || 1;
   game.setPan(x / l, y / l);
 }
-document.addEventListener('pointerlockchange', () => {
-  GS.locked = document.pointerLockElement === glCanvas;
-  if (GS.locked) skipMoves = 2;      // the first moves after the lock carry the cursor's jump to the centre
-  else { unlockAt = performance.now(); game.trigger(false); }
-  if (!GS.locked && mode === 'play' && wantLock) pause();      // Esc frees the mouse: pause
-});
-document.addEventListener('pointerlockerror', lockFail);
+// the crosshair is the mouse: no lock, no extra click
 addEventListener('mousemove', (e) => {
-  if (mode !== 'play' && mode !== 'title') return;
-  if (GS.locked) {
-    const dx = e.movementX || 0, dy = e.movementY || 0;
-    if (skipMoves > 0) { skipMoves--; return; }
-    if (Math.abs(dx) > innerWidth * 0.3 || Math.abs(dy) > innerHeight * 0.3) return;   // a spurious jump, not a hand
-    const k = (devicePixelRatio || 1) / VIEW.S;
-    if (mode === 'play') game.look(dx * k, dy * k);
-    return;
-  }
   GS.cursor.x = clamp(e.clientX / innerWidth, 0, 1); GS.cursor.y = clamp(e.clientY / innerHeight, 0, 1);
+  GS.cursor.inside = true;
 });
+document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) GS.cursor.inside = false; });
 // mouse buttons come through mousedown: a second button pressed while one is held is no pointerdown
 glCanvas.addEventListener('mousedown', (e) => {
   if (mode !== 'play') return;
   audioInit();
   e.preventDefault();
-  if (!GS.locked && !lockFailed) { lockMouse(); return; }      // the first click takes the mouse
+  GS.cursor.x = clamp(e.clientX / innerWidth, 0, 1); GS.cursor.y = clamp(e.clientY / innerHeight, 0, 1);
   if (e.button === 2) game.fireHE();
   else if (e.button === 0) game.trigger(true);
 });
@@ -186,7 +161,7 @@ addEventListener('mouseup', (e) => { if (e.button === 0) game.trigger(false); })
 // touch: the finger aims and holds the 25mm, the round button fires the 105
 glCanvas.addEventListener('pointerdown', (e) => {
   if (mode !== 'play' || e.pointerType === 'mouse') return;
-  audioInit(); touched = true;
+  audioInit();
   GS.cursor.x = e.clientX / innerWidth; GS.cursor.y = e.clientY / innerHeight;
   game.trigger(true);
   e.preventDefault();
@@ -209,7 +184,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyT' && !e.repeat) { setThermal(!thermal); SFX.click(); return; }
   if (e.code === 'KeyB' && !e.repeat) { invert = !invert; save('skyreaper.px.bht', invert ? 1 : 0); if (!thermal) setThermal(true); SFX.click(); return; }
   if (e.code === 'KeyZ' && !e.repeat && mode === 'play') { zoom(zoomStep >= 1 ? -2 : 1); return; }
-  if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat) { if (mode === 'play') pause(); else if (mode === 'paused' && e.code === 'KeyP') resume(); return; }
+  if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat) { if (mode === 'play') pause(); else if (mode === 'paused') resume(); return; }
   if (e.code === 'Enter' && !e.repeat && (mode === 'title' || mode === 'over') && !$('startBtn').disabled) { start(); return; }
   if (/^(Key[WASD]|Arrow)/.test(e.code)) { keys.add(e.code); if (mode === 'play') updatePan(); e.preventDefault(); }
 });
@@ -225,7 +200,7 @@ $('modeThermal').addEventListener('click', () => { setThermal(true); SFX.click()
 $('btn105').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); audioInit(); game.fireHE(); });
 
 /* --------------------------------------------------------------- events */
-let lastPop = 0;
+let lastPop = 0, lastPuff = 0;
 function banner(text) {
   showBanner(text);
   const b = $('banner');
@@ -239,7 +214,10 @@ function handleEvents() {
       const near = Math.hypot(ev.x - GS.T.x, ev.z - GS.T.z) < GS.viewR;
       SFX.boom(near ? 1 : 0.35);
       if (near) flash = Math.max(flash, thermal ? 0.12 : 0.08);
-    } else if (ev.type === 'kill') { if (GS.t - lastPop > 0.08) { lastPop = GS.t; SFX.pop(); } }
+    } else if (ev.type === 'kill') { if (GS.t - lastPop > 0.045) { lastPop = GS.t; ev.cause === 'mg' ? SFX.splat() : SFX.pop(); } }
+    else if (ev.type === 'hit') SFX.tick();
+    else if (ev.type === 'impact') { if (!ev.hits && GS.t - lastPuff > 0.06) { lastPuff = GS.t; SFX.puff(); } }
+    else if (ev.type === 'streak') { SFX.streak(); banner('STREAK ×' + ev.n + '   +$' + ev.bonus); }
     else if (ev.type === 'multi') banner((ev.kills >= 25 ? 'MASSACRE ×' : ev.kills >= 12 ? 'CARNAGE ×' : 'MULTI KILL ×') + ev.kills + '   +$' + ev.value);
     else if (ev.type === 'overheat') SFX.overheat();
     else if (ev.type === 'fuelout') SFX.radio();
@@ -279,7 +257,6 @@ function frame(now) {
     if (steps === 6) acc = 0;
   }
   handleEvents();
-  GS.free = lockFailed || touched;
   if (mode === 'play') {
     staticV = Math.max(0, staticV - dt * 1.4);
     if (GS.fuel < 10 && GS.fuel > 0 && Math.ceil(GS.fuel) !== lastBeep) { lastBeep = Math.ceil(GS.fuel); SFX.beep(); }
@@ -289,9 +266,8 @@ function frame(now) {
   flash = Math.max(0, flash - dt * 1.2);
   if (DBG.noStatic) staticV = 0;
   renderFrame({ time: GS.t, dt, thermal, invert, flash, static: staticV });
-  const hint = mode !== 'play' ? '' : !GS.locked && !lockFailed ? 'CLICK TO TAKE THE GUNS · ESC TO PAUSE'
-    : GS.free && GS.run < 8 ? 'AIM WITH THE CURSOR · PUSH IT TO AN EDGE TO MOVE' : '';
-  drawHud(GS, dt, { live: mode === 'play' || mode === 'paused', locked: GS.locked || mode !== 'play', thermal, invert, hint, zoomLabel: zoomLabel() });
+  const hint = mode === 'play' && GS.run < 6 ? 'HOLD LEFT CLICK ON THE DEAD · THE SIGHT LOCKS ON · RIGHT CLICK FOR THE 105' : '';
+  drawHud(GS, dt, { live: mode === 'play' || mode === 'paused', thermal, invert, hint, zoomLabel: zoomLabel() });
   if (!thermal && (mode === 'play' || mode === 'paused')) {
     updatePanels();
     const h = $('hint');
@@ -308,7 +284,7 @@ if (!initRenderer(glCanvas)) {
   $('noGl').hidden = false; $('startBtn').disabled = true; $('loading').hidden = true;
 } else {
   initLook(); initWorld(); initZombies(); initFx(); initHud(hudCanvas);
-  NOCAST.push(ground, decalMesh, tracerMesh, wires);
+  NOCAST.push(ground, decalMesh, tracerMesh, wires, zombieXray);
   game = createGame(); GS = game.S;
   layout();
   setThermal(thermal);
@@ -316,7 +292,7 @@ if (!initRenderer(glCanvas)) {
   setMode('title');
   game.update(1 / 60);
   game.spawnScatter(220);
-  if (/[?&]debug/.test(location.search)) window.__sr = { game, GS, R3, MAT, U, DBG, VIEW, PART, ACTIVE, setThermal, zoom, layout };
+  if (/[?&]debug/.test(location.search)) window.__sr = { game, GS, R3, MAT, U, DBG, VIEW, PART, ACTIVE, setThermal, zoom, layout, toArt };
   $('loading').hidden = true;
   requestAnimationFrame(frame);
 }
