@@ -160,7 +160,7 @@ function blastRays() {
 function juiceBoom(x, y, big) {
   if (!offView(x, y, 20)) JUICE.flash = Math.max(JUICE.flash, big ? 0.1 : 0.06);
   addBoom(x, y - 2, big ? 30 : 22, 8, big ? 1.1 : 0.9, big ? 13 : 10, 0.02);
-  lights.push({ x, y, z: 10, r: big ? 130 : 80, c: '#ffb060', life: 0.6, max: 0.6, a: 0.55 });
+  lights.push({ x, y, z: 10, r: big ? 60 : 46, c: '#ffb060', life: 0.45, max: 0.45, a: 0.35 });
   lights.push({ x, y, z: 1, r: big ? 26 : 18, c: '#ff6a28', life: 3, max: 3, a: 0.5 });
   rings.push({ x, y, r0: 4, r1: big ? 72 : 48, t: 0, T: 0.2, c: '#fff6e0', w: 2 });
   // the shock ring of dust along the ground
@@ -253,7 +253,7 @@ function updateJuice(dt) {
       e.smoke--;
       const dark = Math.random() < k;
       part({ x: e.x + rnd(-6, 6), y: e.y + rnd(-3, 3), z: rnd(2, 8), vx: rnd(2, 9), vy: rnd(-3, 1), vz: rnd(12, 24) * (0.6 + k * 0.6), g: 0,
-        life: rnd(2.2, 3.4), max: 3.4, s: rnd(3, 6), c: dark ? pick(['rgba(30,26,24,0.7)', 'rgba(44,38,34,0.65)']) : pick(['rgba(70,64,58,0.5)', 'rgba(92,86,80,0.45)']),
+        life: rnd(2.2, 3.4), max: 3.4, s: rnd(3, 6), c: dark ? pick(['rgba(66,62,58,0.7)', 'rgba(84,80,76,0.65)']) : pick(['rgba(128,124,118,0.5)', 'rgba(156,152,146,0.45)']),
         grow: 4.5, drag: 0.5, smoke: true });
     }
     e.ember += dt * 5 * k;

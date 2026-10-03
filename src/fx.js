@@ -189,7 +189,7 @@ function updateFX(dt) {
     if (Math.random() < dt * 5) part({ x: f.x + rnd(-1.5, 1.5), y: f.y, z: rnd(2, 4), vx: rnd(-4, 4), vy: rnd(-2, 2), vz: rnd(14, 26),
       g: -4, life: rnd(0.4, 0.8), max: 0.8, s: 1, c: pick(['#ffc27a', '#ff8a3a', '#e2552f']), add: true, drag: 1.5 });
     if (Math.random() < dt * 1.6) part({ x: f.x + rnd(-1, 1), y: f.y, z: 5, vx: rnd(3, 8), vy: rnd(-2, 2), vz: rnd(7, 12),
-      g: 0, life: rnd(1.4, 2.2), max: 2.2, s: rnd(2, 3), c: pick(['rgba(52,46,42,0.6)', 'rgba(70,62,56,0.5)']), grow: 2.5, drag: 0.4, smoke: true });
+      g: 0, life: rnd(1.4, 2.2), max: 2.2, s: rnd(2, 3), c: pick(['rgba(92,88,84,0.55)', 'rgba(120,116,110,0.45)']), grow: 2.5, drag: 0.4, smoke: true });
   }
 }
 
@@ -226,16 +226,19 @@ function stampCorpse(S, x, y) {
 }
 
 // ---------- drawing (world layer, under the camera transform)
-// Explosion colors, from hot to smoke.
-const BC = ['#fff6e0', '#ffd27a', '#ff9a3a', '#e2552f', '#9a3320', '#4a2418', '#2e2320'];
+// Explosion colors, from white hot through yellow and orange to grey smoke (5 to 7).
+const BC = ['#ffffff', '#fff3b0', '#ffd25a', '#ffa23a', '#f0702a', '#8f8a83', '#aca79f', '#cac5bd'];
 
 // Particles. add = true: only the glowing ones (drawn with 'lighter'), false: only the others.
 function drawParts(add) {
+  // (the alpha in eighths, and the colour and alpha only set when they change: most are drops of
+  // blood and dirt at full alpha, so a thousand of them cost little)
+  let la = -1, lc = '';
   for (const p of parts) {
     if (!!p.add !== add) continue;
-    const a = p.smoke ? Math.min(1, p.life / p.max * 1.5) : p.life / p.max;
-    ctx.globalAlpha = clamp(add || p.smoke ? a : 1, 0, 1);
-    ctx.fillStyle = p.c;
+    const a = add || p.smoke ? clamp(Math.ceil((p.smoke ? Math.min(1, p.life / p.max * 1.5) : p.life / p.max) * 8) / 8, 0, 1) : 1;
+    if (a !== la) { ctx.globalAlpha = la = a; }
+    if (p.c !== lc) { ctx.fillStyle = lc = p.c; }
     const s = Math.max(1, Math.round(p.s));
     // (a big puff of smoke is round)
     if (p.smoke && s >= 5) pcirc(p.x, p.y - p.z, s / 2, p.c);
@@ -243,32 +246,44 @@ function drawParts(add) {
   }
   ctx.globalAlpha = 1;
 }
-// Fire explosions: a white flash, then puffs that grow, rise and turn to smoke.
+// Fire explosions: a white flash with a yellow edge, then fat puffs (white hot in the middle,
+// yellow and orange outside) that swell, rise and cool into grey smoke.
 function drawBooms() {
   const many = booms.length > 10;
   for (const b of booms) {
     if (b.t < 0) continue;
     const u = b.t / b.T, e = 1 - Math.pow(1 - u, 3);
     if (u < 0.06) {
-      pcirc(b.x, b.y - 3, Math.min(b.cap * 0.75, b.r * 0.35), '#fff6e0');
+      const r = Math.min(b.cap, b.r * 0.45);
+      pcirc(b.x, b.y - 3, r + 1, '#ffd25a');
+      pcirc(b.x, b.y - 3, r, '#ffffff');
       continue;
     }
     const fade = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
-    const n = many ? Math.min(2, b.pf.length) : b.pf.length;
-    // three passes, so the puffs read as one ball: a dark rim under them all, the puffs (the outer
-    // ones cool first), then their lit tops with a white-hot heart while it is young
+    const n = many ? Math.min(3, b.pf.length) : b.pf.length;
+    // three passes, so the puffs read as one ball: a deep orange rim under the fire (a soft grey
+    // one under the smoke), the puffs (the outer ones cool first), then their lit tops with a
+    // white-hot heart while it is young
     for (let pass = 0; pass < 3; pass++) for (let i = 0; i < n; i++) {
-      const p = b.pf[i], k = 0.55 + 0.7 * e, ci = clamp((u * 9 + (p.d - 0.32) * 5) | 0, 0, 6);
+      const p = b.pf[i], k = 0.55 + 0.7 * e, ci = clamp((u * 10 + (p.d - 0.32) * 5) | 0, 0, 7);
       const px = b.x + Math.cos(p.a) * b.r * p.d * k,
         py = b.y - 3 + Math.sin(p.a) * b.r * p.d * k * FORE - b.r * p.up * e,
-        pr = Math.min(b.cap, b.r * p.s * (0.5 + 0.3 * e)) * (0.6 + 0.4 * fade);
+        pr = Math.min(b.cap, b.r * p.s * (0.55 + 0.35 * e)) * (0.6 + 0.4 * fade);
       if (pr < 1) continue;
-      ctx.globalAlpha = ci < 3 ? 1 : 0.55 * fade;
-      if (pass === 0) { if (ci < 4) pcirc(px + 1, py + 2, pr, '#1a0f0a'); }
-      else if (pass === 1) pcirc(px, py, pr, BC[ci]);
-      else if (ci < 4) {
-        pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.5, BC[Math.max(0, ci - 1)]);
-        if (ci < 2) pcirc(px - pr * 0.36, py - pr * 0.42, pr * 0.22, '#ffffff');
+      const fire = ci < 5;
+      if (pass === 0) {
+        ctx.globalAlpha = fire ? 1 : 0.3 * fade;
+        pcirc(px + 1, py + 1, pr + 1, fire ? '#c2401a' : '#5e5a55');
+      } else if (pass === 1) {
+        ctx.globalAlpha = fire ? 1 : 0.7 * fade;
+        pcirc(px, py, pr, BC[ci]);
+      } else if (fire) {
+        ctx.globalAlpha = 1;
+        pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.55, BC[Math.max(0, ci - 1)]);
+        if (ci < 3) pcirc(px - pr * 0.36, py - pr * 0.42, pr * 0.25, '#ffffff');
+      } else {
+        ctx.globalAlpha = 0.5 * fade;
+        pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.5, BC[7]);
       }
     }
     ctx.globalAlpha = 1;

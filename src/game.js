@@ -1256,8 +1256,8 @@ function mgImpact(r) {
 }
 // The look of a big blast (no damage): flash, fireball, rings, smoke, earth, sparks, fires, a crater.
 function boomFx(x, y, big) {
-  lights.push({ x, y, z: 6, r: big ? 90 : 60, c: '#ff8a3a', life: 0.35, max: 0.35, a: 0.9 });
-  lights.push({ x, y, z: 6, r: 40, c: '#fff6e0', life: 0.12, max: 0.12, a: 1 });
+  lights.push({ x, y, z: 6, r: big ? 50 : 38, c: '#ff8a3a', life: 0.35, max: 0.35, a: 0.6 });
+  lights.push({ x, y, z: 6, r: 20, c: '#fff6e0', life: 0.1, max: 0.1, a: 0.8 });
   addBoom(x, y, big ? 26 : 18, 7, 0.75, big ? 11 : 8);
   for (let k = 0; k < (big ? 4 : 2); k++) {
     const a = rnd(TAU), r = rnd(10, 22);
@@ -1267,7 +1267,7 @@ function boomFx(x, y, big) {
   rings.push({ x, y, r0: 20, r1: CFG.he.hurt * 1.5, t: 0, T: 0.55, c: '#a89878' });
   for (let k = 0; k < 16; k++) part({ x: x + rnd(-14, 14), y: y + rnd(-8, 8), z: rnd(4, 18), vx: rnd(-14, 14) + 4, vy: rnd(-6, 6),
     vz: rnd(10, 34), g: 0, life: rnd(1.4, 2.8), max: 2.8, s: rnd(4, 8),
-    c: pick(['rgba(58,50,46,0.75)', 'rgba(40,36,34,0.7)', 'rgba(74,64,56,0.6)']), grow: 6, drag: 1, smoke: true });
+    c: pick(['rgba(96,92,88,0.7)', 'rgba(76,72,68,0.7)', 'rgba(124,120,114,0.6)']), grow: 6, drag: 1, smoke: true });
   for (let k = 0; k < 34; k++) {
     const a = rnd(TAU), s = rnd(30, 130);
     part({ x, y, z: 3, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(60, 170), g: 320, life: 2, max: 2,
@@ -1278,7 +1278,7 @@ function boomFx(x, y, big) {
     part({ x, y, z: 5, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(30, 140), g: 140, life: rnd(0.4, 0.9), max: 0.9,
       s: 1, c: pick(['#ffe2a0', '#ffb347', '#ff6a28']), add: true, drag: 1.2 });
   }
-  for (let k = 0; k < 4 && flames.length < 40; k++) {
+  for (let k = 0; k < 3 && flames.length < 30; k++) {
     const a = rnd(TAU), r = rnd(6, 24);
     flames.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r * FORE, life: rnd(3, 7), seed: rnd(100) });
   }

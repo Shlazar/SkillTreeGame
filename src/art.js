@@ -281,7 +281,7 @@ function text(s, x, y, col, o) {
 }
 
 // ---------- drawing primitives
-// A 64x64 round glow in color col: bright centre, dithered steps to the edge (made on first use).
+// A 64x64 round glow in color col: bright centre, clean bands out to the edge (made on first use).
 const GLOWS = new Map();
 function glow(col) {
   let c = GLOWS.get(col);
@@ -292,7 +292,7 @@ function glow(col) {
     for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
       const t = Math.hypot(x - 31.5, y - 31.5) / 32;
       if (t >= 1) continue;
-      const q = Math.floor(Math.pow(1 - t, 1.7) * 5 + bayer(x, y) * 0.9) / 5;
+      const q = Math.floor(Math.pow(1 - t, 1.7) * 6 + 0.5) / 6;
       if (q <= 0) continue;
       const i = (y * 64 + x) * 4;
       d[i] = R; d[i + 1] = G; d[i + 2] = B; d[i + 3] = Math.round(Math.min(0.9, q) * 255);
@@ -306,6 +306,8 @@ function glow(col) {
 // A glow of radius rad at (x, y), strength a (call it with the 'lighter' blend mode).
 function light(x, y, rad, col, a) {
   if (rad < 1) return;
+  // (big glows cost the most and wash out the bright ground: none is wider than 76 px)
+  if (rad > 38) rad = 38 + (rad - 38) * 0.5;
   ctx.globalAlpha = clamp(a == null ? 1 : a, 0, 1);
   blit(glow(col), Math.round(x - rad), Math.round(y - rad), Math.round(rad * 2), Math.round(rad * 2));
 }
@@ -336,14 +338,25 @@ function pcirc(x, y, r, col) {
     ctx.fillRect(x - w, y + dy, w * 2 + 1, 1);
   }
 }
-// Pixel ellipse outline, drawn as dots.
+// Pixel ellipse outline, drawn as dots. Each size and colour is drawn once into a small canvas
+// (kept) and copied from there: a blast's rings are hundreds of dots every frame.
+const PELL = new Map();
 function pell(x, y, rx, ry, col) {
-  ctx.fillStyle = col;
-  const n = Math.max(16, Math.ceil((rx + ry) * 1.7));
-  for (let i = 0; i < n; i++) {
-    const a = i / n * TAU;
-    ctx.fillRect(Math.round(x + Math.cos(a) * rx), Math.round(y + Math.sin(a) * ry), 1, 1);
+  const RX = Math.max(1, Math.round(rx)), RY = Math.max(1, Math.round(ry)), key = col + RX + '|' + RY;
+  let c = PELL.get(key);
+  if (!c) {
+    if (PELL.size > 500) PELL.clear();
+    let g;
+    [c, g] = mk(RX * 2 + 1, RY * 2 + 1);
+    g.fillStyle = col;
+    const n = Math.max(16, Math.ceil((RX + RY) * 1.7));
+    for (let i = 0; i < n; i++) {
+      const a = i / n * TAU;
+      g.fillRect(Math.round(RX + Math.cos(a) * RX), Math.round(RY + Math.sin(a) * RY), 1, 1);
+    }
+    PELL.set(key, c);
   }
+  ctx.drawImage(c, Math.round(x) - RX, Math.round(y) - RY);
 }
 // 1-pixel rectangle outline without the corner pixels.
 function frame(x, y, w, h, col) {

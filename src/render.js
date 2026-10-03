@@ -1,72 +1,26 @@
-// render.js - draws one frame of the world: ground and its marks, tufts, the helicopters' shadows and
-// the other shadows, then trees, props, the train, the station, the safe zone, survivors and the
-// dead sorted by depth (the dead behind a tree show through it), fires, particles, explosions,
-// flying bodies, the helicopters (helis.js), tracers and glows (headlights, lamps, searchlights), the mist and cloud shadows,
-// then the color grade and vignette, or the thermal camera look (grey, hot things white).
+// render.js - draws one frame of the world: the baked ground and its marks, the helicopters' shadows
+// and the other shadows, then trees, props, the train, the station, the safe zone, survivors and
+// the dead sorted by depth (the dead behind a tree show through it), fires, particles, explosions,
+// flying bodies, the helicopters (helis.js), tracers and glows (headlights, lamps, searchlights),
+// then a light vignette (clear daylight), or the thermal camera look (grey, hot things white).
 
-let VIG = null, GRADE = null, HAZE = null, SCAN = null, GRAIN = null, MIST = null, BODYSH = null;
-const CLOUDSPR = [];
-
-// Smooth noise on a grid of cell px from a seeded rng, for a w x h area (from Ball x Archers).
-function makeNoise(rng, cell, w, h) {
-  const gw = Math.ceil(w / cell) + 2, gh = Math.ceil(h / cell) + 2, v = new Float32Array(gw * gh);
-  for (let i = 0; i < v.length; i++) v[i] = rng();
-  return (x, y) => {
-    const fx = x / cell, fy = y / cell, ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy;
-    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty), o = iy * gw + ix;
-    return lerp(lerp(v[o], v[o + 1], sx), lerp(v[o + gw], v[o + gw + 1], sx), sy);
-  };
-}
-// Made once: the mist band, 2 cloud shadows, the shadow under a flying body.
+let VIG = null, SCAN = null, GRAIN = null, BODYSH = null;
+// Made once: the shadow under a flying body.
 function bakeStatic() {
-  const fr = mulberry(404);
-  let g;
-  [MIST, g] = mk(640, 48);
-  const nm = makeNoise(fr, 22, 1280, 48);
-  g.fillStyle = '#8b9894';
-  for (let y = 0; y < 48; y++) for (let x = 0; x < 640; x++) {
-    // the noise wraps round at 640 px, so the band tiles without a seam
-    const t = Math.sin(y / 48 * Math.PI), n = lerp(nm(x, y), nm(x + 640, y), x / 640);
-    if ((n * 1.3 - 0.35) * t > bayer(x, y)) g.fillRect(x, y, 1, 1);
-  }
-  const cr = mulberry(21);
-  CLOUDSPR.length = 0;
-  for (let k = 0; k < 2; k++) {
-    const cw = 200, ch = 110, n = makeNoise(cr, 18, cw, ch);
-    const [cc, cg] = mk(cw, ch);
-    cg.fillStyle = '#000';
-    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
-      const dx = (x - cw / 2) / (cw / 2), dy = (y - ch / 2) / (ch / 2);
-      if ((1 - Math.sqrt(dx * dx + dy * dy)) * 1.4 + n(x, y) * 0.8 - 0.55 > bayer(x, y)) cg.fillRect(x, y, 1, 1);
-    }
-    CLOUDSPR.push(cc);
-  }
   BODYSH = shadowSpr(9);
 }
-// Made again for every size of the picture: vignette, color grade, sun haze, thermal grain and lines.
+// Made again for every size of the picture: a light vignette (only its edges are ever drawn, see
+// drawVignette), thermal grain and lines.
 function bakeOverlays() {
   let g, gr;
   [VIG, g] = mk(W, H);
-  gr = g.createRadialGradient(W * 0.5, H * 0.46, H * 0.3, W * 0.5, H * 0.5, Math.max(W, H) * 0.62);
-  gr.addColorStop(0, 'rgba(0,0,0,0)');
-  gr.addColorStop(1, 'rgba(0,0,0,0.66)');
+  g.setTransform(1, 0, 0, H / W, 0, 0);
+  gr = g.createRadialGradient(W * 0.5, W * 0.5, W * 0.38, W * 0.5, W * 0.5, W * 0.62);
+  gr.addColorStop(0, 'rgba(10,20,12,0)');
+  gr.addColorStop(1, 'rgba(10,20,12,0.3)');
   g.fillStyle = gr;
-  g.fillRect(0, 0, W, H);
-  // warm top left (the low sun) to cool, moody shade bottom right
-  [GRADE, g] = mk(W, H);
-  gr = g.createLinearGradient(0, 0, W, H);
-  gr.addColorStop(0, 'rgba(255,176,104,1)');
-  gr.addColorStop(0.45, 'rgba(136,126,116,1)');
-  gr.addColorStop(1, 'rgba(62,84,140,1)');
-  g.fillStyle = gr;
-  g.fillRect(0, 0, W, H);
-  // warm sun haze from above the top edge
-  [HAZE, g] = mk(W, H);
-  gr = g.createRadialGradient(W * 0.47, -60, 10, W * 0.47, -60, Math.max(330, W * 0.52));
-  gr.addColorStop(0, 'rgba(255,192,124,0.2)');
-  gr.addColorStop(1, 'rgba(255,196,130,0)');
-  g.fillStyle = gr;
-  g.fillRect(0, 0, W, H);
+  g.fillRect(0, 0, W, W);
+  g.setTransform(1, 0, 0, 1, 0, 0);
   // thermal: sensor noise and faint scan lines
   [GRAIN, g] = mk(W + 64, H + 64);
   const rg = mulberry(9);
@@ -190,19 +144,6 @@ function drawPerson(p) {
     ctx.fillRect(x, y - 13, 1, 1);
   }
 }
-// Grass tufts that sway a little.
-function drawTufts(ci0, cj0, ci1, cj1) {
-  for (let j = cj0; j <= cj1; j++) for (let i = ci0; i <= ci1; i++) {
-    for (const t of plan(i, j).tufts) {
-      const sw = Math.round(Math.sin(realT * 1.6 + t.p + t.x * 0.03) * 0.8);
-      ctx.fillStyle = t.c;
-      ctx.fillRect(t.x, t.y - t.h + 1, 1, t.h);
-      ctx.fillRect(t.x - 1 + sw, t.y - t.h, 1, 1);
-      ctx.fillRect(t.x + 2, t.y - t.h + 2, 1, t.h - 1);
-      ctx.fillRect(t.x + 2 + sw, t.y - t.h + 1, 1, 1);
-    }
-  }
-}
 // Bodies in the air: knocked over (fall) or thrown and turning (spin).
 function drawBodies() {
   for (const b of G.bodies) {
@@ -279,29 +220,13 @@ function drawRamCount() {
   const c = G.tr.cars[0], n = r.kills, col = realT - r.killT < 0.07 ? '#ffffff' : n >= 30 ? '#ff7a4a' : n >= 15 ? U.amber : U.gold;
   text('×' + n, c.x0 + 13, c.y0 - 10, col, { scale: 2, drop: true });
 }
-// Two bands of mist that drift over the field (they belong to the ground and move with it).
-function drawMist() {
-  const k0 = Math.floor((G.camY - 48) / 300), k1 = Math.floor((G.camY + H) / 300), mw = MIST.width;
-  for (let k = k0; k <= k1; k++) {
-    const y = k * 300 + 80, odd = k & 1;
-    const off = mod(k * 217 + realT * (odd ? 3 : -2), mw);
-    ctx.globalAlpha = odd ? 0.09 : 0.06;
-    for (let x = Math.floor((G.camX - off) / mw) * mw + off; x < G.camX + W; x += mw) ctx.drawImage(MIST, Math.round(x), y);
-  }
-  ctx.globalAlpha = 1;
-}
-// Cloud shadows that slide over the field.
-function drawClouds() {
-  const dx = realT * 5, CW = 520, CL = 380;
-  const i0 = Math.floor((G.camX - dx) / CW) - 1, i1 = Math.floor((G.camX + W - dx) / CW);
-  const j0 = Math.floor(G.camY / CL) - 1, j1 = Math.floor((G.camY + H) / CL);
-  ctx.globalAlpha = 0.13;
-  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-    if (hrnd(i, j, 77) < 0.3) continue;
-    const s = CLOUDSPR[hrnd(i, j, 78) < 0.5 ? 0 : 1];
-    ctx.drawImage(s, Math.round(i * CW + dx + hrnd(i, j, 79) * (CW - s.width)), Math.round(j * CL + hrnd(i, j, 80) * (CL - s.height)));
-  }
-  ctx.globalAlpha = 1;
+// The vignette: only the bands along the edges where it is not clear (the middle is skipped).
+function drawVignette() {
+  const bx = Math.round(W * 0.14), by = Math.round(H * 0.16);
+  ctx.drawImage(VIG, 0, 0, W, by, 0, 0, W, by);
+  ctx.drawImage(VIG, 0, H - by, W, by, 0, H - by, W, by);
+  ctx.drawImage(VIG, 0, by, bx, H - 2 * by, 0, by, bx, H - 2 * by);
+  ctx.drawImage(VIG, W - bx, by, bx, H - 2 * by, W - bx, by, bx, H - 2 * by);
 }
 
 // ---------- the frame (world layer)
@@ -331,7 +256,6 @@ function render() {
     ctx.fillStyle = 'rgba(0,0,0,0.32)';
     ctx.fillRect(G.camX - 8, G.camY - 8, W + 16, H + 16);
   }
-  drawTufts(ci0, cj0, ci1, cj1);
   drawGroundLife();
   drawShellMarks();
   // shadows of the dead, and of bodies in the air
@@ -394,22 +318,21 @@ function render() {
   // glows (added light)
   ctx.globalCompositeOperation = 'lighter';
   drawLights();
-  for (const f of FIRES) light(f.x, f.y - (f.big ? 6 : 3), f.big ? 30 : 18, '#ff9a4a', 0.45 + Math.sin(realT * 13 + f.seed) * 0.08);
-  for (const f of flames) light(f.x, f.y - 2, 10, '#ff8a3a', 0.35 * Math.min(1, f.life));
-  // the train's headlights, and their beam on the rails ahead (it follows the bends). While the
-  // Turbo Ram runs: bigger lights, a third beam further out, and the engine glows orange.
+  for (const f of FIRES) light(f.x, f.y - (f.big ? 6 : 3), f.big ? 22 : 14, '#ff9a4a', 0.45 + Math.sin(realT * 13 + f.seed) * 0.08);
+  // the train's headlights (in daylight their beam on the rails ahead only shows while the Turbo
+  // Ram runs: bigger lights, beams that follow the bends, and the engine glows orange)
   if (G.result !== 'lost') {
     const tr = G.tr, c = tr.cars[0], k = ramK(), hr = 6 + 4 * k;
     light(c.x0 - c.nx * 4, c.y0 - c.ny * 4 - 7, hr, '#fff1c2', 0.8);
     light(c.x0 + c.nx * 3, c.y0 + c.ny * 3 - 7, hr, '#fff1c2', 0.8);
-    for (const [ds, r, a] of k > 0 ? [[24, 22, 0.3], [56, 30, 0.18], [90, 34, 0.16 * k]] : [[24, 22, 0.3], [56, 30, 0.16]]) {
+    if (k > 0) for (const [ds, r, a] of [[24, 22, 0.3 * k], [56, 30, 0.18 * k], [90, 34, 0.16 * k]]) {
       const y = yAtS(tr.s - ds, tr.fy - ds);
       light(trackX(y), y, r, '#ffe2a0', a);
     }
     if (k > 0 && !thermal) light(c.cx, c.cy - 6, 24, '#ff8a3a', 0.2 * k + 0.05 * Math.sin(realT * 18));
   }
-  // station lamps
-  for (const p of G.statics) if (p.lamp && Math.abs(p.y - G.camY - H / 2) < H) light(p.x, p.y - 17, 16, '#ffe2a0', 0.45);
+  // station lamps (lit by day, just a glint)
+  for (const p of G.statics) if (p.lamp && Math.abs(p.y - G.camY - H / 2) < H) light(p.x, p.y - 17, 5, '#ffe2a0', 0.6);
   // the searchlights of the safe zone sweep the ground in front of the wall
   for (const p of G.statics) if (p.tower && Math.abs(p.y - (G.camY + H / 2)) < H) {
     light(p.x + 5, p.y - 26, 5, '#fff1c2', 0.9);
@@ -427,10 +350,6 @@ function render() {
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
   drawSky();
-  if (!thermal) {
-    drawMist();
-    drawClouds();
-  }
   // the names of the safe zone (past the gate), the Depot and the stations, over everything on the ground
   if (G.goalY > G.camY - 80 && G.goalY < G.camY + H + 80) text('SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30, '#8fd18a', { align: 'center', scale: 2 });
   for (const st of G.stops) {
@@ -443,16 +362,8 @@ function render() {
   drawRamCount();
   ctx.restore();
   // the camera's look over everything
-  if (!thermal) {
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(HAZE, 0, 0);
-    ctx.globalCompositeOperation = 'soft-light';
-    ctx.globalAlpha = 0.5;
-    ctx.drawImage(GRADE, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.drawImage(VIG, 0, 0);
-  } else {
+  if (!thermal) drawVignette();
+  else {
     // grey (the color's saturation taken out), turned over for black hot, then grain and lines
     ctx.globalCompositeOperation = 'saturation';
     ctx.fillStyle = '#808080';
