@@ -1,11 +1,10 @@
-// scenery.js - more of the world: broken fences, railway signs and crossings, relay boxes, hay
-// bales, tyres, wrecks and crates beside the rails (placed by dressChunk from each chunk's plan);
-// the wires that sag between the telegraph poles (with their shadows); crows that sit in the fields
+// scenery.js - more of the world: the sprites of broken fences, railway signs, relay boxes, hay
+// bales and tyres (land.js places some of them); the wires that sag between the telegraph poles (with their shadows); crows that sit in the fields
 // and fly up when the train, a blast or a shot comes near; and what makes the stations and the Depot
 // real places: a water tower, a name board, fences, sandbag walls, lamps, benches, crates and, at
 // the Depot, an engine shed, a fuel tank and a coal heap.
-// Hooks: initScenery (initSprites), dressChunk (plan), dressStop (buildStop), updateScenery (step),
-// drawGroundLife (render, over the tufts), drawSky (render, over everything in the world).
+// Hooks: initScenery (initSprites), dressStop (buildStop), updateScenery (step),
+// drawGroundLife (render, over the ground), drawSky (render, over everything in the world).
 
 // SCN = the sprites only stations and the Depot use
 const SCN = {};
@@ -163,44 +162,6 @@ function initScenery() {
   for (let r = 2; r <= 8; r++) poolSpr(r);
 }
 
-// ---------- in each chunk's plan
-// Broken fences along the farm tracks, hay bales in the fields, and beside the rails: signs, relay
-// boxes, crates and barrels, now and then a wreck; crossing signs where a track crosses the rails.
-// put / take / rng are plan()'s own.
-function dressChunk(pl, ci, cj, rng, put, take) {
-  const X0 = ci * CH, Y0 = cj * CH;
-  for (let k = 0; k < 4; k++) {
-    const x = X0 + rng() * CH, y = Y0 + rng() * CH, rd = roadDist(x, y);
-    if (rd > 9 && rd < 14 && !nearRail(x, y, 40) && rng() < 0.6) put(take(PROPS.fence), x, y);
-  }
-  if (rng() < 0.3) {
-    const x = X0 + rng() * CH, y = Y0 + rng() * CH;
-    if (fieldAt(x, y) > 0.66 && !nearRail(x, y, 40) && roadDist(x, y) > 12) for (let k = 0; k < 2 + ((rng() * 3) | 0); k++) put(PROPS.misc[1 + (k & 1)], x + rng() * 30, y + rng() * 20);
-  }
-  // beside the rails (the west side: the poles stand east)
-  for (let y = Y0 + 8; y < Y0 + CH; y += 40) {
-    if (rng() > 0.35) continue;
-    const s = rng() < 0.75 ? -1 : 1, x = trackX(y) + s * (20 + rng() * 10);
-    if (x < X0 || x >= X0 + CH || roadDist(x, y) < 10) continue;
-    const r = rng();
-    if (r < 0.3) put(PROPS.sign[rng() < 0.5 ? 0 : rng() < 0.5 ? 1 : 3], x, y);
-    else if (r < 0.55) put(PROPS.misc[0], x, y);
-    else if (r < 0.8) { put(take(PROPS.barrel), x, y); if (rng() < 0.6) put(PROPS.crate[0], x + s * 7, y + 3); }
-    else if (r < 0.9) put(PROPS.misc[3], x, y);
-    else if (!nearRail(x + s * 18, y, 34)) put(take(rng() < 0.5 ? PROPS.wreck : PROPS.burnt), x + s * 18, y);
-  }
-  // crossing signs on both sides of the rails where a farm track crosses them
-  for (let y = Y0; y < Y0 + CH; y += 4) {
-    const tx = trackX(y);
-    if (roadDist(tx, y) > 1.5 || roadDist(tx, y - 4) < roadDist(tx, y)) continue;
-    for (const s of [-1, 1]) {
-      const x = tx + s * 17;
-      if (x >= X0 && x < X0 + CH) put(PROPS.sign[2], x, y + s * 9);
-    }
-    y += 40;
-  }
-}
-
 // ---------- stations and the Depot
 // Dress stop st (side 1 = the house east of the rails): a water tower and a name board north of
 // the platform, sandbag walls and a lamp past each end of it, picket fences, a bench on it, crates
@@ -243,37 +204,6 @@ function depotZone(x, y) {
 // Where each stop's yard is: [s of its house, side] for the Depot and every station.
 function yards() {
   return [[DEPOT_S + STOP_OFF, 1], [DEPOT_S + STOP_OFF, -1], ...STATIONS.map((d) => [sAtKm(d.km), d.side])];
-}
-// Paint the yards that fall in chunk (ci, cj) onto its ground image g: gravel along the platform,
-// packed earth round the house with a worn path to the door, a ragged edge into the grass.
-function paintYard(g, ci, cj) {
-  const X0 = ci * CH, Y0 = cj * CH, T = { u: 0, a: 0, c: 1 };
-  let near = null;
-  for (const [s, side] of yards()) {
-    const y = yOfS(s);
-    if (Math.abs(y - (Y0 + CH / 2)) < 200 && Math.abs(trackX(y) - (X0 + CH / 2)) < 260) near = near || [], near.push([s, side]);
-  }
-  if (!near) return;
-  const im = g.getImageData(0, 0, CH, CH), d = im.data;
-  for (let y = 0; y < CH; y++) for (let x = 0; x < CH; x++) {
-    const X = X0 + x, Y = Y0 + y;
-    trackLocal(X, Y, T);
-    for (const [s, side] of near) {
-      const u = T.u * side, a = T.a - s - 9, th = bayer(X, Y), i = (y * CH + x) * 4;
-      if (u < 13 || u > 128 || Math.abs(a) > 76) continue;
-      const edge = Math.max((u - 108) / 20, (Math.abs(a) - 60) / 16);
-      if (edge > th) continue;
-      let c;
-      if (u < 34 && Math.abs(a) < 62) c = BAL[clamp(Math.floor(hrnd(X, Y, 93) * 2.4 + 0.6), 0, 3)];
-      else {
-        const path = Math.abs(a + 9) < 7 && u < 96, v = vnoise(X / 9, Y / 9, 94);
-        c = DR[clamp(Math.floor(v * 2.6 + (path ? 1.2 : 0.4) + th * 0.8), 0, 4)];
-        if (hrnd(X, Y, 95) < 0.03) c = GR[3];
-      }
-      d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2];
-    }
-  }
-  g.putImageData(im, 0, 0);
 }
 
 // ---------- the wires between the telegraph poles
@@ -336,7 +266,7 @@ function drawCoupler(i) {
 const BIRDS = [];
 let birdG = null, birdCd = 0;
 function addFlock(x, y) {
-  const n = rndi(4, 8);
+  const n = rndi(3, 5);
   for (let i = 0; i < n; i++) BIRDS.push({ x: x + rnd(-12, 12), y: y + rnd(-8, 8), z: 0, vx: 0, vy: 0, vz: 0, sit: true, peck: rnd(3), left: Math.random() < 0.5, f: rnd(2), wait: rnd(0, 0.25) });
 }
 // Everything within r of (x, y) takes off, away from it.
@@ -356,8 +286,8 @@ function updateScenery(dt) {
     birdG = G;
     BIRDS.length = 0;
     birdCd = 0;
-    // a few flocks in the fields at the start
-    for (let k = 0; k < 3; k++) {
+    // a flock or two in the fields at the start
+    for (let k = 0; k < 2; k++) {
       const x = G.camX + rnd(40, W - 40), y = G.camY + rnd(30, H - 40);
       if (!nearRail(x, y, 50)) addFlock(x, y);
     }
@@ -365,8 +295,8 @@ function updateScenery(dt) {
   // new flocks land in the fields ahead (just over the top of the view)
   birdCd -= dt;
   if (birdCd <= 0) {
-    birdCd = rnd(2, 4);
-    if (BIRDS.length < 40) {
+    birdCd = rnd(5, 9);
+    if (BIRDS.length < 16) {
       const x = G.camX + rnd(20, W - 20), y = G.camY - rnd(8, 30);
       if (!nearRail(x, y, 50) && !stationZone(x, y)) addFlock(x, y);
     }
@@ -401,12 +331,12 @@ function updateScenery(dt) {
 // On the ground: the wires' shadows and the crows sitting (they peck and turn now and then).
 function drawGroundLife() {
   if (thermal) return;
-  ctx.globalAlpha = 0.4;
+  ctx.globalAlpha = 0.3;
   for (const p of G.statics) {
     if (!p.cast && p.d !== STATION.house && p.d !== STATION.lamp || Math.abs(p.y - G.camY - H / 2) > H) continue;
     blit(p.d.sh, p.x - p.d.ax, p.y - 1);
   }
-  ctx.globalAlpha = 0.16;
+  ctx.globalAlpha = 0.07;
   eachSpan((s) => ctx.drawImage(s.s, s.x, s.y));
   ctx.globalAlpha = 1;
   for (const b of BIRDS) {
@@ -425,7 +355,7 @@ function drawGroundLife() {
 }
 // Up in the air: the wires from pole to pole, the crows flying (and their shadows), the flash.
 function drawSky() {
-  ctx.globalAlpha = thermal ? 0.4 : 0.75;
+  ctx.globalAlpha = thermal ? 0.4 : 0.5;
   eachSpan((s) => ctx.drawImage(s.w, s.x, s.y));
   ctx.globalAlpha = 1;
   for (const b of BIRDS) {

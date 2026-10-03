@@ -861,4 +861,6 @@ function initSprites() {
   for (const c of [ICON.ram, ICON.ramOff]) atl(c);
   for (let i = 0; i < ANG_N; i++) atl(carGlow(TRAIN[0], i));
   initScenery();
+  initLand();
+  warmAtlas();
 }

@@ -126,12 +126,13 @@ function buildTowers(st) {
     }
   }
 }
-// The corn: two strips on both sides of the station, 120 to 200 px out from the rails.
+// The corn: two strips on both sides of the station, 120 to 200 px out from the rails. The field
+// itself is painted flat on the ground (land.js), so the dead in it stay in plain view; only its
+// near edge stands up as a row of stalks.
 function buildCorn(st) {
   const A = towerArt();
-  for (let a = -86; a <= 104; a += 8) for (const side of [-1, 1]) for (let u = 122; u <= 198; u += 10) {
-    const p = gridToWorld(6.5 + side * (u + rnd(-3, 3)) / TILE, 3.5 + (a + rnd(-2, 2)) / TILE, st.s);
-    if (Math.random() < 0.18) continue;
+  for (let a = -84; a <= 102; a += 6) for (const side of [-1, 1]) {
+    const p = gridToWorld(6.5 + side * (CORN_U0 + 2 + rnd(-1, 1)) / TILE, 3.5 + (a + rnd(-1, 1)) / TILE, st.s);
     G.statics.push({ d: pick(A.corn), x: Math.round(p.x), y: Math.round(p.y), k: Math.round(p.y) });
   }
 }

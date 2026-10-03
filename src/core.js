@@ -58,29 +58,53 @@ function mk(w, h, rf) {
 
 // ---------- sprite atlas
 // Small sprites are copied once into one big canvas and drawn from there, so a crowd of hundreds
-// is hundreds of copies out of a single image. ATL maps a sprite to its {x, y} in the atlas.
+// is hundreds of copies out of a single image. ATL maps a sprite to its {x, y, c} (c = the canvas
+// it is in). Writing into the big atlas after it has been drawn from is slow (the whole 16 MB image
+// is copied, about 10 ms), so once the first frame has used it, new sprites go into small late
+// pages instead (warmAtlas in land.js puts every sprite made at start-up in before that).
 const ATLAS = document.createElement('canvas');
 ATLAS.width = 2048;
 ATLAS.height = 2048;
 const AG = ATLAS.getContext('2d');
 AG.imageSmoothingEnabled = false;
 const ATL = new Map();
-let atX = 0, atY = 0, atH = 0;
+let atX = 0, atY = 0, atH = 0, atUsed = false;
+// the late pages: {c, g, x, y, h}
+const LATE = [];
 function atl(src) {
   let s = ATL.get(src);
   if (s !== undefined) return s;
   s = null;
   const w = src.width, h = src.height;
   if (w * h <= 4096 || (h <= 12 && w <= 512)) {
-    if (atX + w + 1 > 2048) { atX = 0; atY += atH + 1; atH = 0; }
-    if (atY + h <= 2048) {
-      AG.drawImage(src, atX, atY);
-      s = { x: atX, y: atY };
-      atX += w + 1;
-      if (h > atH) atH = h;
+    if (atUsed) s = atlLate(src, w, h);
+    else {
+      if (atX + w + 1 > 2048) { atX = 0; atY += atH + 1; atH = 0; }
+      if (atY + h <= 2048) {
+        AG.drawImage(src, atX, atY);
+        s = { x: atX, y: atY, c: ATLAS };
+        atX += w + 1;
+        if (h > atH) atH = h;
+      }
     }
   }
   ATL.set(src, s);
+  return s;
+}
+// A sprite made after start-up: into the last late page (512 x 512), or a new one when it is full.
+function atlLate(src, w, h) {
+  let p = LATE[LATE.length - 1];
+  if (p && p.x + w + 1 > 512) { p.x = 0; p.y += p.h + 1; p.h = 0; }
+  if (!p || p.y + h > 512) {
+    if (LATE.length >= 24) return null;
+    const [c, g] = mk(512, 512);
+    p = { c, g, x: 0, y: 0, h: 0 };
+    LATE.push(p);
+  }
+  p.g.drawImage(src, p.x, p.y);
+  const s = { x: p.x, y: p.y, c: p.c };
+  p.x += w + 1;
+  if (h > p.h) p.h = h;
   return s;
 }
 // Draw a sprite, from the atlas when it is there. w, h are optional (stretched size).
@@ -91,7 +115,8 @@ function blit(src, x, y, w, h) {
     else ctx.drawImage(src, x, y, w, h);
     return;
   }
-  ctx.drawImage(ATLAS, s.x, s.y, src.width, src.height, x, y, w == null ? src.width : w, h == null ? src.height : h);
+  if (s.c === ATLAS) atUsed = true;
+  ctx.drawImage(s.c, s.x, s.y, src.width, src.height, x, y, w == null ? src.width : w, h == null ? src.height : h);
 }
 
 // ---------- colours, numbers, random, dither, noise
