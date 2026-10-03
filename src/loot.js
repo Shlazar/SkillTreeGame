@@ -160,6 +160,7 @@ function takeLoot(f, h) {
   const i = G.statics.indexOf(f.top);
   if (i >= 0) G.statics.splice(i, 1);
   G.lootFly.push({ f, h: h || G.helis[0], spr: f.top.d, x0: f.x, y0: f.y, t: 0, T: LOOT.fly });
+  juicePop(f.x, f.y, f.kind !== 'pile');
   SFX.lootUp();
 }
 // It reached heli h: the pay, a chime, coins to the counter.
@@ -169,6 +170,7 @@ function lootPaid(f, h) {
   G.pay.loot += f.pay;
   G.cashPulse = 1;
   addTotal(gx, gy - 14, f.pay, U.gold, big);
+  coinPop(gx, gy, f.kind === 'gold' ? 16 : big ? 8 : 4);
   const n = f.kind === 'gold' ? 14 : big ? 7 : 4;
   for (let k = 0; k < n && coins.length < 60; k++) coins.push({ x0: gx - G.camX + rnd(-6, 6), y0: gy - G.camY - 10 + rnd(-4, 4), t: -k * 0.05, T: rnd(0.5, 0.75) });
   if (f.kind === 'gold') {

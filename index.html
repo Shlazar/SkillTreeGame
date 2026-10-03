@@ -474,12 +474,28 @@ function light(x, y, rad, col, a) {
   ctx.globalAlpha = clamp(a == null ? 1 : a, 0, 1);
   blit(glow(col), Math.round(x - rad), Math.round(y - rad), Math.round(rad * 2), Math.round(rad * 2));
 }
-// Filled pixel circle.
+// Filled pixel circle. From radius 3 up it is drawn once into a small canvas (kept per colour and
+// radius) and copied from there: a blast or a cloud of smoke is many of them every frame.
+const PCIRC = new Map();
 function pcirc(x, y, r, col) {
   if (r < 0.5) return;
-  ctx.fillStyle = col;
   x = Math.round(x); y = Math.round(y);
   const R = Math.round(r);
+  if (R >= 3 && R <= 24) {
+    const key = col + R;
+    let c = PCIRC.get(key);
+    if (!c) {
+      if (PCIRC.size > 600) PCIRC.clear();
+      let g;
+      [c, g] = mk(R * 2 + 1, R * 2 + 1);
+      g.fillStyle = col;
+      for (let dy = -R; dy <= R; dy++) { const w = Math.floor(Math.sqrt(R * R - dy * dy + R * 0.5)); g.fillRect(R - w, R + dy, w * 2 + 1, 1); }
+      PCIRC.set(key, c);
+    }
+    ctx.drawImage(c, x - R, y - R);
+    return;
+  }
+  ctx.fillStyle = col;
   for (let dy = -R; dy <= R; dy++) {
     const w = Math.floor(Math.sqrt(R * R - dy * dy + R * 0.5));
     ctx.fillRect(x - w, y + dy, w * 2 + 1, 1);
@@ -553,27 +569,40 @@ const ZSKIN = [
   ['#3f4a37', '#5f6d50', '#808f69', '#a6b388'],     // grave green
   ['#45433f', '#67645d', '#8d887d', '#b2ab9b'],     // ash grey
   ['#4f4632', '#71654a', '#978863', '#b9ab80'],     // sallow
-  ['#3a4548', '#5a686a', '#7f8f8d', '#a4b2ac']      // drowned
+  ['#3a4548', '#5a686a', '#7f8f8d', '#a4b2ac'],     // drowned
+  ['#4a3634', '#6d504a', '#937066', '#b89488'],     // bruised
+  ['#38424e', '#52626e', '#768c96', '#a0b6bc']      // frozen blue
 ];
 const ZSHIRT = [
   ['#3a1412', '#6a2420', '#94372c'], ['#1a2238', '#2c3d62', '#45608e'], ['#4e4a42', '#7d776b', '#aaa290'],
-  ['#262f1c', '#3f4c2c', '#5c6b40'], ['#2e2016', '#4f3826', '#6f5034'], ['#4a3a14', '#7a6224', '#a68a3c']
+  ['#262f1c', '#3f4c2c', '#5c6b40'], ['#2e2016', '#4f3826', '#6f5034'], ['#4a3a14', '#7a6224', '#a68a3c'],
+  ['#5a2a0a', '#a2501c', '#d8782c'], ['#2c2c34', '#4a4a56', '#6e6e7c'], ['#4e1624', '#7e2638', '#a84456'],
+  ['#5e5e56', '#8e8e82', '#bcbcae']
 ];
-const ZPANTS = [['#16181d', '#262931', '#3a3e4a'], ['#221a14', '#352920', '#4c3b2c'], ['#1e2420', '#303a33', '#46524a']];
-const ZHAIR = ['#1c1612', '#2e2620', '#4a4238', '#3a1e14'];
+const ZPANTS = [['#16181d', '#262931', '#3a3e4a'], ['#221a14', '#352920', '#4c3b2c'], ['#1e2420', '#303a33', '#46524a'],
+  ['#18223a', '#26365a', '#3a5080']];
+const ZHAIR = ['#1c1612', '#2e2620', '#4a4238', '#3a1e14', '#6e6048', '#5a3a20'];
 
 // ---------- zombie drawings
+// Four walk frames: 0 and 2 a stride (the near leg ahead, then behind), 1 and 3 passing (the body
+// up 1 px, one foot lifted). The near leg is the lighter one.
 // Walker: shuffles, one arm reaching out, head pushed forward. 9x16 px.
 function dWalker(r, f, c) {
-  const b = f ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
+  const b = f & 1 ? -1 : 0, st = f === 0 ? 1 : f === 2 ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
   const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
-  // legs: a dragging stride on frame 0, together on frame 1
-  if (!f) {
-    r(2, 11, 1, 4, p1); r(5, 11, 1, 4, p0); r(2, 13, 1, 1, s1);
-    r(1, 15, 2, 1, P.dk); r(5, 15, 2, 1, P.dk);
+  // a leg: d = 1 ahead, -1 behind
+  const leg = (d, col) => {
+    if (d > 0) { r(4, 11, 1, 2, col); r(5, 13, 1, 2, col); r(5, 15, 2, 1, P.dk); }
+    else { r(3, 11, 1, 2, col); r(2, 13, 1, 2, col); r(1, 15, 2, 1, P.dk); }
+  };
+  if (st) {
+    leg(-st, p0);
+    leg(st, p1);
+    if (st > 0) r(5, 13, 1, 1, s1);
   } else {
-    r(3, 11, 1, 4, p1); r(5, 11, 1, 4, p0);
-    r(2, 15, 2, 1, P.dk); r(5, 15, 2, 1, P.dk);
+    // passing: the far foot drags up behind, the near leg straight under the body
+    r(4, 10, 1, 3, p0); r(4, 13, 1, 1, p0); r(4, 14, 2, 1, P.dk);
+    r(3, 10, 1, 5, p1); r(3, 12, 1, 1, s1); r(2, 15, 3, 1, P.dk);
   }
   o(2, 10, 4, 1, p2); o(2, 10, 1, 1, p1);
   // torso: a torn shirt lit on the left, a wound, a ragged hem
@@ -581,34 +610,41 @@ function dWalker(r, f, c) {
   o(3, 7, 1, 1, s1);
   o(4, 8, 1, 2, P.bl2); o(4, 9, 1, 1, P.bl1);
   o(2, 9, 1, 1, h0); o(5, 9, 1, 1, P.rag0);
-  // the back arm hangs
-  o(1, 6, 1, 3, s1); o(1, 9, 1, 1, s0);
+  // the back arm hangs and swings with the stride
+  o(1, 6, 1, 3, s1); o(st > 0 ? 0 : 1, 9, 1, 1, s0);
   // head pushed forward: lit top and left, a dark socket, one glowing eye, a slack jaw
   o(3, 1, 4, 4, s2); o(3, 1, 4, 1, s3); o(3, 1, 1, 3, s3); o(6, 2, 1, 3, s1);
   o(3, 0, 3, 1, c.hr); o(3, 1, 1, 1, c.hr);
   o(5, 2, 1, 1, P.em); o(4, 2, 1, 1, s0);
   o(5, 4, 2, 1, s0); o(6, 4, 1, 1, P.bl2);
   o(4, 5, 1, 1, s1);
-  // the front arm reaches out, hand open
-  o(5, 6, 1, 1, h2); o(6, 6, 2, 1, s2); o(8, 6, 1, 1, s3); o(6, 7, 2, 1, s1); o(8, 7, 1, 1, s2);
+  // the front arm reaches out, hand open (it sags a little as the body rises)
+  const ay = 6 + (b ? 1 : 0);
+  o(5, ay, 1, 1, h2); o(6, ay, 2, 1, s2); o(8, ay, 1, 1, s3); o(6, ay + 1, 2, 1, s1); o(8, ay + 1, 1, 1, s2);
 }
 // Runner: fast, bent low, arms clawing. 10x14 px.
 function dRunner(r, f, c) {
-  const b = f ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
+  const b = f & 1 ? -1 : 0, st = f === 0 ? 1 : f === 2 ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
   const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
-  if (!f) {
-    r(1, 10, 1, 2, p1); r(0, 12, 1, 1, p1); r(0, 13, 2, 1, P.dk);
-    r(6, 10, 1, 2, p0); r(7, 12, 1, 1, p0); r(7, 13, 2, 1, P.dk);
+  const leg = (d, col) => {
+    if (d > 0) { r(6, 10, 1, 2, col); r(7, 12, 1, 1, col); r(7, 13, 2, 1, P.dk); }
+    else { r(2, 10, 1, 2, col); r(1, 12, 1, 1, col); r(0, 13, 2, 1, P.dk); }
+  };
+  if (st) {
+    leg(-st, p0);
+    leg(st, p1);
   } else {
-    r(3, 10, 1, 3, p1); r(5, 10, 1, 3, p0); r(2, 13, 2, 1, P.dk); r(5, 13, 2, 1, P.dk);
+    // passing: the far knee comes up in front, the near leg pushes off under the body
+    r(5, 9, 1, 1, p0); r(6, 10, 1, 1, p0); r(6, 11, 1, 1, p0); r(5, 12, 1, 1, P.dk);
+    r(3, 9, 1, 4, p1); r(3, 13, 2, 1, P.dk);
   }
   o(2, 9, 5, 1, p2);
   // torso leaning forward
   o(2, 6, 4, 3, h1); o(3, 5, 4, 1, h1); o(4, 4, 3, 1, h2); o(2, 6, 1, 3, h2); o(5, 7, 1, 2, h0);
   o(3, 7, 1, 1, P.bl2);
-  // arms: the back one swung behind, the front one clawing ahead
-  o(1, 6, 1, 1, s1); o(0, 7, 1, 2, s1);
-  o(6, 5, 2, 1, s2); o(8, 6, 1, 1, s3); o(7, 6, 1, 1, s1);
+  // arms: they swing against the legs; the front one claws
+  if (st >= 0) { o(1, 6, 1, 1, s1); o(0, 7, 1, 2, s1); o(6, 5, 2, 1, s2); o(8, 6, 1, 1, s3); o(7, 6, 1, 1, s1); }
+  else { o(1, 6, 1, 2, s1); o(1, 8, 1, 1, s0); o(6, 5, 1, 1, s2); o(7, 4, 1, 1, s2); o(8, 4, 1, 1, s3); o(7, 5, 1, 1, s1); }
   // head low and forward
   o(6, 1, 3, 3, s2); o(6, 1, 3, 1, s3); o(6, 1, 1, 2, s3); o(9, 2, 1, 2, s1);
   o(6, 0, 3, 1, c.hr);
@@ -616,17 +652,26 @@ function dRunner(r, f, c) {
 }
 // Brute: bloated and slow, ribs through the skin, long heavy arms. 15x21 px.
 function dBrute(r, f, c) {
-  const b = f ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
+  const b = f & 1 ? -1 : 0, st = f === 0 ? 1 : f === 2 ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
   const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
-  if (!f) {
-    r(3, 15, 3, 5, p1); r(9, 15, 3, 5, p0); r(2, 20, 4, 1, P.dk); r(9, 20, 4, 1, P.dk); r(3, 15, 1, 4, p2);
+  const leg = (d, col, lit) => {
+    if (d > 0) { r(8, 15, 3, 3, col); r(9, 18, 3, 2, col); r(9, 20, 4, 1, P.dk); if (lit) r(8, 15, 1, 3, p2); }
+    else { r(4, 15, 3, 3, col); r(3, 18, 3, 2, col); r(2, 20, 4, 1, P.dk); if (lit) r(3, 18, 1, 2, p2); }
+  };
+  if (st) {
+    leg(-st, p0, false);
+    leg(st, p1, true);
   } else {
-    r(4, 15, 3, 5, p1); r(8, 15, 3, 5, p0); r(3, 20, 4, 1, P.dk); r(8, 20, 4, 1, P.dk); r(4, 15, 1, 4, p2);
+    // passing: the far foot lifted, the near leg planted
+    r(8, 15, 3, 3, p0); r(8, 18, 4, 1, P.dk);
+    r(5, 15, 3, 5, p1); r(5, 15, 1, 4, p2); r(4, 20, 4, 1, P.dk);
   }
   // belly and chest, bare and bloated
   o(3, 7, 9, 8, s2); o(3, 7, 2, 8, s3); o(10, 8, 2, 7, s1); o(5, 13, 5, 2, s1);
-  for (let k = 0; k < 3; k++) o(6, 8 + k * 2, 3, 1, P.bone);
-  o(5, 8, 1, 5, P.bl1); o(9, 9, 1, 4, P.bl2); o(6, 9, 3, 1, P.bl0);
+  // ribs in pairs either side of a dark breastbone, an open wound low on the belly
+  for (let k = 0; k < 3; k++) { o(5, 8 + k * 2, 2, 1, P.bone); o(8, 8 + k * 2, 2, 1, '#b3a990'); }
+  o(7, 8, 1, 5, s0); o(5, 9, 1, 1, P.bl0);
+  o(8, 13, 2, 1, P.bl2); o(8, 14, 2, 1, P.bl0); o(9, 12, 1, 1, P.bl1);
   o(3, 14, 9, 1, p2);
   // shoulders under a torn vest
   o(2, 6, 11, 2, h1); o(2, 6, 11, 1, h2); o(11, 7, 2, 4, h0); o(2, 7, 2, 5, h1);
@@ -634,24 +679,38 @@ function dBrute(r, f, c) {
   o(6, 1, 5, 5, s2); o(6, 1, 5, 1, s3); o(6, 1, 1, 4, s3); o(10, 2, 1, 4, s1);
   o(6, 0, 4, 1, c.hr);
   o(9, 3, 1, 1, P.em); o(8, 3, 1, 1, s0); o(8, 5, 3, 1, s0); o(9, 5, 1, 1, P.bone);
-  // arms down to the knees, the front one reaching
-  o(0, 8, 3, 7, s1); o(0, 8, 1, 7, s2); o(0, 15, 3, 2, s0);
-  o(12, 8, 3, 3, s2); o(13, 11, 2, 4, s1); o(12, 15, 3, 2, s2); o(14, 15, 1, 1, s3);
+  // arms down to the knees, swinging with the stride; the front one reaching
+  const sw = st > 0 ? 1 : 0, lift = st < 0 ? 1 : 0;
+  o(0, 8 - sw, 3, 7, s1); o(0, 8 - sw, 1, 7, s2); o(0, 15 - sw, 3, 2, s0);
+  o(12, 8, 3, 3, s2); o(13, 11, 2, 4 - lift, s1); o(12, 15 - lift, 3, 2, s2); o(14, 15 - lift, 1, 1, s3);
 }
 
 // ---------- zombie frame sets
 // Every frame has n = normal, w = white (hit flash), h = hot (thermal camera), s = shadow, each also
 // mirrored (nf, wf, hf, sf) for a zombie that walks left. Plus the body turned on its side (dead),
-// the 4 turns of a thrown body (spin) and two corpses with a pool of blood.
+// tilt = half fallen (a body knocked over), the 8 eighth turns of a thrown body (spin) and two
+// corpses with a pool of blood.
+// A copy of src turned by angle a (nearest pixel, hard edges), on a square canvas.
+function rotA(src, a) {
+  const s = Math.ceil(Math.hypot(src.width, src.height)) + 1;
+  const [c, g] = mk(s, s, true);
+  g.translate(s / 2, s / 2);
+  g.rotate(a);
+  g.drawImage(src, -src.width / 2, -src.height / 2);
+  const im = g.getImageData(0, 0, s, s), d = im.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
+  g.putImageData(im, 0, 0);
+  return c;
+}
 function makeZSet(w, h, draw, pal, shw) {
   const S = { walk: [] };
-  for (let f = 0; f < 2; f++) {
+  for (let f = 0; f < 4; f++) {
     const raw = pix(w, h, (r) => draw(r, f, pal));
-    const n = selOut(rimLight(raw, '#e8e2cc', 0.22));
+    const n = selOut(rimLight(raw, '#f0e6cc', 0.3));
     const hot = outline(hotSpr(raw), '#161616');
     const nf = flipH(n), hf = flipH(hot);
     S.walk.push({
-      n, nf, w: tint(n, '#fff3dc', 0.75), wf: tint(nf, '#fff3dc', 0.75), h: hot, hf,
+      n, nf, w: tint(n, '#fff3dc', 0.85), wf: tint(nf, '#fff3dc', 0.85), h: hot, hf,
       s: unitShadow(n, shw), sf: unitShadow(nf, shw)
     });
   }
@@ -662,15 +721,22 @@ function makeZSet(w, h, draw, pal, shw) {
   S.shp = S.walk[0].s.pad || 0;
   S.dead = rot90(c0);
   S.deadH = rot90(S.walk[0].h);
-  // a body thrown by a blast turns over in the air: 4 quarter turns (normal and hot)
-  S.spin = [c0, S.dead, rot90(S.dead), rot90(rot90(S.dead))];
-  S.spinH = [S.walk[0].h, S.deadH, rot90(S.deadH), rot90(rot90(S.deadH))];
+  S.tilt = rotA(c0, Math.PI / 4);
   S.dax = S.dead.width >> 1;
   S.day = S.dead.height - 1;
+  // a body thrown by a blast turns over in the air: 8 eighth turns (normal and hot)
+  S.spin = [];
+  S.spinH = [];
+  for (let k = 0; k < 8; k++) {
+    S.spin.push(k & 1 ? rotA(c0, k * Math.PI / 4) : k === 0 ? c0 : k === 2 ? S.dead : k === 4 ? rot90(S.dead) : rot90(rot90(S.dead)));
+    S.spinH.push(k & 1 ? rotA(S.walk[0].h, k * Math.PI / 4) : k === 0 ? S.walk[0].h : k === 2 ? S.deadH : k === 4 ? rot90(S.deadH) : rot90(rot90(S.deadH)));
+  }
   const raw0 = pix(w, h, (r) => draw(r, 0, pal));
   S.corpses = [corpseSpr(raw0, false), corpseSpr(raw0, true)];
   S.cax = S.corpses[0].width >> 1;
   S.cay = S.corpses[0].height - 2;
+  // its colours, for the bits a big hit tears off (skin, shirt, trousers)
+  S.pal = pal;
   return S;
 }
 // ZS[type] = the colour variants of each type (0 walker, 1 runner, 2 brute)
@@ -685,52 +751,92 @@ const ANG_MAX = 40 * Math.PI / 180, ANG_N = 33;
 const angIdx = (a) => clamp(Math.round((a + ANG_MAX) / (2 * ANG_MAX) * (ANG_N - 1)), 0, ANG_N - 1);
 const angOf = (i) => -ANG_MAX + i * 2 * ANG_MAX / (ANG_N - 1);
 const slice = (fn) => pix(16, 28, fn);
+// Rust, grime and wear on a car: the outer ring of pixels of a slice (the only ones that show from
+// the side) gets spots of rust and dirt from a fixed seed. k = how much.
+function wear(r, seed, k, nose) {
+  for (let y = 0; y < 28; y++) for (let x = 0; x < 16; x++) {
+    if (x > 0 && x < 15 && y > 0 && y < 27 && !(nose && y < 3)) continue;
+    const v = hrnd(x, y, seed);
+    if (v < k * 0.45) r(x, y, 1, 1, v < k * 0.15 ? '#3a1e12' : '#6a3a1e');
+    else if (v > 1 - k * 0.3) r(x, y, 1, 1, '#14100c');
+  }
+}
 // the wheels and the frame (the two bottom slices of every car)
 function underSlices() {
   return [slice((r) => {
     r(1, 2, 14, 24, '#0b0c0e');
-    for (const y of [4, 20]) { r(0, y, 1, 4, '#2a2d33'); r(15, y, 1, 4, '#2a2d33'); }
+    for (const y of [4, 20]) { r(0, y, 1, 4, '#2a2d33'); r(15, y, 1, 4, '#2a2d33'); r(0, y + 1, 1, 1, '#5a5e66'); r(15, y + 1, 1, 1, '#5a5e66'); }
   }), slice((r) => {
     r(0, 0, 16, 28, '#1a1d22');
     for (let y = 1; y < 28; y += 3) { r(0, y, 1, 1, '#4a4e57'); r(15, y, 1, 1, '#4a4e57'); }
+    r(0, 0, 16, 1, '#2a2d33'); r(7, 0, 2, 1, '#0b0c0e'); r(7, 27, 2, 1, '#0b0c0e');
   })];
 }
-// a wall slice: the whole outline filled with one colour (only its outer pixels ever show)
-const wallSlice = (col, nose) => slice((r) => {
+// a wall slice: the whole outline filled with one colour (only its outer pixels ever show), with
+// wear (seed, k) when asked
+const wallSlice = (col, nose, seed, k) => slice((r) => {
   if (nose) { r(2, 0, 12, 1, col); r(1, 1, 14, 1, col); r(0, 2, 16, 26, col); } else r(0, 0, 16, 28, col);
+  if (seed) wear(r, seed, k || 0.3, nose);
 });
 function locoSlices() {
   const B = ['#151b24', '#243042', '#34445c', '#4b5f7d'];
-  return [...underSlices(), wallSlice(B[0], true), wallSlice('#a8641f', true), wallSlice(B[1], true), wallSlice(B[1], true),
+  return [...underSlices(), wallSlice(B[0], true, 11, 0.5),
+    // a band of hazard stripes round the engine
+    slice((r) => {
+      r(2, 0, 12, 1, '#c9772f'); r(1, 1, 14, 1, '#c9772f'); r(0, 2, 16, 26, '#c9772f');
+      for (let y = 0; y < 28; y++) for (let x = 0; x < 16; x++) if (((x + y) >> 1) % 2 === 0) r(x, y, 1, 1, '#1c1a18');
+    }),
+    wallSlice(B[1], true, 12, 0.25), wallSlice(B[1], true, 13, 0.12),
     // glass round the cab
     slice((r) => {
       r(2, 0, 12, 1, B[1]); r(1, 1, 14, 1, B[1]); r(0, 2, 16, 26, B[1]);
       r(0, 7, 1, 6, '#1b2836'); r(15, 7, 1, 6, '#1b2836'); r(2, 6, 12, 1, '#1b2836'); r(3, 6, 2, 1, '#6f8aa6');
+      r(0, 8, 1, 1, '#9fb8d0'); r(15, 8, 1, 1, '#4a6078');
+      // the louvres along the hood
+      for (let y = 16; y < 27; y += 2) { r(0, y, 1, 1, '#0e131a'); r(15, y, 1, 1, '#0e131a'); }
     }),
-    // the roof: nose with headlights and stripes, the cab, the long hood with its fans
+    // the roof: nose with headlights, a number plate and stripes, the cab, the long hood with its
+    // fans, handrails along both sides, rust round the stack
     slice((r) => {
       r(2, 0, 12, 1, B[2]); r(1, 1, 14, 1, B[2]); r(0, 2, 16, 26, B[1]);
-      r(4, 0, 1, 1, '#fff1c2'); r(11, 0, 1, 1, '#fff1c2');
+      r(4, 0, 1, 1, '#fff1c2'); r(11, 0, 1, 1, '#fff1c2'); r(7, 1, 2, 1, '#e3b04b');
       for (let x = 1; x < 15; x += 2) r(x, 3, 1, 1, '#c9772f');
       r(1, 6, 14, 8, B[3]);
       r(0, 14, 2, 14, '#2a2d33'); r(14, 14, 2, 14, '#2a2d33'); r(2, 14, 1, 14, B[2]);
-      for (const fy of [19, 23]) { r(6, fy, 4, 3, '#14171c'); r(7, fy, 2, 3, '#3a3e48'); r(6, fy + 1, 4, 1, '#3a3e48'); }
+      for (let y = 15; y < 28; y += 3) { r(0, y, 1, 1, '#8b919c'); r(15, y, 1, 1, '#5a5e66'); }
+      for (const fy of [19, 23]) { r(6, fy, 4, 3, '#14171c'); r(7, fy, 2, 3, '#3a3e48'); r(6, fy + 1, 4, 1, '#3a3e48'); r(6, fy, 4, 1, '#4b5263'); }
+      r(4, 15, 1, 3, '#3a2a22'); r(11, 17, 2, 1, '#4a2e1e'); r(3, 26, 2, 1, '#4a2e1e'); r(12, 24, 1, 2, '#3a2a22');
+      r(2, 4, 12, 1, '#1b2430');
     }),
-    // on top: the cab roof and the exhaust stack
-    slice((r) => { r(1, 6, 14, 8, '#6d82a3'); r(1, 6, 14, 1, '#8ea3c4'); r(7, 15, 2, 2, '#07080a'); })];
+    // on top: the cab roof (lit at its front, a horn and a vent), the exhaust stack with a sooty ring
+    slice((r) => {
+      r(1, 6, 14, 8, '#6d82a3'); r(1, 6, 14, 1, '#a8bcd8'); r(1, 6, 1, 8, '#8ea3c4'); r(14, 7, 1, 7, '#4b5f7d');
+      r(3, 8, 3, 2, '#4b5f7d'); r(3, 8, 3, 1, '#8ea3c4'); r(10, 7, 3, 1, '#c4c8ce'); r(10, 8, 3, 1, '#5d636e');
+      r(6, 14, 4, 4, '#1c1e23'); r(7, 15, 2, 2, '#07080a'); r(6, 14, 4, 1, '#3a3530');
+    })];
 }
 function coachSlices() {
   const C = ['#18221a', '#2a3a2a', '#3e563c', '#5b7656'];
-  // lit windows along both sides, a door window at each end
-  const windows = slice((r) => {
+  // lit windows along both sides (one boarded up), a door window at each end
+  const windows = (top) => slice((r) => {
     r(0, 0, 16, 28, C[1]);
-    for (let y = 2; y < 26; y += 4) { r(0, y, 1, 2, '#ffcf6a'); r(15, y, 1, 2, '#ffcf6a'); }
+    for (let y = 2; y < 26; y += 4) {
+      const board = y === 10;
+      r(0, y, 1, 2, board ? '#5b3f27' : top ? '#ffe2a0' : '#ffcf6a'); r(15, y, 1, 2, y === 18 ? '#5b3f27' : top ? '#ffe2a0' : '#e8a84a');
+    }
     r(7, 0, 2, 1, '#ffcf6a'); r(7, 27, 2, 1, '#ffcf6a');
+    if (!top) for (let y = 4; y < 26; y += 4) { r(0, y, 1, 1, '#121a14'); r(15, y, 1, 1, '#121a14'); }
   });
-  return [...underSlices(), wallSlice(C[0]), wallSlice(C[0]), windows, windows, wallSlice(C[1]), wallSlice(C[2]),
+  return [...underSlices(), wallSlice(C[0], false, 21, 0.5), wallSlice(C[0], false, 22, 0.3), windows(false), windows(true),
+    wallSlice(C[1], false, 23, 0.1),
+    // the cream band under the roof
+    slice((r) => { r(0, 0, 16, 28, '#8a8466'); r(0, 0, 16, 1, '#a8a27e'); wear(r, 24, 0.25); }),
+    // the round roof: lit on the left, a walkway, rusty vents, dirt along the edges
     slice((r) => {
       r(0, 0, 16, 28, C[2]); r(0, 0, 2, 28, C[3]); r(13, 0, 3, 28, C[1]); r(7, 0, 2, 28, C[3]);
-      for (const vy of [4, 11, 18, 24]) { r(7, vy, 2, 2, '#121a14'); }
+      for (const vy of [4, 11, 18, 24]) { r(7, vy, 2, 2, '#121a14'); r(7, vy, 2, 1, '#6a3a1e'); }
+      for (let y = 0; y < 28; y++) if (hrnd(3, y, 25) < 0.35) r(hrnd(4, y, 26) < 0.5 ? 13 : 14, y, 1, 1, '#1a221a');
+      r(2, 6, 1, 3, '#4a3a22'); r(10, 20, 2, 1, '#4a3a22'); r(0, 0, 16, 1, C[3]);
     })];
 }
 function flatSlices() {
@@ -755,19 +861,28 @@ function flatSlices() {
 }
 function boxSlices() {
   const R = ['#2e120f', '#4e1d18', '#6c2c22', '#8a3d2c'];
-  // a sliding door on each side, ribs on the ends
-  const wall = (col) => slice((r) => {
+  // planks (each a little lighter or darker), a sliding door on each side with its rail and
+  // handle, ribs on the ends, ladders at the corners
+  const wall = (col, z) => slice((r) => {
     r(0, 0, 16, 28, col);
-    r(0, 10, 1, 8, R[0]); r(15, 10, 1, 8, R[0]);
+    for (let y = 0; y < 28; y++) { const v = hrnd(y >> 1, z, 31); if (v < 0.3) { r(0, y, 1, 1, R[0]); r(15, y, 1, 1, R[0]); } else if (v > 0.8) { r(0, y, 1, 1, R[2]); r(15, y, 1, 1, R[2]); } }
+    r(0, 10, 1, 8, '#3e1612'); r(15, 10, 1, 8, '#3e1612');
+    if (z === 1) { r(0, 13, 1, 1, '#8b919c'); r(15, 13, 1, 1, '#8b919c'); }
+    if (z === 5) { r(0, 9, 1, 10, '#2a2d33'); r(15, 9, 1, 10, '#2a2d33'); }
     for (let x = 2; x < 16; x += 3) { r(x, 0, 1, 1, R[0]); r(x, 27, 1, 1, R[0]); }
+    if (z & 1) { r(0, 0, 1, 1, '#8b919c'); r(15, 27, 1, 1, '#5d636e'); }
+    wear(r, 40 + z, z < 2 ? 0.35 : 0.12);
   });
-  return [...underSlices(), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[2]), wall(R[2]),
+  return [...underSlices(), wall(R[1], 0), wall(R[1], 1), wall(R[1], 2), wall(R[1], 3), wall(R[1], 4), wall(R[2], 5), wall(R[2], 6),
     slice((r) => {
       r(0, 0, 16, 28, R[2]); r(0, 0, 2, 28, R[3]); r(14, 0, 2, 28, R[1]);
       for (let y = 3; y < 28; y += 4) r(1, y, 14, 1, R[1]);
       r(6, 0, 4, 28, '#5b3f27');
       for (let y = 1; y < 28; y += 2) r(6, y, 4, 1, '#4a3220');
       r(6, 0, 1, 28, '#7b5735');
+      // rust streaks and a patch of the roof gone dull
+      r(2, 5, 1, 4, '#5a2418'); r(12, 15, 1, 5, '#5a2418'); r(3, 19, 2, 2, '#7a4a3a'); r(11, 3, 2, 1, '#9a5038');
+      r(0, 0, 16, 1, R[3]);
     })];
 }
 function tankSlices() {
@@ -779,9 +894,14 @@ function tankSlices() {
       for (let y = 1; y < 27; y++) {
         const end = Math.min(y - 1, 26 - y), w = Math.max(1, hw - (end < 2 ? 2 - end : 0));
         r(8 - w, y, w * 2, 1, col[z]);
+        // fuel run down the sides from the dome, and grime low down
+        if (z > 1 && z < 7 && (y === 13 || y === 15) && hrnd(y, z, 51) < 0.8) { r(8 - w, y, 1, 1, '#2a2620'); r(7 + w, y, 1, 1, '#2a2620'); }
+        if (z < 3 && hrnd(y, z, 52) < 0.35) { r(8 - w, y, 1, 1, '#3a2a1e'); r(7 + w, y, 1, 1, '#3a2a1e'); }
       }
       if (z > 0 && z < 8) { const w = hw; r(8 - w, 9, w * 2, 2, '#9a3326'); }
-      if (z === 8) { r(6, 12, 4, 4, '#434753'); r(7, 12, 2, 1, '#e8e2cc'); r(7, 2, 1, 23, '#d0d4da'); }
+      // a hazard sign on each side
+      if (z === 4 || z === 5) { r(1, 19, 1, 2, z === 4 ? '#e8e2cc' : '#d0553f'); r(14, 19, 1, 2, z === 4 ? '#e8e2cc' : '#d0553f'); }
+      if (z === 8) { r(6, 12, 4, 4, '#434753'); r(7, 12, 2, 1, '#e8e2cc'); r(7, 2, 1, 23, '#d0d4da'); r(6, 15, 4, 1, '#2b2e35'); r(9, 3, 1, 1, '#8b919c'); r(9, 23, 1, 1, '#8b919c'); }
     }));
   }
   return out;
@@ -805,13 +925,17 @@ function stackSpr(slices, ang, box) {
   g.putImageData(im, 0, 0);
   return c;
 }
-// The ground shadow of a car turned to heading ang (black).
-function footSpr(ang) {
-  const [c, g] = mk(36, 36, true);
-  g.translate(18, 18);
-  g.rotate(ang);
+// The ground shadow of a car turned to heading ang (black). tall = its height in px: the shadow is
+// the footprint swept away from the sun up to that height (so a tall car throws a longer one).
+function footSpr(ang, tall) {
+  const [c, g] = mk(36 + Math.ceil((tall || 0) * SUNX), 36 + Math.ceil((tall || 0) * SUNY), true);
   g.fillStyle = '#000';
-  g.fillRect(-8, -14, 16, 28);
+  for (let z = 0; z <= (tall || 0); z++) {
+    g.setTransform(1, 0, 0, 1, 18 + z * SUNX, 18 + z * SUNY);
+    g.rotate(ang);
+    g.fillRect(-8, -13, 16, 26);
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
   const im = g.getImageData(0, 0, 36, 36), d = im.data;
   for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
   g.putImageData(im, 0, 0);
@@ -843,14 +967,18 @@ const RIDERS_GUN = [[-4, -9], [3, -11]];
 // SURV[k] = a survivor: n / h = standing (normal / hot), run = 2 running frames each [n, h].
 const SURV = [];
 // a survivor with a rifle, 4 x 7; f = 0 standing, 1 / 2 = running
-function survivorRaw(shirt, skin, f) {
+// (a cap or hair on top, the face lit on the left, a shirt with a belt, a rifle with a wooden
+// stock, trousers and boots)
+function survivorRaw(shirt, skin, f, hat) {
+  const lit = lighten(shirt, 40), dk = lighten(shirt, -30);
   return pix(4, 7, (r) => {
-    r(0, 0, 3, 2, skin); r(0, 0, 3, 1, '#2e2620');
-    r(0, 2, 3, 3, shirt); r(0, 2, 1, 3, '#d8cfb6');
-    r(3, 1, 1, 3, '#1a1a1a');
-    if (f === 1) { r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 1, '#1a1c20'); }
-    else if (f === 2) { r(0, 5, 1, 1, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20'); }
-    else { r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20'); }
+    r(0, 0, 3, 2, skin); r(0, 0, 3, 1, hat || '#2e2620'); r(2, 1, 1, 1, lighten(skin, -40));
+    r(0, 2, 3, 3, shirt); r(0, 2, 1, 2, lit); r(2, 3, 1, 1, dk); r(0, 4, 3, 1, '#3a2a1e');
+    r(3, 0, 1, 3, '#2a2c30'); r(3, 3, 1, 1, '#6b4a2c');
+    const L = '#2e3440', B = '#14100c';
+    if (f === 1) { r(0, 5, 1, 1, L); r(0, 6, 1, 1, B); r(2, 5, 1, 1, B); }
+    else if (f === 2) { r(0, 5, 1, 1, B); r(2, 5, 1, 1, L); r(2, 6, 1, 1, B); }
+    else { r(0, 5, 1, 1, L); r(2, 5, 1, 1, L); r(0, 6, 1, 1, B); r(2, 6, 1, 1, B); }
   });
 }
 
@@ -879,13 +1007,19 @@ function lampSpr() {
   return pix(3, 18, (r) => { r(1, 2, 1, 16, '#3a3e48'); r(0, 0, 3, 2, '#2a2d33'); r(1, 1, 1, 1, '#fff1c2'); });
 }
 
+// A colour k steps (0..255 per channel) lighter.
+function lighten(col, k) {
+  const [R, G, B] = hexRgb(col), h = (v) => clamp(v + k, 0, 255).toString(16).padStart(2, '0');
+  return '#' + h(R) + h(G) + h(B);
+}
+
 // ---------- props
 // Pine, h px tall. pal = [dark, mid, light]; the lit side is on the left (from Ball x Archers).
 function pineSpr(h, rng, pal) {
-  const w = (Math.round(h * 0.62) | 1);
+  const w = (Math.round(h * 0.62) | 1), hi = lighten(pal[2], 22);
   return pix(w, h, (r) => {
     const cx = w >> 1;
-    r(cx, h - 4, 1, 4, '#24180f');
+    r(cx, h - 4, 1, 4, '#24180f'); r(cx - 1, h - 1, 3, 1, '#1a120b');
     const tiers = h > 22 ? 4 : 3, bot = h - 3;
     for (let t = 0; t < tiers; t++) {
       const y0 = Math.round(bot * t / tiers * 0.78), y1 = Math.min(bot, Math.round(bot * (t + 1) / tiers * 0.78 + bot * 0.24));
@@ -895,7 +1029,9 @@ function pineSpr(h, rng, pal) {
         for (let x = cx - hw; x <= cx + hw; x++) {
           const side = (x - cx) / (hw + 0.01);
           let c = side < -0.3 ? pal[2] : side < 0.35 ? pal[1] : pal[0];
-          if (y === y1 - 1 && rng() < 0.5) c = pal[0];
+          // the sun catches the needles at the top left of each tier; each tier's skirt is in shade
+          if (side < -0.45 && y - y0 < (y1 - y0) * 0.5 && rng() < 0.45) c = hi;
+          if (y >= y1 - 2 && side > -0.6 && rng() < 0.7) c = pal[0];
           if (rng() < 0.06) c = pal[0];
           r(x, y, 1, 1, c);
         }
@@ -906,7 +1042,8 @@ function pineSpr(h, rng, pal) {
 // Leafy tree: a lumpy round crown lit from the top left, on a short trunk.
 function oakSpr(h, rng, autumn) {
   const w = Math.round(h * 0.95) | 1, cr = w / 2 - 0.5, th = Math.round(h * 0.32);
-  const pal = autumn ? ['#2a1a10', '#4a2a16', '#6e3f1e', '#94582a'] : ['#18240f', '#26361a', '#384d25', '#506633'];
+  const pal = autumn ? ['#2a1a10', '#4a2a16', '#6e3f1e', '#94582a', '#b8763a'] : ['#18240f', '#26361a', '#384d25', '#506633', '#6a8040'];
+  const seed = (rng() * 1000) | 0;
   const lumps = [];
   for (let k = 0; k < 6; k++) lumps.push([rng() * TAU, 0.18 + rng() * 0.16]);
   return pix(w, h, (r) => {
@@ -919,8 +1056,10 @@ function oakSpr(h, rng, autumn) {
       for (const [la, lr] of lumps) rim += lr * Math.max(0, Math.cos(a - la)) * 0.45;
       const d = Math.hypot(dx, dy);
       if (d > rim) continue;
-      const l = -dx * 0.55 - dy * 0.85 + (rng() - 0.5) * 0.45 + (rim - d) * 0.2;
-      r(x, y, 1, 1, l > 0.62 ? pal[3] : l > 0.12 ? pal[2] : l > -0.45 ? pal[1] : pal[0]);
+      // light from the top left, leaf clumps, a dark underside
+      let l = -dx * 0.55 - dy * 0.85 + (rng() - 0.5) * 0.35 + (rim - d) * 0.2 + (vnoise(x / 2.3, y / 2.3, seed) - 0.5) * 0.7;
+      if (dy > 0.45) l -= (dy - 0.45) * 1.2;
+      r(x, y, 1, 1, l > 1.0 ? pal[4] : l > 0.6 ? pal[3] : l > 0.1 ? pal[2] : l > -0.45 ? pal[1] : pal[0]);
     }
   });
 }
@@ -932,7 +1071,7 @@ function deadSpr(h, rng) {
     r(cx, h - Math.round(h * 0.6), 2, Math.round(h * 0.6), '#3d342c'); r(cx, h - Math.round(h * 0.6), 1, Math.round(h * 0.6), '#5a4e42');
     const branch = (x, y, len, dir, depth) => {
       const x1 = x + Math.round(Math.cos(dir) * len), y1 = y - Math.round(Math.abs(Math.sin(dir)) * len);
-      pl(g, x, y, x1, y1, depth ? '#4a4038' : '#3d342c');
+      pl(g, x, y, x1, y1, depth ? '#5e5244' : '#6e6252');
       if (depth < 2) for (let k = 0; k < 2; k++) branch(x1, y1, len * 0.6, dir + (k ? 0.6 : -0.6) + (rng() - 0.5) * 0.3, depth + 1);
     };
     const top = h - Math.round(h * 0.6);
@@ -1147,10 +1286,10 @@ const NODE_ART = {
 function initSprites() {
   const rng = mulberry(2024);
   // the dead: 8 walkers, 4 runners and 3 brutes, each in its own clothes
-  const pal = (k) => ({ sk: ZSKIN[k % 4], sh: ZSHIRT[(k * 5 + 1) % 6], pa: ZPANTS[(k * 2) % 3], hr: ZHAIR[(k * 3) % 4] });
-  for (let k = 0; k < 8; k++) ZS[0].push(makeZSet(9, 16, dWalker, pal(k), 7));
-  for (let k = 0; k < 4; k++) ZS[1].push(makeZSet(10, 14, dRunner, pal(k + 3), 6));
-  for (let k = 0; k < 3; k++) ZS[2].push(makeZSet(15, 21, dBrute, pal(k + 1), 12));
+  const pal = (k) => ({ sk: ZSKIN[k % 6], sh: ZSHIRT[(k * 7 + 1) % 10], pa: ZPANTS[(k * 3) % 4], hr: ZHAIR[(k * 5) % 6] });
+  for (let k = 0; k < 12; k++) ZS[0].push(makeZSet(9, 16, dWalker, pal(k), 7));
+  for (let k = 0; k < 6; k++) ZS[1].push(makeZSet(10, 14, dRunner, pal(k + 3), 6));
+  for (let k = 0; k < 4; k++) ZS[2].push(makeZSet(15, 21, dBrute, pal(k + 1), 12));
   // trees and scenery
   const PINE = [['#142018', '#1d2b20', '#2f4229'], ['#101a14', '#18241b', '#283a26'], ['#1a261c', '#243323', '#35492d']];
   for (let k = 0; k < 10; k++) PROPS.pine.push(prop(pineSpr(24 + ((rng() * 16) | 0), rng, PINE[k % 3]), 3, { tree: true }));
@@ -1172,10 +1311,11 @@ function initSprites() {
   TRAIN.length = 0;
   FOOT.length = 0;
   for (const [make, heat] of [[locoSlices, 150], [coachSlices, 100], [flatSlices, 60], [boxSlices, 75], [tankSlices, 55]]) {
-    const sl = make(), t = { n: [], h: [], red: [], tall: sl.length };
+    const sl = make(), t = { n: [], h: [], red: [], foot: [], tall: sl.length };
     for (let i = 0; i < ANG_N; i++) {
       const raw = stackSpr(sl, angOf(i));
-      const n = selOut(rimLight(raw, '#e8e2cc', 0.15));
+      const n = selOut(rimLight(raw, '#f0e6cc', 0.3));
+      t.foot.push(footSpr(angOf(i), sl.length - 1));
       n.ox = 19;
       n.oy = 19 + sl.length;
       const h = outline(hotSpr(raw, heat), '#161616');
@@ -1190,7 +1330,8 @@ function initSprites() {
   SURV.length = 0;
   for (const [shirt, skin] of [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#5c6b40', '#b8876a'], ['#7d776b', '#d1a582'],
     ['#9fd3f2', '#c99a72'], ['#e3b04b', '#8a6448']]) {
-    const one = (f) => { const raw = survivorRaw(shirt, skin, f); return [outline(raw, '#07080a'), outline(hotSpr(raw, 215), '#161616')]; };
+    const hat = ['#2e2620', '#4a5a34', '#7a3a24', '#2e2620', '#c4b088', '#3a3e48'][SURV.length];
+    const one = (f) => { const raw = survivorRaw(shirt, skin, f, hat); return [outline(raw, '#07080a'), outline(hotSpr(raw, 215), '#161616')]; };
     const [n, h] = one(0);
     SURV.push({ n, h, run: [one(1), one(2)] });
   }
@@ -1261,6 +1402,7 @@ function initSprites() {
   // the same for the run's new sprites: the Ram card's icon (the rail cannon's are in cannon.js)
   for (const c of [ICON.ram, ICON.ramOff]) atl(c);
   for (let i = 0; i < ANG_N; i++) atl(carGlow(TRAIN[0], i));
+  initScenery();
 }
 
 // world.js - the countryside the railway runs through, built in 128 px chunks as the camera moves.
@@ -1276,6 +1418,10 @@ const CH = 128;
 const GR = ['#1e2a24', '#243226', '#2b3928', '#323f29', '#3a472b', '#44502e'].map(hexRgb);
 const DR = ['#2a2521', '#332b24', '#3c3229', '#463b2f', '#514435'].map(hexRgb);
 const PLOW = ['#251e19', '#2f2620', '#3a3027', '#46392d'].map(hexRgb);
+// dry grass (ochre olive), green crop rows and golden stubble fields
+const DRY = ['#2a2c20', '#343424', '#3f3d27', '#4b472b', '#57512f', '#625a33'].map(hexRgb);
+const CROP = ['#1e2a1a', '#2b3a22', '#3a4d2a', '#4c6232'].map(hexRgb);
+const STUB = ['#2e2a1e', '#383222', '#433b26', '#4f452b', '#5a4f30'].map(hexRgb);
 // ---------- the railway
 // It winds north for ever: its middle is at x = trackX(y), two gentle waves added together (the
 // steepest bend is under 30 degrees from north). trackSlope(y) = dx/dy, trackS(y) = the distance
@@ -1340,21 +1486,40 @@ function groundPix(X, Y, out) {
   const gv = vnoise(wx / 56, wy / 56, 33) * 0.7 + n2 * 0.3;
   const dirt = vnoise(wx / 40, wy / 40, 34) + (th - 0.5) * 0.1;
   let col;
-  if (dirt > 0.74) col = DR[clamp(Math.floor((gv - 0.3) / 0.4 * 2.5 + 1.2 + th - 0.5), 0, DR.length - 1)];
-  else col = GR[clamp(Math.floor((gv - 0.3) / 0.4 * 2.5 + 1.5 + (dirt > 0.68 ? -1 : 0) + th - 0.5), 0, GR.length - 1)];
-  // ploughed fields: furrows every 3 px, softened at the field edge
+  // (the shade steps are dithered by the 4x4 pattern mixed with noise: the pattern alone leaves
+  // dotted lines down the grass where a step is nearly flat)
+  const tn = th * 0.55 + hrnd(X, Y, 8) * 0.45;
+  if (dirt > 0.74) col = DR[clamp(Math.floor((gv - 0.3) / 0.4 * 2.5 + 1.2 + tn - 0.5), 0, DR.length - 1)];
+  else {
+    // grass: patches gone dry and yellow, single blades catching the light (with a shadow under)
+    let gi = Math.floor((gv - 0.3) / 0.4 * 2.5 + 1.5 + (dirt > 0.68 ? -1 : 0) + tn - 0.5);
+    const bl = hrnd(X, Y, 3) < 0.06 ? 1 : hrnd(X, Y - 1, 3) < 0.06 ? -1 : 0;
+    gi = clamp(gi + bl, 0, GR.length - 1);
+    col = vnoise(wx / 70, wy / 70, 38) > 0.64 + (th - 0.5) * 0.04 ? DRY[gi] : GR[gi];
+  }
+  // fields: ploughed earth with furrows every 4 px, green crop rows or golden stubble, softened
+  // at the field edge
   const fv = fieldAt(X, Y);
   if (fv > 0.63 + (th - 0.5) * 0.02) {
-    const a = fieldDir(X, Y), u = X * Math.cos(a) + Y * Math.sin(a);
+    const a = fieldDir(X, Y), u = X * Math.cos(a) + Y * Math.sin(a), kind = vnoise(X / 700 + 3, Y / 700 - 7, 39);
     const row = mod(Math.floor(u), 4) === 0 ? 0 : 1, edge = fv < 0.66;
-    col = PLOW[clamp(row + (gv > 0.5 ? 1 : 0) + (edge ? 1 : 0) + (th > 0.85 ? 1 : 0), 0, 3)];
-    if (row && vnoise(X / 5, Y / 5, 37) > 0.74) col = GR[2];          // a few sprouts
+    if (kind < 0.4) {
+      col = PLOW[clamp(row + (gv > 0.5 ? 1 : 0) + (edge ? 1 : 0) + (th > 0.85 ? 1 : 0), 0, 3)];
+      if (row && vnoise(X / 5, Y / 5, 37) > 0.74) col = GR[2];          // a few sprouts
+    } else if (kind < 0.62) {
+      // crop rows: a green row, a dark gap, the leaves lit on one side
+      const r4 = mod(Math.floor(u), 4);
+      col = r4 === 0 ? PLOW[1] : CROP[clamp((r4 === 1 ? 3 : r4 === 2 ? 2 : 1) - (edge ? 1 : 0) - (hrnd(X, Y, 39) < 0.12 ? 1 : 0), 0, 3)];
+    } else {
+      // stubble: pale straw in thin rows
+      col = STUB[clamp((row ? 2 : 1) + (gv > 0.55 ? 1 : 0) + (hrnd(X, Y, 40) < 0.1 ? 1 : 0) - (edge ? 1 : 0), 0, 4)];
+    }
   }
   // farm tracks: a grassy crown, two muddy ruts, worn earth, a dithered edge
   const rd = roadDist(X, Y);
   if (rd < 8.5 + (th - 0.5) * 2) {
     if (rd < 1.4) col = GR[1];
-    else if (Math.abs(rd - 3.6) < 1.1) col = DR[0];
+    else if (Math.abs(rd - 3.6) < 1.1) col = (X + Y) % 3 === 0 ? DR[1] : DR[0];      // ruts with a tyre tread
     else col = DR[clamp(2 + (gv > 0.5 ? 1 : 0) + (th > 0.75 ? 1 : 0) - (rd > 6.5 ? 1 : 0), 0, 4)];
   }
   // the railway: a bed of gravel with a ragged edge, a sleeper every 6 px along the rails (lit
@@ -1395,8 +1560,8 @@ function plan(ci, cj) {
   pl = { props: [], flats: [], tufts: [], fires: [], block: [] };
   const take = (list) => list[(rng() * list.length) | 0];
   const put = (def, x, y, o) => {
-    // (nothing stands on a station's ground)
-    if (stationZone(x, y)) return null;
+    // (nothing stands on a station's ground or the Depot's)
+    if (stationZone(x, y) || depotZone(x, y)) return null;
     const p = Object.assign({ d: def, x: Math.round(x), y: Math.round(y) }, o || {});
     p.k = p.y;
     pl.props.push(p);
@@ -1453,6 +1618,7 @@ function plan(ci, cj) {
     const px = trackX(y) + 27;
     if (px >= X0 && px < X0 + CH) put(PROPS.pole[0], px, y);
   }
+  dressChunk(pl, ci, cj, rng, put, take);
   // grass tufts (they sway, so they are drawn live)
   for (let k = 0; k < 40 && pl.tufts.length < 16; k++) {
     const x = X0 + ((rng() * CH) | 0), y = Y0 + ((rng() * CH) | 0);
@@ -1479,6 +1645,7 @@ function bakeChunk(ci, cj) {
     d[i] = PIX[0]; d[i + 1] = PIX[1]; d[i + 2] = PIX[2]; d[i + 3] = 255;
   }
   g.putImageData(im, 0, 0);
+  paintYard(g, ci, cj);
   const rng = mulberry(hash32(Math.imul(ci, 2654435761) ^ Math.imul(cj, 40503) ^ 0xb4e));
   const r = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
   // grass specks in clusters, pebbles on bare earth, a few pale flowers
@@ -1497,9 +1664,33 @@ function bakeChunk(ci, cj) {
     if (vnoise((X0 + x) / 16, (Y0 + y) / 16, 31) < 0.6 || fieldAt(X0 + x, Y0 + y) > 0.62) continue;
     r(x, y, 1, 1, rng() < 0.5 ? '#a99b6e' : '#8f6f7a');
   }
+  // clusters of wild flowers (a stem under each), puddles on the tracks and bare earth, stones
+  for (let k = 0; k < 3; k++) {
+    const x = (rng() * CH) | 0, y = (rng() * CH) | 0, c = FLOWERS[(rng() * FLOWERS.length) | 0];
+    if (fieldAt(X0 + x, Y0 + y) > 0.6 || roadDist(X0 + x, Y0 + y) < 10 || nearRail(X0 + x, Y0 + y, 18) || rng() < 0.3) continue;
+    for (let f = 0; f < 5 + rng() * 6; f++) {
+      const fx = x + Math.round((rng() - 0.5) * 9), fy = y + Math.round((rng() - 0.5) * 6);
+      r(fx, fy + 1, 1, 1, '#1e2a1a');
+      r(fx, fy, 1, 1, rng() < 0.2 ? '#f0e6cc' : c);
+    }
+  }
+  for (let k = 0; k < 2; k++) {
+    const x = (rng() * CH) | 0, y = (rng() * CH) | 0, rd = roadDist(X0 + x, Y0 + y);
+    if (!(rd < 5 || vnoise((X0 + x) / 40, (Y0 + y) / 40, 34) > 0.76) || nearRail(X0 + x, Y0 + y, 20) || rng() < 0.4) continue;
+    const p = PUDDLE[(rng() * PUDDLE.length) | 0];
+    g.drawImage(p, x - (p.width >> 1), y - (p.height >> 1));
+  }
+  for (let k = 0; k < 6; k++) {
+    const x = (rng() * CH) | 0, y = (rng() * CH) | 0;
+    if (nearRail(X0 + x, Y0 + y, 16) || fieldAt(X0 + x, Y0 + y) > 0.62) continue;
+    r(x, y, 2, 1, '#5a5850'); r(x, y, 1, 1, '#8c8a80'); r(x, y + 1, 2, 1, '#1d1b18');
+  }
   // cast shadows of everything standing here or nearby, and the flat things themselves
   for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
     const pn = plan(ci + di, cj + dj);
+    // a soft dark ring of shade under each tree's crown, then the cast shadows
+    g.globalAlpha = 0.3;
+    for (const p of pn.props) if (p.d.tree) { const s = softShadow(p.d.spr.width); g.drawImage(s, p.x - (s.width >> 1) - X0 + 2, p.y - (s.height >> 1) - Y0 + 1); }
     g.globalAlpha = 0.42;
     for (const p of pn.props) g.drawImage(p.d.sh, p.x - p.d.ax - X0, p.y - 1 - Y0);
     for (const f of pn.flats) g.drawImage(f.d.sh, f.x - f.d.ax - X0, f.y - 1 - Y0);
@@ -1575,6 +1766,42 @@ function blockersNear(x, y, out) {
     for (let k = 0; k < b.length; k += 3) if (Math.abs(b[k] - x) < 16 && Math.abs(b[k + 1] - y) < 16) out.push(b[k], b[k + 1], b[k + 2]);
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ ground details */
+// wild flower colours: white, yellow, purple, poppy red
+const FLOWERS = ['#e8e2cc', '#e3c04b', '#a87ab8', '#c8432e'];
+// PUDDLE: a few puddles of rain water: muddy rim, dark water, the sky caught along the far edge
+const PUDDLE = [];
+(function () {
+  for (const [w, h, sd] of [[9, 4, 1], [13, 5, 2], [7, 3, 3], [16, 6, 4]]) {
+    const rg = mulberry(sd * 31);
+    const [c, g] = mk(w + 2, h + 2);
+    for (let y = 0; y < h + 2; y++) for (let x = 0; x < w + 2; x++) {
+      const dx = (x - (w + 1) / 2) / (w / 2 + 1), dy = (y - (h + 1) / 2) / (h / 2 + 1), d = dx * dx + dy * dy + (rg() - 0.5) * 0.25;
+      if (d > 1) continue;
+      g.fillStyle = d > 0.62 ? '#231d18' : dy < -0.25 ? (d > 0.3 ? '#6f8aa6' : '#4a6078') : d < 0.25 ? '#1c2630' : '#26323c';
+      g.fillRect(x, y, 1, 1);
+    }
+    PUDDLE.push(c);
+  }
+})();
+// A soft round shade w px across (dithered toward its edge), for under the trees.
+const SOFT = new Map();
+function softShadow(w) {
+  w = Math.max(6, Math.round(w * 0.9));
+  let c = SOFT.get(w);
+  if (!c) {
+    const h = Math.max(3, Math.round(w * 0.5));
+    c = pix(w, h, (r) => {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const d = Math.hypot((x + 0.5) / w * 2 - 1, (y + 0.5) / h * 2 - 1);
+        if (d < 1 && (1 - d) * 1.6 > bayer(x, y)) r(x, y, 1, 1, '#000');
+      }
+    });
+    SOFT.set(w, c);
+  }
+  return c;
 }
 
 // fx.js - the effects, in the Ball x Archers style: particles (dirt and blood land and stay on the
@@ -1801,6 +2028,7 @@ function stampScorch(x, y, k) {
 // One of the 2 corpse images of zombie sprite set S, with its pool of blood.
 function stampCorpse(S, x, y) {
   stampSpr(S.corpses[(Math.random() * 2) | 0], x - S.cax, y - S.cay, 0.9);
+  bloodPool(x, y, S);
 }
 
 // ---------- drawing (world layer, under the camera transform)
@@ -1815,7 +2043,9 @@ function drawParts(add) {
     ctx.globalAlpha = clamp(add || p.smoke ? a : 1, 0, 1);
     ctx.fillStyle = p.c;
     const s = Math.max(1, Math.round(p.s));
-    ctx.fillRect(Math.round(p.x - s / 2), Math.round(p.y - p.z - s / 2), s, s);
+    // (a big puff of smoke is round)
+    if (p.smoke && s >= 5) pcirc(p.x, p.y - p.z, s / 2, p.c);
+    else ctx.fillRect(Math.round(p.x - s / 2), Math.round(p.y - p.z - s / 2), s, s);
   }
   ctx.globalAlpha = 1;
 }
@@ -1829,20 +2059,25 @@ function drawBooms() {
       pcirc(b.x, b.y - 3, Math.min(b.cap * 0.75, b.r * 0.35), '#fff6e0');
       continue;
     }
-    const ci = Math.min(6, (u * 9) | 0), fade = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
+    const fade = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
     const n = many ? Math.min(2, b.pf.length) : b.pf.length;
-    for (let i = 0; i < n; i++) {
-      const p = b.pf[i], k = 0.55 + 0.7 * e;
+    // three passes, so the puffs read as one ball: a dark rim under them all, the puffs (the outer
+    // ones cool first), then their lit tops with a white-hot heart while it is young
+    for (let pass = 0; pass < 3; pass++) for (let i = 0; i < n; i++) {
+      const p = b.pf[i], k = 0.55 + 0.7 * e, ci = clamp((u * 9 + (p.d - 0.32) * 5) | 0, 0, 6);
       const px = b.x + Math.cos(p.a) * b.r * p.d * k,
         py = b.y - 3 + Math.sin(p.a) * b.r * p.d * k * FORE - b.r * p.up * e,
         pr = Math.min(b.cap, b.r * p.s * (0.5 + 0.3 * e)) * (0.6 + 0.4 * fade);
       if (pr < 1) continue;
       ctx.globalAlpha = ci < 3 ? 1 : 0.55 * fade;
-      if (ci < 3) pcirc(px, py + 1, pr, '#140e0c');
-      pcirc(px, py, pr, BC[ci]);
-      ctx.globalAlpha = 1;
-      if (ci < 4) pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.5, BC[Math.max(0, ci - 1)]);
+      if (pass === 0) { if (ci < 4) pcirc(px + 1, py + 2, pr, '#1a0f0a'); }
+      else if (pass === 1) pcirc(px, py, pr, BC[ci]);
+      else if (ci < 4) {
+        pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.5, BC[Math.max(0, ci - 1)]);
+        if (ci < 2) pcirc(px - pr * 0.36, py - pr * 0.42, pr * 0.22, '#ffffff');
+      }
     }
+    ctx.globalAlpha = 1;
   }
 }
 // Rings that grow on the ground and fade (draw with 'lighter').
@@ -3413,6 +3648,7 @@ function ramFx() {
       vx: c.nx * s * rnd(30, 60) + c.dx * tr.v * 0.9, vy: c.ny * s * rnd(30, 60) + c.dy * tr.v * 0.9, vz: rnd(6, 16), g: 0,
       life: rnd(0.4, 0.7), max: 0.7, s: rnd(2, 3), c: pick(['rgba(126,108,84,0.5)', 'rgba(104,90,70,0.5)']), grow: 5, drag: 3, smoke: true });
   }
+  juiceRamFx();
 }
 // The Ram is over (cut = a station is near: BRAKES!). Its rank and what it paid; after the first
 // run's taste, the boiler cracks.
@@ -3531,6 +3767,7 @@ function kill(z, cause, cx, cy, dist, free) {
     if (!G.demo) SFX.splat();
   }
   z.paid = pay;
+  juiceKill(z, cause, cx, cy);
   if (z.gold) goldKill(z, sc);
   if (sc && (Math.random() < 0.3 || z.big) && coins.length < 45) coins.push({ x0: z.x - G.camX, y0: z.y - G.camY - 8, t: 0, T: rnd(0.55, 0.8) });
   if (z.big && !G.demo) {
@@ -3543,6 +3780,7 @@ function kill(z, cause, cx, cy, dist, free) {
 function hitZombie(z, dmg, cause) {
   z.hp -= dmg != null ? dmg : G.demo ? 1 : G.up.dmg;
   z.flash = 0.1;
+  juiceHit(z, cause);
   if (z.hp <= 0) {
     kill(z, cause || 'mg', 0, 0, 0);
     return true;
@@ -3557,11 +3795,12 @@ function hitZombie(z, dmg, cause) {
 // ones it killed (for CHAIN SHOT and the hit-stop).
 const NEAR = [], KILLED = [];
 function mgImpact(r) {
-  const x = r.bx, y = r.by, T = r.tgt;
+  const x = r.bx, y = r.by, T = r.tgt, from = r.h ? [r.h.x, r.h.y] : null;
   let hits = 0;
   KILLED.length = 0;
   if (T) T.pending = Math.max(0, T.pending - G.up.dmg);
   if (T && !T.dead && Math.hypot(T.x - x, (T.y - y) / FORE) < 6) {
+    JUICE.from = from; // the blood flies away from the heli that shot
     if (hitZombie(T)) KILLED.push(T);
     hits++;
   }
@@ -3575,10 +3814,12 @@ function mgImpact(r) {
   for (const z of NEAR) {
     if (hits >= CFG.mg.victims) break;
     if (!z.dead) {
+      JUICE.from = from;
       if (hitZombie(z)) KILLED.push(z);
       hits++;
     }
   }
+  JUICE.from = null;
   if (hits && r.player) {
     G.hits++;
     G.hitT = 0.12;
@@ -3631,6 +3872,7 @@ function boomFx(x, y, big) {
     flames.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r * FORE, life: rnd(3, 7), seed: rnd(100) });
   }
   stampScorch(x, y, 3);
+  juiceBoom(x, y, big);
 }
 // The 105 lands: everything near dies, the edge of the blast throws the rest back. Too close to
 // the train, the blast hurts the train as well; it kills survivors on foot too.
@@ -3866,6 +4108,8 @@ function step(dt) {
   updateFireSpots(dt);
   updateSkills(dt);
   if (!G.demo) updateLoot(dt);
+  updateJuice(dt);
+  updateScenery(dt);
   updateFX(dt);
   // every 3 s the marks on the ground fade a little
   G.decalT += dt;
@@ -3994,6 +4238,7 @@ function buildStop(def, s, side, n, hold) {
       sv: SURV[i % SURV.length], anim: rnd(2), left: Math.random() < 0.5, k: 0, by: null, gt: 0 });
   }
   if (def !== DEPOT) buildCorn(st);
+  dressStop(st);
   G.stops.push(st);
   return st;
 }
@@ -4702,6 +4947,7 @@ function goldFlee(z) {
 }
 // A golden zombie dies: a gold ring, a burst of gold, a shower of coins to the counter and a chime.
 function goldKill(z, sc) {
+  juiceGold(z);
   rings.push({ x: z.x, y: z.y, r0: 3, r1: 26, t: 0, T: 0.4, c: '#ffd24a', w: 2 });
   lights.push({ x: z.x, y: z.y, z: 6, r: 30, c: '#ffd24a', life: 0.3, max: 0.3, a: 0.9 });
   for (let k = 0; k < 16; k++) {
@@ -4734,7 +4980,7 @@ function goldSpr(src) {
 // Returns false when the plain frame must show (the white hit flash, the thermal camera).
 function drawGold(z) {
   if (z.flash > 0 || thermal) return false;
-  const S = z.S, f = (z.anim | 0) & 1;
+  const S = z.S, f = (z.anim | 0) & 3;
   if (!S.gold) S.gold = S.walk.map((fr) => [goldSpr(fr.n), goldSpr(fr.nf)]);
   blit(S.gold[f][z.left ? 1 : 0], Math.round(z.x - S.ax), Math.round(z.y - S.ay));
   // two sparkles that blink round it
@@ -5622,6 +5868,850 @@ function drawHeliCursor() {
   }
 }
 
+// juice.js - the extra kick of every hit, in the same pixel style as fx.js: blood sprayed away from
+// the shot and a small knock back, torn bits (gibs) that tumble, leave a trail and stay on the
+// ground, pools of blood that spread under the dead, the 105's full blast (a hot core, a shock ring
+// of dust, smoking debris, a column of smoke with embers, a crater with rays), the Turbo Ram's bow
+// wave, coins that pop out and bounce, the golden zombie's glints and a short flash of the screen.
+// Hooks: juiceHit (hitZombie), juiceKill (kill), bloodPool (stampCorpse), juiceBoom (boomFx),
+// juiceRamFx (ramFx), juiceGold (goldKill), juicePop / coinPop (loot), updateJuice (step),
+// drawJuice (render, after the flying bodies) and drawJuiceTop (render, over the glows).
+
+// from = where the next hit comes from ([x, y] on the ground; a gun may set it before it hits, or
+// the hit comes from below the screen, where the gunship is); flash = screen flash left (s)
+const JUICE = { g: null, from: null, flash: 0, emit: [], gibs: [], debris: [], pools: [], coins: [] };
+const BLOOD = [P.bl0, P.bl1, P.bl2, P.bl2, '#821f1a'];
+const DUSTC = ['rgba(150,128,96,0.55)', 'rgba(124,106,80,0.55)', 'rgba(170,150,116,0.45)'];
+const JD = [0, 0];
+// The unit direction [x, y] a hit on z travels (away from its source), y on the flat ground.
+function hitDir(z, cause, out) {
+  out = out || JD;
+  let sx, sy;
+  if (JUICE.from) [sx, sy] = JUICE.from;
+  else if (cause === 'gun' && G.up.gun && typeof gunXY === 'function') [sx, sy] = gunXY();
+  else { sx = G.camX + W / 2; sy = G.camY + H + 40; }
+  const dx = z.x - sx, dy = (z.y - sy) / FORE, l = Math.hypot(dx, dy) || 1;
+  out[0] = dx / l;
+  out[1] = dy / l;
+  return out;
+}
+// n drops of blood thrown along (dx, dy) from (x, y) at height up to zh, and a red mist puff.
+// k = force. They land and stay on the ground.
+function spray(x, y, dx, dy, n, zh, k) {
+  k = k || 1;
+  for (let i = 0; i < n; i++) {
+    const v = rnd(30, 105) * k, s = rnd(-0.55, 0.55);
+    part({ x: x + rnd(-1, 1), y, z: rnd(zh * 0.4, zh), vx: (dx - dy * s) * v, vy: (dy + dx * s) * v * FORE, vz: rnd(5, 45) * k,
+      g: 260, life: 1.4, max: 1.4, s: Math.random() < 0.18 * k ? 2 : 1, c: pick(BLOOD), land: 1 });
+  }
+  part({ x: x + dx * 2, y: y + dy * 2 * FORE, z: zh * 0.7, vx: dx * 22 * k, vy: dy * 22 * k * FORE, vz: 4, g: 0, life: 0.32, max: 0.32,
+    s: 2, c: 'rgba(150,24,18,0.55)', grow: 9, drag: 4, smoke: true });
+}
+// A hit that does not kill (and the first part of one that does): blood out of the far side, a
+// small push back. Brutes take it heavy: more blood, dust at their feet, a longer flash, a nudge
+// of the view.
+function juiceHit(z, cause) {
+  const [dx, dy] = hitDir(z, cause), big = z.big, S = z.S;
+  if (z.hp > 0) {
+    spray(z.x, z.y, dx, dy, big ? 8 : 4, S.h * 0.65, big ? 1.1 : 0.9);
+    if (z.st !== 2) {
+      z.kbx += dx * (big ? 7 : 16);
+      z.kby += dy * (big ? 7 : 16) * FORE;
+    }
+  }
+  if (big) {
+    z.flash = 0.14;
+    for (let i = 0; i < 3; i++) part({ x: z.x + rnd(-4, 4), y: z.y, z: 1, vx: rnd(-14, 14), vy: rnd(-4, 4), vz: rnd(3, 8), g: 0,
+      life: rnd(0.4, 0.6), max: 0.6, s: 2, c: pick(DUSTC), grow: 5, drag: 3, smoke: true });
+    if (!G.demo && !offView(z.x, z.y, 0)) addShake(0.035);
+  }
+}
+// A kill: more blood along the blow, and for the big blows (the 105, the train, the Ram, a brute)
+// torn bits that tumble and stay. cause and the blast centre (cx, cy) as in kill().
+function juiceKill(z, cause, cx, cy) {
+  const S = z.S, big = z.big;
+  let dx, dy;
+  if (cause === 'he') {
+    const ex = z.x - cx, ey = (z.y - cy) / FORE, l = Math.hypot(ex, ey) || 1;
+    dx = ex / l;
+    dy = ey / l;
+  } else if (cause === 'train' || cause === 'ram') {
+    const c = G.tr.cars[0], s = trackLocal(z.x, z.y, TL).u < 0 ? -1 : 1;
+    dx = c.nx * s * 0.8 + c.dx * 0.6;
+    dy = (c.ny * s * 0.8 + c.dy * 0.6) / FORE;
+  } else [dx, dy] = hitDir(z, cause);
+  JUICE.from = null;
+  if (offView(z.x, z.y, 40)) return;
+  const hard = cause === 'he' || cause === 'train' || cause === 'ram';
+  spray(z.x, z.y, dx, dy, hard ? 9 : big ? 10 : 6, S.h * 0.6, hard ? 1.25 : 1.1);
+  // torn bits: always from the 105, the Ram and the train, and from a brute; now and then from a gun
+  const n = cause === 'he' ? rndi(2, 4) : cause === 'ram' ? rndi(1, 3) : cause === 'train' ? rndi(1, 2) : big ? 3 : Math.random() < 0.15 ? 1 : 0;
+  for (let i = 0; i < n + (big && hard ? 2 : 0); i++) gib(z, dx, dy, hard ? 1.4 : 1);
+  if (cause === 'ram' || cause === 'train') {
+    // the smack on the nose: a hot white spark and a smear of blood on the rails
+    const c = G.tr.cars[0];
+    if (realT - (JUICE.smack || 0) > 0.12) {
+      JUICE.smack = realT;
+      lights.push({ x: c.x0, y: c.y0, z: 4, r: 10, c: '#fff1d8', life: 0.07, max: 0.07, a: 0.55 });
+    }
+    for (let i = 0; i < 4; i++) stampPix(z.x + rnd(-3, 3), z.y + rnd(-2, 2), pick(BLOOD), Math.random() < 0.3 ? 2 : 1);
+  }
+}
+// One torn bit of zombie z (an arm, a leg, a piece of shirt, a bone), thrown along (dx, dy).
+function gib(z, dx, dy, k) {
+  if (JUICE.gibs.length >= 60) return;
+  const p = z.S.pal, kind = rndi(0, 3), v = rnd(40, 100) * k, s = rnd(-0.7, 0.7);
+  const c = kind === 0 ? p.sk[2] : kind === 1 ? p.pa[1] : kind === 2 ? p.sh[1] : P.bone;
+  JUICE.gibs.push({ x: z.x, y: z.y, z: z.S.h * 0.5, vx: (dx - dy * s) * v, vy: (dy + dx * s) * v * FORE, vz: rnd(50, 110) * k,
+    rot: rnd(TAU), spin: rnd(-18, 18), c, c2: kind === 3 ? '#8a826f' : P.bl2, len: kind === 2 ? 2 : 3, trail: 0 });
+}
+
+// ---------- pools of blood that spread under the dead
+// POOL[r] = a dark red puddle r px across (lumpy, dithered at its edge).
+const POOL = [];
+function poolSpr(r) {
+  if (!POOL[r]) {
+    const ry = Math.max(1, Math.round(r * FORE)), rg = mulberry(r * 13 + 5);
+    POOL[r] = pix(r * 2 + 3, ry * 2 + 3, (R) => {
+      for (let y = -ry - 1; y <= ry + 1; y++) for (let x = -r - 1; x <= r + 1; x++) {
+        const d = Math.hypot(x / r, y / ry) + (rg() - 0.5) * 0.3;
+        if (d > 1) continue;
+        R(x + r + 1, y + ry + 1, 1, 1, d < 0.45 ? '#3a0c0a' : d < 0.8 ? '#4a1210' : (x + y) & 1 ? '#5a1612' : '#401010');
+      }
+      R(r - 1, ry - 1, 2, 1, '#7a2a24');
+    });
+  }
+  return POOL[r];
+}
+// Paint spr under what is already on the ground there (so a pool grows round a body, not over it).
+function stampUnder(spr, x, y, a) {
+  x = Math.round(x);
+  y = Math.round(y);
+  const ci0 = Math.floor(x / CH), ci1 = Math.floor((x + spr.width - 1) / CH), cj0 = Math.floor(y / CH), cj1 = Math.floor((y + spr.height - 1) / CH);
+  for (let cj = cj0; cj <= cj1; cj++) for (let ci = ci0; ci <= ci1; ci++) {
+    const d = decalChunk(ci, cj);
+    d.g.globalCompositeOperation = 'destination-over';
+    d.g.globalAlpha = a;
+    d.g.drawImage(spr, x - ci * CH, y - cj * CH);
+    d.g.globalAlpha = 1;
+    d.g.globalCompositeOperation = 'source-over';
+  }
+}
+// A body came to rest at (x, y): its pool spreads out under it over a second or so.
+function bloodPool(x, y, S) {
+  if (JUICE.pools.length >= 50 || offView(x, y, 30)) return;
+  JUICE.pools.push({ x, y: y - 1, r: 2, max: S.h > 18 ? 8 : rndi(4, 6), t: 0 });
+}
+
+// ---------- the 105's blast
+// BLASTR = scorched rays round the crater, stamped once per blast.
+let BLASTR = null;
+function blastRays() {
+  if (!BLASTR) {
+    const R = 38, Ry = Math.round(R * FORE), rg = mulberry(77);
+    const rays = [];
+    for (let i = 0; i < 13; i++) rays.push([rg() * TAU, 0.55 + rg() * 0.45]);
+    BLASTR = pix(R * 2 + 1, Ry * 2 + 1, (r) => {
+      for (const [a, len] of rays) for (let t = 0.35; t < len; t += 0.012) {
+        const w = (1 - t / len) * 2.2;
+        for (let s = -w; s <= w; s += 1) {
+          const x = Math.round(R + Math.cos(a) * t * R - Math.sin(a) * s), y = Math.round(Ry + (Math.sin(a) * t * R + Math.cos(a) * s) * FORE);
+          if ((1 - t / len) * 1.4 > bayer(x, y) + 0.15) r(x, y, 1, 1, t < 0.6 ? 'rgba(14,10,8,0.7)' : 'rgba(30,22,16,0.55)');
+        }
+      }
+    });
+  }
+  return BLASTR;
+}
+// The full look of a big blast, over boomFx's: a white-hot core, a flash of the screen, a ring of
+// dust racing out over the ground, chunks that fly trailing smoke, then a column of smoke and
+// embers that rises from the crater for a few seconds, the crater glowing, rays of scorch and
+// rubble round it. It also scares the crows.
+function juiceBoom(x, y, big) {
+  if (!offView(x, y, 20)) JUICE.flash = Math.max(JUICE.flash, big ? 0.1 : 0.06);
+  addBoom(x, y - 2, big ? 30 : 22, 8, big ? 1.1 : 0.9, big ? 13 : 10, 0.02);
+  lights.push({ x, y, z: 10, r: big ? 130 : 80, c: '#ffb060', life: 0.6, max: 0.6, a: 0.55 });
+  lights.push({ x, y, z: 1, r: big ? 26 : 18, c: '#ff6a28', life: 3, max: 3, a: 0.5 });
+  rings.push({ x, y, r0: 4, r1: big ? 72 : 48, t: 0, T: 0.2, c: '#fff6e0', w: 2 });
+  // the shock ring of dust along the ground
+  const nd = big ? 22 : 14;
+  for (let i = 0; i < nd; i++) {
+    const a = i / nd * TAU + rnd(-0.1, 0.1), s = rnd(110, 170);
+    part({ x: x + Math.cos(a) * 6, y: y + Math.sin(a) * 6 * FORE, z: 1, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(2, 8), g: 0,
+      life: rnd(0.6, 0.9), max: 0.9, s: rnd(3, 4), c: pick(DUSTC), grow: 7, drag: 3.6, smoke: true });
+  }
+  // chunks that fly trailing smoke (some of them burning)
+  for (let i = 0; i < (big ? 7 : 4) && JUICE.debris.length < 24; i++) {
+    const a = rnd(TAU), s = rnd(40, 120);
+    JUICE.debris.push({ x, y, z: 4, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(90, 190), fire: Math.random() < 0.5, trail: 0,
+      c: pick(['#2a241d', '#3a3027', '#4c4032']) });
+  }
+  // the smoke column and embers, then the crater's rays and rubble
+  JUICE.emit.push({ x, y, t: 0, T: big ? 4.5 : 3, smoke: 0, ember: 0 });
+  stampSpr(blastRays(), x - (BLASTR.width >> 1), y - (BLASTR.height >> 1), 0.8);
+  stampScorch(x, y, 3);
+  for (let i = 0; i < 14; i++) {
+    const a = rnd(TAU), r = rnd(16, 30);
+    stampPix(x + Math.cos(a) * r, y + Math.sin(a) * r * FORE, pick(['#5e5140', '#2a241d', '#6d6a62', '#463b2f']), Math.random() < 0.3 ? 2 : 1);
+  }
+  if (typeof scareBirds === 'function') scareBirds(x, y, 220);
+}
+
+// ---------- the Turbo Ram
+// Each step while it runs: clods of earth and gravel thrown off both sides of the nose (a bow wave)
+// and dust rolling out over the ground beside the rails.
+function juiceRamFx() {
+  const tr = G.tr, k = ramK(), c = tr.cars[0];
+  if (Math.random() < k * 0.9) for (const s of [-1, 1]) {
+    const v = rnd(50, 120);
+    part({ x: c.x0 + c.nx * s * 6 + c.dx * 2, y: c.y0 + c.ny * s * 6 + c.dy * 2, z: 2, vx: c.nx * s * v + c.dx * tr.v * rnd(0.6, 1.2),
+      vy: c.ny * s * v + c.dy * tr.v * rnd(0.6, 1.2), vz: rnd(30, 75), g: 300, life: 1.2, max: 1.2, s: Math.random() < 0.3 ? 2 : 1,
+      c: pick(['#4c4032', '#362d24', '#5e5140', '#555047']), land: 1 });
+  }
+  if (Math.random() < k * 0.5) {
+    const s = Math.random() < 0.5 ? -1 : 1;
+    part({ x: c.x0 + c.nx * s * 9, y: c.y0 + c.ny * s * 9, z: 1, vx: c.nx * s * rnd(40, 70) + c.dx * tr.v * 0.5, vy: c.ny * s * rnd(40, 70) + c.dy * tr.v * 0.5,
+      vz: rnd(4, 10), g: 0, life: rnd(0.6, 0.9), max: 0.9, s: 3, c: pick(DUSTC), grow: 8, drag: 2.5, smoke: true });
+  }
+  if (typeof scareBirds === 'function' && Math.random() < 0.1) scareBirds(c.x0, c.y0, 110);
+}
+
+// ---------- coins
+// A golden zombie falls: its coins burst out over the ground, and a ring of gold.
+function juiceGold(z) {
+  coinPop(z.x, z.y, 14, 1.2);
+  rings.push({ x: z.x, y: z.y, r0: 6, r1: 40, t: 0, T: 0.55, c: '#fff1c2' });
+  JUICE.flash = Math.max(JUICE.flash, 0.03);
+}
+// n coins pop out of (x, y), bounce twice with a clink of light and wink out.
+function coinPop(x, y, n, k) {
+  k = k || 1;
+  for (let i = 0; i < n && JUICE.coins.length < 70; i++) {
+    const a = rnd(TAU), s = rnd(14, 46) * k;
+    JUICE.coins.push({ x, y, z: 6, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(70, 120) * k, t: 0, T: rnd(0.9, 1.3), b: 0, f: rnd(3) });
+  }
+}
+// A find leaves the ground: a puff of dust, a ring and a few coins.
+function juicePop(x, y, big) {
+  rings.push({ x, y, r0: 3, r1: big ? 28 : 18, t: 0, T: 0.3, c: '#ffe2a0', w: 2 });
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * TAU;
+    part({ x, y, z: 1, vx: Math.cos(a) * 40, vy: Math.sin(a) * 40 * FORE, vz: rnd(3, 8), g: 0, life: 0.5, max: 0.5, s: 2, c: pick(DUSTC), grow: 6, drag: 4, smoke: true });
+  }
+  coinPop(x, y, big ? 8 : 4, 0.8);
+}
+
+// ---------- each step
+function updateJuice(dt) {
+  const J = JUICE;
+  // (a new run, or the demo behind the menus, starts with nothing left over)
+  if (J.g !== G) {
+    J.g = G;
+    J.emit.length = J.gibs.length = J.debris.length = J.pools.length = J.coins.length = 0;
+    J.flash = 0;
+    J.from = null;
+  }
+  J.flash = Math.max(0, J.flash - dt);
+  // smoke columns and embers over the craters
+  for (let i = J.emit.length - 1; i >= 0; i--) {
+    const e = J.emit[i];
+    e.t += dt;
+    if (e.t >= e.T) { J.emit.splice(i, 1); continue; }
+    const k = 1 - e.t / e.T;
+    e.smoke += dt * (2 + 4 * k);
+    while (e.smoke >= 1) {
+      e.smoke--;
+      const dark = Math.random() < k;
+      part({ x: e.x + rnd(-6, 6), y: e.y + rnd(-3, 3), z: rnd(2, 8), vx: rnd(2, 9), vy: rnd(-3, 1), vz: rnd(12, 24) * (0.6 + k * 0.6), g: 0,
+        life: rnd(2.2, 3.4), max: 3.4, s: rnd(3, 6), c: dark ? pick(['rgba(30,26,24,0.7)', 'rgba(44,38,34,0.65)']) : pick(['rgba(70,64,58,0.5)', 'rgba(92,86,80,0.45)']),
+        grow: 4.5, drag: 0.5, smoke: true });
+    }
+    e.ember += dt * 5 * k;
+    while (e.ember >= 1) {
+      e.ember--;
+      part({ x: e.x + rnd(-8, 8), y: e.y + rnd(-4, 4), z: rnd(1, 4), vx: rnd(-6, 8), vy: rnd(-3, 3), vz: rnd(18, 40), g: -6,
+        life: rnd(0.6, 1.4), max: 1.4, s: 1, c: pick(['#ffd27a', '#ff8a3a', '#e2552f']), add: true, drag: 1.2 });
+    }
+  }
+  // torn bits: they fly, turn, leave a trail of drops, bounce once and lie where they stop
+  for (let i = J.gibs.length - 1; i >= 0; i--) {
+    const b = J.gibs[i];
+    b.vz -= 300 * dt;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.z += b.vz * dt;
+    b.rot += b.spin * dt;
+    b.trail -= dt;
+    if (b.trail <= 0 && b.z > 2) {
+      b.trail = 0.07;
+      part({ x: b.x, y: b.y, z: b.z, vx: b.vx * 0.2, vy: b.vy * 0.2, vz: 0, g: 260, life: 1, max: 1, s: 1, c: pick(BLOOD), land: 1 });
+    }
+    if (b.z > 0) continue;
+    b.z = 0;
+    if (b.vz < -60) {
+      b.vz *= -0.3;
+      b.vx *= 0.5;
+      b.vy *= 0.5;
+      b.spin *= 0.5;
+      continue;
+    }
+    const [ox, oy] = gibOff(b.rot);
+    for (let k = 0; k < b.len; k++) stampPix(b.x + ox * k, b.y + oy * k, k ? b.c : b.c2);
+    stampPix(b.x + rnd(-1, 1), b.y + 1, P.bl1);
+    J.gibs[i] = J.gibs[J.gibs.length - 1];
+    J.gibs.pop();
+  }
+  // chunks of the blast: a trail of smoke (or fire), a puff where they land
+  for (let i = J.debris.length - 1; i >= 0; i--) {
+    const b = J.debris[i];
+    b.vz -= 320 * dt;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.z += b.vz * dt;
+    b.trail -= dt;
+    if (b.trail <= 0) {
+      b.trail = 0.05;
+      part({ x: b.x, y: b.y, z: b.z, vx: rnd(-2, 2), vy: rnd(-2, 2), vz: rnd(2, 6), g: 0, life: rnd(0.4, 0.7), max: 0.7, s: 2,
+        c: b.fire ? 'rgba(60,50,44,0.55)' : 'rgba(80,72,64,0.45)', grow: 3, drag: 1, smoke: true });
+      if (b.fire) part({ x: b.x, y: b.y, z: b.z, vx: 0, vy: 0, vz: 0, g: 0, life: 0.18, max: 0.18, s: 1, c: pick(['#ffd27a', '#ff8a3a']), add: true });
+    }
+    if (b.z > 0) continue;
+    stampPix(b.x, b.y, b.c, 2);
+    part({ x: b.x, y: b.y, z: 0, vx: 0, vy: 0, vz: 4, g: 0, life: 0.6, max: 0.6, s: 3, c: pick(DUSTC), grow: 5, smoke: true });
+    if (b.fire && flames.length < 30 && Math.random() < 0.5) flames.push({ x: b.x, y: b.y, life: rnd(1, 2.2), seed: rnd(100) });
+    J.debris[i] = J.debris[J.debris.length - 1];
+    J.debris.pop();
+  }
+  // pools grow one pixel every 0.12 s up to their size
+  for (let i = J.pools.length - 1; i >= 0; i--) {
+    const p = J.pools[i];
+    p.t += dt;
+    if (p.t < 0.12) continue;
+    p.t = 0;
+    const s = poolSpr(p.r);
+    stampUnder(s, p.x - (s.width >> 1), p.y - (s.height >> 1), 0.8);
+    if (++p.r > p.max) {
+      J.pools[i] = J.pools[J.pools.length - 1];
+      J.pools.pop();
+    }
+  }
+  // coins bounce and wink out
+  for (let i = J.coins.length - 1; i >= 0; i--) {
+    const c = J.coins[i];
+    c.t += dt;
+    if (c.t >= c.T) {
+      part({ x: c.x, y: c.y, z: c.z + 2, vx: 0, vy: 0, vz: 10, g: 0, life: 0.25, max: 0.25, s: 1, c: '#fff6c0', add: true });
+      J.coins[i] = J.coins[J.coins.length - 1];
+      J.coins.pop();
+      continue;
+    }
+    c.vz -= 340 * dt;
+    c.x += c.vx * dt;
+    c.y += c.vy * dt;
+    c.z += c.vz * dt;
+    if (c.z <= 0 && c.vz < 0) {
+      c.z = 0;
+      c.vz = c.b < 2 ? -c.vz * 0.45 : 0;
+      c.vx *= 0.55;
+      c.vy *= 0.55;
+      c.b++;
+      if (c.b <= 2) lights.push({ x: c.x, y: c.y, z: 1, r: 4, c: '#ffd24a', life: 0.08, max: 0.08, a: 0.7 });
+    }
+  }
+  // golden zombies glint: a spark now and then rises off them
+  if (G.up.gold) for (const z of G.zombies) {
+    if (!z.gold || z.dead || Math.random() > dt * 9 || offView(z.x, z.y, 0)) continue;
+    part({ x: z.x + rnd(-4, 4), y: z.y, z: rnd(2, z.S.h), vx: 0, vy: 0, vz: rnd(8, 16), g: 0, life: 0.5, max: 0.5, s: 1,
+      c: pick(['#fff6c0', '#ffd24a']), add: true });
+  }
+}
+// the pixel step of a gib turned to angle a (it lies along it)
+function gibOff(a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [Math.abs(c) > 0.38 ? Math.sign(c) : 0, Math.abs(s) > 0.38 ? Math.sign(s) : 0];
+}
+
+// ---------- drawing
+// Torn bits, blast chunks and coins in the air (with their shadows), over the bodies.
+function drawJuice() {
+  const J = JUICE;
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#000';
+  for (const b of J.gibs) ctx.fillRect(Math.round(b.x) - 1, Math.round(b.y), 3, 1);
+  for (const c of J.coins) ctx.fillRect(Math.round(c.x) - 1, Math.round(c.y), 3, 1);
+  ctx.globalAlpha = 1;
+  for (const b of J.gibs) {
+    const [ox, oy] = gibOff(b.rot), x = Math.round(b.x), y = Math.round(b.y - b.z);
+    for (let k = 0; k < b.len; k++) {
+      ctx.fillStyle = k ? (thermal ? '#e0e0e0' : b.c) : (thermal ? '#c0c0c0' : b.c2);
+      ctx.fillRect(x + ox * k, y + oy * k, 1, 1);
+    }
+  }
+  for (const b of J.debris) {
+    ctx.fillStyle = b.fire && !thermal ? '#ff8a3a' : b.c;
+    ctx.fillRect(Math.round(b.x), Math.round(b.y - b.z), 2, 2);
+  }
+  for (const c of J.coins) {
+    const x = Math.round(c.x), y = Math.round(c.y - c.z) - 2, wob = ((realT * 14 + c.f) | 0) % 3;
+    ctx.fillStyle = '#5a3e10';
+    ctx.fillRect(x - 1, y - 1, wob === 1 ? 1 : 3, 3);
+    ctx.fillStyle = '#e3b04b';
+    ctx.fillRect(x - (wob === 1 ? 1 : 1), y - 1, wob === 1 ? 1 : 2, 2);
+    ctx.fillStyle = '#fff1c2';
+    ctx.fillRect(x - 1, y - 1, 1, 1);
+  }
+}
+// The flash of a big blast, over everything in the world (drawn with 'lighter').
+function drawJuiceTop() {
+  if (JUICE.flash <= 0 || thermal) return;
+  ctx.globalAlpha = Math.min(0.35, JUICE.flash * 3.5);
+  ctx.fillStyle = '#ffcf9a';
+  ctx.fillRect(G.camX - 16, G.camY - 16, W + 32, H + 32);
+  ctx.globalAlpha = 1;
+}
+
+// scenery.js - more of the world: broken fences, railway signs and crossings, relay boxes, hay
+// bales, tyres, wrecks and crates beside the rails (placed by dressChunk from each chunk's plan);
+// the wires that sag between the telegraph poles (with their shadows); crows that sit in the fields
+// and fly up when the train, a blast or a shot comes near; and what makes the stations and the Depot
+// real places: a water tower, a name board, fences, sandbag walls, lamps, benches, crates and, at
+// the Depot, an engine shed, a fuel tank and a coal heap.
+// Hooks: initScenery (initSprites), dressChunk (plan), dressStop (buildStop), updateScenery (step),
+// drawGroundLife (render, over the tufts), drawSky (render, over everything in the world).
+
+// SCN = the sprites only stations and the Depot use
+const SCN = {};
+// ---------- sprites
+// A wooden fence n posts long; broken = a rail missing and a post leaning.
+function fenceSpr(n, rng, broken) {
+  const w = n * 5 - 4;
+  return pix(w + 1, 8, (r) => {
+    const gap = broken ? 1 + ((rng() * (n - 2)) | 0) : -1;
+    for (let k = 0; k < n - 1; k++) {
+      if (k === gap) { r(k * 5 + 1, 3, 2, 1, '#6b5038'); continue; }
+      r(k * 5, 2, 5, 1, '#8a6a44'); r(k * 5, 5, 5, 1, '#6b5038'); r(k * 5, 3, 5, 1, '#3a2718');
+    }
+    for (let k = 0; k < n; k++) {
+      const lean = broken && k === gap + 1 ? 1 : 0;
+      r(k * 5 + lean, 1, 1, 7, '#5b4632'); r(k * 5 + lean, 0, 1, 1, '#a38558'); r(k * 5 + lean, 1, 1, 1, '#8a6a44');
+    }
+  });
+}
+// A white picket fence n pickets long (stations).
+function picketSpr(n) {
+  return pix(n * 2, 8, (r) => {
+    r(0, 3, n * 2, 1, '#a8a290'); r(0, 6, n * 2, 1, '#8a8472');
+    for (let k = 0; k < n; k++) { r(k * 2, 1, 1, 7, '#d6cdb6'); r(k * 2, 0, 1, 1, '#f0e6cc'); r(k * 2, 7, 1, 1, '#6a6458'); }
+  });
+}
+// Railway signs: 0 a whistle board (W), 1 a km post, 2 a crossing sign (a white X on a post),
+// 3 a yellow speed board.
+function signSpr(k) {
+  if (k === 0) return pix(5, 12, (r) => { r(2, 5, 1, 7, '#5d636e'); r(0, 0, 5, 5, '#e8e2cc'); r(0, 4, 5, 1, '#8a8472'); r(1, 1, 1, 3, '#14100c'); r(3, 1, 1, 3, '#14100c'); r(2, 2, 1, 1, '#14100c'); });
+  if (k === 1) return pix(3, 9, (r) => { r(0, 0, 3, 9, '#d6cdb6'); r(0, 0, 1, 9, '#f0e6cc'); r(0, 2, 3, 2, '#14100c'); r(2, 0, 1, 9, '#8a8472'); r(0, 8, 3, 1, '#4a4038'); });
+  if (k === 2) return pix(9, 16, (r, g) => {
+    r(4, 4, 1, 12, '#5d636e'); r(4, 4, 1, 12, '#8b919c'); r(3, 15, 3, 1, '#2a2d33');
+    pl(g, 0, 0, 8, 6, '#e8e2cc'); pl(g, 0, 6, 8, 0, '#e8e2cc'); pl(g, 1, 0, 8, 5, '#c8432e'); pl(g, 1, 6, 8, 1, '#c8432e');
+    r(3, 9, 3, 2, '#c8432e'); r(4, 9, 1, 2, '#ff6a50');
+  });
+  return pix(5, 12, (r) => { r(2, 5, 1, 7, '#5d636e'); r(0, 0, 5, 5, '#e3b04b'); r(0, 0, 5, 1, '#f6dc8e'); r(1, 1, 3, 1, '#14100c'); r(1, 3, 3, 1, '#14100c'); r(0, 4, 5, 1, '#8a6420'); });
+}
+// A grey relay box beside the rails.
+function cabSpr() {
+  return pix(7, 9, (r) => {
+    r(0, 2, 7, 7, '#5d636e'); r(0, 2, 2, 7, '#7d838c'); r(6, 2, 1, 7, '#3a3e48'); r(0, 0, 7, 3, '#8b919c'); r(0, 0, 7, 1, '#b4b9c1');
+    r(3, 4, 1, 3, '#2a2d33'); r(2, 8, 4, 1, '#2a2d33'); r(1, 6, 1, 2, '#6a3a1e');
+  });
+}
+// A round hay bale, lit on its top left.
+function baleSpr() {
+  return pix(9, 8, (r) => {
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 9; x++) {
+      const dx = (x - 4) / 4.5, dy = (y - 3.6) / 4;
+      if (dx * dx + dy * dy > 1) continue;
+      const l = -dx * 0.6 - dy * 0.8 + (hrnd(x, y, 61) - 0.5) * 0.5;
+      r(x, y, 1, 1, l > 0.55 ? '#d8b868' : l > 0 ? '#b49446' : l > -0.5 ? '#8a6e32' : '#5e4a22');
+    }
+    r(2, 1, 1, 6, '#6e5426'); r(6, 1, 1, 6, '#6e5426');
+  });
+}
+// A pile of old tyres.
+function tyreSpr() {
+  return pix(9, 7, (r) => {
+    for (const [x, y] of [[0, 3], [4, 3], [2, 0]]) { r(x, y, 5, 4, '#16171a'); r(x + 1, y, 3, 1, '#3a3c42'); r(x + 2, y + 1, 1, 2, '#07080a'); r(x, y + 1, 1, 2, '#2a2c32'); }
+  });
+}
+// The water tower: a wooden tank with iron bands on four legs, a cone roof and a spout.
+function waterTowerSpr() {
+  return pix(20, 40, (r, g) => {
+    for (const x of [3, 15]) { r(x, 18, 2, 22, '#3a2718'); r(x, 18, 1, 22, '#5b3f27'); }
+    r(8, 20, 2, 20, '#2a1d13'); r(8, 20, 1, 20, '#4a3220');
+    pl(g, 4, 22, 15, 36, '#2a1d13'); pl(g, 15, 22, 4, 36, '#3a2718'); r(3, 29, 14, 1, '#4a3220');
+    r(2, 8, 16, 11, '#6e4a2c'); r(2, 8, 3, 11, '#8a6040'); r(15, 8, 3, 11, '#4a3220');
+    for (let x = 4; x < 18; x += 3) r(x, 8, 1, 11, '#5b3f27');
+    for (const y of [10, 15]) { r(2, y, 16, 1, '#2a2d33'); r(2, y, 4, 1, '#5d636e'); }
+    r(2, 18, 16, 1, '#2a1d13');
+    r(1, 6, 18, 2, '#3a3e48'); r(3, 4, 14, 2, '#4b5263'); r(5, 2, 10, 2, '#5d636e'); r(8, 0, 4, 2, '#7d838c'); r(5, 2, 3, 1, '#8b919c'); r(1, 6, 5, 1, '#626875');
+    r(17, 12, 3, 1, '#2a2d33'); r(19, 12, 1, 4, '#2a2d33'); r(19, 16, 1, 1, '#5d636e');
+  });
+}
+// A name board on two posts (the letters are dashes too small to read, the name floats above).
+function boardSpr(col) {
+  return pix(22, 12, (r) => {
+    r(2, 6, 1, 6, '#3a3e48'); r(19, 6, 1, 6, '#3a3e48');
+    r(0, 0, 22, 7, '#e8e2cc'); r(1, 1, 20, 5, col); r(1, 1, 20, 1, '#ffffff22');
+    for (let x = 3; x < 19; x += 2) if (x !== 11) r(x, 3, 1, 1, '#e8e2cc');
+    r(0, 6, 22, 1, '#6a6458');
+  });
+}
+// A low wall of sandbags, n bags long.
+function bagWallSpr(n) {
+  return pix(n * 4 + 2, 7, (r) => {
+    for (let row = 0; row < 2; row++) for (let k = 0; k < n + (row ? 0 : 0); k++) {
+      const x = k * 4 + (row ? 2 : 0), y = row ? 0 : 3;
+      if (row && k === n - 1) continue;
+      r(x, y, 4, 4, '#8a7a56'); r(x, y, 4, 1, '#c4b088'); r(x, y, 1, 3, '#a8946a'); r(x + 3, y + 1, 1, 3, '#5e5238'); r(x, y + 3, 4, 1, '#4a3f2c');
+    }
+  });
+}
+// A bench on the platform.
+function benchSpr() {
+  return pix(10, 5, (r) => { r(0, 0, 10, 2, '#7b5735'); r(0, 0, 10, 1, '#a38558'); r(1, 2, 1, 3, '#2a1d13'); r(8, 2, 1, 3, '#2a1d13'); r(0, 2, 10, 1, '#4a3220'); });
+}
+// The Depot's engine shed: a long brick building with a big dark door, a tin roof and a skylight.
+function shedSpr() {
+  return pix(46, 34, (r) => {
+    r(0, 0, 46, 15, '#3e4652'); r(0, 0, 46, 1, '#7d8a98'); r(0, 0, 2, 15, '#5d6876');
+    for (let x = 3; x < 46; x += 4) r(x, 1, 1, 14, '#323944');
+    r(16, 2, 14, 4, '#9fb8c8'); r(16, 2, 14, 1, '#d0e0e8'); r(22, 2, 1, 4, '#3e4652');
+    r(9, 10, 3, 2, '#6a3a1e'); r(33, 6, 4, 2, '#6a3a1e');
+    r(0, 15, 46, 19, '#6a3226');
+    for (let y = 16; y < 34; y += 3) for (let x = (y % 2) * 3; x < 46; x += 6) r(x, y, 1, 2, '#4a2018');
+    r(0, 15, 46, 1, '#2a1410'); r(0, 15, 1, 19, '#8a4a36');
+    r(13, 19, 20, 15, '#14100c'); r(13, 19, 20, 1, '#3a2a22'); r(14, 20, 1, 14, '#2a1d13'); r(31, 20, 1, 14, '#2a1d13');
+    r(15, 29, 16, 5, '#1c1612');
+    r(4, 20, 5, 5, '#ffcf6a'); r(4, 20, 5, 1, '#fff1c2'); r(6, 20, 1, 5, '#6a3226');
+    r(37, 20, 5, 5, '#2a3040'); r(37, 20, 5, 1, '#4a5468');
+    r(0, 33, 46, 1, '#2a1410');
+  });
+}
+// The Depot's fuel tank on legs.
+function fuelSpr() {
+  return pix(16, 18, (r) => {
+    r(2, 10, 1, 8, '#2a2d33'); r(13, 10, 1, 8, '#2a2d33');
+    for (let y = 0; y < 12; y++) { const w = y < 2 || y > 9 ? 6 : 8; r(8 - w, y, w * 2, 1, y < 4 ? '#a3a9b2' : y < 8 ? '#7d838c' : '#4b5263'); }
+    r(1, 2, 2, 8, '#c4c8ce'); r(3, 5, 10, 2, '#9a3326'); r(6, 0, 3, 1, '#e8e2cc');
+  });
+}
+// A heap of coal.
+function coalSpr() {
+  return pix(14, 7, (r) => {
+    for (let y = 0; y < 7; y++) for (let x = 0; x < 14; x++) {
+      const dx = (x - 6.5) / 7, dy = (y - 6.5) / 7;
+      if (dx * dx + dy * dy > 1) continue;
+      const v = hrnd(x, y, 71);
+      r(x, y, 1, 1, v < 0.15 ? '#5a5e66' : v < 0.5 ? '#1c1e23' : '#101114');
+    }
+  });
+}
+
+function initScenery() {
+  const rng = mulberry(909);
+  PROPS.fence = [];
+  for (let k = 0; k < 6; k++) PROPS.fence.push(prop(fenceSpr(3 + ((rng() * 3) | 0), rng, k > 2), 0));
+  PROPS.sign = [0, 1, 2, 3].map((k) => prop(signSpr(k), 0));
+  PROPS.misc = [prop(cabSpr(), 3), prop(baleSpr(), 4), prop(baleSpr(), 4), prop(tyreSpr(), 3)];
+  SCN.tower = prop(waterTowerSpr(), 6);
+  SCN.board = prop(boardSpr('#2c4a6a'), 0);
+  SCN.boardD = prop(boardSpr('#6a4a14'), 0);
+  SCN.picket = prop(picketSpr(8), 0);
+  SCN.bags = prop(bagWallSpr(4), 0);
+  SCN.bench = prop(benchSpr(), 0);
+  SCN.shed = prop(shedSpr(), 14);
+  SCN.fuel = prop(fuelSpr(), 6);
+  SCN.coal = prop(coalSpr(), 4);
+  // the blast's marks, made now and not in the middle of the first blast
+  blastRays();
+  for (let r = 2; r <= 8; r++) poolSpr(r);
+}
+
+// ---------- in each chunk's plan
+// Broken fences along the farm tracks, hay bales in the fields, and beside the rails: signs, relay
+// boxes, crates and barrels, now and then a wreck; crossing signs where a track crosses the rails.
+// put / take / rng are plan()'s own.
+function dressChunk(pl, ci, cj, rng, put, take) {
+  const X0 = ci * CH, Y0 = cj * CH;
+  for (let k = 0; k < 4; k++) {
+    const x = X0 + rng() * CH, y = Y0 + rng() * CH, rd = roadDist(x, y);
+    if (rd > 9 && rd < 14 && !nearRail(x, y, 40) && rng() < 0.6) put(take(PROPS.fence), x, y);
+  }
+  if (rng() < 0.3) {
+    const x = X0 + rng() * CH, y = Y0 + rng() * CH;
+    if (fieldAt(x, y) > 0.66 && !nearRail(x, y, 40) && roadDist(x, y) > 12) for (let k = 0; k < 2 + ((rng() * 3) | 0); k++) put(PROPS.misc[1 + (k & 1)], x + rng() * 30, y + rng() * 20);
+  }
+  // beside the rails (the west side: the poles stand east)
+  for (let y = Y0 + 8; y < Y0 + CH; y += 40) {
+    if (rng() > 0.35) continue;
+    const s = rng() < 0.75 ? -1 : 1, x = trackX(y) + s * (20 + rng() * 10);
+    if (x < X0 || x >= X0 + CH || roadDist(x, y) < 10) continue;
+    const r = rng();
+    if (r < 0.3) put(PROPS.sign[rng() < 0.5 ? 0 : rng() < 0.5 ? 1 : 3], x, y);
+    else if (r < 0.55) put(PROPS.misc[0], x, y);
+    else if (r < 0.8) { put(take(PROPS.barrel), x, y); if (rng() < 0.6) put(PROPS.crate[0], x + s * 7, y + 3); }
+    else if (r < 0.9) put(PROPS.misc[3], x, y);
+    else if (!nearRail(x + s * 18, y, 34)) put(take(rng() < 0.5 ? PROPS.wreck : PROPS.burnt), x + s * 18, y);
+  }
+  // crossing signs on both sides of the rails where a farm track crosses them
+  for (let y = Y0; y < Y0 + CH; y += 4) {
+    const tx = trackX(y);
+    if (roadDist(tx, y) > 1.5 || roadDist(tx, y - 4) < roadDist(tx, y)) continue;
+    for (const s of [-1, 1]) {
+      const x = tx + s * 17;
+      if (x >= X0 && x < X0 + CH) put(PROPS.sign[2], x, y + s * 9);
+    }
+    y += 40;
+  }
+}
+
+// ---------- stations and the Depot
+// Dress stop st (side 1 = the house east of the rails): a water tower and a name board north of
+// the platform, sandbag walls and a lamp past each end of it, picket fences, a bench on it, crates
+// and a barrel by the house. The Depot gets an engine shed, a fuel tank, coal, tyres and more lamps
+// and sandbags. All of it stands off the grid's free tiles, and casts a shadow (cast).
+function dressStop(st) {
+  const side = st.side, col = (c) => 6.5 + side * (c - 6.5), at = (c, r) => gridToWorld(col(c), r, st.s);
+  const add = (d, c, r, o) => {
+    const p = at(c, r), x = Math.round(p.x), y = Math.round(p.y);
+    G.statics.push(Object.assign({ d, x, y, k: y, cast: true }, o || {}));
+  };
+  const depot = st.def === DEPOT;
+  add(SCN.tower, 9.8, -2.3);
+  add(depot ? SCN.boardD : SCN.board, 10.6, -0.8);
+  add(SCN.bench, 8, 2.9, { k: Math.round(at(8, 2.9).y) + 1 });
+  // a barrel and crates against the house
+  add(PROPS.barrel[0], 12.9, 3.3);
+  add(PROPS.crate[0], 10.9, 3.25);
+  // picket fences past the ends, sandbags and a lamp at each end of the platform
+  for (const r of [-0.7, 8.7]) add(SCN.picket, 12.4, r);
+  for (const r of [-1.3, 9.3]) add(SCN.bags, 8.1, r);
+  for (const r of [-2.4, 10.4]) add(STATION.lamp, 8.3, r, { lamp: true });
+  if (!depot) return;
+  // the Depot: an engine shed across the rails, a fuel tank, coal, crates, more lamps and sandbags
+  add(SCN.shed, 3.2, 1.2);
+  add(SCN.fuel, 11.8, 7.2);
+  add(SCN.coal, 10.4, 7.8);
+  add(PROPS.crate[0], 12.4, 1.2);
+  add(PROPS.crate[0], 12.9, 1.5);
+  add(PROPS.misc[3], 2.6, 6.8);
+  add(PROPS.barrel[1], 3.6, 7.4);
+  for (const r of [3, 5.8]) add(STATION.lamp, 4.8, r, { lamp: true });
+  for (let r = -1; r <= 9; r += 2.2) add(SCN.bags, 0.6, r);
+}
+// true when (x, y) is on the Depot's ground (no telegraph poles there; stations have stationZone)
+function depotZone(x, y) {
+  trackLocal(x, y, SZ);
+  return Math.abs(SZ.a - DEPOT_S - STOP_OFF) < 130 && Math.abs(SZ.u) < 150;
+}
+// Where each stop's yard is: [s of its house, side] for the Depot and every station.
+function yards() {
+  return [[DEPOT_S + STOP_OFF, 1], [DEPOT_S + STOP_OFF, -1], ...STATIONS.map((d) => [sAtKm(d.km), d.side])];
+}
+// Paint the yards that fall in chunk (ci, cj) onto its ground image g: gravel along the platform,
+// packed earth round the house with a worn path to the door, a ragged edge into the grass.
+function paintYard(g, ci, cj) {
+  const X0 = ci * CH, Y0 = cj * CH, T = { u: 0, a: 0, c: 1 };
+  let near = null;
+  for (const [s, side] of yards()) {
+    const y = yOfS(s);
+    if (Math.abs(y - (Y0 + CH / 2)) < 200 && Math.abs(trackX(y) - (X0 + CH / 2)) < 260) near = near || [], near.push([s, side]);
+  }
+  if (!near) return;
+  const im = g.getImageData(0, 0, CH, CH), d = im.data;
+  for (let y = 0; y < CH; y++) for (let x = 0; x < CH; x++) {
+    const X = X0 + x, Y = Y0 + y;
+    trackLocal(X, Y, T);
+    for (const [s, side] of near) {
+      const u = T.u * side, a = T.a - s - 9, th = bayer(X, Y), i = (y * CH + x) * 4;
+      if (u < 13 || u > 128 || Math.abs(a) > 76) continue;
+      const edge = Math.max((u - 108) / 20, (Math.abs(a) - 60) / 16);
+      if (edge > th) continue;
+      let c;
+      if (u < 34 && Math.abs(a) < 62) c = BAL[clamp(Math.floor(hrnd(X, Y, 93) * 2.4 + 0.6), 0, 3)];
+      else {
+        const path = Math.abs(a + 9) < 7 && u < 96, v = vnoise(X / 9, Y / 9, 94);
+        c = DR[clamp(Math.floor(v * 2.6 + (path ? 1.2 : 0.4) + th * 0.8), 0, 4)];
+        if (hrnd(X, Y, 95) < 0.03) c = GR[3];
+      }
+      d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2];
+    }
+  }
+  g.putImageData(im, 0, 0);
+}
+
+// ---------- the wires between the telegraph poles
+const POLE_GAP = 72, POLE_U = 27, WIRE_Z = 20;
+// SPANS: each span of wire (by the y of its north pole) drawn once: {x, y, w = the two wires,
+// s = their shadow on the ground}, or null where a pole is missing (stations, the Depot).
+const SPANS = new Map();
+function span(y) {
+  let s = SPANS.get(y);
+  if (s !== undefined) return s;
+  if (SPANS.size > 200) SPANS.clear();
+  const ya = y + POLE_GAP, xa = Math.round(trackX(ya) + POLE_U), xb = Math.round(trackX(y) + POLE_U);
+  s = null;
+  if (!(stationZone(xa, ya) || stationZone(xb, y) || depotZone(xa, ya) || depotZone(xb, y))) {
+    const ox = Math.round(WIRE_Z * SUNX), oy = Math.round(WIRE_Z * SUNY), x0 = Math.min(xa, xb) - 4, y0 = y - WIRE_Z - 2;
+    const w = Math.max(xa, xb) + 6 + ox - x0, h = POLE_GAP + WIRE_Z + oy + 4;
+    const [wc, wg] = mk(w, h), [sc, sg] = mk(w, h);
+    wireLine(wg, xa - 2 - x0, ya - y0, xb - 2 - x0, y - y0, WIRE_Z, 4, '#16171a');
+    wireLine(wg, xa + 2 - x0, ya - y0, xb + 2 - x0, y - y0, WIRE_Z, 5, '#16171a');
+    pl(sg, xa + ox - 2 - x0, ya + oy - y0, xb + ox - 2 - x0, y + oy - y0, '#000');
+    pl(sg, xa + ox + 2 - x0, ya + oy - y0, xb + ox + 2 - x0, y + oy - y0, '#000');
+    s = { x: x0, y: y0, w: wc, s: sc };
+  }
+  SPANS.set(y, s);
+  return s;
+}
+// Call fn(span) for each span of wire in view.
+function eachSpan(fn) {
+  const y0 = Math.floor((G.camY - 40) / POLE_GAP) * POLE_GAP, y1 = G.camY + H + 80;
+  for (let y = y0; y < y1; y += POLE_GAP) {
+    const s = span(y);
+    if (s) fn(s);
+  }
+}
+// A wire sagging from pole to pole on context g (oz = the height, sag in px).
+function wireLine(g, x0, y0, x1, y1, oz, sag, col) {
+  const n = 10;
+  let px = x0, py = y0 - oz;
+  for (let i = 1; i <= n; i++) {
+    const t = i / n, x = lerp(x0, x1, t), y = lerp(y0, y1, t) - oz + Math.sin(t * Math.PI) * sag;
+    pl(g, px, py, x, y, col);
+    px = x;
+    py = y;
+  }
+}
+
+// ---------- the couplings between the cars
+// Car i's front is hooked to the back of the car ahead: a short dark bar with a lit top, at the
+// height of the frames (drawn just before car i, so it sits under it and over the car ahead).
+function drawCoupler(i) {
+  const a = G.tr.cars[i - 1], b = G.tr.cars[i];
+  ctx.globalAlpha = 1;
+  if (!(Math.abs(a.x1 - b.x0) < 20 && Math.abs(a.y1 - b.y0) < 20)) return;
+  pl(ctx, a.x1, a.y1 - 3, b.x0, b.y0 - 3, thermal ? '#3a3a3a' : '#16181c');
+  pl(ctx, a.x1, a.y1 - 4, b.x0, b.y0 - 4, thermal ? '#6a6a6a' : '#4b4f5a');
+}
+
+// ---------- crows
+// BIRDS: crows. sit = on the ground (pecking), else flying away (vx, vy, vz) with flapping wings.
+const BIRDS = [];
+let birdG = null, birdCd = 0;
+function addFlock(x, y) {
+  const n = rndi(4, 8);
+  for (let i = 0; i < n; i++) BIRDS.push({ x: x + rnd(-12, 12), y: y + rnd(-8, 8), z: 0, vx: 0, vy: 0, vz: 0, sit: true, peck: rnd(3), left: Math.random() < 0.5, f: rnd(2), wait: rnd(0, 0.25) });
+}
+// Everything within r of (x, y) takes off, away from it.
+function scareBirds(x, y, r) {
+  for (const b of BIRDS) {
+    if (!b.sit || Math.hypot(b.x - x, (b.y - y) / FORE) > r) continue;
+    b.sit = false;
+    const dx = b.x - x, dy = b.y - y, l = Math.hypot(dx, dy) || 1, s = rnd(40, 60);
+    b.vx = dx / l * s + rnd(-12, 12);
+    b.vy = dy / l * s * 0.7 - rnd(10, 25);
+    b.vz = rnd(28, 40);
+    b.left = b.vx < 0;
+  }
+}
+function updateScenery(dt) {
+  if (birdG !== G) {
+    birdG = G;
+    BIRDS.length = 0;
+    birdCd = 0;
+    // a few flocks in the fields at the start
+    for (let k = 0; k < 3; k++) {
+      const x = G.camX + rnd(40, W - 40), y = G.camY + rnd(30, H - 40);
+      if (!nearRail(x, y, 50)) addFlock(x, y);
+    }
+  }
+  // new flocks land in the fields ahead (just over the top of the view)
+  birdCd -= dt;
+  if (birdCd <= 0) {
+    birdCd = rnd(2, 4);
+    if (BIRDS.length < 40) {
+      const x = G.camX + rnd(20, W - 20), y = G.camY - rnd(8, 30);
+      if (!nearRail(x, y, 50) && !stationZone(x, y)) addFlock(x, y);
+    }
+  }
+  const tr = G.tr, c = tr.cars[0];
+  for (let i = BIRDS.length - 1; i >= 0; i--) {
+    const b = BIRDS[i];
+    if (b.sit) {
+      b.peck += dt;
+      // the train coming, or the dead walking through them
+      if (Math.abs(b.x - trackX(b.y)) < 46 && Math.abs(b.y - c.y0) < 70) scareBirds(c.x0, c.y0, 90);
+      if (b.y > G.camY + H + 40 || b.y < G.camY - 300) BIRDS.splice(i, 1);
+      continue;
+    }
+    if (b.wait > 0) { b.wait -= dt; continue; }
+    b.f += dt * 11;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.z = Math.min(60, b.z + b.vz * dt);
+    b.vz = Math.max(4, b.vz - dt * 12);
+    if (offView(b.x, b.y - b.z, 60)) BIRDS.splice(i, 1);
+  }
+  // a crowd of the dead walking into a flock scares it too (one zombie checked a step)
+  const zs = G.zombies;
+  if (zs.length && BIRDS.length) {
+    const z = zs[(Math.random() * zs.length) | 0];
+    if (!z.dead) for (const b of BIRDS) if (b.sit && Math.abs(b.x - z.x) < 14 && Math.abs(b.y - z.y) < 10) { scareBirds(z.x, z.y, 40); break; }
+  }
+}
+
+// ---------- drawing
+// On the ground: the wires' shadows and the crows sitting (they peck and turn now and then).
+function drawGroundLife() {
+  if (thermal) return;
+  ctx.globalAlpha = 0.4;
+  for (const p of G.statics) {
+    if (!p.cast && p.d !== STATION.house && p.d !== STATION.lamp || Math.abs(p.y - G.camY - H / 2) > H) continue;
+    blit(p.d.sh, p.x - p.d.ax, p.y - 1);
+  }
+  ctx.globalAlpha = 0.16;
+  eachSpan((s) => ctx.drawImage(s.s, s.x, s.y));
+  ctx.globalAlpha = 1;
+  for (const b of BIRDS) {
+    if (!b.sit) continue;
+    const x = Math.round(b.x), y = Math.round(b.y), dn = (b.peck * 2.3 + b.x) % 3 < 0.5 ? 1 : 0, d = b.left ? -1 : 1;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(x - 1, y, 4, 1);
+    ctx.fillStyle = '#121214';
+    ctx.fillRect(x - 1, y - 2, 3, 2);
+    ctx.fillRect(x + d * 2, y - 3 + dn, 1, 1);
+    ctx.fillStyle = '#34363e';
+    ctx.fillRect(x - 1, y - 2, 1, 1);
+    ctx.fillStyle = '#6a5a3a';
+    ctx.fillRect(x + d * 3, y - 3 + dn + (dn ? 1 : 0), 1, 1);
+  }
+}
+// Up in the air: the wires from pole to pole, the crows flying (and their shadows), the flash.
+function drawSky() {
+  ctx.globalAlpha = thermal ? 0.4 : 0.75;
+  eachSpan((s) => ctx.drawImage(s.w, s.x, s.y));
+  ctx.globalAlpha = 1;
+  for (const b of BIRDS) {
+    if (b.sit || b.wait > 0) continue;
+    const x = Math.round(b.x), y = Math.round(b.y - b.z), up = (b.f | 0) & 1;
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(Math.round(b.x + b.z * SUNX) - 1, Math.round(b.y + b.z * SUNY), 3, 1);
+    ctx.fillStyle = thermal ? '#bbbbbb' : '#101012';
+    ctx.fillRect(x - 1, y, 3, 1);
+    if (up) { ctx.fillRect(x - 2, y - 1, 1, 1); ctx.fillRect(x + 2, y - 1, 1, 1); ctx.fillRect(x - 3, y - 2, 1, 1); ctx.fillRect(x + 3, y - 2, 1, 1); }
+    else { ctx.fillRect(x - 2, y + 1, 1, 1); ctx.fillRect(x + 2, y + 1, 1, 1); ctx.fillRect(x - 3, y + 1, 1, 1); ctx.fillRect(x + 3, y + 1, 1, 1); }
+  }
+}
+
 // render.js - draws one frame of the world: ground and its marks, tufts, the helicopters' shadows and
 // the other shadows, then trees, props, the train, the station, the safe zone, survivors and the
 // dead sorted by depth (the dead behind a tree show through it), fires, particles, explosions,
@@ -5673,21 +6763,21 @@ function bakeOverlays() {
   [VIG, g] = mk(W, H);
   gr = g.createRadialGradient(W * 0.5, H * 0.46, H * 0.3, W * 0.5, H * 0.5, Math.max(W, H) * 0.62);
   gr.addColorStop(0, 'rgba(0,0,0,0)');
-  gr.addColorStop(1, 'rgba(0,0,0,0.6)');
+  gr.addColorStop(1, 'rgba(0,0,0,0.66)');
   g.fillStyle = gr;
   g.fillRect(0, 0, W, H);
-  // warm top left to cool bottom right
+  // warm top left (the low sun) to cool, moody shade bottom right
   [GRADE, g] = mk(W, H);
   gr = g.createLinearGradient(0, 0, W, H);
-  gr.addColorStop(0, 'rgba(255,186,120,1)');
-  gr.addColorStop(0.45, 'rgba(128,128,128,1)');
-  gr.addColorStop(1, 'rgba(70,96,150,1)');
+  gr.addColorStop(0, 'rgba(255,176,104,1)');
+  gr.addColorStop(0.45, 'rgba(136,126,116,1)');
+  gr.addColorStop(1, 'rgba(62,84,140,1)');
   g.fillStyle = gr;
   g.fillRect(0, 0, W, H);
   // warm sun haze from above the top edge
   [HAZE, g] = mk(W, H);
   gr = g.createRadialGradient(W * 0.47, -60, 10, W * 0.47, -60, Math.max(330, W * 0.52));
-  gr.addColorStop(0, 'rgba(255,196,130,0.16)');
+  gr.addColorStop(0, 'rgba(255,192,124,0.2)');
   gr.addColorStop(1, 'rgba(255,196,130,0)');
   g.fillStyle = gr;
   g.fillRect(0, 0, W, H);
@@ -5749,7 +6839,7 @@ function gather(ci0, cj0, ci1, cj1) {
 
 // ---------- pieces
 function zImg(z) {
-  const fr = z.S.walk[(z.anim | 0) & 1];
+  const fr = z.S.walk[(z.anim | 0) & 3];
   if (z.flash > 0) return z.left ? fr.wf : fr.w;
   if (thermal) return z.left ? fr.hf : fr.h;
   return z.left ? fr.nf : fr.n;
@@ -5772,6 +6862,7 @@ function drawZombie(z) {
 // survivors ride on the flatcar, standing on its deck; with the flatcar gun, it stands at the front
 // and two of them stay at the back. While the Turbo Ram runs the engine glows orange.
 function drawCar(i) {
+  if (i) drawCoupler(i);
   const t = TRAIN[i], c = G.tr.cars[i], a = angIdx(c.ang);
   const img = thermal ? t.h[a] : G.tr.hit[i] > 0 ? carRed(t, a) : t.n[a], x0 = Math.round(c.cx) - img.ox, y0 = Math.round(c.cy) - img.oy;
   blit(img, x0, y0);
@@ -5795,8 +6886,8 @@ const DECK = 3;
 // The train's shadow: each car's footprint, moved away from the sun by its height.
 function drawTrainShadow() {
   for (let i = 0; i < CAR.n; i++) {
-    const c = G.tr.cars[i], h = TRAIN[i].tall;
-    blit(FOOT[angIdx(c.ang)], Math.round(c.cx + h * SUNX) - 18, Math.round(c.cy + h * SUNY) - 18);
+    const c = G.tr.cars[i];
+    blit(TRAIN[i].foot[angIdx(c.ang)], Math.round(c.cx) - 18, Math.round(c.cy) - 18);
   }
 }
 // A survivor on foot: waiting by the station house, running for the train (a green marker over
@@ -5832,9 +6923,10 @@ function drawBodies() {
     const S = b.S;
     if (b.fall) {
       if (b.age < 0.07) blit(S.walk[0].w, Math.round(b.x - S.ax), Math.round(b.y - S.ay - b.z));
+      else if (b.age < 0.16 && !thermal) blit(S.tilt, Math.round(b.x - S.tilt.width / 2), Math.round(b.y - S.tilt.height * 0.7 - b.z));
       else blit(thermal ? S.deadH : S.dead, Math.round(b.x - S.dax), Math.round(b.y - S.day - b.z));
     } else {
-      const img = (thermal ? S.spinH : S.spin)[mod(Math.round(b.rot / (TAU / 4)), 4)];
+      const n = S.spin.length, img = (thermal ? S.spinH : S.spin)[mod(Math.round(b.rot / (TAU / n)), n)];
       blit(img, Math.round(b.x - img.width / 2), Math.round(b.y - b.z - 5 - img.height / 2));
     }
   }
@@ -5954,11 +7046,12 @@ function render() {
     ctx.fillRect(G.camX - 8, G.camY - 8, W + 16, H + 16);
   }
   drawTufts(ci0, cj0, ci1, cj1);
+  drawGroundLife();
   drawShellMarks();
   // shadows of the dead, and of bodies in the air
   ctx.globalAlpha = thermal ? 0.2 : 0.32;
   for (const z of VZ) {
-    const S = z.S, fr = S.walk[(z.anim | 0) & 1];
+    const S = z.S, fr = S.walk[(z.anim | 0) & 3];
     blit(z.left ? fr.sf : fr.s, Math.round(z.x - S.ax), Math.round(z.y - 1 - S.shp));
   }
   drawTrainShadow();
@@ -6010,6 +7103,7 @@ function render() {
   drawParts(false);
   drawBooms();
   drawBodies();
+  drawJuice();
   drawHelis();
   // glows (added light)
   ctx.globalCompositeOperation = 'lighter';
@@ -6043,8 +7137,10 @@ function render() {
   drawCannonFx();
   drawZaps();
   drawTowerFx();
+  drawJuiceTop();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
+  drawSky();
   if (!thermal) {
     drawMist();
     drawClouds();
@@ -8765,6 +9861,7 @@ function takeLoot(f, h) {
   const i = G.statics.indexOf(f.top);
   if (i >= 0) G.statics.splice(i, 1);
   G.lootFly.push({ f, h: h || G.helis[0], spr: f.top.d, x0: f.x, y0: f.y, t: 0, T: LOOT.fly });
+  juicePop(f.x, f.y, f.kind !== 'pile');
   SFX.lootUp();
 }
 // It reached heli h: the pay, a chime, coins to the counter.
@@ -8774,6 +9871,7 @@ function lootPaid(f, h) {
   G.pay.loot += f.pay;
   G.cashPulse = 1;
   addTotal(gx, gy - 14, f.pay, U.gold, big);
+  coinPop(gx, gy, f.kind === 'gold' ? 16 : big ? 8 : 4);
   const n = f.kind === 'gold' ? 14 : big ? 7 : 4;
   for (let k = 0; k < n && coins.length < 60; k++) coins.push({ x0: gx - G.camX + rnd(-6, 6), y0: gy - G.camY - 10 + rnd(-4, 4), t: -k * 0.05, T: rnd(0.5, 0.75) });
   if (f.kind === 'gold') {
@@ -10079,6 +11177,37 @@ Object.assign(window.__sr, {
   // boxFrom(x, y): the left button is held down from (x, y): a drag box shows to the mouse
   boxFrom: (x, y) => { HUI.box = { x0: x, y0: y, shift: false }; M.down = true; },
   heliMarks: () => HUI.marks.length
+});
+
+// test_j.js - test calls for the effects and the scenery (juice.js, scenery.js).
+Object.assign(window.__sr, {
+  // the props and the station sprites, for a test sheet
+  artJ: () => ({ PROPS, SCN }),
+  // juice() = how much of each effect is alive now
+  juice: () => ({ gibs: JUICE.gibs.length, debris: JUICE.debris.length, pools: JUICE.pools.length, coins: JUICE.coins.length,
+    emit: JUICE.emit.length, birds: BIRDS.length, flying: BIRDS.filter((b) => !b.sit).length, parts: parts.length }),
+  // boom(sx, sy): a 105 blast at screen pixel (sx, sy), as the player's shell would make it
+  boom: (sx, sy) => explode(G.camX + sx, G.camY + sy, false),
+  // flock(sx, sy): crows land at screen pixel (sx, sy)
+  flock: (sx, sy) => addFlock(G.camX + sx, G.camY + sy),
+  coins: (sx, sy, n) => coinPop(G.camX + sx, G.camY + sy, n || 12),
+  // groundAt(sx, sy): the baked ground and the decal pixel under screen pixel (sx, sy)
+  groundAt: (sx, sy) => {
+    const x = Math.round(G.camX + sx), y = Math.round(G.camY + sy), ci = Math.floor(x / CH), cj = Math.floor(y / CH);
+    const gc = GROUND.get(ckey(ci, cj)), dc = DECALS.get(ckey(ci, cj));
+    const px = (c) => c ? Array.from((c.c || c).getContext('2d').getImageData(x - ci * CH, y - cj * CH, 1, 1).data) : null;
+    return { g: px(gc), d: px(dc), statics: G.statics.filter((p) => Math.abs(p.x - x) < 12 && Math.abs(p.y - y) < 30).map((p) => [p.x - x, p.y - y, p.d.spr.width, p.d.spr.height]) };
+  },
+  // atlas() = how full the sprite atlas is
+  atlas: () => ({ n: ATL.size, out: [...ATL.values()].filter((v) => !v).length, atY, atH }),
+  // propsAt(sx, sy, r): the props of the chunk plans within r px of screen pixel (sx, sy): [kind, dx, dy, w, h]
+  propsAt: (sx, sy, r) => {
+    const x = G.camX + sx, y = G.camY + sy, out = [], kind = (d) => Object.keys(PROPS).find((k) => PROPS[k].includes(d)) || '?';
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) for (const p of plan(Math.floor(x / CH) + i, Math.floor(y / CH) + j).props) {
+      if (Math.abs(p.x - x) < r && Math.abs(p.y - y) < r) out.push([kind(p.d), p.x - x, p.y - y, p.d.spr.width, p.d.spr.height]);
+    }
+    return out;
+  }
 });
 
 })();

@@ -222,6 +222,7 @@ function stampScorch(x, y, k) {
 // One of the 2 corpse images of zombie sprite set S, with its pool of blood.
 function stampCorpse(S, x, y) {
   stampSpr(S.corpses[(Math.random() * 2) | 0], x - S.cax, y - S.cay, 0.9);
+  bloodPool(x, y, S);
 }
 
 // ---------- drawing (world layer, under the camera transform)
@@ -236,7 +237,9 @@ function drawParts(add) {
     ctx.globalAlpha = clamp(add || p.smoke ? a : 1, 0, 1);
     ctx.fillStyle = p.c;
     const s = Math.max(1, Math.round(p.s));
-    ctx.fillRect(Math.round(p.x - s / 2), Math.round(p.y - p.z - s / 2), s, s);
+    // (a big puff of smoke is round)
+    if (p.smoke && s >= 5) pcirc(p.x, p.y - p.z, s / 2, p.c);
+    else ctx.fillRect(Math.round(p.x - s / 2), Math.round(p.y - p.z - s / 2), s, s);
   }
   ctx.globalAlpha = 1;
 }
@@ -250,20 +253,25 @@ function drawBooms() {
       pcirc(b.x, b.y - 3, Math.min(b.cap * 0.75, b.r * 0.35), '#fff6e0');
       continue;
     }
-    const ci = Math.min(6, (u * 9) | 0), fade = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
+    const fade = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
     const n = many ? Math.min(2, b.pf.length) : b.pf.length;
-    for (let i = 0; i < n; i++) {
-      const p = b.pf[i], k = 0.55 + 0.7 * e;
+    // three passes, so the puffs read as one ball: a dark rim under them all, the puffs (the outer
+    // ones cool first), then their lit tops with a white-hot heart while it is young
+    for (let pass = 0; pass < 3; pass++) for (let i = 0; i < n; i++) {
+      const p = b.pf[i], k = 0.55 + 0.7 * e, ci = clamp((u * 9 + (p.d - 0.32) * 5) | 0, 0, 6);
       const px = b.x + Math.cos(p.a) * b.r * p.d * k,
         py = b.y - 3 + Math.sin(p.a) * b.r * p.d * k * FORE - b.r * p.up * e,
         pr = Math.min(b.cap, b.r * p.s * (0.5 + 0.3 * e)) * (0.6 + 0.4 * fade);
       if (pr < 1) continue;
       ctx.globalAlpha = ci < 3 ? 1 : 0.55 * fade;
-      if (ci < 3) pcirc(px, py + 1, pr, '#140e0c');
-      pcirc(px, py, pr, BC[ci]);
-      ctx.globalAlpha = 1;
-      if (ci < 4) pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.5, BC[Math.max(0, ci - 1)]);
+      if (pass === 0) { if (ci < 4) pcirc(px + 1, py + 2, pr, '#1a0f0a'); }
+      else if (pass === 1) pcirc(px, py, pr, BC[ci]);
+      else if (ci < 4) {
+        pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.5, BC[Math.max(0, ci - 1)]);
+        if (ci < 2) pcirc(px - pr * 0.36, py - pr * 0.42, pr * 0.22, '#ffffff');
+      }
     }
+    ctx.globalAlpha = 1;
   }
 }
 // Rings that grow on the ground and fade (draw with 'lighter').

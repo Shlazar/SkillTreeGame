@@ -161,6 +161,7 @@ function goldFlee(z) {
 }
 // A golden zombie dies: a gold ring, a burst of gold, a shower of coins to the counter and a chime.
 function goldKill(z, sc) {
+  juiceGold(z);
   rings.push({ x: z.x, y: z.y, r0: 3, r1: 26, t: 0, T: 0.4, c: '#ffd24a', w: 2 });
   lights.push({ x: z.x, y: z.y, z: 6, r: 30, c: '#ffd24a', life: 0.3, max: 0.3, a: 0.9 });
   for (let k = 0; k < 16; k++) {
@@ -193,7 +194,7 @@ function goldSpr(src) {
 // Returns false when the plain frame must show (the white hit flash, the thermal camera).
 function drawGold(z) {
   if (z.flash > 0 || thermal) return false;
-  const S = z.S, f = (z.anim | 0) & 1;
+  const S = z.S, f = (z.anim | 0) & 3;
   if (!S.gold) S.gold = S.walk.map((fr) => [goldSpr(fr.n), goldSpr(fr.nf)]);
   blit(S.gold[f][z.left ? 1 : 0], Math.round(z.x - S.ax), Math.round(z.y - S.ay));
   // two sparkles that blink round it

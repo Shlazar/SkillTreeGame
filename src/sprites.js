@@ -27,27 +27,40 @@ const ZSKIN = [
   ['#3f4a37', '#5f6d50', '#808f69', '#a6b388'],     // grave green
   ['#45433f', '#67645d', '#8d887d', '#b2ab9b'],     // ash grey
   ['#4f4632', '#71654a', '#978863', '#b9ab80'],     // sallow
-  ['#3a4548', '#5a686a', '#7f8f8d', '#a4b2ac']      // drowned
+  ['#3a4548', '#5a686a', '#7f8f8d', '#a4b2ac'],     // drowned
+  ['#4a3634', '#6d504a', '#937066', '#b89488'],     // bruised
+  ['#38424e', '#52626e', '#768c96', '#a0b6bc']      // frozen blue
 ];
 const ZSHIRT = [
   ['#3a1412', '#6a2420', '#94372c'], ['#1a2238', '#2c3d62', '#45608e'], ['#4e4a42', '#7d776b', '#aaa290'],
-  ['#262f1c', '#3f4c2c', '#5c6b40'], ['#2e2016', '#4f3826', '#6f5034'], ['#4a3a14', '#7a6224', '#a68a3c']
+  ['#262f1c', '#3f4c2c', '#5c6b40'], ['#2e2016', '#4f3826', '#6f5034'], ['#4a3a14', '#7a6224', '#a68a3c'],
+  ['#5a2a0a', '#a2501c', '#d8782c'], ['#2c2c34', '#4a4a56', '#6e6e7c'], ['#4e1624', '#7e2638', '#a84456'],
+  ['#5e5e56', '#8e8e82', '#bcbcae']
 ];
-const ZPANTS = [['#16181d', '#262931', '#3a3e4a'], ['#221a14', '#352920', '#4c3b2c'], ['#1e2420', '#303a33', '#46524a']];
-const ZHAIR = ['#1c1612', '#2e2620', '#4a4238', '#3a1e14'];
+const ZPANTS = [['#16181d', '#262931', '#3a3e4a'], ['#221a14', '#352920', '#4c3b2c'], ['#1e2420', '#303a33', '#46524a'],
+  ['#18223a', '#26365a', '#3a5080']];
+const ZHAIR = ['#1c1612', '#2e2620', '#4a4238', '#3a1e14', '#6e6048', '#5a3a20'];
 
 // ---------- zombie drawings
+// Four walk frames: 0 and 2 a stride (the near leg ahead, then behind), 1 and 3 passing (the body
+// up 1 px, one foot lifted). The near leg is the lighter one.
 // Walker: shuffles, one arm reaching out, head pushed forward. 9x16 px.
 function dWalker(r, f, c) {
-  const b = f ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
+  const b = f & 1 ? -1 : 0, st = f === 0 ? 1 : f === 2 ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
   const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
-  // legs: a dragging stride on frame 0, together on frame 1
-  if (!f) {
-    r(2, 11, 1, 4, p1); r(5, 11, 1, 4, p0); r(2, 13, 1, 1, s1);
-    r(1, 15, 2, 1, P.dk); r(5, 15, 2, 1, P.dk);
+  // a leg: d = 1 ahead, -1 behind
+  const leg = (d, col) => {
+    if (d > 0) { r(4, 11, 1, 2, col); r(5, 13, 1, 2, col); r(5, 15, 2, 1, P.dk); }
+    else { r(3, 11, 1, 2, col); r(2, 13, 1, 2, col); r(1, 15, 2, 1, P.dk); }
+  };
+  if (st) {
+    leg(-st, p0);
+    leg(st, p1);
+    if (st > 0) r(5, 13, 1, 1, s1);
   } else {
-    r(3, 11, 1, 4, p1); r(5, 11, 1, 4, p0);
-    r(2, 15, 2, 1, P.dk); r(5, 15, 2, 1, P.dk);
+    // passing: the far foot drags up behind, the near leg straight under the body
+    r(4, 10, 1, 3, p0); r(4, 13, 1, 1, p0); r(4, 14, 2, 1, P.dk);
+    r(3, 10, 1, 5, p1); r(3, 12, 1, 1, s1); r(2, 15, 3, 1, P.dk);
   }
   o(2, 10, 4, 1, p2); o(2, 10, 1, 1, p1);
   // torso: a torn shirt lit on the left, a wound, a ragged hem
@@ -55,34 +68,41 @@ function dWalker(r, f, c) {
   o(3, 7, 1, 1, s1);
   o(4, 8, 1, 2, P.bl2); o(4, 9, 1, 1, P.bl1);
   o(2, 9, 1, 1, h0); o(5, 9, 1, 1, P.rag0);
-  // the back arm hangs
-  o(1, 6, 1, 3, s1); o(1, 9, 1, 1, s0);
+  // the back arm hangs and swings with the stride
+  o(1, 6, 1, 3, s1); o(st > 0 ? 0 : 1, 9, 1, 1, s0);
   // head pushed forward: lit top and left, a dark socket, one glowing eye, a slack jaw
   o(3, 1, 4, 4, s2); o(3, 1, 4, 1, s3); o(3, 1, 1, 3, s3); o(6, 2, 1, 3, s1);
   o(3, 0, 3, 1, c.hr); o(3, 1, 1, 1, c.hr);
   o(5, 2, 1, 1, P.em); o(4, 2, 1, 1, s0);
   o(5, 4, 2, 1, s0); o(6, 4, 1, 1, P.bl2);
   o(4, 5, 1, 1, s1);
-  // the front arm reaches out, hand open
-  o(5, 6, 1, 1, h2); o(6, 6, 2, 1, s2); o(8, 6, 1, 1, s3); o(6, 7, 2, 1, s1); o(8, 7, 1, 1, s2);
+  // the front arm reaches out, hand open (it sags a little as the body rises)
+  const ay = 6 + (b ? 1 : 0);
+  o(5, ay, 1, 1, h2); o(6, ay, 2, 1, s2); o(8, ay, 1, 1, s3); o(6, ay + 1, 2, 1, s1); o(8, ay + 1, 1, 1, s2);
 }
 // Runner: fast, bent low, arms clawing. 10x14 px.
 function dRunner(r, f, c) {
-  const b = f ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
+  const b = f & 1 ? -1 : 0, st = f === 0 ? 1 : f === 2 ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
   const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
-  if (!f) {
-    r(1, 10, 1, 2, p1); r(0, 12, 1, 1, p1); r(0, 13, 2, 1, P.dk);
-    r(6, 10, 1, 2, p0); r(7, 12, 1, 1, p0); r(7, 13, 2, 1, P.dk);
+  const leg = (d, col) => {
+    if (d > 0) { r(6, 10, 1, 2, col); r(7, 12, 1, 1, col); r(7, 13, 2, 1, P.dk); }
+    else { r(2, 10, 1, 2, col); r(1, 12, 1, 1, col); r(0, 13, 2, 1, P.dk); }
+  };
+  if (st) {
+    leg(-st, p0);
+    leg(st, p1);
   } else {
-    r(3, 10, 1, 3, p1); r(5, 10, 1, 3, p0); r(2, 13, 2, 1, P.dk); r(5, 13, 2, 1, P.dk);
+    // passing: the far knee comes up in front, the near leg pushes off under the body
+    r(5, 9, 1, 1, p0); r(6, 10, 1, 1, p0); r(6, 11, 1, 1, p0); r(5, 12, 1, 1, P.dk);
+    r(3, 9, 1, 4, p1); r(3, 13, 2, 1, P.dk);
   }
   o(2, 9, 5, 1, p2);
   // torso leaning forward
   o(2, 6, 4, 3, h1); o(3, 5, 4, 1, h1); o(4, 4, 3, 1, h2); o(2, 6, 1, 3, h2); o(5, 7, 1, 2, h0);
   o(3, 7, 1, 1, P.bl2);
-  // arms: the back one swung behind, the front one clawing ahead
-  o(1, 6, 1, 1, s1); o(0, 7, 1, 2, s1);
-  o(6, 5, 2, 1, s2); o(8, 6, 1, 1, s3); o(7, 6, 1, 1, s1);
+  // arms: they swing against the legs; the front one claws
+  if (st >= 0) { o(1, 6, 1, 1, s1); o(0, 7, 1, 2, s1); o(6, 5, 2, 1, s2); o(8, 6, 1, 1, s3); o(7, 6, 1, 1, s1); }
+  else { o(1, 6, 1, 2, s1); o(1, 8, 1, 1, s0); o(6, 5, 1, 1, s2); o(7, 4, 1, 1, s2); o(8, 4, 1, 1, s3); o(7, 5, 1, 1, s1); }
   // head low and forward
   o(6, 1, 3, 3, s2); o(6, 1, 3, 1, s3); o(6, 1, 1, 2, s3); o(9, 2, 1, 2, s1);
   o(6, 0, 3, 1, c.hr);
@@ -90,17 +110,26 @@ function dRunner(r, f, c) {
 }
 // Brute: bloated and slow, ribs through the skin, long heavy arms. 15x21 px.
 function dBrute(r, f, c) {
-  const b = f ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
+  const b = f & 1 ? -1 : 0, st = f === 0 ? 1 : f === 2 ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
   const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
-  if (!f) {
-    r(3, 15, 3, 5, p1); r(9, 15, 3, 5, p0); r(2, 20, 4, 1, P.dk); r(9, 20, 4, 1, P.dk); r(3, 15, 1, 4, p2);
+  const leg = (d, col, lit) => {
+    if (d > 0) { r(8, 15, 3, 3, col); r(9, 18, 3, 2, col); r(9, 20, 4, 1, P.dk); if (lit) r(8, 15, 1, 3, p2); }
+    else { r(4, 15, 3, 3, col); r(3, 18, 3, 2, col); r(2, 20, 4, 1, P.dk); if (lit) r(3, 18, 1, 2, p2); }
+  };
+  if (st) {
+    leg(-st, p0, false);
+    leg(st, p1, true);
   } else {
-    r(4, 15, 3, 5, p1); r(8, 15, 3, 5, p0); r(3, 20, 4, 1, P.dk); r(8, 20, 4, 1, P.dk); r(4, 15, 1, 4, p2);
+    // passing: the far foot lifted, the near leg planted
+    r(8, 15, 3, 3, p0); r(8, 18, 4, 1, P.dk);
+    r(5, 15, 3, 5, p1); r(5, 15, 1, 4, p2); r(4, 20, 4, 1, P.dk);
   }
   // belly and chest, bare and bloated
   o(3, 7, 9, 8, s2); o(3, 7, 2, 8, s3); o(10, 8, 2, 7, s1); o(5, 13, 5, 2, s1);
-  for (let k = 0; k < 3; k++) o(6, 8 + k * 2, 3, 1, P.bone);
-  o(5, 8, 1, 5, P.bl1); o(9, 9, 1, 4, P.bl2); o(6, 9, 3, 1, P.bl0);
+  // ribs in pairs either side of a dark breastbone, an open wound low on the belly
+  for (let k = 0; k < 3; k++) { o(5, 8 + k * 2, 2, 1, P.bone); o(8, 8 + k * 2, 2, 1, '#b3a990'); }
+  o(7, 8, 1, 5, s0); o(5, 9, 1, 1, P.bl0);
+  o(8, 13, 2, 1, P.bl2); o(8, 14, 2, 1, P.bl0); o(9, 12, 1, 1, P.bl1);
   o(3, 14, 9, 1, p2);
   // shoulders under a torn vest
   o(2, 6, 11, 2, h1); o(2, 6, 11, 1, h2); o(11, 7, 2, 4, h0); o(2, 7, 2, 5, h1);
@@ -108,24 +137,38 @@ function dBrute(r, f, c) {
   o(6, 1, 5, 5, s2); o(6, 1, 5, 1, s3); o(6, 1, 1, 4, s3); o(10, 2, 1, 4, s1);
   o(6, 0, 4, 1, c.hr);
   o(9, 3, 1, 1, P.em); o(8, 3, 1, 1, s0); o(8, 5, 3, 1, s0); o(9, 5, 1, 1, P.bone);
-  // arms down to the knees, the front one reaching
-  o(0, 8, 3, 7, s1); o(0, 8, 1, 7, s2); o(0, 15, 3, 2, s0);
-  o(12, 8, 3, 3, s2); o(13, 11, 2, 4, s1); o(12, 15, 3, 2, s2); o(14, 15, 1, 1, s3);
+  // arms down to the knees, swinging with the stride; the front one reaching
+  const sw = st > 0 ? 1 : 0, lift = st < 0 ? 1 : 0;
+  o(0, 8 - sw, 3, 7, s1); o(0, 8 - sw, 1, 7, s2); o(0, 15 - sw, 3, 2, s0);
+  o(12, 8, 3, 3, s2); o(13, 11, 2, 4 - lift, s1); o(12, 15 - lift, 3, 2, s2); o(14, 15 - lift, 1, 1, s3);
 }
 
 // ---------- zombie frame sets
 // Every frame has n = normal, w = white (hit flash), h = hot (thermal camera), s = shadow, each also
 // mirrored (nf, wf, hf, sf) for a zombie that walks left. Plus the body turned on its side (dead),
-// the 4 turns of a thrown body (spin) and two corpses with a pool of blood.
+// tilt = half fallen (a body knocked over), the 8 eighth turns of a thrown body (spin) and two
+// corpses with a pool of blood.
+// A copy of src turned by angle a (nearest pixel, hard edges), on a square canvas.
+function rotA(src, a) {
+  const s = Math.ceil(Math.hypot(src.width, src.height)) + 1;
+  const [c, g] = mk(s, s, true);
+  g.translate(s / 2, s / 2);
+  g.rotate(a);
+  g.drawImage(src, -src.width / 2, -src.height / 2);
+  const im = g.getImageData(0, 0, s, s), d = im.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
+  g.putImageData(im, 0, 0);
+  return c;
+}
 function makeZSet(w, h, draw, pal, shw) {
   const S = { walk: [] };
-  for (let f = 0; f < 2; f++) {
+  for (let f = 0; f < 4; f++) {
     const raw = pix(w, h, (r) => draw(r, f, pal));
-    const n = selOut(rimLight(raw, '#e8e2cc', 0.22));
+    const n = selOut(rimLight(raw, '#f0e6cc', 0.3));
     const hot = outline(hotSpr(raw), '#161616');
     const nf = flipH(n), hf = flipH(hot);
     S.walk.push({
-      n, nf, w: tint(n, '#fff3dc', 0.75), wf: tint(nf, '#fff3dc', 0.75), h: hot, hf,
+      n, nf, w: tint(n, '#fff3dc', 0.85), wf: tint(nf, '#fff3dc', 0.85), h: hot, hf,
       s: unitShadow(n, shw), sf: unitShadow(nf, shw)
     });
   }
@@ -136,15 +179,22 @@ function makeZSet(w, h, draw, pal, shw) {
   S.shp = S.walk[0].s.pad || 0;
   S.dead = rot90(c0);
   S.deadH = rot90(S.walk[0].h);
-  // a body thrown by a blast turns over in the air: 4 quarter turns (normal and hot)
-  S.spin = [c0, S.dead, rot90(S.dead), rot90(rot90(S.dead))];
-  S.spinH = [S.walk[0].h, S.deadH, rot90(S.deadH), rot90(rot90(S.deadH))];
+  S.tilt = rotA(c0, Math.PI / 4);
   S.dax = S.dead.width >> 1;
   S.day = S.dead.height - 1;
+  // a body thrown by a blast turns over in the air: 8 eighth turns (normal and hot)
+  S.spin = [];
+  S.spinH = [];
+  for (let k = 0; k < 8; k++) {
+    S.spin.push(k & 1 ? rotA(c0, k * Math.PI / 4) : k === 0 ? c0 : k === 2 ? S.dead : k === 4 ? rot90(S.dead) : rot90(rot90(S.dead)));
+    S.spinH.push(k & 1 ? rotA(S.walk[0].h, k * Math.PI / 4) : k === 0 ? S.walk[0].h : k === 2 ? S.deadH : k === 4 ? rot90(S.deadH) : rot90(rot90(S.deadH)));
+  }
   const raw0 = pix(w, h, (r) => draw(r, 0, pal));
   S.corpses = [corpseSpr(raw0, false), corpseSpr(raw0, true)];
   S.cax = S.corpses[0].width >> 1;
   S.cay = S.corpses[0].height - 2;
+  // its colours, for the bits a big hit tears off (skin, shirt, trousers)
+  S.pal = pal;
   return S;
 }
 // ZS[type] = the colour variants of each type (0 walker, 1 runner, 2 brute)
@@ -159,52 +209,92 @@ const ANG_MAX = 40 * Math.PI / 180, ANG_N = 33;
 const angIdx = (a) => clamp(Math.round((a + ANG_MAX) / (2 * ANG_MAX) * (ANG_N - 1)), 0, ANG_N - 1);
 const angOf = (i) => -ANG_MAX + i * 2 * ANG_MAX / (ANG_N - 1);
 const slice = (fn) => pix(16, 28, fn);
+// Rust, grime and wear on a car: the outer ring of pixels of a slice (the only ones that show from
+// the side) gets spots of rust and dirt from a fixed seed. k = how much.
+function wear(r, seed, k, nose) {
+  for (let y = 0; y < 28; y++) for (let x = 0; x < 16; x++) {
+    if (x > 0 && x < 15 && y > 0 && y < 27 && !(nose && y < 3)) continue;
+    const v = hrnd(x, y, seed);
+    if (v < k * 0.45) r(x, y, 1, 1, v < k * 0.15 ? '#3a1e12' : '#6a3a1e');
+    else if (v > 1 - k * 0.3) r(x, y, 1, 1, '#14100c');
+  }
+}
 // the wheels and the frame (the two bottom slices of every car)
 function underSlices() {
   return [slice((r) => {
     r(1, 2, 14, 24, '#0b0c0e');
-    for (const y of [4, 20]) { r(0, y, 1, 4, '#2a2d33'); r(15, y, 1, 4, '#2a2d33'); }
+    for (const y of [4, 20]) { r(0, y, 1, 4, '#2a2d33'); r(15, y, 1, 4, '#2a2d33'); r(0, y + 1, 1, 1, '#5a5e66'); r(15, y + 1, 1, 1, '#5a5e66'); }
   }), slice((r) => {
     r(0, 0, 16, 28, '#1a1d22');
     for (let y = 1; y < 28; y += 3) { r(0, y, 1, 1, '#4a4e57'); r(15, y, 1, 1, '#4a4e57'); }
+    r(0, 0, 16, 1, '#2a2d33'); r(7, 0, 2, 1, '#0b0c0e'); r(7, 27, 2, 1, '#0b0c0e');
   })];
 }
-// a wall slice: the whole outline filled with one colour (only its outer pixels ever show)
-const wallSlice = (col, nose) => slice((r) => {
+// a wall slice: the whole outline filled with one colour (only its outer pixels ever show), with
+// wear (seed, k) when asked
+const wallSlice = (col, nose, seed, k) => slice((r) => {
   if (nose) { r(2, 0, 12, 1, col); r(1, 1, 14, 1, col); r(0, 2, 16, 26, col); } else r(0, 0, 16, 28, col);
+  if (seed) wear(r, seed, k || 0.3, nose);
 });
 function locoSlices() {
   const B = ['#151b24', '#243042', '#34445c', '#4b5f7d'];
-  return [...underSlices(), wallSlice(B[0], true), wallSlice('#a8641f', true), wallSlice(B[1], true), wallSlice(B[1], true),
+  return [...underSlices(), wallSlice(B[0], true, 11, 0.5),
+    // a band of hazard stripes round the engine
+    slice((r) => {
+      r(2, 0, 12, 1, '#c9772f'); r(1, 1, 14, 1, '#c9772f'); r(0, 2, 16, 26, '#c9772f');
+      for (let y = 0; y < 28; y++) for (let x = 0; x < 16; x++) if (((x + y) >> 1) % 2 === 0) r(x, y, 1, 1, '#1c1a18');
+    }),
+    wallSlice(B[1], true, 12, 0.25), wallSlice(B[1], true, 13, 0.12),
     // glass round the cab
     slice((r) => {
       r(2, 0, 12, 1, B[1]); r(1, 1, 14, 1, B[1]); r(0, 2, 16, 26, B[1]);
       r(0, 7, 1, 6, '#1b2836'); r(15, 7, 1, 6, '#1b2836'); r(2, 6, 12, 1, '#1b2836'); r(3, 6, 2, 1, '#6f8aa6');
+      r(0, 8, 1, 1, '#9fb8d0'); r(15, 8, 1, 1, '#4a6078');
+      // the louvres along the hood
+      for (let y = 16; y < 27; y += 2) { r(0, y, 1, 1, '#0e131a'); r(15, y, 1, 1, '#0e131a'); }
     }),
-    // the roof: nose with headlights and stripes, the cab, the long hood with its fans
+    // the roof: nose with headlights, a number plate and stripes, the cab, the long hood with its
+    // fans, handrails along both sides, rust round the stack
     slice((r) => {
       r(2, 0, 12, 1, B[2]); r(1, 1, 14, 1, B[2]); r(0, 2, 16, 26, B[1]);
-      r(4, 0, 1, 1, '#fff1c2'); r(11, 0, 1, 1, '#fff1c2');
+      r(4, 0, 1, 1, '#fff1c2'); r(11, 0, 1, 1, '#fff1c2'); r(7, 1, 2, 1, '#e3b04b');
       for (let x = 1; x < 15; x += 2) r(x, 3, 1, 1, '#c9772f');
       r(1, 6, 14, 8, B[3]);
       r(0, 14, 2, 14, '#2a2d33'); r(14, 14, 2, 14, '#2a2d33'); r(2, 14, 1, 14, B[2]);
-      for (const fy of [19, 23]) { r(6, fy, 4, 3, '#14171c'); r(7, fy, 2, 3, '#3a3e48'); r(6, fy + 1, 4, 1, '#3a3e48'); }
+      for (let y = 15; y < 28; y += 3) { r(0, y, 1, 1, '#8b919c'); r(15, y, 1, 1, '#5a5e66'); }
+      for (const fy of [19, 23]) { r(6, fy, 4, 3, '#14171c'); r(7, fy, 2, 3, '#3a3e48'); r(6, fy + 1, 4, 1, '#3a3e48'); r(6, fy, 4, 1, '#4b5263'); }
+      r(4, 15, 1, 3, '#3a2a22'); r(11, 17, 2, 1, '#4a2e1e'); r(3, 26, 2, 1, '#4a2e1e'); r(12, 24, 1, 2, '#3a2a22');
+      r(2, 4, 12, 1, '#1b2430');
     }),
-    // on top: the cab roof and the exhaust stack
-    slice((r) => { r(1, 6, 14, 8, '#6d82a3'); r(1, 6, 14, 1, '#8ea3c4'); r(7, 15, 2, 2, '#07080a'); })];
+    // on top: the cab roof (lit at its front, a horn and a vent), the exhaust stack with a sooty ring
+    slice((r) => {
+      r(1, 6, 14, 8, '#6d82a3'); r(1, 6, 14, 1, '#a8bcd8'); r(1, 6, 1, 8, '#8ea3c4'); r(14, 7, 1, 7, '#4b5f7d');
+      r(3, 8, 3, 2, '#4b5f7d'); r(3, 8, 3, 1, '#8ea3c4'); r(10, 7, 3, 1, '#c4c8ce'); r(10, 8, 3, 1, '#5d636e');
+      r(6, 14, 4, 4, '#1c1e23'); r(7, 15, 2, 2, '#07080a'); r(6, 14, 4, 1, '#3a3530');
+    })];
 }
 function coachSlices() {
   const C = ['#18221a', '#2a3a2a', '#3e563c', '#5b7656'];
-  // lit windows along both sides, a door window at each end
-  const windows = slice((r) => {
+  // lit windows along both sides (one boarded up), a door window at each end
+  const windows = (top) => slice((r) => {
     r(0, 0, 16, 28, C[1]);
-    for (let y = 2; y < 26; y += 4) { r(0, y, 1, 2, '#ffcf6a'); r(15, y, 1, 2, '#ffcf6a'); }
+    for (let y = 2; y < 26; y += 4) {
+      const board = y === 10;
+      r(0, y, 1, 2, board ? '#5b3f27' : top ? '#ffe2a0' : '#ffcf6a'); r(15, y, 1, 2, y === 18 ? '#5b3f27' : top ? '#ffe2a0' : '#e8a84a');
+    }
     r(7, 0, 2, 1, '#ffcf6a'); r(7, 27, 2, 1, '#ffcf6a');
+    if (!top) for (let y = 4; y < 26; y += 4) { r(0, y, 1, 1, '#121a14'); r(15, y, 1, 1, '#121a14'); }
   });
-  return [...underSlices(), wallSlice(C[0]), wallSlice(C[0]), windows, windows, wallSlice(C[1]), wallSlice(C[2]),
+  return [...underSlices(), wallSlice(C[0], false, 21, 0.5), wallSlice(C[0], false, 22, 0.3), windows(false), windows(true),
+    wallSlice(C[1], false, 23, 0.1),
+    // the cream band under the roof
+    slice((r) => { r(0, 0, 16, 28, '#8a8466'); r(0, 0, 16, 1, '#a8a27e'); wear(r, 24, 0.25); }),
+    // the round roof: lit on the left, a walkway, rusty vents, dirt along the edges
     slice((r) => {
       r(0, 0, 16, 28, C[2]); r(0, 0, 2, 28, C[3]); r(13, 0, 3, 28, C[1]); r(7, 0, 2, 28, C[3]);
-      for (const vy of [4, 11, 18, 24]) { r(7, vy, 2, 2, '#121a14'); }
+      for (const vy of [4, 11, 18, 24]) { r(7, vy, 2, 2, '#121a14'); r(7, vy, 2, 1, '#6a3a1e'); }
+      for (let y = 0; y < 28; y++) if (hrnd(3, y, 25) < 0.35) r(hrnd(4, y, 26) < 0.5 ? 13 : 14, y, 1, 1, '#1a221a');
+      r(2, 6, 1, 3, '#4a3a22'); r(10, 20, 2, 1, '#4a3a22'); r(0, 0, 16, 1, C[3]);
     })];
 }
 function flatSlices() {
@@ -229,19 +319,28 @@ function flatSlices() {
 }
 function boxSlices() {
   const R = ['#2e120f', '#4e1d18', '#6c2c22', '#8a3d2c'];
-  // a sliding door on each side, ribs on the ends
-  const wall = (col) => slice((r) => {
+  // planks (each a little lighter or darker), a sliding door on each side with its rail and
+  // handle, ribs on the ends, ladders at the corners
+  const wall = (col, z) => slice((r) => {
     r(0, 0, 16, 28, col);
-    r(0, 10, 1, 8, R[0]); r(15, 10, 1, 8, R[0]);
+    for (let y = 0; y < 28; y++) { const v = hrnd(y >> 1, z, 31); if (v < 0.3) { r(0, y, 1, 1, R[0]); r(15, y, 1, 1, R[0]); } else if (v > 0.8) { r(0, y, 1, 1, R[2]); r(15, y, 1, 1, R[2]); } }
+    r(0, 10, 1, 8, '#3e1612'); r(15, 10, 1, 8, '#3e1612');
+    if (z === 1) { r(0, 13, 1, 1, '#8b919c'); r(15, 13, 1, 1, '#8b919c'); }
+    if (z === 5) { r(0, 9, 1, 10, '#2a2d33'); r(15, 9, 1, 10, '#2a2d33'); }
     for (let x = 2; x < 16; x += 3) { r(x, 0, 1, 1, R[0]); r(x, 27, 1, 1, R[0]); }
+    if (z & 1) { r(0, 0, 1, 1, '#8b919c'); r(15, 27, 1, 1, '#5d636e'); }
+    wear(r, 40 + z, z < 2 ? 0.35 : 0.12);
   });
-  return [...underSlices(), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[2]), wall(R[2]),
+  return [...underSlices(), wall(R[1], 0), wall(R[1], 1), wall(R[1], 2), wall(R[1], 3), wall(R[1], 4), wall(R[2], 5), wall(R[2], 6),
     slice((r) => {
       r(0, 0, 16, 28, R[2]); r(0, 0, 2, 28, R[3]); r(14, 0, 2, 28, R[1]);
       for (let y = 3; y < 28; y += 4) r(1, y, 14, 1, R[1]);
       r(6, 0, 4, 28, '#5b3f27');
       for (let y = 1; y < 28; y += 2) r(6, y, 4, 1, '#4a3220');
       r(6, 0, 1, 28, '#7b5735');
+      // rust streaks and a patch of the roof gone dull
+      r(2, 5, 1, 4, '#5a2418'); r(12, 15, 1, 5, '#5a2418'); r(3, 19, 2, 2, '#7a4a3a'); r(11, 3, 2, 1, '#9a5038');
+      r(0, 0, 16, 1, R[3]);
     })];
 }
 function tankSlices() {
@@ -253,9 +352,14 @@ function tankSlices() {
       for (let y = 1; y < 27; y++) {
         const end = Math.min(y - 1, 26 - y), w = Math.max(1, hw - (end < 2 ? 2 - end : 0));
         r(8 - w, y, w * 2, 1, col[z]);
+        // fuel run down the sides from the dome, and grime low down
+        if (z > 1 && z < 7 && (y === 13 || y === 15) && hrnd(y, z, 51) < 0.8) { r(8 - w, y, 1, 1, '#2a2620'); r(7 + w, y, 1, 1, '#2a2620'); }
+        if (z < 3 && hrnd(y, z, 52) < 0.35) { r(8 - w, y, 1, 1, '#3a2a1e'); r(7 + w, y, 1, 1, '#3a2a1e'); }
       }
       if (z > 0 && z < 8) { const w = hw; r(8 - w, 9, w * 2, 2, '#9a3326'); }
-      if (z === 8) { r(6, 12, 4, 4, '#434753'); r(7, 12, 2, 1, '#e8e2cc'); r(7, 2, 1, 23, '#d0d4da'); }
+      // a hazard sign on each side
+      if (z === 4 || z === 5) { r(1, 19, 1, 2, z === 4 ? '#e8e2cc' : '#d0553f'); r(14, 19, 1, 2, z === 4 ? '#e8e2cc' : '#d0553f'); }
+      if (z === 8) { r(6, 12, 4, 4, '#434753'); r(7, 12, 2, 1, '#e8e2cc'); r(7, 2, 1, 23, '#d0d4da'); r(6, 15, 4, 1, '#2b2e35'); r(9, 3, 1, 1, '#8b919c'); r(9, 23, 1, 1, '#8b919c'); }
     }));
   }
   return out;
@@ -279,13 +383,17 @@ function stackSpr(slices, ang, box) {
   g.putImageData(im, 0, 0);
   return c;
 }
-// The ground shadow of a car turned to heading ang (black).
-function footSpr(ang) {
-  const [c, g] = mk(36, 36, true);
-  g.translate(18, 18);
-  g.rotate(ang);
+// The ground shadow of a car turned to heading ang (black). tall = its height in px: the shadow is
+// the footprint swept away from the sun up to that height (so a tall car throws a longer one).
+function footSpr(ang, tall) {
+  const [c, g] = mk(36 + Math.ceil((tall || 0) * SUNX), 36 + Math.ceil((tall || 0) * SUNY), true);
   g.fillStyle = '#000';
-  g.fillRect(-8, -14, 16, 28);
+  for (let z = 0; z <= (tall || 0); z++) {
+    g.setTransform(1, 0, 0, 1, 18 + z * SUNX, 18 + z * SUNY);
+    g.rotate(ang);
+    g.fillRect(-8, -13, 16, 26);
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
   const im = g.getImageData(0, 0, 36, 36), d = im.data;
   for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
   g.putImageData(im, 0, 0);
@@ -317,14 +425,18 @@ const RIDERS_GUN = [[-4, -9], [3, -11]];
 // SURV[k] = a survivor: n / h = standing (normal / hot), run = 2 running frames each [n, h].
 const SURV = [];
 // a survivor with a rifle, 4 x 7; f = 0 standing, 1 / 2 = running
-function survivorRaw(shirt, skin, f) {
+// (a cap or hair on top, the face lit on the left, a shirt with a belt, a rifle with a wooden
+// stock, trousers and boots)
+function survivorRaw(shirt, skin, f, hat) {
+  const lit = lighten(shirt, 40), dk = lighten(shirt, -30);
   return pix(4, 7, (r) => {
-    r(0, 0, 3, 2, skin); r(0, 0, 3, 1, '#2e2620');
-    r(0, 2, 3, 3, shirt); r(0, 2, 1, 3, '#d8cfb6');
-    r(3, 1, 1, 3, '#1a1a1a');
-    if (f === 1) { r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 1, '#1a1c20'); }
-    else if (f === 2) { r(0, 5, 1, 1, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20'); }
-    else { r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20'); }
+    r(0, 0, 3, 2, skin); r(0, 0, 3, 1, hat || '#2e2620'); r(2, 1, 1, 1, lighten(skin, -40));
+    r(0, 2, 3, 3, shirt); r(0, 2, 1, 2, lit); r(2, 3, 1, 1, dk); r(0, 4, 3, 1, '#3a2a1e');
+    r(3, 0, 1, 3, '#2a2c30'); r(3, 3, 1, 1, '#6b4a2c');
+    const L = '#2e3440', B = '#14100c';
+    if (f === 1) { r(0, 5, 1, 1, L); r(0, 6, 1, 1, B); r(2, 5, 1, 1, B); }
+    else if (f === 2) { r(0, 5, 1, 1, B); r(2, 5, 1, 1, L); r(2, 6, 1, 1, B); }
+    else { r(0, 5, 1, 1, L); r(2, 5, 1, 1, L); r(0, 6, 1, 1, B); r(2, 6, 1, 1, B); }
   });
 }
 
@@ -353,13 +465,19 @@ function lampSpr() {
   return pix(3, 18, (r) => { r(1, 2, 1, 16, '#3a3e48'); r(0, 0, 3, 2, '#2a2d33'); r(1, 1, 1, 1, '#fff1c2'); });
 }
 
+// A colour k steps (0..255 per channel) lighter.
+function lighten(col, k) {
+  const [R, G, B] = hexRgb(col), h = (v) => clamp(v + k, 0, 255).toString(16).padStart(2, '0');
+  return '#' + h(R) + h(G) + h(B);
+}
+
 // ---------- props
 // Pine, h px tall. pal = [dark, mid, light]; the lit side is on the left (from Ball x Archers).
 function pineSpr(h, rng, pal) {
-  const w = (Math.round(h * 0.62) | 1);
+  const w = (Math.round(h * 0.62) | 1), hi = lighten(pal[2], 22);
   return pix(w, h, (r) => {
     const cx = w >> 1;
-    r(cx, h - 4, 1, 4, '#24180f');
+    r(cx, h - 4, 1, 4, '#24180f'); r(cx - 1, h - 1, 3, 1, '#1a120b');
     const tiers = h > 22 ? 4 : 3, bot = h - 3;
     for (let t = 0; t < tiers; t++) {
       const y0 = Math.round(bot * t / tiers * 0.78), y1 = Math.min(bot, Math.round(bot * (t + 1) / tiers * 0.78 + bot * 0.24));
@@ -369,7 +487,9 @@ function pineSpr(h, rng, pal) {
         for (let x = cx - hw; x <= cx + hw; x++) {
           const side = (x - cx) / (hw + 0.01);
           let c = side < -0.3 ? pal[2] : side < 0.35 ? pal[1] : pal[0];
-          if (y === y1 - 1 && rng() < 0.5) c = pal[0];
+          // the sun catches the needles at the top left of each tier; each tier's skirt is in shade
+          if (side < -0.45 && y - y0 < (y1 - y0) * 0.5 && rng() < 0.45) c = hi;
+          if (y >= y1 - 2 && side > -0.6 && rng() < 0.7) c = pal[0];
           if (rng() < 0.06) c = pal[0];
           r(x, y, 1, 1, c);
         }
@@ -380,7 +500,8 @@ function pineSpr(h, rng, pal) {
 // Leafy tree: a lumpy round crown lit from the top left, on a short trunk.
 function oakSpr(h, rng, autumn) {
   const w = Math.round(h * 0.95) | 1, cr = w / 2 - 0.5, th = Math.round(h * 0.32);
-  const pal = autumn ? ['#2a1a10', '#4a2a16', '#6e3f1e', '#94582a'] : ['#18240f', '#26361a', '#384d25', '#506633'];
+  const pal = autumn ? ['#2a1a10', '#4a2a16', '#6e3f1e', '#94582a', '#b8763a'] : ['#18240f', '#26361a', '#384d25', '#506633', '#6a8040'];
+  const seed = (rng() * 1000) | 0;
   const lumps = [];
   for (let k = 0; k < 6; k++) lumps.push([rng() * TAU, 0.18 + rng() * 0.16]);
   return pix(w, h, (r) => {
@@ -393,8 +514,10 @@ function oakSpr(h, rng, autumn) {
       for (const [la, lr] of lumps) rim += lr * Math.max(0, Math.cos(a - la)) * 0.45;
       const d = Math.hypot(dx, dy);
       if (d > rim) continue;
-      const l = -dx * 0.55 - dy * 0.85 + (rng() - 0.5) * 0.45 + (rim - d) * 0.2;
-      r(x, y, 1, 1, l > 0.62 ? pal[3] : l > 0.12 ? pal[2] : l > -0.45 ? pal[1] : pal[0]);
+      // light from the top left, leaf clumps, a dark underside
+      let l = -dx * 0.55 - dy * 0.85 + (rng() - 0.5) * 0.35 + (rim - d) * 0.2 + (vnoise(x / 2.3, y / 2.3, seed) - 0.5) * 0.7;
+      if (dy > 0.45) l -= (dy - 0.45) * 1.2;
+      r(x, y, 1, 1, l > 1.0 ? pal[4] : l > 0.6 ? pal[3] : l > 0.1 ? pal[2] : l > -0.45 ? pal[1] : pal[0]);
     }
   });
 }
@@ -406,7 +529,7 @@ function deadSpr(h, rng) {
     r(cx, h - Math.round(h * 0.6), 2, Math.round(h * 0.6), '#3d342c'); r(cx, h - Math.round(h * 0.6), 1, Math.round(h * 0.6), '#5a4e42');
     const branch = (x, y, len, dir, depth) => {
       const x1 = x + Math.round(Math.cos(dir) * len), y1 = y - Math.round(Math.abs(Math.sin(dir)) * len);
-      pl(g, x, y, x1, y1, depth ? '#4a4038' : '#3d342c');
+      pl(g, x, y, x1, y1, depth ? '#5e5244' : '#6e6252');
       if (depth < 2) for (let k = 0; k < 2; k++) branch(x1, y1, len * 0.6, dir + (k ? 0.6 : -0.6) + (rng() - 0.5) * 0.3, depth + 1);
     };
     const top = h - Math.round(h * 0.6);
@@ -621,10 +744,10 @@ const NODE_ART = {
 function initSprites() {
   const rng = mulberry(2024);
   // the dead: 8 walkers, 4 runners and 3 brutes, each in its own clothes
-  const pal = (k) => ({ sk: ZSKIN[k % 4], sh: ZSHIRT[(k * 5 + 1) % 6], pa: ZPANTS[(k * 2) % 3], hr: ZHAIR[(k * 3) % 4] });
-  for (let k = 0; k < 8; k++) ZS[0].push(makeZSet(9, 16, dWalker, pal(k), 7));
-  for (let k = 0; k < 4; k++) ZS[1].push(makeZSet(10, 14, dRunner, pal(k + 3), 6));
-  for (let k = 0; k < 3; k++) ZS[2].push(makeZSet(15, 21, dBrute, pal(k + 1), 12));
+  const pal = (k) => ({ sk: ZSKIN[k % 6], sh: ZSHIRT[(k * 7 + 1) % 10], pa: ZPANTS[(k * 3) % 4], hr: ZHAIR[(k * 5) % 6] });
+  for (let k = 0; k < 12; k++) ZS[0].push(makeZSet(9, 16, dWalker, pal(k), 7));
+  for (let k = 0; k < 6; k++) ZS[1].push(makeZSet(10, 14, dRunner, pal(k + 3), 6));
+  for (let k = 0; k < 4; k++) ZS[2].push(makeZSet(15, 21, dBrute, pal(k + 1), 12));
   // trees and scenery
   const PINE = [['#142018', '#1d2b20', '#2f4229'], ['#101a14', '#18241b', '#283a26'], ['#1a261c', '#243323', '#35492d']];
   for (let k = 0; k < 10; k++) PROPS.pine.push(prop(pineSpr(24 + ((rng() * 16) | 0), rng, PINE[k % 3]), 3, { tree: true }));
@@ -646,10 +769,11 @@ function initSprites() {
   TRAIN.length = 0;
   FOOT.length = 0;
   for (const [make, heat] of [[locoSlices, 150], [coachSlices, 100], [flatSlices, 60], [boxSlices, 75], [tankSlices, 55]]) {
-    const sl = make(), t = { n: [], h: [], red: [], tall: sl.length };
+    const sl = make(), t = { n: [], h: [], red: [], foot: [], tall: sl.length };
     for (let i = 0; i < ANG_N; i++) {
       const raw = stackSpr(sl, angOf(i));
-      const n = selOut(rimLight(raw, '#e8e2cc', 0.15));
+      const n = selOut(rimLight(raw, '#f0e6cc', 0.3));
+      t.foot.push(footSpr(angOf(i), sl.length - 1));
       n.ox = 19;
       n.oy = 19 + sl.length;
       const h = outline(hotSpr(raw, heat), '#161616');
@@ -664,7 +788,8 @@ function initSprites() {
   SURV.length = 0;
   for (const [shirt, skin] of [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#5c6b40', '#b8876a'], ['#7d776b', '#d1a582'],
     ['#9fd3f2', '#c99a72'], ['#e3b04b', '#8a6448']]) {
-    const one = (f) => { const raw = survivorRaw(shirt, skin, f); return [outline(raw, '#07080a'), outline(hotSpr(raw, 215), '#161616')]; };
+    const hat = ['#2e2620', '#4a5a34', '#7a3a24', '#2e2620', '#c4b088', '#3a3e48'][SURV.length];
+    const one = (f) => { const raw = survivorRaw(shirt, skin, f, hat); return [outline(raw, '#07080a'), outline(hotSpr(raw, 215), '#161616')]; };
     const [n, h] = one(0);
     SURV.push({ n, h, run: [one(1), one(2)] });
   }
@@ -735,4 +860,5 @@ function initSprites() {
   // the same for the run's new sprites: the Ram card's icon (the rail cannon's are in cannon.js)
   for (const c of [ICON.ram, ICON.ramOff]) atl(c);
   for (let i = 0; i < ANG_N; i++) atl(carGlow(TRAIN[0], i));
+  initScenery();
 }

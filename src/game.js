@@ -1059,6 +1059,7 @@ function ramFx() {
       vx: c.nx * s * rnd(30, 60) + c.dx * tr.v * 0.9, vy: c.ny * s * rnd(30, 60) + c.dy * tr.v * 0.9, vz: rnd(6, 16), g: 0,
       life: rnd(0.4, 0.7), max: 0.7, s: rnd(2, 3), c: pick(['rgba(126,108,84,0.5)', 'rgba(104,90,70,0.5)']), grow: 5, drag: 3, smoke: true });
   }
+  juiceRamFx();
 }
 // The Ram is over (cut = a station is near: BRAKES!). Its rank and what it paid; after the first
 // run's taste, the boiler cracks.
@@ -1177,6 +1178,7 @@ function kill(z, cause, cx, cy, dist, free) {
     if (!G.demo) SFX.splat();
   }
   z.paid = pay;
+  juiceKill(z, cause, cx, cy);
   if (z.gold) goldKill(z, sc);
   if (sc && (Math.random() < 0.3 || z.big) && coins.length < 45) coins.push({ x0: z.x - G.camX, y0: z.y - G.camY - 8, t: 0, T: rnd(0.55, 0.8) });
   if (z.big && !G.demo) {
@@ -1189,6 +1191,7 @@ function kill(z, cause, cx, cy, dist, free) {
 function hitZombie(z, dmg, cause) {
   z.hp -= dmg != null ? dmg : G.demo ? 1 : G.up.dmg;
   z.flash = 0.1;
+  juiceHit(z, cause);
   if (z.hp <= 0) {
     kill(z, cause || 'mg', 0, 0, 0);
     return true;
@@ -1203,11 +1206,12 @@ function hitZombie(z, dmg, cause) {
 // ones it killed (for CHAIN SHOT and the hit-stop).
 const NEAR = [], KILLED = [];
 function mgImpact(r) {
-  const x = r.bx, y = r.by, T = r.tgt;
+  const x = r.bx, y = r.by, T = r.tgt, from = r.h ? [r.h.x, r.h.y] : null;
   let hits = 0;
   KILLED.length = 0;
   if (T) T.pending = Math.max(0, T.pending - G.up.dmg);
   if (T && !T.dead && Math.hypot(T.x - x, (T.y - y) / FORE) < 6) {
+    JUICE.from = from; // the blood flies away from the heli that shot
     if (hitZombie(T)) KILLED.push(T);
     hits++;
   }
@@ -1221,10 +1225,12 @@ function mgImpact(r) {
   for (const z of NEAR) {
     if (hits >= CFG.mg.victims) break;
     if (!z.dead) {
+      JUICE.from = from;
       if (hitZombie(z)) KILLED.push(z);
       hits++;
     }
   }
+  JUICE.from = null;
   if (hits && r.player) {
     G.hits++;
     G.hitT = 0.12;
@@ -1277,6 +1283,7 @@ function boomFx(x, y, big) {
     flames.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r * FORE, life: rnd(3, 7), seed: rnd(100) });
   }
   stampScorch(x, y, 3);
+  juiceBoom(x, y, big);
 }
 // The 105 lands: everything near dies, the edge of the blast throws the rest back. Too close to
 // the train, the blast hurts the train as well; it kills survivors on foot too.
@@ -1512,6 +1519,8 @@ function step(dt) {
   updateFireSpots(dt);
   updateSkills(dt);
   if (!G.demo) updateLoot(dt);
+  updateJuice(dt);
+  updateScenery(dt);
   updateFX(dt);
   // every 3 s the marks on the ground fade a little
   G.decalT += dt;

@@ -116,6 +116,7 @@ function buildStop(def, s, side, n, hold) {
       sv: SURV[i % SURV.length], anim: rnd(2), left: Math.random() < 0.5, k: 0, by: null, gt: 0 });
   }
   if (def !== DEPOT) buildCorn(st);
+  dressStop(st);
   G.stops.push(st);
   return st;
 }
