@@ -155,7 +155,7 @@ function nextLabel() {
     const m = w.km - k;
     if (m < 0.15 && m > -CFG.wall.len / CFG.line.km) return [m > 0.005 ? 'DEAD WALL ' + fmtM(m) : 'DEAD WALL!', U.red];
   }
-  if (st && st.state === 'boarding') return ['AT ' + st.name, U.green];
+  if (st && st.state === 'hold') return ['AT ' + st.name, U.green];
   if (st) return ['NEXT: ' + st.name + ' ' + fmtM(Math.max(0, kmAt(st.s) - k)), U.blue];
   return ['SAFE ZONE ' + fmtM(Math.max(0, CFG.line.end - k)), U.green];
 }
@@ -203,25 +203,24 @@ function drawRoute(x0, x1) {
   }
   blit(ICON.flag, X(end) + 3, 3);
   // the train: a pale block that blinks while it stands at a station
-  const tx = X(k1), stop = G.station && G.station.state === 'boarding';
+  const tx = X(k1), stop = G.station && G.station.state === 'hold';
   ctx.fillStyle = '#07080a';
   ctx.fillRect(tx - 2, y - 3, 5, 7);
   ctx.fillStyle = stop && Math.floor(realT * 3) % 2 ? U.green : '#e8dfc8';
   ctx.fillRect(tx - 1, y - 2, 3, 5);
 }
 // warnings under the top bar: the dead on the track or on the train, the helicopter too far away,
-// the survivors boarding
+// the station hold
 function drawWarnings() {
   if (G.result) return;
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', st = G.station, L = [];
   if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (E: RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
   if (G.heli.far) L.push(['RADIO RANGE LIMIT  (F: BACK)', U.amber]);
-  if (st && st.state === 'boarding') {
-    if (st.people) L.push(['SURVIVORS ABOARD ' + st.saved + ' / ' + st.people, U.green]);
-    if (st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
-  }
-  L.forEach(([t, c], i) => text(t, W / 2, 24 + i * 10, c, { align: 'center' }));
+  // the station hold: its bar and the survivors come first (stationtab.js)
+  const y = drawHoldBar(24);
+  if (st && st.state === 'hold' && st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
+  L.forEach(([t, c], i) => text(t, W / 2, y + i * 10, c, { align: 'center' }));
 }
 // An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
 // with a label just inside it.

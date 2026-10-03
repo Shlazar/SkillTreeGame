@@ -237,6 +237,7 @@ function endGame() {
   M.px = M.py = -1e4;
   // where the run ended (the train may roll on a little after it is lost; that does not count)
   const k = G.maxKm;
+  refillHouses();
   bankRun();
   G.sum = {
     result: G.result, km: km2(k), ride: km2(G.ride / CFG.line.km), kills: G.kills, pay: Object.assign({}, G.pay),
@@ -497,7 +498,7 @@ function scatter(at) {
 // More of the dead come as the train goes: side packs while there are fewer than the horde wants
 // (none while the train stands at a station), and now and then a crowd on the rails ahead.
 function spawn(dt) {
-  const st = G.station, stopped = st && st.state === 'boarding', h = G.demo ? null : horde(DK());
+  const st = G.station, stopped = st && st.state === 'hold', h = G.demo ? null : horde(DK());
   G.spawnCd -= dt;
   if (G.spawnCd <= 0 && !stopped && G.zombies.length < (h ? h.want : 300)) {
     sidePack(h ? rndi(h.side, h.side + 4) : rndi(3, 7), -420, 80);
@@ -700,7 +701,8 @@ function updateZombies(dt) {
     // where to walk: after a survivor, down the rails, onto the rails ahead, to the train's side,
     // or after the train
     let tx, ty;
-    const prey = z.st === 0 && !z.gold ? preyNear(z, 70) : null;
+    // (runners hunt survivors from further away; golden zombies only run)
+    const prey = z.st === 0 && !z.gold ? preyNear(z, z.run ? 120 : 70) : null;
     if (z.gold) [tx, ty] = goldFlee(z);
     else if (prey) {
       tx = prey.x;
@@ -1644,7 +1646,7 @@ function step(dt) {
       tr.v = 0;
       trainStops(st);
     }
-  } else if (st && st.state === 'boarding') tr.v = 0;
+  } else if (st && st.state === 'hold') tr.v = 0;
   else {
     // the Turbo Ram: up to its top speed in 0.4 s, then back down to the cruise over 1 s (also after
     // a Ram cut short). Otherwise the train gets back up to its cruise.

@@ -1451,6 +1451,8 @@ function plan(ci, cj) {
   pl = { props: [], flats: [], tufts: [], fires: [], block: [] };
   const take = (list) => list[(rng() * list.length) | 0];
   const put = (def, x, y, o) => {
+    // (nothing stands on a station's ground)
+    if (stationZone(x, y)) return null;
     const p = Object.assign({ d: def, x: Math.round(x), y: Math.round(y) }, o || {});
     p.k = p.y;
     pl.props.push(p);
@@ -2645,6 +2647,7 @@ function endGame() {
   M.px = M.py = -1e4;
   // where the run ended (the train may roll on a little after it is lost; that does not count)
   const k = G.maxKm;
+  refillHouses();
   bankRun();
   G.sum = {
     result: G.result, km: km2(k), ride: km2(G.ride / CFG.line.km), kills: G.kills, pay: Object.assign({}, G.pay),
@@ -2905,7 +2908,7 @@ function scatter(at) {
 // More of the dead come as the train goes: side packs while there are fewer than the horde wants
 // (none while the train stands at a station), and now and then a crowd on the rails ahead.
 function spawn(dt) {
-  const st = G.station, stopped = st && st.state === 'boarding', h = G.demo ? null : horde(DK());
+  const st = G.station, stopped = st && st.state === 'hold', h = G.demo ? null : horde(DK());
   G.spawnCd -= dt;
   if (G.spawnCd <= 0 && !stopped && G.zombies.length < (h ? h.want : 300)) {
     sidePack(h ? rndi(h.side, h.side + 4) : rndi(3, 7), -420, 80);
@@ -3108,7 +3111,8 @@ function updateZombies(dt) {
     // where to walk: after a survivor, down the rails, onto the rails ahead, to the train's side,
     // or after the train
     let tx, ty;
-    const prey = z.st === 0 && !z.gold ? preyNear(z, 70) : null;
+    // (runners hunt survivors from further away; golden zombies only run)
+    const prey = z.st === 0 && !z.gold ? preyNear(z, z.run ? 120 : 70) : null;
     if (z.gold) [tx, ty] = goldFlee(z);
     else if (prey) {
       tx = prey.x;
@@ -4052,7 +4056,7 @@ function step(dt) {
       tr.v = 0;
       trainStops(st);
     }
-  } else if (st && st.state === 'boarding') tr.v = 0;
+  } else if (st && st.state === 'hold') tr.v = 0;
   else {
     // the Turbo Ram: up to its top speed in 0.4 s, then back down to the cruise over 1 s (also after
     // a Ram cut short). Otherwise the train gets back up to its cruise.
@@ -4165,93 +4169,235 @@ function step(dt) {
 }
 
 // station.js - the stops on the fixed line: the Depot where every run from home starts, and the
-// stations further up, each at its own km. At a station the train brakes with its passenger car at
-// the station house, the survivors run for the train while the heli covers them, and the train
-// leaves when they are aboard. Each one aboard is +1 survivor to keep; the stop pays scrap too.
-// (Holding a station against waves, and the towers built there, will live in this file as well.)
+// stations further up, each at its own km. At a station the train stops with its passenger car at
+// the station house and HOLDS: for a set time the dead come out of the corn in waves, the survivors
+// run from the house to the train, and the towers you built there (towers.js) fight beside you.
+// Each survivor aboard is +1 survivor to keep; the hold pays scrap too.
 
-// the Depot, and the stations: id, name, km from the Depot, survivors waiting on a first visit
-const DEPOT = { id: 'depot', name: 'DEPOT', km: 0 };
-const STATIONS = [
-  { id: 'farm', name: 'FARM STOP', km: 1, people: 8 },
-  { id: 'mill', name: 'MILL TOWN', km: 2, people: 10 }
+// The station grid: 14 columns (0 = west) x 9 rows (0 = north, the way the train goes). One tile is
+// 16 x 16 world px. = rails (the parked train), P platform, L lamp, ~ the door path, H the house,
+// . free to build on. Farm Stop has its house east; Mill Town is the mirror of it.
+const GRID_C = 14, GRID_R = 9, TILE = 16;
+const FARM_MAP = [
+  '......==......',
+  '......==P.....',
+  '......==L.....',
+  '......==P~~HH.',
+  '......==P~~HH.',
+  '......==P.....',
+  '......==L.....',
+  '......==P.....',
+  '......==......'
 ];
+const mirrorMap = (m) => m.map((r) => r.split('').reverse().join(''));
+// a later visit (and a run that starts at the station): 25 s, 3 survivors (they leave the house at
+// 2, 8 and 14 s), the 20 dead waiting there, waves that start at the near edge of the corn (px from
+// the rail middle). Wave side: -1 = the side away from the house, 1 = the house side, 0 = both.
+// w / r / b = walkers, runners, brutes. brute = px out on the house side where the brute starts.
+const HOLD_LATER = {
+  T: 25, people: 3, outs: [2, 8, 14], dead: 20, far: [120, 140], brute: 120,
+  waves: [{ t: 0, side: -1, w: 30, r: 0, b: 0 }, { t: 6, side: 1, w: 32, r: 6, b: 0 }, { t: 11, side: 0, w: 42, r: 8, b: 1 }]
+};
+const DEPOT = { id: 'depot', name: 'DEPOT', km: 0 };
+// side = where the house is (1 = east of the rails). kit = the free towers the people there built:
+// [type, column, row]. first = the first hold (out0 + i x gap = when survivor i leaves the house).
+const STATIONS = [
+  { id: 'farm', name: 'FARM STOP', km: 1, side: 1, map: FARM_MAP,
+    kit: [['nest', 4, 4], ['bag', 2, 0], ['bag', 2, 1], ['bag', 2, 2], ['bag', 2, 6], ['bag', 2, 7], ['bag', 2, 8]],
+    first: { T: 40, people: 8, out0: 2, gap: 4.5, dead: 20, far: [150, 200], brute: 140,
+      waves: [{ t: 0, side: -1, w: 35, r: 0, b: 0 }, { t: 10, side: 1, w: 39, r: 6, b: 0 }, { t: 20, side: 0, w: 52, r: 8, b: 1 }] },
+    later: HOLD_LATER },
+  { id: 'mill', name: 'MILL TOWN', km: 2, side: -1, map: mirrorMap(FARM_MAP),
+    kit: [['nest', 9, 4], ['bag', 11, 0], ['bag', 11, 1], ['bag', 11, 2], ['bag', 11, 6], ['bag', 11, 7], ['bag', 11, 8]],
+    first: { T: 50, people: 10, out0: 2, gap: 4.5, dead: 20, far: [150, 200], brute: 140,
+      waves: [{ t: 0, side: -1, w: 44, r: 0, b: 0 }, { t: 12, side: 1, w: 49, r: 8, b: 0 }, { t: 24, side: 0, w: 65, r: 10, b: 1 }] },
+    later: HOLD_LATER }
+];
+// the rows the dead walk in on (the lanes), how near the door the dead keep a survivor inside (px)
+// and for how long at most (s), how long the train waits for the last survivors after the time is
+// up (s), the HP the crew repairs on stopping, the scrap a hold pays (first / later), px from the
+// stop where the dead waiting there are placed and where they start to walk, the seconds after a
+// wave starts when its runners step out of the corn
+const HOLD = { runners: [3, 6], lanes: [1, 7], clear: 34, wait: 3, extra: 8, repair: 20, pay: 50, payAgain: 25, place: 600, walk: 200 };
 // px from a stop's house (along the rails) to where the engine's nose stops: the passenger car
 // (car 1) then stands at the house
 const STOP_OFF = CAR.L + CAR.gap + CAR.L / 2;
 // a stop by its id ('depot' too)
 const stopDef = (id) => (id === 'depot' ? DEPOT : STATIONS.find((d) => d.id === id) || null);
+// what is on tile (c, r) of station def: '=', 'P', 'L', '~', 'H' or '.' ('#' = off the grid)
+const tileAt = (def, c, r) => (c < 0 || r < 0 || c >= GRID_C || r >= GRID_R ? '#' : def.map[r][c]);
+const sideName = (s) => (s < 0 ? 'WEST' : s > 0 ? 'EAST' : 'BOTH');
+
+// Tile (c, r) of the station whose house is at s along the rails -> the world. The rails run
+// between columns 6 and 7; the coach door is between rows 3 and 4. c, r may be fractions (tile
+// middles are at whole numbers). The grid bends with the rails.
+function gridToWorld(c, r, s) {
+  const a = s + (r - 3.5) * TILE, y0 = yAtS(a, yOfS(a)), fp = trackSlope(y0), k = 1 / Math.sqrt(1 + fp * fp);
+  const u = (c - 6.5) * TILE;
+  return { x: trackX(y0) + k * u, y: y0 - fp * k * u };
+}
 
 // The stops of a real run that starts at station at (or at the Depot when at is null): the Depot
 // beside the train, every station from the start on, and the Dead Walls ahead.
 function buildLine(at) {
   const k0 = at ? at.km : 0;
+  G.trounds = [];
   if (!at) {
-    const dp = buildStop(DEPOT, DEPOT_S + STOP_OFF, -1, 0);
+    const dp = buildStop(DEPOT, DEPOT_S + STOP_OFF, 1, 0, null);
     dp.state = 'done';
   }
   for (const d of STATIONS) {
     if (d.km < k0) continue;
-    const first = !SAVE.held.includes(d.id);
-    const st = buildStop(d, sAtKm(d.km), 1, first ? d.people : CFG.station.again);
+    // a run that starts here, and every visit once it is held, gets the later hold
+    const start = at === d, first = !start && !SAVE.held.includes(d.id), h = SAVE.house[d.id];
+    const n = first ? d.first.people : typeof h === 'number' ? clamp(h | 0, 0, HOLD_LATER.people) : HOLD_LATER.people;
+    const st = buildStop(d, sAtKm(d.km), d.side, n, first ? d.first : d.later);
     st.first = first;
+    st.start = start;
+    buildTowers(st);
     G.stations.push(st);
   }
   G.station = G.stations[0] || null;
   for (const w of WALLS) if (w.km > k0) G.walls.push({ km: w.km, walkers: w.walkers, brutes: w.brutes, s: sAtKm(w.km), placed: false, warned: false, awake: false, zs: [] });
 }
 // A stop with its house at s along the rails: a platform, the house and two lamps on one side of
-// the rails (side 1 = east, -1 = west), and n survivors waiting by the door.
-function buildStop(def, s, side, n) {
-  const y = yOfS(s), c = trackLocal(trackX(y), y, {}).c, fp = trackSlope(y);
-  const nx = c * side, ny = -fp * c * side;                       // away from the rails, on that side
-  const hx = trackX(y) + nx * 74, hy = y + ny * 74;
+// the rails (side 1 = east, -1 = west), and n survivors waiting by the door. hold = its hold plan.
+function buildStop(def, s, side, n, hold) {
+  const y = yOfS(s), col = (c) => 6.5 + side * (c - 6.5);
+  const hp = gridToWorld(col(11.5), 4.1, s), hx = hp.x, hy = hp.y;
   const st = {
-    def, id: def.id, name: def.name, s, stopS: s - STOP_OFF, y, state: 'ahead', t: 0, warned: false, first: false,
-    people: n, saved: 0, lost: 0, blockedT: 0, house: { x: hx, y: hy }, door: { x: hx, y: hy + 4 }
+    def, id: def.id, name: def.name, s, stopS: s - STOP_OFF, y, side, state: 'ahead', t: 0, warned: false, first: false,
+    start: false, hold, people: n, saved: 0, lost: 0, blockedT: 0, house: { x: hx, y: hy }, door: { x: hx, y: hy + 3 },
+    wave: 0, waveT: -9, waveSide: 0, queue: [], deadPlaced: false, deadZs: [], awake: false, towers: [], nests: [], bags: [], wires: [], perfect: false
   };
-  for (let a = -66; a <= 66; a += 12) {
-    const yy = yAtS(s + a, y + a), fpp = trackSlope(yy), cc = 1 / Math.sqrt(1 + fpp * fpp);
-    const x = Math.round(trackX(yy) + cc * 18 * side), py = Math.round(yy - fpp * cc * 18 * side);
-    G.statics.push({ d: STATION.slab, x, y: py, k: py });
+  // the platform slabs (column 8, rows 1 to 7) and the lamps (rows 2 and 6)
+  for (let r = 0.75; r <= 7.3; r += 0.75) {
+    const p = gridToWorld(col(8), r, s);
+    G.statics.push({ d: STATION.slab, x: Math.round(p.x), y: Math.round(p.y), k: Math.round(p.y) - 4 });
   }
-  for (const a of [-44, 44]) {
-    const yy = yAtS(s + a, y + a), x = Math.round(trackX(yy) + 26 * side);
-    G.statics.push({ d: STATION.lamp, x, y: Math.round(yy), k: Math.round(yy), lamp: true });
+  for (const r of [2, 6]) {
+    const p = gridToWorld(col(8), r, s);
+    G.statics.push({ d: STATION.lamp, x: Math.round(p.x), y: Math.round(p.y), k: Math.round(p.y), lamp: true });
   }
   G.statics.push({ d: STATION.house, x: Math.round(hx), y: Math.round(hy), k: Math.round(hy) });
+  const go = (i) => (!hold ? 0.6 + i : hold.outs ? hold.outs[i] : hold.out0 + i * hold.gap);
   for (let i = 0; i < n; i++) {
-    G.people.push({ person: true, stop: st, x: hx + rnd(-8, 8), y: hy + rnd(3, 7), st: 'wait', go: 0.6 + i * CFG.station.gap,
+    G.people.push({ person: true, stop: st, x: hx + rnd(-8, 8), y: hy + rnd(2, 5), st: 'wait', go: go(i),
       sv: SURV[i % SURV.length], anim: rnd(2), left: Math.random() < 0.5, k: 0, by: null, gt: 0 });
   }
+  if (def !== DEPOT) buildCorn(st);
   G.stops.push(st);
   return st;
 }
-// The train has stopped at station st: it counts as reached (a run can start here from now on).
+// true when (x, y) is on a station's ground (its grid and the corn round it): no trees or poles there
+const SZ = { u: 0, a: 0, c: 1 };
+function stationZone(x, y) {
+  for (const d of STATIONS) {
+    const s = sAtKm(d.km);
+    if (d.y0 == null) d.y0 = yOfS(s);
+    if (Math.abs(y - d.y0) > 150) continue;
+    trackLocal(x, y, SZ);
+    if (Math.abs(SZ.a - s) < 112 && Math.abs(SZ.u) < 214) return true;
+  }
+  return false;
+}
+
+// ---------- the hold
+// The train has stopped at station st: the crew repairs it, the station counts as reached, and the
+// hold begins.
 function trainStops(st) {
-  st.state = 'boarding';
+  st.state = 'hold';
   st.t = 0;
+  st.awake = true;
+  const tr = G.tr;
+  tr.hp = Math.min(tr.max, tr.hp + HOLD.repair);
+  tr.hpShown = Math.max(tr.hpShown, tr.hp);
+  floatText(tr.cars[0].cx, tr.cars[0].cy - 18, '+' + HOLD.repair + ' HP REPAIRED', U.green);
   if (!SAVE.reached.includes(st.id)) {
     SAVE.reached.push(st.id);
     saveSave();
   }
-  banner(st.name, st.people ? 'COVER THE SURVIVORS. THEY RUN FOR THE TRAIN.' : 'NOBODY IS LEFT HERE', U.green, 3);
-  SFX.radio();
+  const T = st.hold.T;
+  banner('HOLD THE STATION', T + ' SECONDS. ' + (st.people ? 'SAVE THE SURVIVORS.' : 'THE HOUSE IS EMPTY.'), U.green, 3);
+  SFX.bell();
+  if (typeof tutEvent === 'function') tutEvent('hold_start', { id: st.id, first: st.first });
 }
-// Everyone is aboard: the stop pays, and the train leaves for the next station.
+// The hold is over: the stop pays, PERFECT HOLD when no survivor was lost, and the train leaves.
 function trainLeaves(st) {
   st.state = 'done';
-  const pay = st.first ? CFG.pay.stop : CFG.pay.stopAgain, c = G.tr.cars[1];
+  // anyone still out there is left behind; anyone still in the house waits for the next train
+  let home = 0;
+  for (const p of G.people) {
+    if (p.stop !== st) continue;
+    if (p.st === 'run' || p.st === 'grab') {
+      p.st = 'dead';
+      st.lost++;
+    } else if (p.st === 'wait') home++;
+  }
+  SAVE.house[st.id] = home;
+  const firstHeld = !SAVE.held.includes(st.id), pay = st.first ? HOLD.pay : HOLD.payAgain, c = G.tr.cars[1];
   G.cash += pay;
   G.pay.stop += pay;
   G.stopNames.push(st.name);
   addTotal(c.cx, c.cy - 16, pay, U.gold, true);
-  if (st.first && !SAVE.held.includes(st.id)) {
-    SAVE.held.push(st.id);
-    saveSave();
-  }
-  banner('ALL ABOARD', (st.people ? st.saved + ' OF ' + st.people + ' SURVIVORS SAVED.  ' : '') + '+' + pay + ' SCRAP', U.green, 3);
+  st.perfect = st.people > 0 && st.lost === 0 && st.saved === st.people;
+  if (firstHeld) SAVE.held.push(st.id);
+  saveSave();
+  banner('STATION HELD!', (st.people ? st.saved + ' OF ' + st.people + ' SURVIVORS ABOARD.  ' : '') + '+' + pay + ' SCRAP', U.green, 3);
   SFX.horn();
+  if (st.perfect) {
+    G.surv++;
+    later(2.3, () => {
+      banner('PERFECT HOLD!', '+1 SURVIVOR. NOBODY WAS LOST.', U.gold, 3);
+      SFX.saved();
+      floatText(G.tr.cars[1].cx, G.tr.cars[1].cy - 20, '+1 SURVIVOR', U.gold);
+    });
+  }
+  if (firstHeld) later(st.perfect ? 4.6 : 2.3, () => banner(st.name + ' IS YOURS', 'BUILD ITS TOWERS IN THE DEPOT.', U.teal, 3));
+  if (typeof tutEvent === 'function') tutEvent('station_held', { id: st.id, first: st.first, perfect: st.perfect, saved: st.saved, total: st.people });
+}
+// At the end of a run. A hold cut short leaves its house with the survivors still inside. After a
+// run that rode 0.5 km or more, every station house reached fills up to 3 survivors again.
+function refillHouses() {
+  if (!G || G.demo) return;
+  const st = G.station;
+  if (st && st.state === 'hold') SAVE.house[st.id] = G.people.filter((p) => p.stop === st && p.st === 'wait').length;
+  if (G.ride >= CFG.line.km * 0.5) {
+    for (const id of SAVE.reached) SAVE.house[id] = Math.max(SAVE.house[id] | 0, HOLD_LATER.people);
+  }
+  saveSave();
+}
+
+// ---------- the dead at a station
+// The dead who wait at the station: they stand about the grid until the train comes near.
+function placeStationDead(st) {
+  st.deadPlaced = true;
+  if (st.start) return;
+  for (let i = 0; i < st.hold.dead; i++) {
+    const p = gridToWorld(6.5 + (Math.random() < 0.5 ? -1 : 1) * rnd(2.2, 6), rnd(-0.3, 8.3), st.s);
+    const z = makeZombie(p.x, p.y, 0);
+    z.still = true;
+    G.zombies.push(z);
+    st.deadZs.push(z);
+  }
+}
+// Wave n out of the corn: its walkers, runners and brute walk in along the two lanes (rows 1 and
+// 7) of its side, or of both sides. They step out of the corn over a few seconds (the walkers
+// first, the runners a little after, while the survivors are on their way).
+function laneWave(st, w, n) {
+  const H0 = st.hold, side = w.side * st.side, q = st.queue;
+  const one = (type, sd, far, d) => q.push({ t: st.t + d, type, sd, far });
+  const sideOf = (i) => side || (i & 1 ? 1 : -1);
+  for (let i = 0; i < w.w; i++) one(0, sideOf(i), rnd(H0.far[0], H0.far[1]), rnd(0, 3));
+  for (let i = 0; i < w.r; i++) one(1, sideOf(i), rnd(H0.far[0], H0.far[1]), rnd(HOLD.runners[0], HOLD.runners[1]));
+  for (let i = 0; i < w.b; i++) one(2, st.side, H0.brute, 1);
+  st.wave = n;
+  st.waveT = st.t;
+  st.waveSide = side;
+  const sub = w.b ? 'A BRUTE IS COMING!' : w.r ? 'RUNNERS GO FOR THE SURVIVORS!' : w.w + ' DEAD OUT OF THE CORN';
+  banner('WAVE ' + n + '  ' + (side < 0 ? '< WEST' : side > 0 ? 'EAST >' : '< BOTH >'), sub, U.red, 2);
+  SFX.wave();
+  if (typeof tutEvent === 'function') tutEvent('wave', { n, side: sideName(side) });
 }
 
 // ---------- the survivors
@@ -4261,9 +4407,11 @@ function grabPerson(p, z) {
   p.st = 'grab';
   p.by = z;
   p.gt = CFG.station.grab;
+  p.stop.grabs = (p.stop.grabs | 0) + 1;
   if (!G.demo) {
     floatText(p.x, p.y - 8, 'HELP!', U.red);
     SFX.hit();
+    if (typeof tutEvent === 'function') tutEvent('survivor_grabbed', {});
   }
 }
 function catchPerson(p) {
@@ -4275,70 +4423,413 @@ function catchPerson(p) {
   if (!G.demo) {
     floatText(p.x, p.y - 6, 'SURVIVOR DOWN', U.red);
     SFX.splat();
+    if (typeof tutEvent === 'function') tutEvent('survivor_lost', {});
   }
 }
-// The next stop: the warning, the braking point, and the survivors running for the train.
+// The next stop: the dead waiting there, the warning, the braking point, and the hold.
 function updateStation(dt) {
+  if (G.demo) return;
+  updateTowers(dt);
   let st = G.station;
   if (st && st.state === 'done') st = G.station = G.stations.find((s) => s.state !== 'done') || null;
   if (!st) return;
-  const tr = G.tr;
+  const tr = G.tr, d = tr.s - st.stopS;
+  if (!st.deadPlaced && d < HOLD.place) placeStationDead(st);
+  if (st.deadZs.length && d < HOLD.walk) {
+    for (const z of st.deadZs) z.still = false;
+    st.deadZs.length = 0;
+  }
   if (st.state === 'ahead') {
-    if (!st.warned && tr.s - st.stopS < 260) {
+    if (!st.warned && d < 260) {
       st.warned = true;
-      banner(st.name + ' AHEAD', st.people ? st.people + ' SURVIVORS WAIT THERE' : 'THE TRAIN STOPS THERE', U.blue, 3);
+      banner(st.name + ' AHEAD', st.towers.length ? 'YOUR TOWERS ARE READY.' : st.people + ' SURVIVORS WAIT THERE', U.blue, 3);
+      if (typeof tutEvent === 'function') tutEvent('station_ahead', { id: st.id });
     }
     // brake to stop with the passenger car at the house
-    if (tr.s - st.stopS < tr.v * tr.v / (2 * CFG.train.brake) + 1) st.state = 'braking';
-  } else if (st.state === 'boarding') {
-    st.t += dt;
-    const c = tr.cars[1], door = { x: c.cx + c.nx * (CAR.half + 2), y: c.cy + c.ny * (CAR.half + 2) };
-    // the next survivor runs once the way out of the door is clear (or, in the end, anyway)
-    let near = false;
-    for (const z of G.zombies) if (!z.dead && Math.hypot(z.x - st.door.x, (z.y - st.door.y) / FORE) < CFG.station.clear) { near = true; break; }
-    let busy = 0, waiting = false;
-    for (const p of G.people) {
-      if (p.stop !== st) continue;
-      if (p.st === 'wait') {
-        busy++;
-        if (st.t >= p.go) {
-          waiting = true;
-          if (!near || st.blockedT > CFG.station.wait) {
-            p.st = 'run';
-            st.blockedT = 0;
-          }
-        }
-        continue;
-      }
-      if (p.st === 'grab') {
-        busy++;
-        if (p.by.dead) p.st = 'run';
-        else if ((p.gt -= dt) <= 0) catchPerson(p);
-        continue;
-      }
-      if (p.st !== 'run') continue;
-      busy++;
-      const dx = door.x - p.x, dy = door.y - p.y, d = Math.hypot(dx, dy);
-      if (d < 3) {
-        p.st = 'in';
-        st.saved++;
-        if (!G.demo) {
-          G.surv++;
-          floatText(p.x, p.y - 6, '+1 SURVIVOR', U.green);
-          SFX.saved();
-        }
-        continue;
-      }
-      p.x += dx / d * CFG.station.run * dt;
-      p.y += dy / d * CFG.station.run * dt;
-      p.left = dx < 0;
-      p.anim += dt * 8;
-    }
-    st.blockedT = waiting && near ? st.blockedT + dt : 0;
-    if (!busy && st.t >= CFG.station.minStop) trainLeaves(st);
-  }
+    if (d < tr.v * tr.v / (2 * CFG.train.brake) + 1) st.state = 'braking';
+  } else if (st.state === 'hold') updateHold(st, dt);
   for (const p of G.people) p.k = p.y;
 }
+function updateHold(st, dt) {
+  st.t += dt;
+  const H0 = st.hold, ws = H0.waves;
+  if (st.wave < ws.length && st.t >= ws[st.wave].t) laneWave(st, ws[st.wave], st.wave + 1);
+  for (let i = st.queue.length - 1; i >= 0; i--) {
+    const o = st.queue[i];
+    if (st.t < o.t) continue;
+    st.queue.splice(i, 1);
+    const p = gridToWorld(6.5 + o.sd * o.far / TILE, pick(HOLD.lanes) + rnd(-0.45, 0.45), st.s);
+    G.zombies.push(makeZombie(p.x, p.y, o.type));
+  }
+  const c = G.tr.cars[1], door = { x: c.cx + c.nx * (CAR.half + 2) * st.side, y: c.cy + c.ny * (CAR.half + 2) * st.side };
+  // the next survivor runs once the way out of the door is clear (or after 3 s anyway)
+  let near = false;
+  queryEll(st.door.x, st.door.y, HOLD.clear, () => { near = true; });
+  let out = 0, waiting = false;
+  for (const p of G.people) {
+    if (p.stop !== st) continue;
+    if (p.st === 'wait') {
+      if (st.t >= p.go) {
+        if (!near || st.blockedT > HOLD.wait) {
+          p.st = 'run';
+          st.blockedT = 0;
+          out++;
+        } else waiting = true;
+      }
+      continue;
+    }
+    if (p.st === 'grab') {
+      out++;
+      if (p.by.dead) p.st = 'run';
+      else if ((p.gt -= dt) <= 0) catchPerson(p);
+      continue;
+    }
+    if (p.st !== 'run') continue;
+    out++;
+    const dx = door.x - p.x, dy = door.y - p.y, dd = Math.hypot(dx, dy);
+    if (dd < 3) {
+      p.st = 'in';
+      st.saved++;
+      G.surv++;
+      floatText(p.x, p.y - 6, '+1 SURVIVOR', U.green);
+      SFX.saved();
+      continue;
+    }
+    p.x += dx / dd * CFG.station.run * dt;
+    p.y += dy / dd * CFG.station.run * dt;
+    p.left = dx < 0;
+    p.anim += dt * 8;
+  }
+  st.blockedT = waiting && near ? st.blockedT + dt : 0;
+  // the time is up: the train goes once nobody is out there (or at the door), at most 8 s later
+  if (st.t >= H0.T && ((!out && !waiting) || st.t >= H0.T + HOLD.extra)) trainLeaves(st);
+}
+// The hold now, for the HUD: null, or the station with the seconds left
+function holdNow() {
+  const st = G && !G.demo ? G.station : null;
+  return st && st.state === 'hold' ? st : null;
+}
+
+// towers.js - what you build at a station, in the run: MG nests that shoot by themselves, sandbags
+// the dead must climb over, barbed wire that slows them. Also the corn round each station (the dead
+// come out of it), the sprites of all of these, and their sounds. What is built where is kept in
+// SAVE.towers[station id] (the Station tab in the Depot edits it, stationtab.js).
+
+// MG NEST: rounds per second come from the tree (G.up.nest), damage, how many zombies one round
+// hits (its target and the nearest within splash px), range (px), round flight time, barrel turn
+// speed. SANDBAGS: blocker radius, seconds of pushing before a zombie climbs over, and how long the
+// climb takes. Prices and limits per station: a nest (the first is free), sandbags (6 free), wire.
+const TOWER = {
+  nest: { dmg: 1, hits: 2, splash: 5, range: 96, travel: 0.07, turn: 12, max: 4, cost: [0, 150, 300, 600], free: 1 },
+  bag: { r: 11, push: 3, climb: 1, max: 24, cost: 10, free: 6 },
+  wire: { max: 12, cost: 15 }
+};
+const TOWER_TYPES = ['nest', 'bag', 'wire'];
+
+// ---------- what is built (the save)
+// The towers at station id: [{t, c, r, paid}], the free kit until anything is changed there.
+function towersOf(id) {
+  const list = SAVE.towers[id];
+  if (Array.isArray(list)) return list.filter((o) => o && TOWER[o.t] && o.c >= 0 && o.c < GRID_C && o.r >= 0 && o.r < GRID_R);
+  const d = stopDef(id);
+  return d && d.kit ? d.kit.map(([t, c, r]) => ({ t, c, r, paid: 0 })) : [];
+}
+// how many of type t stand at station id, and how many of them were free
+const builtOf = (list, t) => list.filter((o) => o.t === t).length;
+// What the next one of type t costs at station id (prices count per station; free kit slots first).
+function towerPrice(list, t) {
+  const n = builtOf(list, t), free = list.filter((o) => o.t === t && !o.paid).length;
+  if (t === 'nest') return free < TOWER.nest.free ? 0 : TOWER.nest.cost[Math.min(n, TOWER.nest.cost.length - 1)];
+  if (t === 'bag') return free < TOWER.bag.free ? 0 : TOWER.bag.cost;
+  return TOWER.wire.cost;
+}
+
+// ---------- the sprites (made when first needed)
+// ART.nest[i] = an MG nest with its gun turned to heading i of NEST_N (0 = north, clockwise);
+// ART.bag, ART.wire, ART.corn[k] = props (sprite + anchor).
+const ART = { nest: [], bag: null, wire: null, corn: [] }, NEST_N = 16;
+function towerArt() {
+  if (ART.bag) return ART;
+  // sandbags: two rows of fat bags, lit from the north-west
+  const bagRow = (r, y, n, x0) => {
+    for (let i = 0; i < n; i++) {
+      const x = x0 + i * 5;
+      r(x, y, 5, 4, '#8f7a4e'); r(x, y, 5, 1, '#c4ad78'); r(x, y + 1, 1, 2, '#ad9662'); r(x + 4, y + 1, 1, 3, '#6e5c3a'); r(x, y + 3, 5, 1, '#5a4a2e');
+    }
+  };
+  ART.bag = prop(outline(pix(15, 8, (r) => { bagRow(r, 4, 3, 0); bagRow(r, 0, 2, 2); r(7, 1, 1, 1, '#d9c48c'); }), '#1c160c'), 0);
+  // barbed wire: two coils on short posts, barbs glinting
+  ART.wire = prop(pix(16, 8, (r) => {
+    r(1, 2, 1, 6, '#4a3a28'); r(14, 2, 1, 6, '#4a3a28');
+    for (let i = 0; i < 4; i++) {
+      const x = 1 + i * 4;
+      r(x, 2, 4, 1, '#8b919c'); r(x, 6, 4, 1, '#5d616b'); r(x, 3, 1, 3, '#7a7f89'); r(x + 3, 3, 1, 3, '#4b4f5a');
+      r(x + 1, 2, 1, 1, '#d6d9de'); r(x + 2, 4, 1, 1, '#b4b9c1');
+    }
+  }), 0);
+  // corn: a clump of stalks with leaves and pale tassels (3 kinds)
+  for (let k = 0; k < 3; k++) {
+    const rng = mulberry(77 + k);
+    ART.corn.push(prop(pix(11, 19, (r) => {
+      for (let s = 0; s < 3; s++) {
+        const x = 2 + s * 3 + ((rng() * 2) | 0), h = 13 + ((rng() * 5) | 0), y0 = 19 - h;
+        r(x, y0, 1, h, s === 1 ? '#5f6b2c' : '#4c5726');
+        for (let y = y0 + 3; y < 17; y += 3 + ((rng() * 2) | 0)) {
+          const d = rng() < 0.5 ? -1 : 1;
+          r(x + d, y, 1, 1, '#76823a'); r(x + d * 2, y + 1, 1, 1, '#56622a');
+        }
+        r(x, y0 - 1, 1, 1, '#c9b56a'); r(x - 1, y0, 1, 1, '#9a8c4a'); r(x + 1, y0, 1, 1, '#9a8c4a');
+      }
+    }), 0));
+  }
+  // the MG nest: a ring of sandbags round a pit, the gun on a post in the middle
+  for (let i = 0; i < NEST_N; i++) {
+    const a = i / NEST_N * TAU, sx = Math.sin(a), sy = -Math.cos(a) * FORE;
+    const spr = pix(22, 18, (r) => {
+      // the pit and the ring
+      r(4, 9, 14, 6, '#2a241a');
+      for (let k = 0; k < 6; k++) {
+        r(2 + k * 3, 13, 4, 4, '#8f7a4e'); r(2 + k * 3, 13, 4, 1, '#c4ad78'); r(5 + k * 3, 14, 1, 3, '#6e5c3a');
+      }
+      r(1, 9, 3, 5, '#8f7a4e'); r(1, 9, 3, 1, '#b8a16c'); r(18, 9, 3, 5, '#7d6a42'); r(18, 9, 3, 1, '#a8925e');
+      for (let k = 0; k < 4; k++) { r(4 + k * 4, 7, 4, 3, '#7d6a42'); r(4 + k * 4, 7, 4, 1, '#b8a16c'); }
+      // the gunner's helmet behind the gun
+      const hx = Math.round(11 - sx * 3), hy = Math.round(10 - sy * 3);
+      r(hx - 1, hy - 1, 3, 2, '#4a5732'); r(hx - 1, hy - 1, 2, 1, '#6a7a48');
+      // the gun: a body and a barrel turned to heading a
+      r(10, 8, 2, 3, '#3a3e48');
+      for (let t = 0; t <= 9; t += 0.5) {
+        const x = Math.round(11 + sx * t), y = Math.round(9 + sy * t);
+        r(x, y, 1, 1, t < 3 ? '#626875' : '#2a2d33');
+      }
+      const mx = Math.round(11 + sx * 9), my = Math.round(9 + sy * 9);
+      r(mx, my, 1, 1, '#8b919c');
+    });
+    const p = prop(outline(spr, '#141210'), 0);
+    p.mx = 12 + sx * 10;
+    p.my = 10 + sy * 10;
+    ART.nest.push(p);
+  }
+  return ART;
+}
+const nestIdx = (ang) => mod(Math.round(ang / TAU * NEST_N), NEST_N);
+
+// ---------- the towers in a run
+// Put station st's towers into the world, where the grid says (they bend with the rails).
+function buildTowers(st) {
+  const A = towerArt(), up = G.up;
+  for (const o of towersOf(st.id)) {
+    if (o.t === 'wire' && !up.wire) continue;
+    const p = gridToWorld(o.c, o.r, st.s), x = Math.round(p.x), y = Math.round(p.y);
+    const t = { t: o.t, c: o.c, r: o.r, x, y };
+    st.towers.push(t);
+    if (o.t === 'nest') {
+      Object.assign(t, { ang: st.side > 0 ? -Math.PI / 2 : Math.PI / 2, cd: rnd(0.3), tgt: null, look: 0, flash: 0 });
+      t.sp = { d: A.nest[nestIdx(t.ang)], x, y: y + 4, k: y + 4 };
+      G.statics.push(t.sp);
+      st.nests.push(t);
+    } else if (o.t === 'bag') {
+      G.statics.push({ d: A.bag, x, y: y + 3, k: y + 3 });
+      st.bags.push(t);
+    } else {
+      // (wire lies flat: the dead on it are drawn over it)
+      G.statics.push({ d: A.wire, x, y: y + 3, k: y - 6 });
+      st.wires.push(t);
+    }
+  }
+}
+// The corn: two strips on both sides of the station, 120 to 200 px out from the rails.
+function buildCorn(st) {
+  const A = towerArt();
+  for (let a = -86; a <= 104; a += 8) for (const side of [-1, 1]) for (let u = 122; u <= 198; u += 10) {
+    const p = gridToWorld(6.5 + side * (u + rnd(-3, 3)) / TILE, 3.5 + (a + rnd(-2, 2)) / TILE, st.s);
+    if (Math.random() < 0.18) continue;
+    G.statics.push({ d: pick(A.corn), x: Math.round(p.x), y: Math.round(p.y), k: Math.round(p.y) });
+  }
+}
+// Every station near the train: its nests shoot, its sandbags hold the dead back, its wire slows them.
+function updateTowers(dt) {
+  const tr = G.tr;
+  for (const st of G.stations) {
+    if (!st.towers.length) continue;
+    // towers wake when the train is 400 px away, and sleep once it is far past
+    const d = tr.s - st.stopS;
+    if (!st.awake && d < 400 && d > -400) st.awake = true;
+    if (st.awake && d < -600) st.awake = false;
+    if (st.awake) for (const n of st.nests) updateNest(n, dt);
+    for (const b of st.bags) holdBack(b, dt);
+    for (const w of st.wires) slowDown(w, dt);
+  }
+  updateTowerRounds(dt);
+}
+// The best target for a nest: the dead holding a survivor, then the dead on the train, then on
+// the rails, then the nearest. (Not one the rounds in the air will already kill.)
+function nestTarget(n) {
+  let best = null, bk = Infinity;
+  const s0 = G.tr.s;
+  queryEll(n.x, n.y, TOWER.nest.range, (z, d) => {
+    if (z.pending >= z.hp) return;
+    let k = 3000 + d;
+    if (z.st === 2) k = 1000 + d;
+    else if (z.st === 1) k = 2000 + d;
+    if (k > 1000) for (const p of G.people) if (p.st === 'grab' && p.by === z) k = d;
+    if (k < bk) {
+      bk = k;
+      best = z;
+    }
+  });
+  return best;
+}
+function updateNest(n, dt) {
+  const R = TOWER.nest;
+  n.flash = Math.max(0, n.flash - dt);
+  let z = n.tgt;
+  if (z && (z.dead || Math.hypot(z.x - n.x, (z.y - n.y) / FORE) > R.range + 4)) z = null;
+  n.look -= dt;
+  if (!z || n.look <= 0) {
+    z = nestTarget(n) || (z && z.pending < z.hp ? z : null);
+    n.look = 0.1;
+  }
+  n.tgt = z;
+  const want = z ? Math.atan2(z.x - n.x, -(z.y - n.y) / FORE) : n.ang, da = mod(want - n.ang + Math.PI, TAU) - Math.PI;
+  n.ang = mod(n.ang + clamp(da, -R.turn * dt, R.turn * dt), TAU);
+  n.sp.d = ART.nest[nestIdx(n.ang)];
+  n.cd -= dt;
+  if (z && Math.abs(da) < 0.35 && n.cd <= 0 && z.pending < z.hp) {
+    nestFire(n, z);
+    n.cd += 1 / G.up.nest;
+  }
+  n.cd = Math.max(0, n.cd);
+}
+// One round from nest n at zombie z: it lands where z will be when it gets there.
+function nestFire(n, z) {
+  const T = TOWER.nest.travel, A = n.sp.d;
+  z.pending += TOWER.nest.dmg;
+  G.trounds.push({ n, tgt: z, bx: z.x + z.vx * T, by: z.y + z.vy * T, age: 0, T,
+    sx: n.sp.x - A.ax + A.mx, sy: n.sp.y - A.ay + A.my });
+  n.flash = 0.05;
+  part({ x: n.x + rnd(-2, 2), y: n.y + 2, z: 6, vx: rnd(-20, 20), vy: rnd(-6, 6), vz: rnd(20, 35), g: 220, life: 0.45, max: 0.45, s: 1, c: '#e3b04b' });
+  SFX.nest();
+}
+function updateTowerRounds(dt) {
+  const rs = G.trounds;
+  for (let i = rs.length - 1; i >= 0; i--) {
+    const r = rs[i];
+    r.age += dt;
+    if (r.age < r.T) continue;
+    rs[i] = rs[rs.length - 1];
+    rs.pop();
+    nestImpact(r);
+  }
+}
+// The round lands: its target if it is still in the spot, and the nearest other zombie within 5 px.
+function nestImpact(r) {
+  const T = r.tgt, R = TOWER.nest, x = r.bx, y = r.by;
+  T.pending = Math.max(0, T.pending - R.dmg);
+  let hits = 0, other = null, od = R.splash;
+  if (!T.dead && Math.hypot(T.x - x, (T.y - y) / FORE) < 8) {
+    hitZombie(T, R.dmg, 'nest');
+    hits++;
+  }
+  queryEll(x, y, R.splash, (z, d) => {
+    if (z !== T && d <= od) {
+      od = d;
+      other = z;
+    }
+  });
+  if (other && hits < R.hits) hitZombie(other, R.dmg, 'nest');
+  lights.push({ x, y, z: 4, r: 7, c: '#ffb060', life: 0.07, max: 0.07, a: 0.6 });
+  for (let k = 0; k < 2; k++) {
+    const a = rnd(TAU), s = rnd(15, 40);
+    part({ x, y, z: 4, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(10, 35), g: 160, life: rnd(0.12, 0.25), max: 0.25,
+      s: 1, c: pick(['#ffe2a0', '#ffb347']), add: true, drag: 1.5 });
+  }
+}
+// Sandbags: the dead cannot walk through. One that has pushed on them for 3 s climbs over (1 s).
+function holdBack(b, dt) {
+  const R = TOWER.bag;
+  queryEll(b.x, b.y, R.r + 6, (z, d) => {
+    if (z.st === 2 || G.t < (z.climbEnd || 0)) return;
+    const m = R.r + (z.big ? 6 : 3.5) * 0.6;
+    if (d >= m || d < 1e-4) return;
+    const dx = z.x - b.x, dy = (z.y - b.y) / FORE;
+    z.x = b.x + dx / d * m;
+    z.y = b.y + dy / d * m * FORE;
+    if (z.pushT !== G.t) {
+      if (G.t - (z.pushT || -9) > 0.3) z.push = 0;
+      z.push += dt;
+      z.pushT = G.t;
+      if (z.push >= R.push) {
+        z.push = 0;
+        z.climbEnd = G.t + R.climb;
+      }
+    }
+  });
+}
+// Barbed wire: the dead on it walk at 40% (this step's walk is taken back by 60%).
+function slowDown(w, dt) {
+  const k = 1 - CFG.wire.slow;
+  queryEll(w.x, w.y, 12, (z) => {
+    if (z.st === 2 || z.wireT === G.t || Math.abs(z.x - w.x) > 8 || Math.abs(z.y - w.y) > 8) return;
+    z.wireT = G.t;
+    z.x -= (z.vx - z.kbx) * dt * k;
+    z.y -= (z.vy - z.kby) * dt * k;
+  });
+}
+
+// ---------- drawing (in the world, with the glows)
+// The nests' tracers and muzzle flashes.
+function drawTowerFx() {
+  if (G.demo || !G.trounds) return;
+  for (const r of G.trounds) {
+    const u = r.age / r.T, h = clamp(u * 1.2, 0, 1), t0 = Math.max(0, h - 0.5);
+    const ex = r.bx, ey = r.by - 6, hx = lerp(r.sx, ex, h), hy = lerp(r.sy, ey, h);
+    pl(ctx, lerp(r.sx, ex, t0), lerp(r.sy, ey, t0), hx, hy, '#c9772f');
+    ctx.fillStyle = '#fff6e0';
+    ctx.fillRect(Math.round(hx), Math.round(hy), 1, 1);
+  }
+  for (const st of G.stations) for (const n of st.nests) {
+    if (n.flash <= 0) continue;
+    const A = n.sp.d, mx = Math.round(n.sp.x - A.ax + A.mx), my = Math.round(n.sp.y - A.ay + A.my);
+    ctx.fillStyle = '#ffd27a';
+    ctx.fillRect(mx - 1, my, 3, 1);
+    ctx.fillRect(mx, my - 1, 1, 3);
+    ctx.fillStyle = '#fff6e0';
+    ctx.fillRect(mx, my, 1, 1);
+    light(mx, my, 7, '#ffb347', 0.7);
+  }
+}
+
+// ---------- sounds
+Object.assign(SFX, {
+  nest() {
+    // an MG nest: a dry, light knock (quieter than the flatcar gun)
+    if (!gap('nest', 45)) return;
+    nz(0.05, 0.05, 'bandpass', 1600, 1.4, 600);
+    tone(150, 0.05, 'square', 0.012, 70);
+  },
+  bell() {
+    // the station bell: two bright strokes
+    tone(1568, 0.6, 'sine', 0.05);
+    tone(2349, 0.4, 'sine', 0.02);
+    tone(1568, 0.6, 'sine', 0.045, null, 0.32);
+    tone(2349, 0.4, 'sine', 0.018, null, 0.32);
+  },
+  wave() {
+    // a moan rising out of the corn
+    tone(110, 1.1, 'sawtooth', 0.025, 170);
+    tone(98, 1.2, 'sawtooth', 0.02, 150, 0.1);
+    nz(1, 0.03, 'bandpass', 420, 1.2, 900);
+  },
+  place() {
+    tone(220, 0.06, 'square', 0.03, 140);
+    nz(0.08, 0.06, 'lowpass', 900, 0.8, 300);
+  },
+  sell() {
+    tone(660, 0.07, 'triangle', 0.03);
+    tone(880, 0.09, 'triangle', 0.03, null, 0.06);
+  }
+});
 
 // skills.js - the first ring of the skill tree: things you SEE in a run. CHAIN SHOT (a 25mm kill
 // sparks on to more zombies), the COW CATCHER (a steel plow on the engine that throws walkers and
@@ -5065,6 +5556,7 @@ function render() {
   drawParts(true);
   drawRounds();
   drawZaps();
+  drawTowerFx();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
   if (!thermal) {
@@ -5267,7 +5759,7 @@ function nextLabel() {
     const m = w.km - k;
     if (m < 0.15 && m > -CFG.wall.len / CFG.line.km) return [m > 0.005 ? 'DEAD WALL ' + fmtM(m) : 'DEAD WALL!', U.red];
   }
-  if (st && st.state === 'boarding') return ['AT ' + st.name, U.green];
+  if (st && st.state === 'hold') return ['AT ' + st.name, U.green];
   if (st) return ['NEXT: ' + st.name + ' ' + fmtM(Math.max(0, kmAt(st.s) - k)), U.blue];
   return ['SAFE ZONE ' + fmtM(Math.max(0, CFG.line.end - k)), U.green];
 }
@@ -5315,25 +5807,24 @@ function drawRoute(x0, x1) {
   }
   blit(ICON.flag, X(end) + 3, 3);
   // the train: a pale block that blinks while it stands at a station
-  const tx = X(k1), stop = G.station && G.station.state === 'boarding';
+  const tx = X(k1), stop = G.station && G.station.state === 'hold';
   ctx.fillStyle = '#07080a';
   ctx.fillRect(tx - 2, y - 3, 5, 7);
   ctx.fillStyle = stop && Math.floor(realT * 3) % 2 ? U.green : '#e8dfc8';
   ctx.fillRect(tx - 1, y - 2, 3, 5);
 }
 // warnings under the top bar: the dead on the track or on the train, the helicopter too far away,
-// the survivors boarding
+// the station hold
 function drawWarnings() {
   if (G.result) return;
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', st = G.station, L = [];
   if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (E: RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
   if (G.heli.far) L.push(['RADIO RANGE LIMIT  (F: BACK)', U.amber]);
-  if (st && st.state === 'boarding') {
-    if (st.people) L.push(['SURVIVORS ABOARD ' + st.saved + ' / ' + st.people, U.green]);
-    if (st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
-  }
-  L.forEach(([t, c], i) => text(t, W / 2, 24 + i * 10, c, { align: 'center' }));
+  // the station hold: its bar and the survivors come first (stationtab.js)
+  const y = drawHoldBar(24);
+  if (st && st.state === 'hold' && st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
+  L.forEach(([t, c], i) => text(t, W / 2, y + i * 10, c, { align: 'center' }));
 }
 // An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
 // with a label just inside it.
@@ -5901,8 +6392,9 @@ function setTab(t) {
   }
 }
 // Keys on the Depot screen: TAB switches tabs, ENTER starts, left / right pick the start, ESC goes
-// back to the title. (The Station tab will first drop a held item on ESC.)
+// back to the title. (On the Station tab, 1-3 pick a tower and ESC first drops it.)
 function depotKey(k) {
+  if (depotTab === 'station' && stationKey(k)) return;
   if (k === 'Tab') {
     setTab(depotTab === 'tree' ? 'station' : 'tree');
     SFX.ui();
@@ -6008,10 +6500,11 @@ function drawDepotTop() {
 // What the bottom bar says between the start picker and START RUN.
 function depotHint() {
   if (depotTab === 'station' && !stationOpen()) return ['HOLD FARM STOP ONCE TO BUILD HERE.', U.ink];
+  if (depotTab === 'station' && ST.sel) return ['CLICK A TILE TO BUILD.  R-CLICK OR ESC: STOP.', U.dim];
   const th = depotTab === 'tree' && treeHint();
   if (th) return th;
   const d = stopDef(SAVE.start);
-  if (d && d.id !== 'depot') return ['THE TRAIN STOPS AT ' + d.name + ' FIRST.', U.dim];
+  if (d && d.id !== 'depot') return startHint(d);
   return ['TAB: SWITCH PANELS.  ENTER: START RUN.', U.faint];
 }
 function drawDepotBottom() {
@@ -6045,26 +6538,8 @@ function drawDepotBottom() {
   const [hint, hc] = depotHint(), hw = tw(hint);
   if (hw < bx - x - 16) text(hint, Math.round((x + bx) / 2), y + 11, hc, { align: 'center' });
 }
-// (The SKILL TREE tab is drawn by drawTreeTab in tree.js.)
-// The STATION tab: locked (a padlock) until Farm Stop is held. (The build grid comes here.)
-function drawStationTab(y0, y1) {
-  const open = stationOpen(), w = 272, h = 112, x = Math.round(W / 2 - w / 2), y = Math.round((y0 + y1) / 2 - h / 2);
-  const farm = STATIONS[0];
-  panel(x, y, w, h, 'rgba(15,16,20,0.94)');
-  if (!open) blit(ICON.lockBig, Math.round(W / 2 - ICON.lockBig.width / 2), y + 10);
-  else blit(ICON.survBig, Math.round(W / 2 - ICON.survBig.width / 2), y + 10);
-  text(farm.name, W / 2, y + 40, U.teal, { align: 'center', scale: 2, drop: true });
-  if (!open) {
-    text('THE FIRST STATION, ' + farm.km.toFixed(1) + ' KM UP THE LINE.', W / 2, y + 64, U.ink, { align: 'center' });
-    text('YOUR BEST SO FAR: ' + SAVE.best.toFixed(2) + ' KM.', W / 2, y + 76, U.dim, { align: 'center' });
-  } else {
-    text('FARM STOP IS YOURS.', W / 2, y + 64, U.ink, { align: 'center' });
-    text('YOU CAN START RUNS FROM HERE.', W / 2, y + 76, U.dim, { align: 'center' });
-  }
-  ctx.fillStyle = '#2e3139';
-  ctx.fillRect(x + 16, y + 89, w - 32, 1);
-  text(open ? 'ITS TOWERS ARE BUILT HERE SOON.' : 'HOLD IT ONCE, THEN BUILD ITS TOWERS HERE.', W / 2, y + 97, U.faint, { align: 'center' });
-}
+// (The SKILL TREE tab is drawn by drawTreeTab in tree.js, the STATION tab by drawStationTab in
+// stationtab.js.)
 
 // tree.js - the skill tree. One table, NODES, drives all of it: the map on the SKILL TREE tab of the
 // Depot, how each node looks, the info box (what it does, NOW > NEXT, the price), buying, and the
@@ -6733,6 +7208,531 @@ function drawInfo(n, [qx, qy], y0, y1) {
   }
 }
 
+// stationtab.js - the STATION tab of the Depot: a station's 14 x 9 grid drawn with the real sprites
+// (rails and the parked train, platform, lamps, house, the door path, the corn at the edges), and
+// the towers you build on it. Cards on the right pick what to build (keys 1-3), an info box tells
+// what it does, a waves box tells where the dead come from. Also the hold's bar in the run.
+
+// ST = the tab's state: id = the station shown, sel = the tower type being placed, drag = a tower
+// being moved {o, c, r}, flash = {c, r, t} the tile just built on, pops = little +N / -N words
+const ST = { id: 'farm', sel: null, drag: null, flash: null, pops: [], paint: false };
+const ST_CARDS = [
+  { t: 'nest', key: '1', name: 'MG NEST' },
+  { t: 'bag', key: '2', name: 'SANDBAGS' },
+  { t: 'wire', key: '3', name: 'WIRE' },
+  { t: 'mortar', key: '4', name: 'MORTAR' }
+];
+const ST_GUIDE = [
+  'THIS IS FARM STOP. YOUR TOWERS WAIT HERE.',
+  'WAVE 2 CAME FROM THE EAST. PUT A NEW MG NEST THERE.',
+  'DRAG TO MOVE. RIGHT CLICK: SELL (FULL REFUND).'
+];
+const GUIDE_TILE = [11, 5];
+
+// the stations you can see in the tab: Farm Stop, and the others once reached
+const stTabList = () => STATIONS.filter((d, i) => i === 0 || SAVE.reached.includes(d.id));
+const stDef = () => stTabList().find((d) => d.id === ST.id) || STATIONS[0];
+const canBuild = () => stationOpen();
+const wireOpen = () => lv('wire') > 0;
+// the guided steps: 0..2, or 3 = done
+const guideStep = () => (stationOpen() ? Math.min(3, SAVE.flags.stGuide | 0) : 3);
+function guideNext() {
+  SAVE.flags.stGuide = guideStep() + 1;
+  saveSave();
+  SFX.ui();
+}
+
+// Where everything goes this frame: k = zoom (2 when the window has the room), T = tile px on
+// screen, the grid at (gx, gy), the column on the right at (cx, cy) w cw.
+function stLayout(y0, y1) {
+  let k = 2;
+  if (y1 - y0 - 18 < GRID_R * 32 || W - 14 * 32 - 26 < 150) k = 1;
+  const T = TILE * k, gx = 14, gy = y0 + 15, gw = GRID_C * T, gh = GRID_R * T;
+  const cx = gx + gw + 12, cw = W - cx - 6;
+  return { k, T, gx, gy, gw, gh, cx, cy: gy, cw, y0, y1 };
+}
+let ST_L = stLayout(19, 331);
+// the tile under the mouse, or null
+function stTile(L) {
+  const c = Math.floor((M.x - L.gx) / L.T), r = Math.floor((M.y - L.gy) / L.T);
+  return M.inside && c >= 0 && r >= 0 && c < GRID_C && r < GRID_R ? { c, r } : null;
+}
+// screen point of a world offset round the station: u px east of the rails, a px along (south +)
+const stX = (L, u) => L.gx + (u / TILE + 7) * L.T;
+const stY = (L, a) => L.gy + (a / TILE + 4) * L.T;
+// a sprite (with anchor ax, ay) at a screen point, at the zoom
+function zblit(spr, x, y, ax, ay, k) {
+  blit(spr, Math.round(x - ax * k), Math.round(y - ay * k), spr.width * k, spr.height * k);
+}
+
+// ---------- the build rules
+const itemAt = (list, c, r) => list.find((o) => o.c === c && o.r === r) || null;
+// why tower type t can't go on tile (c, r) now ('' = it can)
+function whyNot(def, list, t, c, r, moving) {
+  if (tileAt(def, c, r) !== '.') return 'BLOCKED';
+  const o = itemAt(list, c, r);
+  if (o && o !== moving) return 'TAKEN';
+  if (moving) return '';
+  if (t === 'wire' && !wireOpen()) return 'LOCKED';
+  if (builtOf(list, t) >= TOWER[t].max) return 'MAX';
+  if (towerPrice(list, t) > SAVE.scrap) return 'SCRAP';
+  return '';
+}
+// Build tower type t on tile (c, r) of station id and pay for it. True when built.
+function stPlace(id, t, c, r) {
+  const def = stopDef(id), list = towersOf(id);
+  if (!def || !TOWER[t] || whyNot(def, list, t, c, r)) return false;
+  const paid = towerPrice(list, t);
+  list.push({ t, c, r, paid });
+  SAVE.scrap -= paid;
+  SAVE.towers[id] = list;
+  saveSave();
+  SFX.place();
+  ST.flash = { c, r, t: realT };
+  stPop(c, r, paid ? '-' + paid : 'FREE', paid ? U.gold : U.green);
+  if (t === 'nest' && guideStep() === 1) guideNext();
+  return true;
+}
+// Sell what stands on tile (c, r): all of its price comes back (a free one goes back to FREE).
+function stSell(id, c, r) {
+  const list = towersOf(id), o = itemAt(list, c, r);
+  if (!o) return false;
+  list.splice(list.indexOf(o), 1);
+  SAVE.scrap += o.paid;
+  SAVE.towers[id] = list;
+  saveSave();
+  SFX.sell();
+  stPop(c, r, o.paid ? '+' + o.paid : 'FREE', o.paid ? U.gold : U.green);
+  return true;
+}
+// Move what stands on (c, r) to (c2, r2). Free.
+function stMove(id, c, r, c2, r2) {
+  const def = stopDef(id), list = towersOf(id), o = itemAt(list, c, r);
+  if (!o || whyNot(def, list, o.t, c2, r2, o)) return false;
+  o.c = c2;
+  o.r = r2;
+  SAVE.towers[id] = list;
+  saveSave();
+  SFX.place();
+  ST.flash = { c: c2, r: r2, t: realT };
+  return true;
+}
+function stPop(c, r, s, col) {
+  ST.pops.push({ c, r, s, col, t: realT });
+}
+function stSelect(t) {
+  if (!canBuild() || t === 'mortar') {
+    SFX.deny();
+    return;
+  }
+  if (t === 'wire' && !wireOpen()) {
+    SFX.deny();
+    return;
+  }
+  ST.sel = ST.sel === t ? null : t;
+  ST.drag = null;
+  SFX.ui();
+}
+// Keys on the Station tab: 1-3 pick a tower, ESC drops it (true when the key was used here).
+function stationKey(k) {
+  const card = ST_CARDS.find((c) => c.key === k && c.t !== 'mortar');
+  if (card) {
+    stSelect(card.t);
+    return true;
+  }
+  if (k === 'Escape' && (ST.sel || ST.drag)) {
+    ST.sel = null;
+    ST.drag = null;
+    SFX.ui();
+    return true;
+  }
+  return false;
+}
+function stPick(dir) {
+  const list = stTabList(), i = Math.max(0, list.findIndex((d) => d.id === ST.id));
+  if (list.length < 2) return;
+  ST.id = list[mod(i + dir, list.length)].id;
+  ST.sel = ST.drag = null;
+  SFX.ui();
+}
+
+// ---------- the tab
+function drawStationTab(y0, y1) {
+  const L = (ST_L = stLayout(y0, y1)), def = stDef(), list = towersOf(def.id), open = canBuild();
+  ST.id = def.id;
+  const tile = stTile(L);
+  stHeader(L, def);
+  stInput(L, def, list, tile);
+  stGrid(L, def, list, tile);
+  stCards(L, def, list);
+  if (!open) stLocked(L, def);
+  else if (guideStep() < 3 && def.id === 'farm') stGuide(L);
+}
+// The top line: the station picker, and the hold times.
+function stHeader(L, def) {
+  const y = L.y0 + 2, many = stTabList().length > 1;
+  if (button(L.gx, y, 13, 12, '<', { off: !many })) stPick(-1);
+  const nw = 100;
+  panel(L.gx + 15, y, nw, 12, '#0b0c0f');
+  text(def.name, L.gx + 15 + nw / 2 - tw(def.km.toFixed(1) + ' KM') / 2 - 3, y + 3, U.teal, { align: 'center' });
+  text(def.km.toFixed(1) + ' KM', L.gx + 15 + nw / 2 + tw(def.name) / 2 + 3, y + 3, U.dim, { align: 'center' });
+  if (button(L.gx + 17 + nw, y, 13, 12, '>', { off: !many })) stPick(1);
+  const s = 'FIRST HOLD ' + def.first.T + ' S, LATER ' + def.later.T + ' S';
+  if (L.gx + 140 + tw(s) < L.gx + L.gw) text(s, L.gx + L.gw, y + 3, U.dim, { align: 'right' });
+}
+// The mouse on the grid: place, paint wire, drag to move, right click to sell or drop.
+function stInput(L, def, list, tile) {
+  if (!canBuild()) return;
+  if (tile && (ST.sel || itemAt(list, tile.c, tile.r))) cursor = 'pointer';
+  if (M.rpressed) {
+    if (tile && itemAt(list, tile.c, tile.r) && !ST.drag) stSell(def.id, tile.c, tile.r);
+    else if (ST.sel || ST.drag) {
+      ST.sel = ST.drag = null;
+      SFX.ui();
+    }
+    M.rpressed = false;
+    return;
+  }
+  if (M.pressed && tile && !M.used) {
+    const o = itemAt(list, tile.c, tile.r);
+    if (ST.sel) {
+      if (!stPlace(def.id, ST.sel, tile.c, tile.r) && !o) SFX.deny();
+      ST.paint = ST.sel === 'wire';
+    } else if (o) ST.drag = { o, c: o.c, r: o.r };
+    M.used = true;
+  }
+  // wire: hold the button and paint
+  if (ST.paint && M.down && ST.sel === 'wire' && tile && !itemAt(list, tile.c, tile.r)) {
+    if (!whyNot(def, list, 'wire', tile.c, tile.r)) stPlace(def.id, 'wire', tile.c, tile.r);
+  }
+  if (!M.down) ST.paint = false;
+  if (ST.drag && M.released) {
+    const d = ST.drag;
+    ST.drag = null;
+    if (tile && (tile.c !== d.c || tile.r !== d.r) && !stMove(def.id, d.c, d.r, tile.c, tile.r)) SFX.deny();
+  }
+}
+// A tile's sprite at the zoom: ground, then what stands on it.
+const HATCH = {};
+function hatch(T) {
+  if (!HATCH[T]) {
+    HATCH[T] = pix(T, T, (r) => {
+      for (let i = -T; i < T; i += 6) for (let j = 0; j < T; j++) if (i + j >= 0 && i + j < T) r(i + j, j, 1, 1, 'rgba(255,255,255,0.10)');
+    });
+  }
+  return HATCH[T];
+}
+function stGrid(L, def, list, tile) {
+  const { k, T, gx, gy, gw, gh } = L, A = towerArt(), side = def.side;
+  ctx.fillStyle = '#07080a';
+  ctx.fillRect(gx - 7, gy - 1, gw + 14, gh + 2);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(gx - 6, gy, gw + 12, gh);
+  ctx.clip();
+  // the ground: a checker, the corn at both edges
+  for (let r = 0; r < GRID_R; r++) for (let c = 0; c < GRID_C; c++) {
+    ctx.fillStyle = (c + r) & 1 ? '#323f29' : '#2b3928';
+    ctx.fillRect(gx + c * T, gy + r * T, T, T);
+  }
+  ctx.fillStyle = '#3c4420';
+  ctx.fillRect(gx - 6, gy, 6, gh);
+  ctx.fillRect(gx + gw, gy, 6, gh);
+  for (let a = -64; a < 84; a += 7) for (const sd of [-1, 1]) zblit(A.corn[((a + 70) / 7 | 0) % 3].spr, stX(L, sd * 117), stY(L, a + 6), 5, 18, k);
+  // the door path
+  ctx.fillStyle = '#4a3f30';
+  const dc = side > 0 ? 9 : 3;
+  ctx.fillRect(gx + dc * T, gy + 3 * T + 2 * k, 2 * T, 2 * T - 4 * k);
+  ctx.fillStyle = '#5a4c38';
+  for (let i = 0; i < 12; i++) ctx.fillRect(gx + dc * T + ((i * 37) % (2 * T - 2)), gy + 3 * T + 4 * k + ((i * 53) % (2 * T - 10 * k)), k, k);
+  // the rails, the ballast and the sleepers
+  ctx.fillStyle = '#3b3732';
+  ctx.fillRect(gx + 6 * T + 2 * k, gy, 2 * T - 4 * k, gh);
+  ctx.fillStyle = '#3d2d20';
+  for (let y = 0; y < gh; y += 5 * k) ctx.fillRect(gx + 6 * T + 4 * k, gy + y, 2 * T - 8 * k, 2 * k);
+  ctx.fillStyle = '#8f959e';
+  ctx.fillRect(stX(L, -4) - k, gy, k, gh);
+  ctx.fillRect(stX(L, 4), gy, k, gh);
+  // the platform, the lamps, the house
+  const pu = side * 24;
+  for (let r = 0.75; r <= 7.3; r += 0.75) zblit(STATION.slab.spr, stX(L, pu), stY(L, (r - 3.5) * TILE), STATION.slab.ax, STATION.slab.ay, k);
+  // the parked train (the tanker stands south of the grid)
+  const ai = angIdx(0);
+  for (let i = 0; i < CAR.n; i++) {
+    const img = TRAIN[i].n[ai];
+    zblit(img, stX(L, 0), stY(L, -32 + i * (CAR.L + CAR.gap)), img.ox, img.oy, k);
+  }
+  for (const r of [2, 6]) zblit(STATION.lamp.spr, stX(L, pu), stY(L, (r - 3.5) * TILE), STATION.lamp.ax, STATION.lamp.ay, k);
+  zblit(STATION.house.spr, stX(L, side * 80), stY(L, 0.6 * TILE), STATION.house.ax, STATION.house.ay, k);
+  // blocked tiles: hatched. Grid lines.
+  const hs = hatch(T);
+  for (let r = 0; r < GRID_R; r++) for (let c = 0; c < GRID_C; c++) if (tileAt(def, c, r) !== '.') ctx.drawImage(hs, gx + c * T, gy + r * T);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  for (let c = 1; c < GRID_C; c++) ctx.fillRect(gx + c * T, gy, 1, gh);
+  for (let r = 1; r < GRID_R; r++) ctx.fillRect(gx, gy + r * T, gw, 1);
+  // the guided step's tile glows
+  if (canBuild() && guideStep() === 1 && def.id === 'farm') {
+    const [c, r] = GUIDE_TILE, a = 0.35 + 0.3 * Math.sin(realT * 6);
+    ctx.fillStyle = 'rgba(227,176,75,' + a.toFixed(2) + ')';
+    ctx.fillRect(gx + c * T, gy + r * T, T, T);
+    frame(gx + c * T, gy + r * T, T, T, U.gold);
+  }
+  // the towers (back to front); the one being dragged is drawn under the mouse
+  const sorted = list.slice().sort((a, b) => a.r - b.r || (a.t === 'wire' ? -1 : 1));
+  for (const o of sorted) {
+    if (ST.drag && ST.drag.o === o) continue;
+    stItem(L, o.t, o.c, o.r, 1);
+  }
+  // the WAVES arrows on the lanes, both edges
+  const blink = Math.floor(realT * 2) % 2 ? U.red : '#a8241a';
+  for (const r of HOLD.lanes) {
+    const y = gy + r * T + T / 2;
+    laneArrow(gx + 2, y, 1, blink, k);
+    laneArrow(gx + gw - 3, y, -1, blink, k);
+  }
+  text('WAVES', gx + 4, gy + HOLD.lanes[0] * T - 9, U.red);
+  text('WAVES', gx + gw - 4, gy + HOLD.lanes[0] * T - 9, U.red, { align: 'right' });
+  // the build: hover a nest to see its range, the ghost of what is placed or moved
+  const hov = tile && itemAt(list, tile.c, tile.r);
+  if (tile && canBuild() && (ST.sel || ST.drag)) {
+    const t = ST.drag ? ST.drag.o.t : ST.sel, why = whyNot(def, list, t, tile.c, tile.r, ST.drag && ST.drag.o);
+    ctx.globalAlpha = 0.65;
+    stItem(L, t, tile.c, tile.r, 1);
+    ctx.globalAlpha = 1;
+    const col = why ? U.red : '#7ee07a', x = gx + tile.c * T, y = gy + tile.r * T;
+    frame(x, y, T, T, col);
+    frame(x + 1, y + 1, T - 2, T - 2, col);
+    if (t === 'nest' && !why) stRange(L, tile.c, tile.r);
+    if (why && why !== 'TAKEN' && why !== 'BLOCKED') text(why === 'SCRAP' ? 'NEED ' + towerPrice(list, t) : why, x + T / 2, y + T + 2, U.red, { align: 'center' });
+  } else if (hov && hov.t === 'nest') stRange(L, hov.c, hov.r);
+  if (hov && !ST.sel && !ST.drag && canBuild()) frame(gx + hov.c * T, gy + hov.r * T, T, T, U.ink);
+  // the tile just built on flashes; +N / -N rise from it
+  if (ST.flash && realT - ST.flash.t < 0.35) {
+    ctx.globalAlpha = 1 - (realT - ST.flash.t) / 0.35;
+    ctx.fillStyle = '#fff1c2';
+    ctx.fillRect(gx + ST.flash.c * T, gy + ST.flash.r * T, T, T);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  for (let i = ST.pops.length - 1; i >= 0; i--) {
+    const p = ST.pops[i], u = (realT - p.t) / 0.9;
+    if (u >= 1) {
+      ST.pops.splice(i, 1);
+      continue;
+    }
+    ctx.globalAlpha = 1 - u * u;
+    text(p.s, gx + p.c * T + T / 2, gy + p.r * T + T / 2 - 4 - u * 14, p.col, { align: 'center' });
+    ctx.globalAlpha = 1;
+  }
+  frame(gx - 7, gy - 1, gw + 14, gh + 2, '#2e3139');
+}
+// a tower at tile (c, r) at the zoom
+function stItem(L, t, c, r, a) {
+  const A = towerArt(), k = L.k, x = L.gx + (c + 0.5) * L.T, y = L.gy + (r + 0.5) * L.T;
+  if (t === 'nest') {
+    const p = A.nest[nestIdx(c < 6.5 ? -Math.PI / 2 : Math.PI / 2)];
+    zblit(p.spr, x, y + 4 * k, p.ax, p.ay, k);
+  } else if (t === 'bag') zblit(A.bag.spr, x, y + 3 * k, A.bag.ax, A.bag.ay, k);
+  else if (t === 'wire') zblit(A.wire.spr, x, y + 3 * k, A.wire.ax, A.wire.ay, k);
+}
+// a nest's range as a dotted oval (96 px across the rails, squashed along them)
+function stRange(L, c, r) {
+  const x = L.gx + (c + 0.5) * L.T, y = L.gy + (r + 0.5) * L.T, rx = TOWER.nest.range * L.k;
+  pell(x, y, rx, rx * FORE, 'rgba(255,241,194,0.75)');
+}
+// a red arrow on a lane, pointing in (dir 1 = right)
+function laneArrow(x, y, dir, col, k) {
+  ctx.fillStyle = '#07080a';
+  for (let i = -1; i <= 5; i++) ctx.fillRect(x + dir * (i - 1) * k - (dir < 0 ? k : 0), y - (6 - i) * k / 1.2 - k, k, ((6 - i) * 2 / 1.2 + 2) * k);
+  ctx.fillStyle = col;
+  for (let i = 0; i < 5; i++) ctx.fillRect(x + dir * i * k - (dir < 0 ? k : 0), y - (5 - i) * k / 1.2, k, (5 - i) * 2 / 1.2 * k + k);
+}
+// The cards (what to build, its price, how many stand), the info box and the waves box.
+function stCards(L, def, list) {
+  const x = L.cx, w = L.cw, open = canBuild();
+  let y = L.cy;
+  panel(x, y - 1, w, 12, '#0b0c0f');
+  text('BUILD', x + 6, y + 2, U.teal);
+  text('SCRAP ' + fmt(SAVE.scrap), x + w - 6, y + 2, U.gold, { align: 'right' });
+  y += 14;
+  let info = null;
+  const ch = L.k === 2 ? 30 : 24;
+  for (const cd of ST_CARDS) {
+    const t = cd.t, on = ST.sel === t, mort = t === 'mortar', lock = mort || (t === 'wire' && !wireOpen());
+    const hov = inR(M.x, M.y, x, y, w, ch - 2);
+    ctx.fillStyle = on ? '#1d1a12' : hov && open ? '#1a1c22' : 'rgba(12,13,17,0.94)';
+    ctx.fillRect(x + 1, y + 1, w - 2, ch - 4);
+    frame(x, y, w, ch - 2, on ? U.gold : hov && open && !lock ? '#6a6f7b' : '#2e3139');
+    if (on) frame(x + 1, y + 1, w - 2, ch - 4, '#b8862f');
+    const nc = !open || lock ? U.faint : on ? U.gold : U.ink;
+    text('[' + cd.key + ']', x + 5, y + 5, open && !lock ? U.dim : U.faint);
+    text(cd.name, x + 24, y + 5, nc);
+    let price, pc, sub, sc = U.dim;
+    if (mort) {
+      price = 'LOCKED';
+      pc = U.faint;
+      sub = NODE.mortar.cost[0] + ' SURVIVORS';
+      sc = U.faint;
+    } else if (t === 'wire' && !wireOpen()) {
+      price = 'LOCKED';
+      pc = U.faint;
+      sub = 'BUY BARBED WIRE';
+      sc = U.faint;
+    } else {
+      const n = builtOf(list, t), p = towerPrice(list, t);
+      price = n >= TOWER[t].max ? 'MAX' : p ? String(p) : 'FREE';
+      pc = n >= TOWER[t].max ? U.dim : !p ? U.green : p > SAVE.scrap ? U.red : U.gold;
+      sub = n + '/' + TOWER[t].max + ' BUILT';
+    }
+    const pw = text(price, x + w - 6, y + 5, open ? pc : U.faint, { align: 'right' });
+    if (!mort && !lock && price !== 'MAX' && price !== 'FREE' && open) blit(ICON.boltS, x + w - 14 - pw, y + 4);
+    text(sub, x + 24, y + 15, sc);
+    if (hov) info = t;
+    if (hov && open && clicked(x, y, w, ch - 2)) stSelect(t);
+    if (hov && open && !lock) cursor = 'pointer';
+    y += ch;
+  }
+  // the info box: the card under the mouse, else the tower under it, else the one picked
+  const tile = stTile(L), o = tile && itemAt(list, tile.c, tile.r);
+  info = info || (o && o.t) || ST.sel;
+  const ih = L.k === 2 ? 62 : 52;
+  panel(x, y, w, ih, 'rgba(12,13,17,0.94)');
+  stInfo(x + 6, y + 5, info, !!o && !ST.sel);
+  y += ih + 3;
+  // the waves box
+  const wv = def.first.waves, wh = Math.min(L.gy + L.gh - y, 44);
+  if (wh >= 30) {
+    panel(x, y, w, wh, 'rgba(12,13,17,0.94)');
+    text('WAVES', x + 6, y + 5, U.red);
+    const nm = (v) => sideName(v.side * def.side);
+    text('1 ' + nm(wv[0]) + '  2 ' + nm(wv[1]), x + 6, y + 16, U.ink);
+    text('3 ' + nm(wv[2]) + ' + BRUTE', x + 6, y + 26, U.ink);
+  }
+}
+// What a tower does, in a few lines (numbers from the game's own data).
+function stInfo(x, y, t, placed) {
+  const L = [];
+  if (t === 'nest') {
+    L.push(['MG NEST', U.teal], [UP.nest(lv('nestspd')) + ' ROUNDS/S  RANGE ' + Math.round(TOWER.nest.range / TILE) + ' TILES', U.ink],
+      ['IT SHOOTS BY ITSELF.', U.dim]);
+  } else if (t === 'bag') {
+    L.push(['SANDBAGS', U.teal], ['THE DEAD CAN\'T WALK THROUGH.', U.ink], ['THEY CLIMB OVER AFTER ' + TOWER.bag.push + ' S.', U.dim]);
+  } else if (t === 'wire') {
+    L.push(['BARBED WIRE', U.teal], ['THE DEAD ON IT WALK AT ' + Math.round(CFG.wire.slow * 100) + '%.', U.ink]);
+    L.push(wireOpen() ? ['HOLD THE BUTTON TO PAINT IT.', U.dim] : ['BUY BARBED WIRE IN THE TREE.', U.amber]);
+  } else if (t === 'mortar') {
+    L.push(['MORTAR PIT', U.faint], ['A BIG GUN FOR YOUR STATION.', U.dim], ['COMING SOON.', U.faint]);
+  } else {
+    L.push(['PICK A TOWER', U.teal], ['CLICK A CARD OR PRESS 1-3,', U.dim], ['THEN CLICK A TILE.', U.dim]);
+  }
+  if (t && t !== 'mortar') L.push([placed ? 'DRAG: MOVE.  R-CLICK: SELL' : 'R-CLICK A TOWER: SELL', U.faint]);
+  L.forEach(([s, c], i) => text(s, x, y + i * 12, c));
+}
+// Before Farm Stop is held: the grid is a look only.
+function stLocked(L, def) {
+  const w = 236, h = 50, x = Math.round(L.gx + L.gw / 2 - w / 2), y = Math.round(L.gy + L.gh / 2 - h / 2);
+  panel(x, y, w, h, 'rgba(10,11,14,0.94)');
+  blit(ICON.lockBig, x + 10, y + 12);
+  text(def.name + "'S FREE KIT", x + 44, y + 10, U.teal);
+  text('HOLD FARM STOP ONCE', x + 44, y + 23, U.ink);
+  text('TO BUILD HERE.', x + 44, y + 33, U.ink);
+}
+// The 3 guided steps, the first time the tab opens.
+function stGuide(L) {
+  const i = guideStep(), s = ST_GUIDE[i], w = Math.min(L.gw - 20, tw(s) + 96), h = 22;
+  const x = Math.round(L.gx + L.gw / 2 - w / 2), y = L.gy + L.gh - h - 6;
+  panel(x, y, w, h, 'rgba(10,11,14,0.96)');
+  frame(x, y, w, h, U.gold);
+  text((i + 1) + '/3', x + 6, y + 8, U.gold);
+  text(s, x + 30, y + 8, U.ink);
+  if (button(x + w - 46, y + 3, 42, 16, i === 1 ? 'SKIP' : i === 2 ? 'OK' : 'NEXT', { primary: i !== 1 })) guideNext();
+}
+
+// ---------- the hold in a run
+// The bar under the top bar: seconds left, and the survivors aboard. Returns the y below it.
+function drawHoldBar(y) {
+  const st = holdNow();
+  if (!st) return y;
+  const left = Math.max(0, st.hold.T - st.t), w = 220, x = Math.round(W / 2 - w / 2);
+  ctx.fillStyle = 'rgba(8,9,12,0.85)';
+  ctx.fillRect(x - 4, y - 3, w + 8, 15);
+  const s = left > 0 ? 'HOLD ' + Math.ceil(left) + ' S' : 'ALL ABOARD!';
+  text(s, x, y, left > 0 ? U.ink : U.green);
+  const bx = x + 62, bw = 64;
+  bar(bx, y + 2, bw, 3, left / st.hold.T, '#1a1716', left < 5 ? U.green : U.gold);
+  const sv = st.people ? 'SURVIVORS ' + st.saved + '/' + st.people : 'HOUSE EMPTY';
+  text(sv, x + w, y, st.lost ? U.amber : U.green, { align: 'right' });
+  drawWaveArrows(st);
+  return y + 16;
+}
+// Red arrows on the screen edges at the lanes of the wave that just came (for 5 s).
+function drawWaveArrows(st) {
+  const since = st.t - st.waveT;
+  if (since > 5 || Math.floor(realT * 4) % 2) return;
+  for (const sd of st.waveSide ? [st.waveSide] : [-1, 1]) {
+    for (const r of HOLD.lanes) {
+      const p = gridToWorld(6.5 + sd * 9, r, st.s), sy = clamp(Math.round(p.y - G.camY), 40, H - 20);
+      laneArrow(sd < 0 ? 4 : W - 5, sy, sd < 0 ? 1 : -1, U.red, 2);
+    }
+    text('WAVE ' + st.wave, sd < 0 ? 18 : W - 18, clamp(Math.round(gridToWorld(6.5 + sd * 9, 4, st.s).y - G.camY), 40, H - 20), U.red, { align: sd < 0 ? 'left' : 'right' });
+  }
+}
+// The Depot's hint for a run that starts at a station.
+function startHint(d) {
+  const h = SAVE.house[d.id], n = typeof h === 'number' ? h : HOLD_LATER.people;
+  if (Math.floor(realT / 3) % 2 && n > 0) return [n + ' SURVIVORS WAIT AT ' + d.name + '.', U.green];
+  return ['START AT ' + d.name + ': YOUR TOWERS FIGHT FIRST.', U.dim];
+}
+
+// ---------- test calls (after the start-up has made window.__sr)
+queueMicrotask(() => {
+  if (!window.__sr) return;
+  Object.assign(window.__sr, {
+    // place(id, type, c, r): build as a click does (pays); sell(id, c, r); towers(id) = what stands there
+    place: (id, t, c, r) => stPlace(id, t, c, r),
+    sell: (id, c, r) => stSell(id, c, r),
+    move: (id, c, r, c2, r2) => stMove(id, c, r, c2, r2),
+    towers: (id) => towersOf(id).map((o) => o.t + ' ' + o.c + ',' + o.r + ' ' + o.paid),
+    price: (id, t) => towerPrice(towersOf(id), t),
+    // the Station tab: stTab(id) opens it on station id; stSel(type) picks a card; stTile(c, r) =
+    // the screen point of a tile's middle (and the mouse goes there); stGuide(n) sets the guided step
+    stTab: (id) => {
+      toDepot('station');
+      if (id) ST.id = id;
+      ST.sel = ST.drag = null;
+    },
+    stSel: (t) => { ST.sel = t || null; },
+    stTile: (c, r) => {
+      const L = ST_L, p = { x: L.gx + (c + 0.5) * L.T, y: L.gy + (r + 0.5) * L.T };
+      M.x = p.x;
+      M.y = p.y;
+      M.inside = true;
+      return p;
+    },
+    stGuide: (n) => {
+      SAVE.flags.stGuide = n;
+      saveSave();
+    },
+    rclick: (x, y) => {
+      M.x = x;
+      M.y = y;
+      M.inside = true;
+      M.rpressed = true;
+      render();
+      drawUI();
+      M.rpressed = false;
+    },
+    // the hold now: station, seconds, survivors, wave, towers
+    holdState: () => {
+      const st = G.station;
+      if (!st) return null;
+      return { id: st.id, state: st.state, t: +st.t.toFixed(1), T: st.hold && st.hold.T, first: st.first, people: st.people, saved: st.saved,
+        lost: st.lost, wave: st.wave, perfect: st.perfect, nests: st.nests.length, bags: st.bags.length, wires: st.wires.length, awake: st.awake };
+    },
+    house: () => Object.assign({}, SAVE.house)
+  });
+});
+
 // main.js - input (mouse, keys, wheel), the camera mode, the main loop (fixed steps with hit-stop)
 // and the start-up (the save is read first). window.__sr is a small API for tests and the browser
 // console.
@@ -6764,6 +7764,7 @@ cv.addEventListener('pointerdown', (e) => {
   M.y = p.y;
   M.inside = true;
   if (e.button === 2) {
+    if (mode === 'depot') M.rpressed = true;
     tryHE();
     return;
   }
@@ -6982,6 +7983,7 @@ function oneFrame(dt) {
   M.pressed = false;
   M.released = false;
   M.used = false;
+  M.rpressed = false;
 }
 
 // ---------- start
