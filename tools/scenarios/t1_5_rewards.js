@@ -1,0 +1,29 @@
+// A receipt follows the player through losses and reloads; replays cannot farm limited rewards.
+const check = (ok, why) => { if (!ok) throw new Error(why); };
+__sr.reset(); __sr.setLeg(3); __sr.start(); __sr.hp(9999);
+const first = __sr.payGold('crate:0', 5, 25);
+const duplicate = __sr.payGold('crate:0', 5, 25);
+check(first.gold === 5 && first.scrap === 0 && duplicate.gold === 0 && duplicate.scrap === 25, 'Item paid gold twice');
+check(__sr.SAVE.gold === 5, 'Gold not banked immediately');
+__sr.lose(); __sr.sim(6); __sr.load(); __sr.start();
+const retry = __sr.payGold('crate:0', 5, 25);
+check(!__sr.G.replay && retry.gold === 0 && retry.scrap === 25, 'Retry forgot receipt');
+const fresh = __sr.payGold('golden:0', 1, 10);
+check(fresh.gold === 1 && __sr.SAVE.gold === 6, 'New item on retry did not pay');
+__sr.win(); __sr.frames(120);
+const goldBefore = __sr.SAVE.gold, survBefore = __sr.SAVE.surv;
+__sr.leg(3);
+check(__sr.G.replay, 'Won leg not treated as replay');
+const replay = [__sr.payGold('golden:0', 1, 10), __sr.payGold('crate:1', 5, 25)];
+check(replay[0].scrap === 10 && replay[1].scrap === 25 && __sr.SAVE.gold === goldBefore, 'Replay paid gold');
+__sr.win(); __sr.frames(120);
+check(__sr.SAVE.surv === survBefore, 'Replay paid survivor');
+check(__sr.SAVE.legs[3].stars.every((s) => !s), 'Replay earned a star');
+__sr.leg(1, true); __sr.win(); __sr.frames(120);
+check(__sr.SAVE.surv === survBefore, 'Leg-one replay paid survivor');
+__sr.title();
+check(__sr.payGold('demo:0', 5, 25).gold === 0 && __sr.SAVE.gold === goldBefore, 'Demo earned a reward');
+// Exact replay screenshot setup.
+__sr.reset(); __sr.setLeg(2); __sr.leg(1, true); __sr.hp(9999); __sr.bot(true);
+__sr.frames(20); __sr.hold(true);
+QA_DONE({first, duplicate, retry, fresh, replay, gold: goldBefore, survivors: survBefore});

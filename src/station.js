@@ -110,9 +110,9 @@ function stationReward(st) {
   if (G.demo || G.replay || st.def.kind === 'end') return;
   const record = legSave(G.leg);
   if (record.paid.station) return;
-  record.paid.station = true;
   const x = st.door.x, y = st.door.y;
   if (st.def.kind === 'big') {
+    record.paid.station = true;
     G.surv++;
     G.stationReward = { kind: 'surv', x, y, t: G.t, amount: 1 };
     floatText(x, y + 34, '+1 SURVIVOR', U.gold);
@@ -121,6 +121,7 @@ function stationReward(st) {
     SFX.saved();
     bankRun();
   } else if (G.leg === 2 && !SAVE.flags.goldShown) {
+    record.paid.station = true;
     SAVE.chest = Math.max(SAVE.chest, 1);
     G.stationReward = { kind: 'chest', x, y, t: G.t, amount: 6 };
     floatText(x, y + 34, 'LOCKED GOLD CHEST', U.gold);
@@ -128,9 +129,7 @@ function stationReward(st) {
     SFX.crate();
     saveSave();
   } else {
-    G.gold = (G.gold || 0) + 6;
-    G.banked.gold = (G.banked.gold || 0) + 6;
-    SAVE.gold += 6;
+    payGold('station', 6, 0);
     G.stationReward = { kind: 'gold', x, y, t: G.t, amount: 6 };
     floatText(x, y + 34, '+6 GOLD', U.gold);
     coinPop(x, y, 8);

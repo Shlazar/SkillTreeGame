@@ -33,3 +33,28 @@ const STATIONS = STOPS.slice(1);
 function legSave(n) {
   return SAVE.legs[n] || (SAVE.legs[n] = { won: false, stars: [false, false, false], paid: {} });
 }
+
+// Every gold source has a stable id within its leg. Retries keep the receipt; replays pay only
+// the supplied scrap alternative. Paying immediately protects rewards even if the train is lost.
+function payGold(itemId, amount, scrapIfNot) {
+  const out = { gold: 0, scrap: 0 };
+  if (!G || G.demo || G.result || typeof itemId !== 'string' || !itemId) return out;
+  amount = Math.max(0, Math.floor(Number(amount) || 0));
+  scrapIfNot = Math.max(0, Math.floor(Number(scrapIfNot) || 0));
+  if (!Number.isFinite(amount) || !Number.isFinite(scrapIfNot)) return out;
+  const record = legSave(G.leg);
+  if (G.replay || record.won || Object.prototype.hasOwnProperty.call(record.paid, itemId)) {
+    out.scrap = scrapIfNot;
+    G.cash += scrapIfNot;
+    G.pay.loot += scrapIfNot;
+    if (scrapIfNot) G.cashPulse = 1;
+  } else if (amount) {
+    Object.defineProperty(record.paid, itemId, { value: true, enumerable: true, writable: true, configurable: true });
+    out.gold = amount;
+    G.gold = (G.gold || 0) + amount;
+    G.banked.gold = (G.banked.gold || 0) + amount;
+    SAVE.gold += amount;
+  }
+  bankRun();
+  return out;
+}

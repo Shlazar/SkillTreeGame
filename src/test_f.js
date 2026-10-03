@@ -7,6 +7,7 @@ Object.assign(window.__sr, {
   }),
   leg: (n, replay) => { startGame(n, replay); return G.leg; },
   win: () => { window.__sr.jump(8); },
+  payGold: (id, amount, scrapIfNot) => payGold(id, amount, scrapIfNot),
   setLeg: (n) => {
     n = clamp(Math.floor(Number(n) || 1), 1, 13);
     for (let i = 1; i < n; i++) legSave(i).won = true;
