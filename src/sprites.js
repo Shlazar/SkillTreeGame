@@ -310,32 +310,10 @@ function carGlow(t, i) {
   return t.glow[i];
 }
 // The survivors riding the flatcar: [px across (right), px along (to the front)] from its middle.
-// With the flatcar gun on it, the two at the back stay (RIDERS_GUN) and the gun stands at the front.
+// With the rail cannon on it, the two at the back stay (RIDERS_GUN) and the cannon stands at the front.
 const RIDERS = [[-3, 7], [3, 2], [-2, -4], [3, -9]];
-const RIDERS_GUN = [[-3, -5], [3, -9]];
+const RIDERS_GUN = [[-4, -9], [3, -11]];
 
-// ---------- the flatcar gun: a small turret, a pile of slices like the cars, at TURRET_N headings
-// all the way round (0 = its barrel to the north). n[i] / h[i] = normal / thermal; ox, oy = where
-// its middle on the deck is. TURRET_BARREL = px from its middle to the muzzle, TURRET_Z = the
-// muzzle's height over the deck.
-const TURRET = { n: [], h: [] }, TURRET_N = 32, TURRET_BARREL = 9, TURRET_Z = 3;
-function turretSlices() {
-  const S = (fn) => pix(18, 18, fn);
-  const disc = (r, R, col) => { for (let y = 0; y < 18; y++) for (let x = 0; x < 18; x++) if (Math.hypot(x - 8.5, y - 8.5) <= R) r(x, y, 1, 1, col); };
-  return [
-    // the mount: a dark ring, then the turning plate with four bolts
-    S((r) => disc(r, 5.4, '#16181d')),
-    S((r) => { disc(r, 5.4, '#2d3038'); for (const [x, y] of [[4, 8], [13, 9], [8, 13], [9, 4]]) r(x, y, 1, 1, '#4b4f5a'); }),
-    // the gun body, the dark underside of the barrel, an olive ammo box on its right
-    S((r) => { r(5, 6, 8, 7, '#3a3e48'); r(8, 0, 2, 7, '#1c1e23'); r(13, 8, 2, 4, '#3a4430'); }),
-    // its top lit at the front, a hatch, the barrel (lit on its left) with a bright muzzle
-    S((r) => {
-      r(5, 6, 8, 6, '#626875'); r(5, 6, 8, 1, '#8b919c'); r(7, 8, 4, 3, '#4b4f5a'); r(7, 8, 4, 1, '#3a3e48');
-      r(8, 0, 2, 7, '#7d838c'); r(8, 0, 1, 7, '#b4b9c1'); r(8, 0, 2, 1, '#d6d9de');
-      r(13, 8, 2, 4, '#5c6b40'); r(13, 8, 2, 1, '#7d8a58');
-    })
-  ];
-}
 // SURV[k] = a survivor: n / h = standing (normal / hot), run = 2 running frames each [n, h].
 const SURV = [];
 // a survivor with a rifle, 4 x 7; f = 0 standing, 1 / 2 = running
@@ -611,9 +589,9 @@ const NODE_ART = {
   // ARMOR: a steel shield with a gold plus
   armor: ['............', '.mssssssssm.', '.slllGglllm.', '.slllGglllm.', '.slGGGggglm.', '.slgggyyylm.',
     '.slllgylllm.', '..sllgyllm..', '..sllllllm..', '...sllllm...', '....slmm....', '.....mm.....'],
-  // FLATCAR GUN: a turret on a flatcar
-  gun: ['..........sl', '.........slm', '........slm.', '.......slm..', '....mmslm...', '...mslllmm..',
-    '...mlllllm..', '..mmmmmmmmm.', 'NNNNNNNNNNNN', 'nnnnnnnnnnnn', '.ls......ls.', '.sl......sl.'],
+  // RAIL CANNON: a heavy turret on a flatcar, its long barrel glowing at the muzzle
+  gun: ['..........YO', '........slsY', '.......slmm.', '......sl....', '.....sl.....', '...dsl......',
+    '.dmslmmd....', 'dlllllllmd..', 'dgkgkgkgkd..', 'NNNNNNNNNNNN', 'nnnnnnnnnnnn', '.ls......ls.'],
   // GUN SPEED: rounds stacked higher and higher
   gunspd: ['............', '.........s..', '........sll.', '.....s..Ggy.', '....sll.Ggy.', '.s..Ggy.Ggy.',
     'sll.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'yyy.yyy.yyy.'],
@@ -705,16 +683,6 @@ function initSprites() {
     TRAIN.push(t);
   }
   for (let i = 0; i < ANG_N; i++) FOOT.push(footSpr(angOf(i)));
-  // the flatcar gun at every heading round the circle
-  TURRET.n.length = TURRET.h.length = 0;
-  const ts = turretSlices();
-  for (let i = 0; i < TURRET_N; i++) {
-    const raw = stackSpr(ts, i / TURRET_N * TAU, 26), n = selOut(rimLight(raw, '#e8e2cc', 0.18)), h = outline(hotSpr(raw, 120), '#161616');
-    n.ox = h.ox = 14;
-    n.oy = h.oy = 14 + ts.length;
-    TURRET.n.push(n);
-    TURRET.h.push(h);
-  }
   SURV.length = 0;
   for (const [shirt, skin] of [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#5c6b40', '#b8876a'], ['#7d776b', '#d1a582'],
     ['#9fd3f2', '#c99a72'], ['#e3b04b', '#8a6448']]) {
@@ -788,7 +756,7 @@ function initSprites() {
   }
   // into the atlas now, not on the first frame of the tree (each new atlas sprite costs a re-upload)
   for (const c of [...Object.values(NICON), ICON.boltS, ICON.survS, ICON.star, ICON.lock]) atl(c);
-  // the same for the run's new sprites: the turret and the Ram card's icon
-  for (const c of [...TURRET.n, ...TURRET.h, ICON.ram, ICON.ramOff]) atl(c);
+  // the same for the run's new sprites: the Ram card's icon (the rail cannon's are in cannon.js)
+  for (const c of [ICON.ram, ICON.ramOff]) atl(c);
   for (let i = 0; i < ANG_N; i++) atl(carGlow(TRAIN[0], i));
 }

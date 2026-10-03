@@ -205,7 +205,7 @@ function tutLook(dt) {
     task('t_shoot', 'HOLD LEFT CLICK: SHOOT', 10, 'shoot');
   }
   if (G.overheat) tip('p_hot', 'TOO HOT! LET GO FOR A SECOND.', () => [52, cardsTop() + 13]);
-  if (G.up.gun && G.run > 3) tip('p_gun', 'YOUR FLATCAR GUN GUARDS THE TRAIN. GO EXPLORE!', () => {
+  if (G.up.gun && G.run > 3) tip('p_gun', 'YOUR RAIL CANNON GUARDS THE TRAIN. GO EXPLORE!', () => {
     const [x, y] = gunXY();
     return [x - G.camX, y - G.camY];
   });

@@ -38,9 +38,9 @@ const CFG = {
   // a Dead Wall: px along the rails it fills, px from the rail middle, how near the train comes
   // before it moves, how far ahead it is placed, how far ahead the warning comes (px)
   wall: { len: 120, half: 12, wake: 110, place: 600, warn: 300 },
-  // bought in the skill tree. The flatcar gun: rounds per second, how far round the flatcar it
-  // shoots (px), a round's flight time and damage, how fast its barrel turns (radians per second).
-  gun: { rate: 3, range: 112, travel: 0.15, dmg: 1, turn: 10 },
+  // bought in the skill tree. The rail cannon (cannon.js): seconds to reload, seconds each GUN SPEED
+  // level takes off, px either side of its line that it kills, how fast its barrel turns (radians/s).
+  gun: { reload: 4, fast: 0.5, hw: 5, turn: 7 },
   // The Turbo Ram: top speed (px/s), seconds at it, seconds to get up to it and to ease back, the
   // kill zone (px either side of the rail middle, px behind and ahead of the nose), kills to fill it
   // again, the next stop nearer than noStart px = it can't start, nearer than cut px = it ends
@@ -106,12 +106,12 @@ const UP = {
   range: (l) => CFG.heli.range + CFG.up.radio * l,                   // RADIO RANGE: flying range (px)
   pickup: (l) => CFG.heli.pickup + CFG.up.magnet * l,                // MAGNET: pickup reach (px)
   scav: (l) => CFG.up.scav * l,                                      // SCAVENGER: extra kill scrap
-  gun: (l) => CFG.gun.rate + CFG.up.gun * l,                         // GUN SPEED: flatcar gun rounds/s
+  gun: (l) => CFG.gun.reload - CFG.gun.fast * l,                     // GUN SPEED: rail cannon reload (s)
   nest: (l) => CFG.nest.rate + CFG.up.nest * l                       // NEST SPEED: MG nest rounds/s
 };
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
 // menus uses the plain numbers, but shows off the 105mm, the flatcar gun and the Turbo Ram. he,
-// winch, ram, wire = owned; gun = the flatcar gun's rounds per second (0 = none).
+// winch, ram, wire = owned; gun = the rail cannon's reload seconds (0 = none).
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
   return {
@@ -163,9 +163,8 @@ function newGame(demo, from) {
     // the train has ridden, the furthest km, and what is already in the save
     pay: { kills: 0, dist: 0, stop: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0 },
     newBest: false, oldBest: 0, bot: false, botT: 0, botZ: null, hurt: { crush: 0, claw: 0, shell: 0 },
-    // the flatcar gun: cd = time to the next round, ang = where its barrel points (0 = north,
-    // clockwise), tgt = what it shoots at, look = time to look for a better target, flash = muzzle
-    gun: { cd: 0, ang: 0, tgt: null, look: 0, flash: 0, shots: 0, kills: 0 },
+    // the rail cannon on the flatcar (cannon.js)
+    gun: newCannon(),
     // the Turbo Ram: on = running, t = seconds since it started, dur = its seconds at top speed,
     // left = kills still needed to fill it (0 = full; every run starts full), kills / pay = this Ram's,
     // card = its card shows, taste = the first run's Ram, flash = when it got full, crack = when the
@@ -1012,81 +1011,15 @@ function updateRounds(dt) {
     rs[i] = rs[rs.length - 1];
     rs.pop();
     if (r.kind === 'he') explode(r.bx, r.by, r.player);
-    else if (r.kind === 'gun') gunImpact(r);
     else mgImpact(r);
   }
 }
 
-// ---------- the flatcar gun
-// A turret on the flatcar (car 2) that shoots by itself: the dead on the train first, then the dead
-// on the rails ahead, then the nearest. Its barrel turns to its target and fires once it points there.
-// gunXY() = the turret's middle on the ground (a little ahead of the flatcar's middle).
+// ---------- the rail cannon (cannon.js)
+// gunXY() = the cannon's middle on the ground (a little ahead of the flatcar's middle).
 function gunXY() {
   const c = G.tr.cars[2];
-  return [c.cx + c.dx * 4, c.cy + c.dy * 4];
-}
-// The best target within reach (one that the rounds in the air will not already kill), or null.
-function gunTarget(gx, gy) {
-  let best = null, bk = Infinity;
-  const s0 = G.tr.s;
-  queryEll(gx, gy, CFG.gun.range, (z, d) => {
-    if (z.pending >= z.hp) return;
-    const k = z.st === 2 ? d : z.st === 1 && trackLocal(z.x, z.y, TL).a < s0 ? 1000 + d : 2000 + d;
-    if (k < bk) {
-      bk = k;
-      best = z;
-    }
-  });
-  return best;
-}
-function updateGun(dt) {
-  const g = G.gun, R = CFG.gun, [gx, gy] = gunXY();
-  g.flash = Math.max(0, g.flash - dt);
-  // look again every 0.1 s (and at once when the target is gone)
-  let z = g.tgt;
-  if (z && (z.dead || Math.hypot(z.x - gx, (z.y - gy) / FORE) > R.range + 6)) z = null;
-  g.look -= dt;
-  if (!z || g.look <= 0) {
-    z = gunTarget(gx, gy) || z;
-    g.look = 0.1;
-  }
-  g.tgt = z;
-  // the barrel turns to it (or back to the front of the train)
-  const want = z ? Math.atan2(z.x - gx, -(z.y - gy)) : G.tr.cars[2].ang, da = mod(want - g.ang + Math.PI, TAU) - Math.PI;
-  g.ang = mod(g.ang + clamp(da, -R.turn * dt, R.turn * dt), TAU);
-  g.cd -= dt;
-  if (z && Math.abs(da) < 0.3 && g.cd <= 0 && z.pending < z.hp) {
-    gunFire(z);
-    g.cd += 1 / G.up.gun;
-  }
-  g.cd = Math.max(0, g.cd);
-}
-// One round at zombie z: it lands where z will be 0.15 s from now. (mx, my) = the muzzle from the
-// turret's middle on screen, for the tracer.
-function gunFire(z) {
-  const g = G.gun, T = CFG.gun.travel, [gx, gy] = gunXY();
-  z.pending += CFG.gun.dmg;
-  const mx = Math.sin(g.ang) * TURRET_BARREL, my = -Math.cos(g.ang) * TURRET_BARREL;
-  G.rounds.push({ kind: 'gun', bx: z.x + z.vx * T, by: z.y + z.vy * T, tgt: z, age: 0, T, mx, my, side: 0, j: 0 });
-  g.flash = 0.06;
-  g.shots++;
-  // a spent case jumps out of the right side
-  part({ x: gx + Math.cos(g.ang) * 3, y: gy + Math.sin(g.ang) * 3, z: 6, vx: Math.cos(g.ang) * rnd(15, 30), vy: Math.sin(g.ang) * rnd(15, 30),
-    vz: rnd(20, 35), g: 220, life: 0.5, max: 0.5, s: 1, c: '#e3b04b' });
-  if (!G.demo) SFX.gun();
-}
-// The round gets there: 1 damage to its target if it is still in the spot, and a small spark.
-function gunImpact(r) {
-  const z = r.tgt;
-  z.pending = Math.max(0, z.pending - CFG.gun.dmg);
-  if (!z.dead && Math.hypot(z.x - r.bx, (z.y - r.by) / FORE) < 8) hitZombie(z, CFG.gun.dmg, 'gun');
-  const x = r.bx, y = r.by;
-  lights.push({ x, y, z: 5, r: 8, c: '#ffb060', life: 0.08, max: 0.08, a: 0.7 });
-  for (let k = 0; k < 3; k++) {
-    const a = rnd(TAU), s = rnd(15, 45);
-    part({ x, y, z: 5, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(10, 40), g: 160, life: rnd(0.15, 0.3), max: 0.3,
-      s: 1, c: pick(['#ffe2a0', '#ffb347']), add: true, drag: 1.5 });
-  }
+  return [c.cx + c.dx * 2, c.cy + c.dy * 2];
 }
 
 // ---------- the Turbo Ram
@@ -1681,7 +1614,7 @@ function step(dt) {
   }
   updateHeli(dt);
   placeCamera();
-  if (G.up.gun && !G.result) updateGun(dt);
+  if (G.up.gun && !G.result) updateCannon(dt);
   for (let i = G.timers.length - 1; i >= 0; i--) {
     const tm = G.timers[i];
     tm.t -= dt;
