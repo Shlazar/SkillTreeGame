@@ -107,7 +107,7 @@ Each call rewrites `index.html` and uses one Chrome profile per repo (`tools/out
 A scenario is a plain browser JS file. It is not a module, and it has no `require`.
 
 - It runs **once, right after the game has booted.** `boot()` in `src/main.js` has already run, `__sr.mode` is `'title'`, and every `__sr` call from section 5 exists.
-- **localStorage is cleared before boot**, so every test starts from a fresh save: 0 scrap, nothing bought, no tutorial seen. Use `__sr.give`, `__sr.node`, `__sr.reach` to set up a save.
+- **localStorage is cleared before boot**, so every test starts from a fresh save: 0 scrap and no tutorial seen. Use `__sr.give`, `__sr.node`, `__sr.setLeg` to set up a save.
 - The game code lives inside one closure (`(() => { 'use strict'; ... })()` from `build.py`). **Your scenario cannot see `G`, `mode`, `SAVE`, `CFG` or any other game name directly.** Use `window.__sr` only (for example `__sr.G`, `__sr.mode`, `__sr.SAVE`, `__sr.CFG`). If you need a new hook, add it to a `test_*.js` file (see "Adding a new test call" at the end of section 5).
 - The scenario code runs synchronously. `__sr.sim(sec)` and `__sr.frames(n)` move the game forward right away, so a 30 s `sim` finishes in about a second of real time. Headless Chrome hardly runs `requestAnimationFrame` by itself during a run, so do not wait with `setTimeout` for the game to move. Step it yourself.
 - **`__sr.node(id, l)` returns `false` with no error for an unknown node id.** If a node was renamed or deleted, your scenario silently sets nothing. Check the return value, or list the ids with `__sr.treeNodes()`.
@@ -151,7 +151,8 @@ node tools/qa.js shot tools/scenarios/my_boom.js tools/out/boom.png 1500
 
 | File | Mode | What it does / checks |
 |---|---|---|
-| `tools/examples/run_loop.js` | run | The whole loop: title -> depot (tree tab) -> run -> bot plays 20 s -> `lose()` -> 6 s -> summary -> depot. Expected result: `["title","depot","play","summary","depot"]` and `qaErrors: []`. |
+| `tools/examples/run_loop.js` | run | New game goes straight from title to leg 1; the bot plays 20 s, loses, and Enter returns from the summary to the Depot. Expected result: `["title","play","summary","depot"]` and `qaErrors: []`. |
+| `tools/examples/run_leg.js` | run | Rides all of leg 1 with the bot and `hp(9999)`, checks the saved first arrival, and prints `legState()`. Expected result: leg 1, `result: "won"`, and `qaErrors: []`. |
 | `tools/examples/run_smoke.js` | run | Starts a run, the bot plays 30 s, returns `__sr.stats()`. Check `qaErrors: []`, that `mode` is still `play` or a sane result, and that `kills`, `km`, `hp`, `zombies`, `parts` look normal. |
 | `tools/examples/shot_fight.js` | shot | Gives 3000 scrap and 30 survivors, starts a run, the bot plays 20 s, then the screenshot shows the live fight (HUD, train, heli, horde, blood). |
 | `tools/examples/shot_tree.js` | shot | Gives 400 scrap and 6 survivors and opens the Depot skill tree tab. |
@@ -171,18 +172,18 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 
 - `__sr.G`: getter for the live game state object `G` (train `G.tr`, `G.zombies`, `G.helis`, `G.up`, `G.station`, `G.loot`...).
 - `__sr.mode`: getter for the screen: `'title'`, `'depot'`, `'play'`, `'ending'`, `'summary'`.
-- `__sr.SAVE`: getter for the live save object (scrap, surv, reached, held, towers, flags, seen...).
+- `__sr.SAVE`: getter for the live v2 save (scrap, surv, gold, leg, legs, rescues, rescueDue, chest, hangar, nodes, flags, seen...).
 - `__sr.FPS`: the frame stats object `{n, sum, worst, t, avg, lastWorst}`. Not useful headless; use `bench`.
 - `__sr.CFG`: the tuning config object.
 - `__sr.HORDE`: the horde-by-distance table from horde.js (for balance tests).
 - `art()`: returns the sprite sets `{TRAIN, FOOT, HSPR, ROTOR, STATION, SURV, ZS, ICON, TURRET}` (for a test sheet).
-- `stats()`: one big snapshot of the run: `mode, result, km, kills, cash, runSurv, scrap, survivors, best, runs, pay, hp, max, speed, onTrain, t, zombies, bodies, up, shots, scavPaid, overheat, heReload, hurt, station, walls, helis, rounds, parts, texts, chunks, decals, W, H, SCALE, fps, worstMs, heat, gun{...}, ram{...}`. `fps` and `worstMs` are always 0 headless: only the real `loop()` updates them, and `frames()` does not. Do not use them for checks.
+- `stats()`: one big snapshot of the run: `mode, result, km, kills, cash, runSurv, scrap, survivors, gold, leg, runs, pay, hp, max, speed, onTrain, t, zombies, bodies, up, shots, scavPaid, overheat, heReload, hurt, station, walls, helis, rounds, parts, texts, chunks, decals, W, H, SCALE, fps, worstMs, heat, gun{...}, ram{...}`. `fps` and `worstMs` are always 0 headless: only the real `loop()` updates them, and `frames()` does not. Do not use them for checks.
 
 ### 5.2 Screens and flow (src/main.js, src/tut.js)
 
 - `title()`: go to the title screen (`toTitle`).
 - `depot(tab)`: go to the Depot with its `'tree'` tab open (`toDepot`).
-- `start(from)`: start a run from `'depot'` (default) or a reached station id (`'farm'`, `'mill'`) (`startGame`).
+- `start(n)`: start leg n (1–12), or the next saved leg when omitted. A won leg is automatically a replay.
 - `lose()`: the train breaks now, in play only. The summary follows about 3.4 s later (sim 6 s to be safe).
 - `quit()`: quit the run as the pause menu does (`quitRun`, src/tut.js).
 - `goal()`: the summary's goal line (`summaryGoal`).
@@ -197,8 +198,8 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 ### 5.4 Train, run and position (src/main.js)
 
 - `hp(v)`: set the train's health (and its shown bar) to v.
-- `jump(px)`: move the train to px before where it brakes for the next station (or, past the last one, before the safe zone). All zombies are removed.
-- `km(x)`: move the train to x km from the Depot. Stations and walls behind are marked passed, zombies are removed, and it does not pay. Does nothing on the title demo.
+- `jump(px)`: move the train to px before this leg's nose stopping point. Zombies are removed; the train still brakes and arrives through normal game logic.
+- `km(x)`: move within the current leg to x km along the whole line, without paying. Does nothing on the title demo.
 - `bot(on)`: the autopilot plays (aims and pulls triggers). `bot(false)` also lets go of the trigger.
 
 ### 5.5 Input (src/main.js, src/test_h.js)
@@ -272,7 +273,7 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 ### 5.11 Save and skill tree (src/main.js, src/test_t.js)
 
 - `give(scrap, surv, gold)`: add the three currencies to the save (saved). Returns `{scrap, surv, gold}`. Omitted amounts add zero.
-- `reach(id, held)`: mark station id reached (and held if `held`). Only for ids in `STATIONS` (`'farm'`, `'mill'`).
+- `setLeg(n)`: set the next leg and mark earlier legs won for setup; it does not grant their rewards (see 5.14).
 - `save()`: a deep copy of the save.
 - `load()`: read the save again from localStorage.
 - `reset()`: wipe the save and go to the title.
@@ -302,6 +303,18 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 - `lootTake(i)`: take find i at once (`takeLoot`).
 - `lootSpawn(kind)`: a find of kind `'pile'`, `'crate'`, `'gold'` or `'sos'` right next to heli 0. Returns its index.
 - `lootStats()`: `{loot, cash, surv, pickup, fly, winch}`.
+
+### 5.14 Legs and rewards (src/test_f.js)
+
+- `line()`: copies the thirteen stops and twelve leg definitions, including each leg's events.
+- `leg(n, replay)`: starts leg n (1–12); `replay: true` forces scrap-only play. Won legs are always replays.
+- `setLeg(n)`: sets the next saved leg (1–13) and marks earlier legs won, without paying station rewards or stars. Reset first when moving backward for a fresh test.
+- `legState()`: `{leg, t, len, result, replay, events, stars, gold, surv, scrap, wall}`. `t` is run seconds; `len` is rail pixels. `wall` is null until the Dead Wall system is added.
+- `win()`: moves near this leg's destination. Step time afterward (for example `frames(60)`) to finish braking and award the arrival normally.
+- `payGold(id, amount, scrapIfNot)`: exercises the receipt-based reward path. A new id pays gold; duplicate/replay ids pay the scrap alternative. It banks at once and returns `{gold, scrap}`.
+- `currencyState()`: shown currencies, their screen x targets, saved chest state and saved gold.
+- `depotRoute()`: selected leg, replay flag, ride label, loss message, and each leg's clickable midpoint/availability.
+- `summaryView()`: current summary layout and its Depot button rectangle, or null when there is no summary.
 
 ### 5.15 Tutorial (src/tut.js)
 
