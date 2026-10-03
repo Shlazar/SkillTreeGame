@@ -130,6 +130,8 @@ function plan(ci, cj) {
   pl = { props: [], flats: [], tufts: [], fires: [], block: [] };
   const take = (list) => list[(rng() * list.length) | 0];
   const put = (def, x, y, o) => {
+    // (nothing stands on a station's ground)
+    if (stationZone(x, y)) return null;
     const p = Object.assign({ d: def, x: Math.round(x), y: Math.round(y) }, o || {});
     p.k = p.y;
     pl.props.push(p);

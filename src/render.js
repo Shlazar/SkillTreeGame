@@ -467,6 +467,7 @@ function render() {
   drawRings();
   drawParts(true);
   drawRounds();
+  drawTowerFx();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
   if (!thermal) {

@@ -97,8 +97,9 @@ function setTab(t) {
   }
 }
 // Keys on the Depot screen: TAB switches tabs, ENTER starts, left / right pick the start, ESC goes
-// back to the title. (The Station tab will first drop a held item on ESC.)
+// back to the title. (On the Station tab, 1-3 pick a tower and ESC first drops it.)
 function depotKey(k) {
+  if (depotTab === 'station' && stationKey(k)) return;
   if (k === 'Tab') {
     setTab(depotTab === 'tree' ? 'station' : 'tree');
     SFX.ui();
@@ -204,10 +205,11 @@ function drawDepotTop() {
 // What the bottom bar says between the start picker and START RUN.
 function depotHint() {
   if (depotTab === 'station' && !stationOpen()) return ['HOLD FARM STOP ONCE TO BUILD HERE.', U.ink];
+  if (depotTab === 'station' && ST.sel) return ['CLICK A TILE TO BUILD.  R-CLICK OR ESC: STOP.', U.dim];
   const th = depotTab === 'tree' && treeHint();
   if (th) return th;
   const d = stopDef(SAVE.start);
-  if (d && d.id !== 'depot') return ['THE TRAIN STOPS AT ' + d.name + ' FIRST.', U.dim];
+  if (d && d.id !== 'depot') return startHint(d);
   return ['TAB: SWITCH PANELS.  ENTER: START RUN.', U.faint];
 }
 function drawDepotBottom() {
@@ -241,23 +243,5 @@ function drawDepotBottom() {
   const [hint, hc] = depotHint(), hw = tw(hint);
   if (hw < bx - x - 16) text(hint, Math.round((x + bx) / 2), y + 11, hc, { align: 'center' });
 }
-// (The SKILL TREE tab is drawn by drawTreeTab in tree.js.)
-// The STATION tab: locked (a padlock) until Farm Stop is held. (The build grid comes here.)
-function drawStationTab(y0, y1) {
-  const open = stationOpen(), w = 272, h = 112, x = Math.round(W / 2 - w / 2), y = Math.round((y0 + y1) / 2 - h / 2);
-  const farm = STATIONS[0];
-  panel(x, y, w, h, 'rgba(15,16,20,0.94)');
-  if (!open) blit(ICON.lockBig, Math.round(W / 2 - ICON.lockBig.width / 2), y + 10);
-  else blit(ICON.survBig, Math.round(W / 2 - ICON.survBig.width / 2), y + 10);
-  text(farm.name, W / 2, y + 40, U.teal, { align: 'center', scale: 2, drop: true });
-  if (!open) {
-    text('THE FIRST STATION, ' + farm.km.toFixed(1) + ' KM UP THE LINE.', W / 2, y + 64, U.ink, { align: 'center' });
-    text('YOUR BEST SO FAR: ' + SAVE.best.toFixed(2) + ' KM.', W / 2, y + 76, U.dim, { align: 'center' });
-  } else {
-    text('FARM STOP IS YOURS.', W / 2, y + 64, U.ink, { align: 'center' });
-    text('YOU CAN START RUNS FROM HERE.', W / 2, y + 76, U.dim, { align: 'center' });
-  }
-  ctx.fillStyle = '#2e3139';
-  ctx.fillRect(x + 16, y + 89, w - 32, 1);
-  text(open ? 'ITS TOWERS ARE BUILT HERE SOON.' : 'HOLD IT ONCE, THEN BUILD ITS TOWERS HERE.', W / 2, y + 97, U.faint, { align: 'center' });
-}
+// (The SKILL TREE tab is drawn by drawTreeTab in tree.js, the STATION tab by drawStationTab in
+// stationtab.js.)

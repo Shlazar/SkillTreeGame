@@ -29,6 +29,7 @@ cv.addEventListener('pointerdown', (e) => {
   M.y = p.y;
   M.inside = true;
   if (e.button === 2) {
+    if (mode === 'depot') M.rpressed = true;
     tryHE();
     return;
   }
@@ -247,6 +248,7 @@ function oneFrame(dt) {
   M.pressed = false;
   M.released = false;
   M.used = false;
+  M.rpressed = false;
 }
 
 // ---------- start
