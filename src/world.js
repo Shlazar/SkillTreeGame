@@ -1,8 +1,14 @@
-/* The endless countryside, in 150 m field cells. Each cell's crop, pond, hedges, farmstead, cars
- * and power poles come from a hash of its coordinates, so any part of the world rebuilds the same.
- * Field types reach the ground shader through a small texture; scenery is drawn with instancing. */
+/* The endless world, in 150 m field cells. Each cell's crop, pond, hedges, houses, cars and lamps
+ * come from a hash of its coordinates, so any part of the world rebuilds the same. Towns sit on the
+ * highway crossings. Everything is painted pixel by pixel in its shader: buildings stand on a
+ * half-metre grid and their details are measured in art pixels (0.25 m along a wall, VU up it), so
+ * every window, plank and shingle row lands on whole pixels. */
 
 const CELL = 150, FT = 64;
+const HU = 0.25, VU = 1 / (KPX * CE);          // one art pixel along a wall, and up it
+const snapH = (v) => Math.round(v * 2) / 2;    // the half-metre grid buildings stand on
+const snapV = (v) => Math.round(v / VU) * VU;
+
 // highways and farm tracks: warped grids, the same in JS and GLSL
 const hwX = (z) => 40 * Math.sin(z * 0.0021) + 18 * Math.sin(z * 0.0057 + 1.3);
 const hwZ = (x) => 40 * Math.sin(x * 0.0019 + 0.7) + 18 * Math.sin(x * 0.0051 + 2.1);
@@ -23,6 +29,22 @@ const GLSL_ROADS = `
     return min(abs(mod(wx, 300.0) - 150.0), abs(mod(wz, 340.0) - 170.0));
   }
 `;
+// heat thrown onto nearby surfaces by fires and blasts (thermal mode)
+U.uSrc = { value: Array.from({ length: 24 }, () => new THREE.Vector4(0, 0, 1, 0)) };
+U.uNSrc = { value: 0 };
+const GLSL_SRC = `
+  uniform vec4 uSrc[24];
+  uniform int uNSrc;
+  float srcHeat(vec3 wp) {
+    float s = 0.0;
+    for (int i = 0; i < 24; i++) {
+      if (i >= uNSrc) break;
+      vec2 d = wp.xz - uSrc[i].xy;
+      s += uSrc[i].w * exp(-dot(d, d) / (uSrc[i].z * uSrc[i].z));
+    }
+    return s;
+  }
+`;
 function vnoise2(x, y, s) {
   const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
   const a = rnd(xi, yi, s), b = rnd(xi + 1, yi, s), c = rnd(xi, yi + 1, s), d = rnd(xi + 1, yi + 1, s);
@@ -38,8 +60,8 @@ function townOf(x, z) {
   const kx = Math.round((x + hwX(z) - 550) / 1100), kz = Math.round((z + hwZ(x) - 650) / 1300), c = crossing(kx, kz);
   return { x: c[0], z: c[1], r: 170 + 130 * rnd(kx, kz, 77), d: Math.hypot(x - c[0], z - c[1]) };
 }
-// where a mission starts: the edge of the first town's centre
-function startSpot() { const c = crossing(0, 0); return [c[0] + 45, c[1] + 60]; }
+// where a mission starts: a street near the first town's centre
+function startSpot() { const c = crossing(0, 0); return [Math.round(c[0] / 75) * 75 + 37, Math.round(c[1] / 75) * 75 + 2]; }
 // field types: 0 pasture, 1 ploughed, 2 crop rows, 3 stubble, 4 woodland, 5 town
 const fieldCache = new Map();
 function fieldOf(ci, cj) {
@@ -47,7 +69,7 @@ function fieldOf(ci, cj) {
   let f = fieldCache.get(key);
   if (f) return f;
   const r = rnd(ci, cj, 1), forest = vnoise2(ci * 0.21, cj * 0.21, 4), town = townOf((ci + 0.5) * CELL, (cj + 0.5) * CELL);
-  let type = town.d < town.r ? 5 : forest > 0.7 ? 4 : r < 0.3 ? 0 : r < 0.55 ? 1 : r < 0.76 ? 2 : 3;
+  const type = town.d < town.r ? 5 : forest > 0.7 ? 4 : r < 0.3 ? 0 : r < 0.55 ? 1 : r < 0.76 ? 2 : 3;
   f = { type, ang: Math.floor(rnd(ci, cj, 2) * 4), v: rnd(ci, cj, 3), pond: type === 0 && rnd(ci, cj, 9) < 0.07 };
   if (fieldCache.size > 20000) fieldCache.clear();
   fieldCache.set(key, f);
@@ -74,167 +96,435 @@ const groundMat = new THREE.ShaderMaterial({
   vertexShader: `
     varying vec3 vW;
     void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
-  fragmentShader: GLSL_NOISE + GLSL_OUT + GLSL_SRC + GLSL_ROADS + `
-    uniform sampler2D uField; uniform vec2 uFieldO; uniform float uTime;
+  fragmentShader: GLSL_GB + GLSL_SRC + GLSL_ROADS + `
+    uniform sampler2D uField; uniform vec2 uFieldO;
     varying vec3 vW;
     void main() {
-      vec2 p = vW.xz, q = p / 150.0, cell = floor(q), fr = q - cell;
+      if (uPass == 2) discard;
+      vec3 P = vec3(vW.x, 0.0, vW.z);
+      vec2 p = P.xz, g = gpix();
+      float r = hash12(g * 0.731 + 3.1), r2 = hash12(g * 1.37 + 9.7);
+      float t = r < 0.08 ? 1.0 : r > 0.93 ? -1.0 : 0.0;
+      vec2 q = p / 150.0, cell = floor(q), fr = q - cell;
       vec4 F = texture2D(uField, (cell - uFieldO + 0.5) / 64.0);
-      float type = floor(F.r * 255.0 + 0.5), ang = floor(F.g * 255.0 + 0.5) * 0.785398, var = F.b - 0.5;
+      float type = floor(F.r * 255.0 + 0.5), ang = floor(F.g * 255.0 + 0.5) * 0.785398;
       vec2 dir = vec2(cos(ang), sin(ang));
+      float n1 = vnoise(p * 0.11), n2 = vnoise(p * 0.035 + 7.0), n3 = vnoise(p * 0.7);
       float edge = min(min(fr.x, 1.0 - fr.x), min(fr.y, 1.0 - fr.y)) * 150.0;
-      float g1 = fbm(p * 0.07), g2 = vnoise(p * 1.3), g3 = hash12(floor(p * 2.0));
-      float h;
-      if (type < 0.5) h = 0.30 + (g1 - 0.5) * 0.06 + (g2 - 0.5) * 0.02 + g3 * 0.006;                    // pasture
-      else if (type < 1.5) h = 0.375 + sin(dot(p, dir) * 2.2 + g2 * 2.0) * 0.008 + (g1 - 0.5) * 0.05 + g3 * 0.008;  // ploughed
-      else if (type < 2.5) h = 0.295 + (1.0 - smoothstep(0.15, 0.85, abs(sin(dot(p, dir) * 1.4)))) * 0.016 + (g1 - 0.5) * 0.04 + (g2 - 0.5) * 0.02; // crop rows
-      else if (type < 3.5) h = 0.34 + sin(dot(p, dir) * 5.0 + g2 * 3.0) * 0.005 + (g1 - 0.5) * 0.04 + g3 * 0.006;    // stubble
-      else if (type < 4.5) h = 0.335 + (g1 - 0.5) * 0.05 + (g2 - 0.5) * 0.02;                                // woodland floor
-      else {                                    // town: 75 m blocks, streets on their edges, three lots along each street side
+      vec3 col; float cls = 200.0, heat;
+      if (type < 0.5) {                                   // pasture
+        col = n1 > 0.62 ? P_grassDk : P_grass;
+        if (n2 > 0.68 && r2 < 0.45) col = P_grassLt;
+        if (vnoise(p * 0.045 + 21.0) > 0.8 && r2 < 0.6) { col = P_dirt; t = r < 0.15 ? -1.0 : 0.0; }
+        if (r2 > 0.996) col = r > 0.5 ? P_trim : P_paintY;            // wild flowers
+        cls = 210.0; heat = 0.3 + (n2 - 0.5) * 0.04;
+      } else if (type < 1.5) {                            // ploughed: furrows one way per field
+        float s = sin(dot(p, dir) * 6.98 + n3 * 0.6);
+        col = s > 0.15 ? P_soil : P_soilDk; t = s > 0.85 ? 1.0 : r > 0.95 ? -1.0 : 0.0;
+        heat = 0.375 + (n1 - 0.5) * 0.04;
+      } else if (type < 2.5) {                            // crop rows on bare soil
+        float s = sin(dot(p, dir) * 6.98);
+        bool row = s > -0.15;
+        col = row ? (n3 > 0.55 ? P_cropDk : P_crop) : P_soilDk; cls = row ? 210.0 : 200.0;
+        heat = 0.295 + (n1 - 0.5) * 0.03;
+      } else if (type < 3.5) {                            // stubble and straw lines
+        float s = fract(dot(p, dir) * 1.25 + r2 * 0.2);
+        col = s < 0.28 ? P_stubbleDk : P_stubble; if (n1 > 0.7 && r2 < 0.5) col = P_dirt;
+        heat = 0.34 + (n1 - 0.5) * 0.04;
+      } else if (type < 4.5) {                            // woodland floor: moss, mud, fallen leaves
+        col = n1 > 0.74 ? P_mud : n2 > 0.6 ? P_leafDk : P_grassDk; if (r2 > 0.93) col = P_autumnDk; if (r2 < 0.05) col = P_grass;
+        cls = 210.0; heat = 0.335 + (n1 - 0.5) * 0.04;
+      } else {                                            // town: 75 m blocks, streets on their edges
         vec2 bl = mod(p, 75.0), e = min(bl, 75.0 - bl);
         float sd = min(e.x, e.y), lx = bl.x - 6.0, lot = lx - floor(lx / 21.0) * 21.0, inLots = step(0.0, lx) * step(lx, 63.0);
-        h = 0.3 + (g1 - 0.5) * 0.035 + (g2 - 0.5) * 0.012 + g3 * 0.005;                                   // lawns
-        float fence = inLots * (1.0 - smoothstep(0.1, 0.28, min(lot, 21.0 - lot))) * step(6.0, e.y);
-        fence = max(fence, (1.0 - smoothstep(0.1, 0.28, abs(e.y - 37.5))) * step(6.0, e.x));
-        h = mix(h, 0.35, fence * 0.8);                                                                     // fences between yards
-        float drive = inLots * step(15.0, lot) * step(lot, 19.4) * step(e.y, 21.0);
-        h = mix(h, 0.355 + (g2 - 0.5) * 0.012, drive);                                                    // driveways
-        float along = e.y < e.x ? p.x : p.y;
-        h = mix(h, 0.36 + step(0.93, fract(along / 1.6)) * 0.012 + g3 * 0.004, 1.0 - smoothstep(5.9, 6.05, sd)); // sidewalks
-        h = mix(h, 0.385 + (vnoise(p * 0.35) - 0.5) * 0.02 + g3 * 0.006 - smoothstep(0.93, 0.97, vnoise(p * vec2(0.8, 0.3))) * 0.015,
-          1.0 - smoothstep(3.9, 4.05, sd));                                                                // the street
-        h -= (1.0 - smoothstep(0.0, 0.3, abs(sd - 4.0))) * 0.018;                                          // the gutter by the curb
+        col = mod(floor(p.x / 1.5), 2.0) < 1.0 ? P_lawn : mix(P_lawn, P_lawnLt, 0.55);   // mown stripes
+        if (n1 > 0.7) col = P_lawnDk;
+        cls = 210.0; heat = 0.3 + (n2 - 0.5) * 0.03;
+        if (inLots * step(15.0, lot) * step(lot, 19.5) * step(e.y, 21.0) > 0.5) {        // driveways
+          col = P_concrete; cls = 200.0; heat = 0.355; t = r > 0.9 ? -1.0 : 0.0;
+          if (fract(e.y / 3.0) < 0.09) col = P_concreteDk;
+        }
+        if (sd < 6.0) {                                                                    // sidewalks with joints
+          float along = e.y < e.x ? p.x : p.y;
+          col = fract(along / 1.5) < 0.17 ? P_concreteDk : P_concrete; cls = 200.0; heat = 0.36; t = r > 0.94 ? -1.0 : 0.0;
+        }
+        if (sd < 4.25) { col = P_curb; heat = 0.36; t = 0.0; }                            // the curb
+        if (sd < 4.0) {                                                                    // the street
+          col = n3 > 0.62 ? P_asphaltDk : P_asphalt; heat = 0.385; t = r < 0.06 ? 1.0 : r > 0.9 ? -1.0 : 0.0;
+          if (smoothstep(0.93, 0.97, vnoise(p * vec2(0.8, 0.3))) > 0.5) col = P_asphaltDk;
+          if (sd > 3.6) col = P_asphaltDk;                                                 // the gutter
+        }
       }
-      h += var * 0.03;
-      if (type < 3.5) h += (1.0 - smoothstep(0.5, 1.8, edge)) * 0.028;                                        // a damp ditch
-      if (F.a > 0.5) {                                                                                        // a pond: cold, flat water
+      if (type < 3.5 && edge < 1.5) { col = P_grassDk; cls = 210.0; heat += 0.02; }          // a damp ditch round each field
+      if (F.a > 0.5) {                                                                     // a pond
         vec2 c = fr - 0.5;
-        float r = length(c * vec2(1.0, 1.25)) + (vnoise(p * 0.05) - 0.5) * 0.12;
-        float w = 1.0 - smoothstep(0.24, 0.255, r);
-        h = mix(h, 0.212 + (vnoise(p * 0.25 + uTime * 0.04) - 0.5) * 0.006, w);
-        h += (smoothstep(0.245, 0.26, r) - smoothstep(0.26, 0.31, r)) * 0.035;
+        float rr = length(c * vec2(1.0, 1.25)) + (vnoise(p * 0.05) - 0.5) * 0.12;
+        if (rr < 0.255) {
+          col = P_water; cls = 220.0; heat = 0.212; t = 0.0;
+          float ripple = hash12(floor(g / vec2(3.0, 1.0)) + floor(uTime * 1.5));
+          if (ripple > 0.94) col = mix(P_water, P_trim, 0.35);
+          if (rr > 0.24) col = P_mud;
+        } else if (rr < 0.29) { col = r2 < 0.5 ? P_grassDk : P_mud; cls = 210.0; }
       }
-      float td = trackD(p), track = (1.0 - smoothstep(2.1, 2.7, td)) * step(type, 4.5);
-      float rut = (1.0 - smoothstep(0.3, 0.55, abs(td - 1.15))) * track;
-      h = mix(h, 0.365 + (g2 - 0.5) * 0.02 + rut * 0.022, track);
-      float dx = hwDx(p), dz = hwDz(p), hd = min(dx, dz), along = dx < dz ? p.y : p.x;
-      float road = 1.0 - smoothstep(3.6, 4.0, hd), shoulder = (1.0 - smoothstep(4.0, 5.6, hd)) * (1.0 - road);
-      float lane = (1.0 - smoothstep(0.08, 0.16, hd)) * step(0.45, fract(along / 9.0));
-      float crack = smoothstep(0.92, 0.97, vnoise(p * vec2(0.9, 0.35)));
-      h = mix(h, 0.395 + (vnoise(p * 0.35) - 0.5) * 0.025 + g3 * 0.008 - crack * 0.02, road);
-      h = mix(h, 0.37, lane * road);
-      h -= shoulder * 0.022;
-      h += srcHeat(vW);
-      gl_FragColor = heatOut(h, vW);
+      float td = trackD(p);                                                                 // farm tracks: ruts and a grassy crown
+      if (type < 4.5 && td < 2.7) {
+        cls = 200.0; heat = 0.365;
+        if (td < 0.5) { col = r < 0.5 ? P_grassDk : P_dirt; cls = 210.0; }
+        else if (abs(td - 1.2) < 0.45) { col = P_mud; t = r < 0.2 ? -1.0 : 0.0; }
+        else col = r2 < 0.12 ? P_grassDk : P_dirt;
+      }
+      float dx = hwDx(p), dz = hwDz(p), hd = min(dx, dz), along = dx < dz ? p.y : p.x;      // highways
+      if (hd < 6.0) {
+        cls = 200.0;
+        if (hd < 4.0) {
+          col = n3 > 0.6 ? P_asphaltDk : P_asphalt; heat = 0.395; t = r < 0.05 ? 1.0 : r > 0.9 ? -1.0 : 0.0;
+          if (smoothstep(0.93, 0.97, vnoise(p * vec2(0.9, 0.35))) > 0.5) col = P_asphaltDk;
+          if (hd < 0.2 && fract(along / 9.0) > 0.45) { col = P_paintY; heat = 0.37; }      // the centre line
+          if (abs(hd - 3.55) < 0.13) { col = P_paintW; heat = 0.37; }                     // edge lines
+        } else { col = r2 < 0.5 ? P_gravel : P_concreteDk; heat = 0.37; t = r < 0.15 ? -1.0 : 0.0; }
+      }
+      heat += srcHeat(P);
+      gl_FragColor = gOut(tex(col, t), cls, vec3(0.0, 1.0, 0.0), P, heat);
     }`,
 });
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(5000, 5000, 1, 1).rotateX(-Math.PI / 2), groundMat);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 1, 1).rotateX(-Math.PI / 2), groundMat);
 ground.frustumCulled = false;
 
-/* ---------------------------------------------------------------- scenery */
-// solids: heat per instance, faces open to the sky a little cooler, fires warm what is near them
-function solidMat(kind) {
-  return new THREE.ShaderMaterial({
-    uniforms: U,
-    defines: { KIND: kind },
-    vertexShader: `
-      attribute float iHeat;
-      varying float vHeat; varying vec3 vN, vW, vL;
-      void main() {
-        mat4 m = modelMatrix * instanceMatrix;
-        vec4 wp = m * vec4(position, 1.0);
-        vW = wp.xyz; vN = normalize(mat3(m) * normal); vL = position; vHeat = iHeat;
-        gl_Position = projectionMatrix * viewMatrix * wp;
-      }`,
-    fragmentShader: GLSL_NOISE + GLSL_OUT + GLSL_SRC + `
-      varying float vHeat; varying vec3 vN, vW, vL;
-      void main() {
-        float h = vHeat - max(vN.y, 0.0) * 0.02 + (fbm(vW.xz * 0.8 + vW.y * 0.3) - 0.5) * 0.025;
-        #if KIND == 1
-          h += (vnoise(vW.xz * 4.5 + vW.y * 3.3) * 0.45 + vnoise(vW.xz * 10.0 - vW.y * 7.0) * 0.55 - 0.5) * 0.06 + (1.0 - vN.y) * 0.02;   // clumps of leaves
-        #elif KIND == 2
-          h += step(0.82, fract(vL.z * 9.0)) * 0.012 - step(0.5, vN.y) * 0.02;           // roof: rows of tiles
-        #elif KIND == 3
-          h += (step(0.85, fract(vW.y * 1.3)) - 0.15) * 0.01;                             // walls: courses
-        #endif
-        h += srcHeat(vW) * 0.7;
-        gl_FragColor = heatOut(h, vW);
-      }`,
-  });
+/* ----------------------------------------------------------- instance pools
+ * Every scenery shape is a unit mesh drawn with per-instance attributes:
+ *   iA = x, y, z, yaw     iB = size x, y, z, kind     iC = seed and three paint parameters */
+const VERT_POOL = `
+  attribute vec4 iA, iB, iC;
+  varying vec3 vL, vN, vNw, vW;
+  varying vec4 vB, vC;
+  void main() {
+    vec3 l = position * iB.xyz;
+    float c = cos(iA.w), s = sin(iA.w);
+    vec3 n = normalize(normal / iB.xyz);
+    vec3 w = vec3(c * l.x + s * l.z, l.y, -s * l.x + c * l.z) + iA.xyz;
+    vL = l; vN = n; vNw = vec3(c * n.x + s * n.z, n.y, -s * n.x + c * n.z); vW = w; vB = iB; vC = iC;
+    gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+  }`;
+const POOL_HEAD = GLSL_GB + GLSL_SRC + `
+  varying vec3 vL, vN, vNw, vW;
+  varying vec4 vB, vC;
+  const float HU = ${HU.toFixed(4)}, VU = ${VU.toFixed(6)};
+  float h1(float a, float b) { return hash12(vec2(a * 1.731 + b * 0.37, b * 2.113 - a * 0.71)); }
+`;
+// walls of houses (kind 0), garages (1), sheds (2) and barns (3)
+const WALL_FRAG = POOL_HEAD + `
+  vec3 wallCol(float i) {
+    if (i < 0.5) return P_plaster; if (i < 1.5) return P_sidingW; if (i < 2.5) return P_sidingB; if (i < 3.5) return P_sidingY;
+    if (i < 4.5) return P_sidingG; if (i < 5.5) return P_brick; if (i < 6.5) return P_woodLt; return vec3(0.54, 0.23, 0.18);
+  }
+  void main() {
+    if (uPass == 2) { gl_FragColor = gOut(vec3(0.0), 0.0, vec3(0.0), vW, 0.0); return; }
+    float kind = vB.w, seed = vC.x, wc = vC.y, flags = vC.z, wheat = vC.w;
+    bool burning = mod(flags, 2.0) > 0.5, frontPlusZ = mod(floor(flags / 2.0), 2.0) > 0.5;
+    vec3 n = normalize(vNw), P = vW;
+    float r = phash(seed), t = 0.0, cls = 200.0, heat = wheat;
+    if (vN.y > 0.5) {                                                 // a flat roof
+      vec3 c = r < 0.5 ? P_asphaltDk : P_asphalt;
+      gl_FragColor = gOut(tex(c, r > 0.92 ? -1.0 : 0.0), 200.0, n, P, 0.3 + srcHeat(P) * 0.6);
+      return;
+    }
+    bool endw = abs(vN.x) > 0.5;
+    float hw = endw ? vB.z * 0.5 : vB.x * 0.5;
+    float ax = floor(((endw ? vL.z : vL.x) + hw) / HU), wpx = floor(hw * 2.0 / HU + 0.5);  // pixels along the wall
+    float ay = floor(vL.y / VU), hpx = floor(vB.y / VU + 0.5);                                   // pixels up it
+    float face = endw ? (vN.x > 0.0 ? 2.0 : 3.0) : (vN.z > 0.0 ? 0.0 : 1.0);
+    bool front = !endw && ((vN.z > 0.0) == frontPlusZ);
+    vec3 col = wallCol(wc);
+    if (kind > 2.5) {                                                 // barn: red boards, white trim, a big X door
+      col = wallCol(7.0); t = mod(ax, 3.0) < 1.0 ? -1.0 : 0.0;
+      if (ax < 1.0 || ax > wpx - 2.0 || ay > hpx - 2.0) { col = P_trim; t = 0.0; }
+      if (!endw && front && abs(ax - wpx * 0.5) < 9.0 && ay < 16.0) {
+        float u = ax - (wpx * 0.5 - 9.0), v = ay;
+        col = wallCol(7.0) * 0.85; t = 0.0;
+        if (u < 1.0 || u > 16.0 || v > 14.0 || abs(u - v * 18.0 / 15.0) < 1.0 || abs(u - (17.0 - v * 18.0 / 15.0)) < 1.0) col = P_trim;
+      }
+    } else if (kind > 1.5) {                                          // shed: vertical planks and a door
+      col = mod(ax, 3.0) < 1.0 ? P_woodDk : P_wood; heat = 0.33;
+      if (front && abs(ax - wpx * 0.5) < 2.5 && ay < 9.0) { col = P_woodDk; if (ay > 7.0 || abs(ax - wpx * 0.5) > 1.5) col = P_wood * 0.8; }
+    } else {
+      if (wc > 4.5 && wc < 5.5) {                                     // brick, mortar every third row
+        col = h1(floor(ax / 2.0 + mod(ay, 2.0) * 0.5), ay) < 0.35 ? P_brickDk : P_brick;
+        if (mod(ay, 3.0) < 1.0) col = mix(P_brick, P_concrete, 0.45);
+      } else if (wc > 0.5) {                                          // clapboard siding
+        if (mod(ay, 3.0) < 1.0) t = -1.0;
+      } else if (r < 0.06) t = -1.0;                                  // plaster
+      if (ax < 1.0 || ax > wpx - 2.0) { col = P_trim; t = 0.0; }      // corner boards
+      if (ay < 2.0) { col = P_concreteDk; t = mod(ax, 6.0) < 1.0 ? -1.0 : 0.0; }    // the foundation
+      if (kind > 0.5) {                                               // garage: a sectional door to the street
+        heat = 0.36;
+        float gu = ax - (floor(wpx * 0.5) - 6.0);
+        if (front && gu >= 0.0 && gu < 12.0 && ay < 11.0) {
+          col = P_trim * 0.92; t = mod(ay, 3.0) < 1.0 ? -1.0 : 0.0;
+          if (gu < 1.0 || gu > 10.5 || ay > 9.5) { col = P_concreteDk; t = 0.0; }
+        }
+      } else {                                                        // house: windows on two floors, a door at the front
+        float nw = endw ? 1.0 : max(1.0, floor((wpx - 4.0) / 10.0));
+        float slot = floor((wpx - 4.0) / nw), k = clamp(floor((ax - 2.0) / slot), 0.0, nw - 1.0);
+        float wx = endw ? floor(wpx * 0.5) - 3.0 : 2.0 + k * slot + floor((slot - 6.0) * 0.5);
+        float u = ax - wx, fl = ay < 13.0 ? 0.0 : 1.0, v = ay - (fl < 0.5 ? 5.0 : 17.0);
+        bool two = hpx >= 26.0;
+        bool doorHere = front && fl < 0.5 && k == floor(nw * 0.5);
+        if (doorHere) {
+          if (u > 0.5 && u < 5.5 && ay >= 2.0 && ay < 12.0) {
+            col = h1(seed, 3.0) < 0.5 ? P_woodDk : (h1(seed, 4.0) < 0.5 ? P_carR : P_carB);
+            if (u < 1.5 || u > 4.5 || ay > 10.5) col = P_trim;
+            if (u > 3.5 && u < 4.5 && ay > 5.5 && ay < 6.5) col = P_paintY;   // the handle
+            t = 0.0; heat = 0.4;
+          }
+        } else if (u >= 0.0 && u < 6.0 && v >= 0.0 && v < 7.0 && (fl < 0.5 || two)) {
+          float wi = k + fl * 7.0 + face * 13.0;
+          bool lit = h1(seed, wi) < 0.33;
+          t = 0.0;
+          if (u < 1.0 || u > 4.5 || v > 5.5) col = P_trim;                     // frame
+          else if (v < 1.0) col = P_trim * 1.05;                              // sill
+          else if (burning) {
+            float fl2 = 0.65 + 0.35 * hash12(vec2(wi, floor(uTime * 12.0)));
+            col = mix(P_fireGlow, vec3(1.0, 0.95, 0.7), v / 6.0); cls = 70.0 + 50.0 * fl2; heat = 1.25;
+          } else if (lit) {
+            col = mix(P_winGlow, vec3(1.0, 0.93, 0.75), v / 6.0); cls = 56.0; heat = 0.5;
+          } else {
+            col = P_glass; cls = 220.0; heat = 0.25; if (v > 4.0) t = 1.0;
+          }
+        } else if (burning && ay > 5.0) {
+          float soot = smoothstep(0.35, 0.8, vnoise(vec2(ax * 0.3, ay * 0.2) + seed)) * smoothstep(4.0, 14.0, ay);
+          col *= 1.0 - 0.75 * soot;
+        }
+      }
+    }
+    heat += srcHeat(P) * 0.7;
+    if (burning) heat = max(heat, 0.5);
+    gl_FragColor = gOut(tex(col, t), cls, n, P, heat);
+  }`;
+// gable roofs: shingle courses, a ridge cap, the gable ends in the wall colour
+const ROOF_FRAG = POOL_HEAD + `
+  vec3 wallCol(float i) {
+    if (i < 0.5) return P_plaster; if (i < 1.5) return P_sidingW; if (i < 2.5) return P_sidingB; if (i < 3.5) return P_sidingY;
+    if (i < 4.5) return P_sidingG; if (i < 5.5) return P_brick; if (i < 6.5) return P_woodLt; return vec3(0.54, 0.23, 0.18);
+  }
+  void main() {
+    if (uPass == 2) { gl_FragColor = gOut(vec3(0.0), 0.0, vec3(0.0), vW, 0.0); return; }
+    float seed = vC.x, wc = vC.y, rc = vC.z;
+    bool burning = vC.w > 0.5;
+    vec3 n = normalize(vNw), P = vW, col;
+    float t = 0.0, heat = 0.3, cls = 200.0;
+    if (abs(vN.x) > 0.5) {                                            // gable end: boards like the walls
+      col = wallCol(wc); float ay = floor(vL.y / VU);
+      if (wc > 0.5 && mod(ay, 3.0) < 1.0) t = -1.0;
+      if (vL.y < VU) col = P_trim;
+      heat = 0.4;
+    } else {
+      vec3 a = rc < 0.5 ? P_slate : rc < 1.5 ? P_roofR : rc < 2.5 ? P_roofB : P_shingle;
+      vec3 b = rc < 0.5 ? P_slateDk : rc < 1.5 ? P_roofRDk : rc < 2.5 ? P_roofBDk : P_shingleDk;
+      float course = floor((vB.y - vL.y) / VU / 2.0), tab = floor((vL.x / HU + mod(course, 2.0) * 1.5) / 3.0);
+      col = h1(course + seed, tab) < 0.3 ? b : a;
+      if (mod((vB.y - vL.y) / VU, 2.0) > 1.0) t = -1.0;                 // the shadow line under each course
+      if (vB.y - vL.y < VU * 1.5) { col = b * 0.85; t = 0.0; }          // ridge cap
+      if (vL.y < VU) { col = P_trim * 0.8; t = 0.0; }                   // fascia
+      if (burning) {
+        float hole = vnoise(vL.xz * 0.9 + seed + floor(uTime * 3.0) * 0.07);
+        if (hole > 0.7) { col = mix(P_fireGlow, vec3(1.0, 0.9, 0.6), hole - 0.7); cls = 90.0; heat = 1.3; }
+        else col *= 0.45;
+      }
+    }
+    heat += srcHeat(P) * 0.7;
+    gl_FragColor = gOut(tex(col, t), cls, n, P, heat);
+  }`;
+// props in boxes; kind: 0 plain, 1 chimney, 2 fence, 3 car body, 4 car cabin, 5 air conditioner,
+// 6 pool, 7 lamp head, 8 timber, 9 bale wrap, 10 mailbox
+const BOX_FRAG = POOL_HEAD + `
+  vec3 plain(float i) {
+    if (i < 0.5) return P_concrete; if (i < 1.5) return P_iron; if (i < 2.5) return P_wood; if (i < 3.5) return P_steel; return P_trim;
+  }
+  vec3 carCol(float i) {
+    if (i < 0.5) return P_carR; if (i < 1.5) return P_carB; if (i < 2.5) return P_carC; if (i < 3.5) return P_carG; if (i < 4.5) return P_carW; return P_carK;
+  }
+  void main() {
+    float kind = vB.w, seed = vC.x, p1 = vC.y, p2 = vC.z, p3 = vC.w;
+    vec3 n = normalize(vNw), P = vW, col = plain(p1);
+    float r = phash(seed), t = 0.0, cls = 200.0, heat = 0.33;
+    bool top = vN.y > 0.5, endw = abs(vN.x) > 0.5;
+    float ax = floor(((endw ? vL.z : vL.x) + (endw ? vB.z : vB.x) * 0.5) / HU), ay = floor(vL.y / VU);
+    if (uPass == 2 && kind > 5.5 && kind < 6.5) discard;             // a pool casts no shadow
+    if (kind > 9.5) { col = P_steel; heat = 0.3; }
+    else if (kind > 8.5) { col = P_hay; heat = 0.37; }
+    else if (kind > 7.5) { col = P_woodDk; t = r < 0.2 ? -1.0 : 0.0; heat = 0.3; }
+    else if (kind > 6.5) {                                            // street lamp: iron hood, glowing glass below
+      col = P_iron; heat = 0.45;
+      if (vN.y < -0.5 || (!top && vL.y < VU * 0.9)) { col = vec3(1.0, 0.94, 0.78); cls = 110.0; heat = 0.9; }
+    } else if (kind > 5.5) {                                          // swimming pool: tiles round the edge, rippling water
+      col = P_pool; cls = 220.0; heat = 0.26;
+      float ex = min(vB.x * 0.5 - abs(vL.x), vB.z * 0.5 - abs(vL.z));
+      if (ex < 0.3 || !top) { col = P_trim; cls = 200.0; }
+      else if (hash12(floor(gpix() / vec2(2.0, 1.0)) + floor(uTime * 2.0 + seed)) > 0.93) col = mix(P_pool, P_trim, 0.5);
+    } else if (kind > 4.5) {                                          // air conditioner: grille slits, a fan on top
+      col = P_steel; heat = 0.52;
+      if (top) { if (length(vL.xz) < 0.3) col = P_iron; } else if (mod(ay, 2.0) < 1.0) t = -1.0;
+    } else if (kind > 3.5) {                                          // car cabin: glass all round, pillars
+      col = carCol(p1); heat = p2 > 1.5 ? 1.1 : 0.29;
+      if (!top) { float u = endw ? ax : ax; if (mod(u + 1.0, 5.0) > 0.9 && ay > 0.0) { col = P_glass; cls = 220.0; } }
+      if (p2 > 1.5) col = vnoise(vL.xz * 3.0 + seed) > 0.5 ? P_soot : P_rust;
+    } else if (kind > 2.5) {                                          // car body: lights front and back, dark sills
+      col = carCol(p1); heat = p2 > 0.5 && p2 < 1.5 ? 0.62 : p2 > 1.5 ? 0.95 : 0.29;
+      if (!top && ay < 1.0) col = P_iron;
+      if (endw && !top && ay >= 1.0 && (ax < 2.0 || ax > floor(vB.z / HU) - 3.0)) col = vN.x > 0.0 ? vec3(0.95, 0.92, 0.8) : vec3(0.75, 0.15, 0.12);
+      if (p2 > 1.5) { col = vnoise(vL.xz * 3.0 + seed) > 0.45 ? P_soot : P_rust; if (hash12(gpix() + floor(uTime * 9.0)) > 0.97) { col = P_fireGlow; cls = 100.0; } }
+    } else if (kind > 1.5) {                                          // fence: boards with gaps, a top rail
+      col = h1(seed, 1.0) < 0.5 ? P_fence : P_fenceW;
+      if (!top && mod(ax, 2.0) > 1.0) t = -1.0;
+      if (!top && ay > floor(vB.y / VU) - 2.0) t = 1.0;
+      heat = 0.33;
+    } else if (kind > 0.5) {                                          // chimney: brick courses, soot on top
+      col = mod(ay, 2.0) < 1.0 ? P_brick : P_brickDk; heat = 0.43;
+      if (top) { col = P_soot; heat = 0.6; }
+    }
+    if (kind < 0.5 && r > 0.92) t = -1.0;
+    heat += srcHeat(P) * 0.7;
+    gl_FragColor = gOut(tex(col, t), cls, n, P, heat);
+  }`;
+// cylinders; kind: 0 bark, 1 timber pole, 2 iron pole, 3 tyre, 4 hay bale
+const CYL_FRAG = POOL_HEAD + `
+  void main() {
+    float kind = vB.w, seed = vC.x;
+    vec3 n = normalize(vNw), P = vW, col;
+    float r = phash(seed + 2.0), t = 0.0, heat = 0.35, cls = 200.0;
+    if (kind < 0.5) { col = r < 0.3 ? P_bark * 0.75 : P_bark; heat = 0.36; }
+    else if (kind < 1.5) { col = r < 0.25 ? P_woodDk : P_wood; heat = 0.3; }
+    else if (kind < 2.5) { col = P_iron; cls = 220.0; heat = 0.3; }
+    else if (kind < 3.5) { col = P_tire; heat = 0.31; if (abs(dot(vN, vec3(0.0, 0.0, 1.0))) > 0.7 && length(vL.xy) < 0.45 * vB.x) col = P_steel; }
+    else { col = mod(floor(length(vL.xy) / 0.16), 2.0) < 1.0 ? P_hay : P_hayDk; if (abs(vN.z) < 0.7) col = r < 0.4 ? P_hayDk : P_hay; heat = 0.37; }
+    heat += srcHeat(P) * 0.7;
+    gl_FragColor = gOut(tex(col, t), cls, n, P, heat);
+  }`;
+// conifers: three tiers of needles
+const CONE_FRAG = POOL_HEAD + `
+  void main() {
+    float seed = vC.x;
+    vec3 n = normalize(vNw), P = vW;
+    float band = vnoise(vec2(atan(vL.z, vL.x) * 2.5 + seed, vL.y * 1.4));
+    vec3 col = band > 0.55 ? P_pineDk : P_pine;
+    float r = phash(seed);
+    float t = r < 0.07 ? 1.0 : r > 0.9 ? -1.0 : 0.0;
+    float heat = vC.y + srcHeat(P) * 0.7;
+    gl_FragColor = gOut(tex(col, t), 210.0, n, P, heat);
+  }`;
+// round crowns and bushes drawn as spheres in the fragment shader, with a lumpy outline
+const BALL_VERT = `
+  attribute vec4 iS;          // centre, radius
+  attribute vec4 iK;          // kind (0 leaf, 1 autumn, 2 hedge), seed, heat, squash
+  varying vec2 vQ; varying vec4 vS, vK;
+  uniform int uPass;
+  uniform vec3 uCR, uCU, uLR, uLU;
+  void main() {
+    vec3 R = uPass == 2 ? uLR : uCR, Up = uPass == 2 ? uLU : uCU;
+    vQ = position.xy * 1.15;
+    vS = iS; vK = iK;
+    vec3 w = iS.xyz + (R * vQ.x + Up * vQ.y * iK.w) * iS.w;
+    gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+  }`;
+const BALL_FRAG = GLSL_GB + GLSL_SRC + `
+  uniform mat4 projectionMatrix;
+  varying vec2 vQ; varying vec4 vS, vK;
+  uniform vec3 uLR, uLU;
+  void main() {
+    vec3 R = uPass == 2 ? uLR : uCR, Up = uPass == 2 ? uLU : uCU, V = uPass == 2 ? uLD : uCV;
+    vec2 q = vec2(vQ.x, vQ.y);
+    float seed = vK.y, ang = atan(q.y, q.x);
+    float rim = 0.86 + 0.14 * vnoise(vec2(ang * 2.6 + seed * 7.0, seed));
+    float d2 = dot(q, q);
+    if (d2 > rim * rim) discard;
+    float z = sqrt(rim * rim - d2);
+    vec3 nn = normalize(R * q.x + Up * q.y + V * z);
+    vec3 P = vS.xyz + (R * q.x + Up * q.y * vK.w + V * z) * vS.w;
+    vec4 clip = projectionMatrix * viewMatrix * vec4(P, 1.0);
+    gl_FragDepth = 0.5 * clip.z / clip.w + 0.5;
+    if (uPass == 2) { gl_FragColor = gOut(vec3(0.0), 0.0, nn, P, 0.0); return; }
+    // clumps of leaves: noise on the surface, a little bump in the normal, a speckle per pixel
+    float cl = vnoise(P.xz * 0.9 + P.y * 0.7 + seed * 3.0), cl2 = vnoise(P.xz * 2.1 - P.y * 1.3 + seed);
+    vec3 col;
+    if (vK.x < 0.5) col = cl > 0.62 ? P_leafLt : cl < 0.36 ? P_leafDk : P_leaf;
+    else if (vK.x < 1.5) col = cl > 0.5 ? P_autumn : P_autumnDk;
+    else col = cl > 0.6 ? P_leaf : P_leafDk;
+    vec3 n = normalize(nn + (R * (cl2 - 0.5) + Up * (cl - 0.5)) * 0.55);
+    float r = phash(seed);
+    float t = r < 0.07 ? 1.0 : r > 0.9 ? -1.0 : 0.0;
+    float heat = vK.z + srcHeat(P) * 0.7;
+    gl_FragColor = gOut(tex(col, t), 210.0, n, P, heat);
+  }`;
+
+const POOLS = {};
+function pool(name, geo, frag, max, vert) {
+  const g = new THREE.InstancedBufferGeometry();
+  g.index = geo.index;
+  g.setAttribute('position', geo.attributes.position);
+  if (geo.attributes.normal) g.setAttribute('normal', geo.attributes.normal);
+  const attrs = vert ? ['iS', 'iK'] : ['iA', 'iB', 'iC'];
+  const A = {};
+  for (const a of attrs) { A[a] = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4); A[a].setUsage(THREE.DynamicDrawUsage); g.setAttribute(a, A[a]); }
+  g.instanceCount = 0;
+  const mat = new THREE.ShaderMaterial({ uniforms: U, vertexShader: vert || VERT_POOL, fragmentShader: frag });
+  const mesh = new THREE.Mesh(g, mat);
+  mesh.frustumCulled = false;
+  POOLS[name] = { mesh, A, n: 0, max, geo: g };
+  return mesh;
 }
 function gableGeo() {
   // a unit gable roof: base x, z in [-0.5, 0.5] at y 0, ridge along x at y 1
-  const v = [], n = [];
+  const v = [], nm = [];
   const tri = (a, b, c) => {
     const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
     const nx = ab[1] * ac[2] - ab[2] * ac[1], ny = ab[2] * ac[0] - ab[0] * ac[2], nz = ab[0] * ac[1] - ab[1] * ac[0], l = Math.hypot(nx, ny, nz) || 1;
-    for (const p of [a, b, c]) { v.push(...p); n.push(nx / l, ny / l, nz / l); }
+    for (const p of [a, b, c]) { v.push(...p); nm.push(nx / l, ny / l, nz / l); }
   };
   const A = [-0.5, 0, 0.5], B = [0.5, 0, 0.5], C = [0.5, 0, -0.5], D = [-0.5, 0, -0.5], E = [-0.5, 1, 0], F = [0.5, 1, 0];
   tri(A, B, F); tri(A, F, E); tri(C, D, E); tri(C, E, F); tri(B, C, F); tri(D, A, E);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3));
-  return g;
-}
-function blobGeo(seed) {
-  const g = new THREE.IcosahedronGeometry(1, 2), p = g.attributes.position, rng = mulberry(seed);
-  const bumps = Array.from({ length: 7 }, () => [rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1, 0.12 + rng() * 0.12]);
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    let k = 1;
-    for (const b of bumps) k += b[3] * Math.max(0, x * b[0] + y * b[1] + z * b[2]);
-    p.setXYZ(i, x * k, y * k * 0.85, z * k);
-  }
-  g.computeVertexNormals();
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nm, 3));
   return g;
 }
 const unitBox = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
-const POOLS = {};
-function pool(name, geo, mat, max) {
-  geo = geo.clone();
-  const heat = new THREE.InstancedBufferAttribute(new Float32Array(max), 1);
-  heat.setUsage(THREE.DynamicDrawUsage);
-  geo.setAttribute('iHeat', heat);
-  const mesh = new THREE.InstancedMesh(geo, mat, max);
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  mesh.frustumCulled = false; mesh.count = 0;
-  POOLS[name] = { mesh, heat, n: 0, max };
-  return mesh;
-}
-const M_PLAIN = solidMat(0), M_LEAF = solidMat(1), M_ROOF = solidMat(2), M_WALL = solidMat(3);
 const SCENERY = new THREE.Group();
 SCENERY.add(
-  pool('trunk', new THREE.CylinderGeometry(0.18, 0.3, 1, 6).translate(0, 0.5, 0), M_PLAIN, 4000),
-  pool('crownA', blobGeo(11), M_LEAF, 9000),
-  pool('crownB', blobGeo(23), M_LEAF, 6000),
-  pool('conifer', new THREE.ConeGeometry(1, 1, 8).translate(0, 0.5, 0), M_LEAF, 2000),
-  pool('wall', unitBox, M_WALL, 1600),
-  pool('roof', gableGeo(), M_ROOF, 1600),
-  pool('box', unitBox, M_PLAIN, 14000),
-  pool('wheel', new THREE.CylinderGeometry(1, 1, 1, 10).rotateX(Math.PI / 2), M_PLAIN, 5000),
-  pool('bale', new THREE.CylinderGeometry(1, 1, 1, 12).rotateZ(Math.PI / 2), M_PLAIN, 800),
-  pool('pole', new THREE.CylinderGeometry(0.13, 0.17, 1, 6).translate(0, 0.5, 0), M_PLAIN, 2600),
+  pool('wall', unitBox, WALL_FRAG, 2400),
+  pool('roof', gableGeo(), ROOF_FRAG, 2400),
+  pool('box', unitBox, BOX_FRAG, 16000),
+  pool('cylV', new THREE.CylinderGeometry(1, 1, 1, 8).translate(0, 0.5, 0), CYL_FRAG, 9000),
+  pool('cylH', new THREE.CylinderGeometry(1, 1, 1, 10).rotateX(Math.PI / 2), CYL_FRAG, 6000),
+  pool('cone', new THREE.ConeGeometry(1, 1, 10).translate(0, 0.5, 0), CONE_FRAG, 6000),
+  pool('ball', new THREE.PlaneGeometry(2, 2), BALL_FRAG, 12000, BALL_VERT),
 );
+// power lines: three sagging wires between poles
 const wireGeo = new THREE.BufferGeometry();
-const wireMax = 800 * 3 * 8;
+const wireMax = 1200 * 3 * 8;
 wireGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(wireMax * 6), 3));
 const wires = new THREE.LineSegments(wireGeo, new THREE.ShaderMaterial({
   uniforms: U,
   vertexShader: 'varying vec3 vW; void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }',
-  fragmentShader: GLSL_OUT + 'varying vec3 vW; void main() { gl_FragColor = heatOut(0.28, vW); }',
+  fragmentShader: GLSL_GB + 'varying vec3 vW; void main() { if (uPass == 2) discard; gl_FragColor = gOut(P_iron * 0.7, 200.0, vec3(0.0, 1.0, 0.0), vW, 0.28); }',
 }));
 wires.frustumCulled = false;
 SCENERY.add(wires);
 
-const QM = new THREE.Matrix4(), QQ = new THREE.Quaternion(), QP = new THREE.Vector3(), QS = new THREE.Vector3(), QE = new THREE.Euler();
-function put(name, x, y, z, sx, sy, sz, yaw, heat) {
+function put(name, x, y, z, yaw, sx, sy, sz, kind, seed, p1, p2, p3) {
   const P = POOLS[name];
   if (P.n >= P.max) return;
-  QE.set(0, yaw || 0, 0); QQ.setFromEuler(QE);
-  QM.compose(QP.set(x, y, z), QQ, QS.set(sx, sy, sz));
-  QM.toArray(P.mesh.instanceMatrix.array, P.n * 16);
-  P.heat.array[P.n] = heat;
+  const i = P.n * 4, a = P.A.iA.array, b = P.A.iB.array, c = P.A.iC.array;
+  a[i] = x; a[i + 1] = y; a[i + 2] = z; a[i + 3] = yaw || 0;
+  b[i] = sx; b[i + 1] = sy; b[i + 2] = sz; b[i + 3] = kind || 0;
+  c[i] = seed || 0; c[i + 1] = p1 || 0; c[i + 2] = p2 || 0; c[i + 3] = p3 || 0;
+  P.n++;
+}
+function putBall(x, y, z, r, kind, seed, heat, squash) {
+  const P = POOLS.ball;
+  if (P.n >= P.max) return;
+  const i = P.n * 4, s = P.A.iS.array, k = P.A.iK.array;
+  s[i] = x; s[i + 1] = y; s[i + 2] = z; s[i + 3] = r;
+  k[i] = kind; k[i + 1] = seed; k[i + 2] = heat; k[i + 3] = squash || 1;
   P.n++;
 }
 
@@ -246,20 +536,29 @@ function cellContent(ci, cj) {
   if (c) return c;
   const f = fieldOf(ci, cj), rng = mulberry(hash32(ci * 7919 + 17) ^ hash32(cj * 104729 + 5) ^ 0x2f6d);
   const x0 = ci * CELL, z0 = cj * CELL;
-  c = { trees: [], houses: [], cars: [], poles: [], bales: [], misc: [], block: [] };
+  c = { trees: [], houses: [], cars: [], poles: [], bales: [], props: [], lamps: [], fences: [], block: [] };
   const town = f.type === 5;
   const clear = (x, z, m) => hwDist(x, z) > 7 + m && (town || trackDist(x, z) > 4 + m);
-  const tree = (x, z, s) => {
+  const tree = (x, z, s, kind) => {
     if (!clear(x, z, 2)) return;
-    const kind = rng() < 0.3 ? 2 : rng() < 0.5 ? 1 : 0;
-    c.trees.push({ x, z, s: s * (0.8 + rng() * 0.5), kind, heat: 0.36 + rng() * 0.04, yaw: rng() * TAU });
+    kind = kind !== undefined ? kind : rng() < 0.3 ? 2 : rng() < 0.22 ? 1 : 0;
+    c.trees.push({ x, z, s: s * (0.8 + rng() * 0.5), kind, heat: 0.36 + rng() * 0.04, seed: Math.floor(rng() * 1000) });
     c.block.push(x, z, 0.8);
+  };
+  // a house: walls, roof, chimney; corners on the half-metre grid, heights in whole pixels
+  const house = (cx, cz, w, d, h, yaw, o) => {
+    w = snapH(w); d = snapH(d); h = snapV(h);
+    const x = snapH(cx - w / 2) + w / 2, z = snapH(cz - d / 2) + d / 2;
+    c.houses.push(Object.assign({ x, z, w, d, h, yaw, seed: Math.floor(rng() * 1000), wc: Math.floor(rng() * 6), rc: Math.floor(rng() * 4),
+      roofH: snapV(Math.min(w, d) * 0.3 + 0.6), burning: false, front: 1, kind: 0, heat: 0.39 + rng() * 0.05, lit: rng() < 0.6 }, o || {}));
+    c.block.push(x, z, Math.max(w, d) / 2 + 0.3);
+    return c.houses[c.houses.length - 1];
   };
   if (f.type === 4) {                                            // a wood
     const n = 34 + Math.floor(rng() * 14);
     for (let k = 0; k < n; k++) tree(x0 + rng() * CELL, z0 + rng() * CELL, 1);
   }
-  if (town) {                                                   // houses: three lots along each side of each 75 m block
+  if (town) {                                                   // three lots along each side of each 75 m block
     for (let bj = 0; bj < 2; bj++) for (let bi = 0; bi < 2; bi++) {
       const bx = x0 + bi * 75, bz = z0 + bj * 75;
       for (const side of [0, 1]) {
@@ -267,30 +566,40 @@ function cellContent(ci, cj) {
         for (let k = 0; k < 3; k++) {
           const lx = bx + 6 + 21 * k, at = (u, v) => [lx + u, front + dir * v];      // u across the lot, v back from the sidewalk
           if (!clear(...at(10.5, 15), 15) || rng() < 0.06) continue;
-          const w = 10 + rng() * 3, d = 8 + rng() * 3, hh = 5 + rng() * 2.2, [hx, hz] = at(2 + w / 2, 5 + d / 2), lit = [];
-          for (let n = 0; n < 8; n++) lit.push(rng() < 0.3);
-          const burning = rng() < 0.035;
-          c.houses.push({ x: hx, z: hz, yaw: (rng() - 0.5) * 0.04, w, d, h: hh, lit, barn: false, heat: 0.39 + rng() * 0.05, burning });
-          c.block.push(hx, hz, Math.max(w, d) / 2 + 0.3);
-          const [gx, gz] = at(17.2, 18);                                         // the garage at the end of the drive
-          c.misc.push(['box', gx, 0, gz, 4.6, 3, 6, 0, 0.36]);
+          const w = 10 + Math.floor(rng() * 7) * 0.5, d = 8 + Math.floor(rng() * 6) * 0.5, hh = rng() < 0.55 ? 5.5 : 3.3;
+          const [hx, hz] = at(2 + w / 2, 5 + d / 2);
+          const H = house(hx, hz, w, d, hh, 0, { front: dir > 0 ? 0 : 1, burning: rng() < 0.035 });
+          const [gx, gz] = at(17.25, 18);                                        // the garage at the end of the drive
+          c.props.push(['wall', snapH(gx), 0, snapH(gz), 0, 4.5, snapV(3), 6, 1, H.seed, H.wc, H.front * 2, 0.36]);
           c.block.push(gx, gz, 3.2);
-          if (rng() < 0.55) { const [cx, cz] = at(17.2, 9.5 + rng() * 1.5); c.cars.push({ x: cx, z: cz, yaw: Math.PI / 2, state: rng() < 0.3 ? 'warm' : 'cold' }); c.block.push(cx, cz, 2.4); }
-          if (rng() < 0.6) { const [ax, az] = at(1, 5 + d * 0.6); c.misc.push(['box', ax, 0, az, 0.9, 0.9, 0.9, 0, 0.5]); }   // an air conditioner
+          if (rng() < 0.55) {
+            const [cx, cz] = at(17.25, 9.5 + rng() * 1.5);
+            c.cars.push({ x: cx, z: cz, yaw: Math.PI / 2, state: rng() < 0.3 ? 'warm' : 'cold', paint: Math.floor(rng() * 6) });
+            c.block.push(cx, cz, 2.4);
+          }
+          if (rng() < 0.6) { const [ax, az] = at(1, 5 + d * 0.6); c.props.push(['box', ax, 0, az, 0, 0.9, 0.9, 0.9, 5, 0, 0, 0, 0]); }
           if (rng() < 0.35) tree(...at(3 + rng() * 9, 1.5 + rng() * 2), 0.75);                                           // front yard
-          for (let n = rng() < 0.75 ? 1 + Math.floor(rng() * 2) : 0; n > 0; n--) tree(...at(2 + rng() * 17, 25 + rng() * 10), 0.9);
-          if (rng() < 0.3) { const [sx, sz] = at(3 + rng() * 14, 30 + rng() * 3); c.misc.push(['box', sx, 0, sz, 3, 2.4, 2.4, 0, 0.33]); c.block.push(sx, sz, 2); }
-          else if (rng() < 0.2) { const [px, pz] = at(5 + rng() * 6, 27); c.misc.push(['box', px, 0, pz, 8, 0.05, 4, 0, 0.25]); }  // a pool
+          for (let n = rng() < 0.75 ? 1 + Math.floor(rng() * 2) : 0; n > 0; n--) tree(...at(2 + rng() * 17, 25 + rng() * 9), 0.9);
+          if (rng() < 0.3) {
+            const [sx, sz] = at(3 + rng() * 14, 31);
+            const sh = { x: snapH(sx), z: snapH(sz) };
+            c.props.push(['wall', sh.x, 0, sh.z, 0, 3, snapV(2.2), 2.5, 2, Math.floor(rng() * 999), 0, (dir > 0 ? 0 : 2), 0.33]);
+            c.props.push(['roof', sh.x, snapV(2.2), sh.z, 0, 3.5, snapV(1.0), 3, 2, 0, 6, 3, 0]);
+            c.block.push(sh.x, sh.z, 2);
+          } else if (rng() < 0.25) { const [px, pz] = at(10, 27); c.props.push(['box', snapH(px), 0, snapH(pz), 0, 8, 0.05, 4, 6, Math.floor(rng() * 99), 0, 0, 0]); }
+          // fences: down the side of the lot and along the back
+          const fh = 1.2, fz0 = front + dir * 13, fz1 = front + dir * 31.5, fs = Math.floor(rng() * 99);
+          c.fences.push([lx, (fz0 + fz1) / 2, 0.12, Math.abs(fz1 - fz0), fh, fs]);
+          c.fences.push([lx + 10.5, fz1 - dir * 0.06, 21, 0.12, fh, fs]);
         }
         // street lights on the sidewalk, cars parked at the curb
         for (const u of [14, 47]) {
           const x = bx + u, z = side ? bz + 70 : bz + 5;
-          if (!clear(x, z, 2)) continue;
-          c.misc.push(['pole', x, 0, z, 0.8, 7.4, 0.8, 0, 0.32], ['box', x, 7.3, z - dir * 0.9, 0.35, 0.18, 1.6, 0, 0.32], ['box', x, 7.18, z - dir * 1.5, 0.4, 0.14, 0.5, 0, 0.8]);
+          if (clear(x, z, 2)) c.lamps.push({ x, z, dx: 0, dz: -dir, h: 7.2 });
         }
         if (rng() < 0.45) {
           const x = bx + 8 + rng() * 60, z = side ? bz + 72.4 : bz + 2.6;
-          if (clear(x, z, 0)) { c.cars.push({ x, z, yaw: rng() < 0.5 ? 0 : Math.PI, state: rng() < 0.12 ? 'warm' : 'cold' }); c.block.push(x, z, 2.4); }
+          if (clear(x, z, 0)) { c.cars.push({ x, z, yaw: rng() < 0.5 ? 0 : Math.PI, state: rng() < 0.12 ? 'warm' : 'cold', paint: Math.floor(rng() * 6) }); c.block.push(x, z, 2.4); }
         }
       }
     }
@@ -303,30 +612,27 @@ function cellContent(ci, cj) {
       tree(x, z, 0.85);
     }
   }
-  // a farmstead: house, barn, a car or two, hay
+  // a farmstead: house, barn, a car, trees
   if (f.type < 4 && !f.pond && rnd(ci, cj, 5) < 0.12) {
     const hx = x0 + 40 + rng() * 70, hz = z0 + 40 + rng() * 70;
     if (clear(hx, hz, 22)) {
-      const yaw = Math.floor(rng() * 4) * Math.PI / 2 + (rng() - 0.5) * 0.3;
-      const lit = [];
-      for (let k = 0; k < 8; k++) lit.push(rng() < 0.45);
-      c.houses.push({ x: hx, z: hz, yaw, w: 11, d: 8, h: 6, lit, barn: false, heat: 0.4 + rng() * 0.04 });
-      const bx = hx + Math.cos(yaw) * 24, bz = hz - Math.sin(yaw) * 24;
-      c.houses.push({ x: bx, z: bz, yaw, w: 20, d: 12, h: 8, lit: [], barn: true, heat: 0.33 + rng() * 0.03 });
-      c.block.push(hx, hz, 7.5, bx, bz, 12);
+      const turn = rng() < 0.5;
+      house(hx, hz, turn ? 8 : 11, turn ? 11 : 8, 5.5, 0, { front: rng() < 0.5 ? 0 : 1, wc: Math.floor(rng() * 7), rc: rng() < 0.5 ? 0 : 1 });
+      house(hx + (turn ? 0 : 24), hz + (turn ? 24 : 0), turn ? 12 : 20, turn ? 20 : 12, 7.3, 0, { kind: 3, wc: 7, rc: 0, heat: 0.33 + rng() * 0.03, lit: false });
       for (let k = 0; k < 2 + Math.floor(rng() * 3); k++) tree(hx + (rng() - 0.5) * 50, hz + (rng() - 0.5) * 50, 1.1);
       if (rng() < 0.7) {
-        const a = yaw + Math.PI / 2, cx = hx + Math.cos(a) * 12, cz = hz - Math.sin(a) * 12;
-        c.cars.push({ x: cx, z: cz, yaw: yaw + (rng() - 0.5) * 0.6, state: rng() < 0.4 ? 'warm' : 'cold' });
+        const cx = hx + (turn ? 9 : 0), cz = hz + (turn ? 0 : 10);
+        c.cars.push({ x: cx, z: cz, yaw: rng() * TAU, state: rng() < 0.4 ? 'warm' : 'cold', paint: Math.floor(rng() * 6) });
         c.block.push(cx, cz, 3);
       }
+      c.lamps.push({ x: hx + (turn ? 6 : -8), z: hz + (turn ? -8 : 6), dx: 0, dz: 0, h: 5.5 });
     }
   }
   if (f.type === 3 && rng() < 0.55) {                             // round bales on the stubble
     const n = 6 + Math.floor(rng() * 10), bx = x0 + 20 + rng() * 80, bz = z0 + 20 + rng() * 80, a = rng() * TAU;
     for (let k = 0; k < n; k++) {
       const x = bx + Math.cos(a) * k * 7 + (rng() - 0.5) * 2, z = bz + Math.sin(a) * k * 7 + (rng() - 0.5) * 2;
-      if (clear(x, z, 2)) { c.bales.push({ x, z, yaw: rng() * TAU, heat: 0.37 + rng() * 0.03 }); c.block.push(x, z, 1.1); }
+      if (clear(x, z, 2)) { c.bales.push({ x, z, yaw: rng() * TAU }); c.block.push(x, z, 1.1); }
     }
   }
   // the highways through this cell: power poles every 50 m, and cars, some burning
@@ -353,7 +659,7 @@ function cellContent(ci, cj) {
       else { x = x0 + along; const n = Math.round((z0 + 75 + hwZ(x) - 650) / 1300); z = 650 + 1300 * n - hwZ(x) + side; yaw = Math.atan2((hwZ(x + 1) - hwZ(x - 1)) / 2, 1); }
       if (x < x0 || x >= x0 + CELL || z < z0 || z >= z0 + CELL) continue;
       const r = rng();
-      c.cars.push({ x, z, yaw: yaw + (rng() < 0.5 ? Math.PI : 0) + (rng() - 0.5) * 0.5, state: r < 0.2 ? 'burning' : r < 0.45 ? 'warm' : 'cold' });
+      c.cars.push({ x, z, yaw: yaw + (rng() < 0.5 ? Math.PI : 0) + (rng() - 0.5) * 0.5, state: r < 0.2 ? 'burning' : r < 0.45 ? 'warm' : 'cold', paint: Math.floor(rng() * 6) });
       c.block.push(x, z, 3);
     }
   }
@@ -363,74 +669,72 @@ function cellContent(ci, cj) {
 }
 
 /* -------------------------------------------------- filling the instance pools */
-const ACTIVE = { ci: 1e9, cj: 1e9, fires: [], cells: [] };
-const VIEW_CELLS = 5;
+const ACTIVE = { ci: 1e9, cj: 1e9, fires: [], lights: [], cells: [] };
+const VIEW_CELLS = 3;
 function rebuildScenery(cx, cz) {
   const ci = Math.floor(cx / CELL), cj = Math.floor(cz / CELL);
   if (ci === ACTIVE.ci && cj === ACTIVE.cj) return;
-  ACTIVE.ci = ci; ACTIVE.cj = cj; ACTIVE.fires = []; ACTIVE.cells = [];
+  ACTIVE.ci = ci; ACTIVE.cj = cj; ACTIVE.fires = []; ACTIVE.lights = []; ACTIVE.cells = [];
   for (const k in POOLS) POOLS[k].n = 0;
-  const poleLines = new Map();
+  const poleLines = new Map(), L = ACTIVE.lights;
   for (let j = cj - VIEW_CELLS; j <= cj + VIEW_CELLS; j++) for (let i = ci - VIEW_CELLS; i <= ci + VIEW_CELLS; i++) {
     const c = cellContent(i, j);
     ACTIVE.cells.push(c);
     for (const t of c.trees) {
-      const h = (t.kind === 2 ? 15 : 12) * t.s, r = (t.kind === 2 ? 3.2 : 4.4) * t.s;
-      put('trunk', t.x, 0, t.z, t.s, h * (t.kind === 2 ? 0.45 : 0.62), t.s, 0, 0.36);
-      if (t.kind === 2) put('conifer', t.x, h * 0.2, t.z, r, h * 0.85, r, t.yaw, t.heat);
-      else {                                       // a crown of three lobes, so no two trees have the same outline
-        const pa = t.kind ? 'crownB' : 'crownA', pb = t.kind ? 'crownA' : 'crownB';
-        put(pa, t.x, h * 0.66, t.z, r, r, r, t.yaw, t.heat);
-        put(pb, t.x + Math.cos(t.yaw) * r * 0.6, h * 0.6, t.z + Math.sin(t.yaw) * r * 0.6, r * 0.7, r * 0.75, r * 0.7, t.yaw * 3, t.heat + 0.01);
-        put(pa, t.x + Math.cos(t.yaw + 2.4) * r * 0.55, h * 0.58, t.z + Math.sin(t.yaw + 2.4) * r * 0.55, r * 0.6, r * 0.65, r * 0.6, t.yaw * 5, t.heat - 0.01);
-      }
-    }
-    for (const m of c.misc) put(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
-    for (const b of c.houses) {
-      put('wall', b.x, 0, b.z, b.w, b.h, b.d, b.yaw, b.burning ? 0.5 : b.heat);
-      put('roof', b.x, b.h, b.z, b.w + 1.2, b.barn ? 5 : 3.6, b.d + 1.6, b.yaw, b.burning ? 0.6 : b.barn ? 0.28 : 0.3);
-      const ca = Math.cos(b.yaw), sa = Math.sin(b.yaw);
-      const at = (lx, lz) => [b.x + lx * ca + lz * sa, b.z - lx * sa + lz * ca];
-      if (!b.barn) {
-        const ch = at(b.w * 0.28, 0);
-        put('box', ch[0], b.h, ch[1], 1.1, 4.6, 1.1, b.yaw, 0.43);          // a chimney, still warm
-        let k = 0;
-        for (const lz of [-1, 1]) for (const lx of [-3.6, 0, 3.6]) {
-          const p = at(lx, lz * (b.d / 2 + 0.05));
-          put('box', p[0], 2.6, p[1], 1.4, 1.5, 0.12, b.yaw, b.burning ? 1.2 : b.lit[k++] ? 0.5 : 0.25);
-        }
-        for (const lx of [-1, 1]) { const p = at(lx * (b.w / 2 + 0.05), 0); put('box', p[0], 2.6, p[1], 0.12, 1.5, 1.4, b.yaw, b.burning ? 1.2 : b.lit[k++] ? 0.5 : 0.25); }
-        if (b.burning) ACTIVE.fires.push({ x: b.x, y: b.h + 1, z: b.z, seed: Math.floor(b.x * 7 + b.z * 13), big: true });
+      const h = (t.kind === 2 ? 13 : 9) * t.s, r = (t.kind === 2 ? 2.6 : 3.4) * t.s;
+      put('cylV', t.x, 0, t.z, 0, 0.28 * t.s, h * (t.kind === 2 ? 0.35 : 0.55), 0.28 * t.s, 0, t.seed);
+      if (t.kind === 2) {
+        for (let k = 0; k < 3; k++) put('cone', t.x, h * (0.18 + k * 0.22), t.z, t.seed + k, r * (1 - k * 0.22), h * (0.42 - k * 0.04), r * (1 - k * 0.22), 0, t.seed + k * 7, t.heat);
       } else {
-        const p = at(0, b.d / 2 + 0.05);
-        put('box', p[0], 0, p[1], 6, 5.5, 0.15, b.yaw, 0.3);               // the barn door
+        const kind = t.kind === 1 ? 1 : 0, rg = mulberry(t.seed * 31 + 7);
+        putBall(t.x, h * 0.66, t.z, r, kind, t.seed, t.heat, 0.92);
+        for (let k = 0; k < 4; k++) {
+          const a = rg() * TAU, d = r * (0.5 + rg() * 0.25);
+          putBall(t.x + Math.cos(a) * d, h * (0.5 + rg() * 0.25), t.z + Math.sin(a) * d, r * (0.5 + rg() * 0.2), kind, t.seed + k + 1, t.heat, 0.92);
+        }
       }
     }
-    for (const v of c.cars) {
-      const ca = Math.cos(v.yaw), sa = Math.sin(v.yaw), body = v.state === 'burning' ? 0.9 : 0.29;
-      const at = (lx, lz) => [v.x + lx * ca + lz * sa, v.z - lx * sa + lz * ca];
-      put('box', v.x, 0.45, v.z, 4.3, 0.75, 1.8, v.yaw, body);
-      const cab = at(-0.3, 0);
-      put('box', cab[0], 1.2, cab[1], 2.2, 0.62, 1.6, v.yaw, v.state === 'burning' ? 1.15 : 0.27);
-      const hood = at(1.5, 0);
-      put('box', hood[0], 1.2, hood[1], 1.1, 0.04, 1.6, v.yaw, v.state === 'warm' ? 0.72 : v.state === 'burning' ? 1.3 : 0.3);
-      for (const lx of [-1.35, 1.35]) for (const lz of [-0.85, 0.85]) { const w = at(lx, lz); put('wheel', w[0], 0.36, w[1], 0.36, 0.36, 0.22, v.yaw, 0.31); }
-      if (v.state === 'burning') ACTIVE.fires.push({ x: v.x, y: 1, z: v.z, seed: Math.floor(v.x * 7 + v.z * 13), big: false });
+    for (const b of c.houses) {
+      const flags = (b.burning ? 1 : 0) + (b.front ? 2 : 0);
+      put('wall', b.x, 0, b.z, b.yaw, b.w, b.h, b.d, b.kind, b.seed, b.wc, flags, b.burning ? 0.5 : b.heat);
+      put('roof', b.x, b.h, b.z, b.yaw, b.w + 1, b.kind === 3 ? snapV(4.5) : b.roofH, b.d + 1, b.kind === 3 ? 3 : 0, b.seed, b.wc, b.rc, b.burning ? 1 : 0);
+      if (b.kind === 0) {
+        put('box', snapH(b.x + b.w * 0.25), b.h, snapH(b.z), 0, 1, b.roofH + snapV(1.2), 1, 1, b.seed);   // a chimney
+        if (b.lit && !b.burning) L.push({ x: b.x, y: 2.2, z: b.z + (b.front ? -1 : 1) * (b.d / 2 + 1.5), r: 9, c: [1, 0.62, 0.3], I: 0.9, kind: 'window', air: 0.3 });
+      }
+      if (b.burning) ACTIVE.fires.push({ x: b.x, y: b.h + 1, z: b.z, seed: b.seed, big: true });
     }
-    for (const b of c.bales) put('bale', b.x, 0.85, b.z, 1.3, 0.85, 0.85, b.yaw, b.heat);
+    for (const p of c.props) put(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12]);
+    for (const f of c.fences) put('box', f[0], 0, f[1], 0, f[2], f[4], f[3], 2, f[5]);
+    for (const v of c.cars) {
+      const ca = Math.cos(v.yaw), sa = Math.sin(v.yaw), st = v.state === 'burning' ? 2 : v.state === 'warm' ? 1 : 0;
+      const at = (lx, lz) => [v.x + lx * ca + lz * sa, v.z - lx * sa + lz * ca];
+      put('box', v.x, 0.35, v.z, v.yaw, 4.3, 0.8, 1.8, 3, v.paint * 13 + 1, v.paint, st);
+      const cab = at(-0.3, 0);
+      put('box', cab[0], 1.15, cab[1], v.yaw, 2.3, 0.65, 1.62, 4, v.paint * 7 + 3, v.paint, st);
+      for (const lx of [-1.35, 1.35]) for (const lz of [-0.82, 0.82]) { const w = at(lx, lz); put('cylH', w[0], 0.36, w[1], v.yaw, 0.36, 0.36, 0.24, 3, 1); }
+      if (st === 2) { ACTIVE.fires.push({ x: v.x, y: 1, z: v.z, seed: Math.floor(v.x * 7 + v.z * 13), big: false }); }
+    }
+    for (const b of c.bales) put('cylH', b.x, 0.85, b.z, b.yaw, 0.85, 0.85, 1.3, 4, 1);
+    for (const lp of c.lamps) {
+      put('cylV', lp.x, 0, lp.z, 0, 0.11, lp.h, 0.11, 2, 0);
+      const hx = lp.x + lp.dx * 1.1, hz = lp.z + lp.dz * 1.1;
+      put('box', (lp.x + hx) / 2, lp.h - 0.1, (lp.z + hz) / 2, 0, Math.abs(lp.dx) * 1.1 + 0.12, 0.12, Math.abs(lp.dz) * 1.1 + 0.12, 0, 0, 1);
+      put('box', hx, lp.h - 0.35, hz, 0, 0.55, 0.3, 0.55, 7, 0);
+      L.push({ x: hx, y: lp.h - 0.5, z: hz, r: 17, c: [1, 0.8, 0.52], I: 2.2, kind: 'lamp', spot: [0, -1, 0, 0.18, 0.62], air: 1 });
+    }
     for (const p of c.poles) {
-      put('pole', p.x, 0, p.z, 1, 10, 1, 0, 0.3);
+      put('cylV', p.x, 0, p.z, 0, 0.16, 10, 0.16, 1, 0);
       const arm = p.line[0] === 'x';
-      put('box', p.x, 9.2, p.z, arm ? 2.4 : 0.14, 0.14, arm ? 0.14 : 2.4, 0, 0.29);
+      put('box', p.x, 9.2, p.z, 0, arm ? 2.4 : 0.16, 0.16, arm ? 0.16 : 2.4, 8, 0);
       if (!poleLines.has(p.line)) poleLines.set(p.line, []);
       poleLines.get(p.line).push(p);
     }
   }
   for (const k in POOLS) {
     const P = POOLS[k];
-    P.mesh.count = P.n;
-    P.mesh.instanceMatrix.needsUpdate = true;
-    P.heat.needsUpdate = true;
+    P.geo.instanceCount = P.n;
+    for (const a in P.A) P.A[a].needsUpdate = true;
   }
   // three sagging wires between neighbouring poles along each highway
   const wp = wireGeo.attributes.position.array;
@@ -453,6 +757,7 @@ function rebuildScenery(cx, cz) {
   }
   wireGeo.setDrawRange(0, w * 2);
   wireGeo.attributes.position.needsUpdate = true;
+  for (const f of ACTIVE.fires) L.push({ x: f.x, y: f.y + 1.5, z: f.z, r: f.big ? 24 : 15, c: [1, 0.5, 0.18], I: f.big ? 2.6 : 1.8, kind: 'fire', seed: f.seed, air: 0.8 });
 }
 // solid things near (x, z) the dead must walk round: flat triples x, z, radius
 function blockersNear(x, z, out) {
@@ -470,5 +775,8 @@ function initWorld() {
 function updateWorld(cx, cz) {
   updateFieldTex(cx, cz);
   rebuildScenery(cx, cz);
-  ground.position.set(Math.round(cx / 50) * 50, 0, Math.round(cz / 50) * 50);
+  const span = Math.max(VIEW.W, VIEW.H * 2.4) / KPX * 1.6 + 60;
+  ground.scale.set(span, 1, span);
+  ground.position.set(cx, 0, cz);
+  ground.updateMatrixWorld();
 }

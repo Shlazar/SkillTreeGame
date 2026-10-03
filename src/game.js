@@ -1,110 +1,85 @@
-/* The game: an AC-130 circling over an endless countryside at night. The camera looks where the
- * crosshair is; the guns fire from the aircraft itself, so every round leaves the camera and flies
- * a second or so down to the ground. Units are metres and seconds. */
+/* The game: a gunship over an endless countryside at night, guns trained on the middle of the
+ * picture. Every round leaves the aircraft (below the bottom of the screen) and takes a second or
+ * so to fall into the target. Units are metres and seconds. */
 
 const CFG = {
   fuel: 60,
-  orbit: { radius: 780, alt: 980, period: 120 },
-  fov: { def: 5, min: 2.2, max: 10 },
-  mg: { rate: 12, speed: 1500, spread: 0.0016, splash: 2.6, victims: 4, heatPer: 0.035, cool: 0.45 },
-  he: { reload: 2.6, speed: 800, kill: 11, hurt: 18 },
+  pan: 70,                                   // m/s with WASD
+  mg: { rate: 12, travel: 0.83, spread: 1.6, splash: 2.6, victims: 4, heatPer: 0.035, cool: 0.45 },
+  he: { reload: 2.6, travel: 1.56, kill: 11, hurt: 18 },
   pop: { start: 160, perSec: 8, max: 700 },
   types: [
-    { hp: 1, speed: [1.1, 1.7], value: 1, scale: [1.12, 1.28], heat: [0.86, 0.97], run: false },
-    { hp: 1, speed: [4.2, 5.6], value: 2, scale: [1.08, 1.18], heat: [0.92, 1.0], run: true },
-    { hp: 8, speed: [0.85, 1.0], value: 10, scale: [1.62, 1.75], heat: [1.0, 1.06], run: false },
+    { hp: 1, speed: [1.1, 1.7], value: 1, heat: [0.86, 0.97], run: false },
+    { hp: 1, speed: [4.2, 5.6], value: 2, heat: [0.92, 1.0], run: true },
+    { hp: 8, speed: [0.85, 1.0], value: 10, heat: [1.0, 1.06], run: false },
   ],
 };
+const G_UP = new THREE.Vector3(-R2, 0, -R2);       // on the ground, the way that is up the screen
 
 function createGame() {
   const S = {};
   const R = Math.random;
-  const cam = R3.camera;
-  const V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), V3 = new THREE.Vector3();
-  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  const camF = new THREE.Vector3(), camR = new THREE.Vector3(), camU = new THREE.Vector3();
 
   function reset(keepPlace) {
     S.t = S.t || 0; S.run = 0; S.fuel = CFG.fuel; S.kills = 0; S.cash = 0; S.shots = 0; S.hits = 0; S.bestBlast = 0;
     S.mode = 'title'; S.endT = 0;
     S.trigger = false; S.mgCd = 0; S.mgHeat = 0; S.overheat = false; S.heReload = 0; S.hitT = 0;
-    if (!keepPlace || !S.C) { const [x, z] = startSpot(); S.C = new THREE.Vector3(x, 0, z); S.T = new THREE.Vector3(x, 0, z); S.theta = 0.8; }
-    S.fov = CFG.fov.def; S.fovT = CFG.fov.def; S.pan = [0, 0]; S.panV = [0, 0];
+    if (!keepPlace || !S.T) { const [x, z] = startSpot(); S.T = new THREE.Vector3(x, 0, z); S.C = new THREE.Vector3(x, 0, z); }
+    S.pan = [0, 0]; S.panV = [0, 0];
     S.locked = S.locked || false; S.free = S.free || false; S.cursor = S.cursor || { x: 0.5, y: 0.5 }; S.aim = new THREE.Vector3(); S.aimOK = false;
-    S.shake = 0; S.zoomBlur = 0;
+    S.shake = 0;
     S.zombies = []; S.dying = []; S.rounds = []; S.flames = []; S.events = []; S.spawnCd = 0; S.attractT = 1.5; S.burst = null; S.nextId = 1;
-    S.viewR = 300;
+    S.viewR = 130;
   }
 
   /* ------------------------------------------------------------ camera */
+  const AP = [0, 0];
   function updateCamera(dt) {
-    S.theta += dt * TAU / CFG.orbit.period;
-    // WASD slides the whole orbit over the ground, in the camera's frame
-    const fx = -Math.cos(S.theta), fz = -Math.sin(S.theta), rx = -fz, rz = fx;
+    // WASD slides the view; with a free cursor, pushing it to an edge does too
     let px = S.pan[0], py = S.pan[1];
-    if (S.free && S.mode === 'play') {       // no mouse lock: the cursor at the edge of the view pushes it along
+    if (S.free && S.mode === 'play') {
       const ex = S.cursor.x * 2 - 1, ey = S.cursor.y * 2 - 1;
       px = clamp(px + Math.sign(ex) * smoothstep(0.7, 0.97, Math.abs(ex)), -1, 1);
       py = clamp(py + Math.sign(ey) * smoothstep(0.7, 0.97, Math.abs(ey)), -1, 1);
     }
-    const sp = 70 * (S.fov / CFG.fov.def), k = Math.min(1, dt * 5);
-    S.panV[0] += ((rx * px + fx * -py) * sp - S.panV[0]) * k;
-    S.panV[1] += ((rz * px + fz * -py) * sp - S.panV[1]) * k;
-    S.C.x += S.panV[0] * dt; S.C.z += S.panV[1] * dt; S.T.x += S.panV[0] * dt; S.T.z += S.panV[1] * dt;
-    // the aim may roam; past 260 m the orbit follows it
-    const dx = S.T.x - S.C.x, dz = S.T.z - S.C.z, d = Math.hypot(dx, dz);
-    if (d > 260) { S.C.x = S.T.x - dx / d * 260; S.C.z = S.T.z - dz / d * 260; }
-    S.fov += (S.fovT - S.fov) * Math.min(1, dt * 6);
-    S.zoomBlur = Math.max(0, Math.min(1, Math.abs(S.fovT - S.fov) / 2.5));
-    cam.fov = S.fov;
-    cam.updateProjectionMatrix();
-    cam.position.set(S.C.x + Math.cos(S.theta) * CFG.orbit.radius, CFG.orbit.alt, S.C.z + Math.sin(S.theta) * CFG.orbit.radius);
-    const j = S.shake * S.fov / CFG.fov.def * 0.9;
-    V1.set(S.T.x + (R() - 0.5) * j, 0, S.T.z + (R() - 0.5) * j);
-    cam.lookAt(V1);
-    cam.updateMatrixWorld();
-    U.uCamPos.value.copy(cam.position);
-    U_PX.value = 2 * Math.tan(S.fov * Math.PI / 360) / R3.h;
-    cam.getWorldDirection(camF); camR.crossVectors(camF, cam.up).normalize(); camU.crossVectors(camR, camF);
-    // where the crosshair falls: the middle of the screen when the mouse is locked, else the cursor
-    if (S.locked || S.mode !== 'play') S.aim.copy(S.T), S.aimOK = true;
-    else {
-      ndc.set(S.cursor.x * 2 - 1, -(S.cursor.y * 2 - 1));
-      ray.setFromCamera(ndc, cam);
-      S.aimOK = !!ray.ray.intersectPlane(groundPlane, S.aim);
-    }
-    // how far the view reaches on the ground, for spawning just out of sight
-    let r = 0;
-    for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      ndc.set(x, y); ray.setFromCamera(ndc, cam);
-      if (ray.ray.intersectPlane(groundPlane, V2)) r = Math.max(r, Math.hypot(V2.x - S.T.x, V2.z - S.T.z));
-    }
-    S.viewR = r || 400;
+    const sp = CFG.pan * 2 / VIEW.S, k = Math.min(1, dt * 6);
+    S.panV[0] += ((CR.x * px - G_UP.x * py) * sp - S.panV[0]) * k;
+    S.panV[1] += ((CR.z * px - G_UP.z * py) * sp - S.panV[1]) * k;
+    S.T.x += S.panV[0] * dt; S.T.z += S.panV[1] * dt;
+    // the pack's meeting point trails the view
+    const kc = Math.min(1, dt * 0.25);
+    S.C.x += (S.T.x - S.C.x) * kc; S.C.z += (S.T.z - S.C.z) * kc;
+    // a kick from the guns, in whole art pixels
+    const j = S.shake * 1.6;
+    setView(S.T.x + (R() - 0.5) * j / KPX * 2, S.T.z + (R() - 0.5) * j / KPX * 2);
+    VIEW.aim.copy(S.T);
+    if (S.locked || S.mode !== 'play') { S.aim.copy(S.T); S.aimOK = true; }
+    else { groundAtArt(S.cursor.x * VIEW.dw / VIEW.S, S.cursor.y * VIEW.dh / VIEW.S, S.aim); S.aimOK = true; }
+    S.viewR = Math.hypot(VIEW.W / 2 / KPX, VIEW.H / 2 / (KPX * SE)) + 8;
+    void AP;
   }
-  // the mouse moved by (dx, dy) pixels while locked: move the aim across the ground
+  // the mouse moved (dx, dy) art pixels while locked: move the aim with it across the ground
   function look(dx, dy) {
-    const mpp = 2 * cam.position.distanceTo(S.T) * Math.tan(S.fov * Math.PI / 360) / Math.max(1, innerHeight);
-    const fx = camF.x, fz = camF.z, fl = Math.hypot(fx, fz) || 1, rl = Math.hypot(camR.x, camR.z) || 1;
-    const k = mpp * 0.85;
-    S.T.x += (camR.x / rl * dx - fx / fl * dy * 1.25) * k;
-    S.T.z += (camR.z / rl * dx - fz / fl * dy * 1.25) * k;
+    S.T.x += CR.x * dx / KPX - G_UP.x * dy / (KPX * SE);
+    S.T.z += CR.z * dx / KPX - G_UP.z * dy / (KPX * SE);
   }
 
   /* --------------------------------------------------------- the horde */
-  // the dead move in packs: each pack drifts towards its own spot near the middle of the orbit
+  // the dead move in packs: each pack drifts towards its own spot near the middle of the view
   function newPack(p) {
-    const a = R() * TAU, r = 10 + R() * 70;
+    const a = R() * TAU, r = 10 + R() * 60;
     p = p || {};
     p.ox = Math.cos(a) * r; p.oz = Math.sin(a) * r; p.next = S.t + 6 + R() * 8;
     return p;
   }
   function makeZombie(x, z, type, pack) {
-    const T = CFG.types[type], s = T.scale[0] + R() * (T.scale[1] - T.scale[0]);
+    const T = CFG.types[type];
     return {
       id: S.nextId++, x, z, type, hp: T.hp, value: T.value, run: T.run, big: type === 2,
-      speed: T.speed[0] + R() * (T.speed[1] - T.speed[0]), scale: s, heat: T.heat[0] + R() * (T.heat[1] - T.heat[0]),
-      yaw: R() * TAU, phase: R() * TAU, seed: R(), limp: R() < 0.35 ? R() : 0, flash: 0,
-      pack: pack || newPack(), jx: (R() - 0.5) * 10, jz: (R() - 0.5) * 10, wob: R() * TAU, block: [], blockT: 0,
+      speed: T.speed[0] + R() * (T.speed[1] - T.speed[0]), heat: T.heat[0] + R() * (T.heat[1] - T.heat[0]),
+      skin: Math.floor(R() * 4), shirt: Math.floor(R() * 6), pants: Math.floor(R() * 3), right: R() < 0.5,
+      phase: R() * TAU, seed: R(), flash: 0,
+      pack: pack || newPack(), jx: (R() - 0.5) * 12, jz: (R() - 0.5) * 12, wob: R() * TAU, block: [], blockT: 0,
     };
   }
   function pickType() {
@@ -117,19 +92,17 @@ function createGame() {
   function pack(n, hx, hz) {
     const p = newPack();
     for (let k = 0; k < n; k++) {
-      const r = Math.sqrt(R()) * (6 + n * 0.45), b = R() * TAU;
+      const r = Math.sqrt(R()) * (6 + n * 0.55), b = R() * TAU;
       S.zombies.push(makeZombie(hx + Math.cos(b) * r, hz + Math.sin(b) * r, pickType(), p));
     }
   }
-  // a pack walks in from just out of sight
   function spawnHorde(n) {
-    const a = R() * TAU, d = S.viewR + 15 + R() * 40;
+    const a = R() * TAU, d = S.viewR + 10 + R() * 30;
     pack(n, S.T.x + Math.cos(a) * d, S.T.z + Math.sin(a) * d);
   }
-  // packs already in view (a new mission, the title screen)
   function spawnScatter(n) {
     while (n > 0) {
-      const m = Math.min(n, 6 + Math.floor(R() * 16)), a = R() * TAU, r = 25 + Math.sqrt(R()) * S.viewR * 1.1;
+      const m = Math.min(n, 6 + Math.floor(R() * 16)), a = R() * TAU, r = 20 + Math.sqrt(R()) * S.viewR * 1.05;
       pack(m, S.T.x + Math.cos(a) * r, S.T.z + Math.sin(a) * r);
       n -= m;
     }
@@ -147,14 +120,14 @@ function createGame() {
       z.wob += dt * (z.run ? 2 : 0.8);
       const w = Math.sin(z.wob) * (z.run ? 0.25 : 0.45), cw = Math.cos(w), sw = Math.sin(w);
       const ux = (dx * cw - dz * sw) / d, uz = (dx * sw + dz * cw) / d;
-      const sp = z.speed * (d < 4 ? 0.12 : 1) * (z.flash > 0 ? 0.3 : 1);
+      const sp = z.speed * (d < 4 ? 0.1 : 1) * (z.flash > 0 ? 0.3 : 1);
       z.x += ux * sp * dt; z.z += uz * sp * dt;
-      let dy = Math.atan2(ux, uz) - z.yaw;
-      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-      z.yaw += dy * Math.min(1, dt * 4);
-      z.phase += dt * (sp * (z.run ? 2.3 : 3.6) / z.scale + 0.3);
+      const sx = ux * CR.x + uz * CR.z;
+      if (Math.abs(sx) > 0.25) z.right = sx > 0;
+      z.vis = sp;
+      z.phase += dt * sp * 3.9;
       if (z.flash > 0) z.flash -= dt;
-      if (Math.hypot(z.x - S.T.x, z.z - S.T.z) > 750) z.gone = true;
+      if (Math.hypot(z.x - S.T.x, z.z - S.T.z) > S.viewR * 3 + 120) z.gone = true;
     }
     // spacing in the crowd, and round houses, cars and trees
     grid = new Map();
@@ -165,13 +138,13 @@ function createGame() {
       a.push(z);
     }
     for (const a of S.zombies) {
-      const ra = a.big ? 0.85 : 0.48, ix = Math.floor(a.x / GC), iz = Math.floor(a.z / GC);
+      const ra = a.big ? 1.2 : 0.75, ix = Math.floor(a.x / GC), iz = Math.floor(a.z / GC);
       for (let i = ix - 1; i <= ix + 1; i++) for (let j = iz - 1; j <= iz + 1; j++) {
         const list = grid.get(gk(i, j));
         if (!list) continue;
         for (const b of list) {
           if (b === a) continue;
-          const dx = a.x - b.x, dz = a.z - b.z, d2 = dx * dx + dz * dz, rr = ra + (b.big ? 0.85 : 0.48);
+          const dx = a.x - b.x, dz = a.z - b.z, d2 = dx * dx + dz * dz, rr = ra + (b.big ? 1.2 : 0.75);
           if (d2 < rr * rr && d2 > 1e-8) { const d = Math.sqrt(d2), p = (rr - d) * 0.25 / d; a.x += dx * p; a.z += dz * p; b.x -= dx * p; b.z -= dz * p; }
         }
       }
@@ -198,7 +171,7 @@ function createGame() {
   function blood(x, z, n, up) {
     for (let k = 0; k < n; k++) {
       const a = R() * TAU, v = 1 + R() * 3;
-      HOT.spawn(x, 1 + R() * 0.6, z, Math.cos(a) * v, up * (0.5 + R()), Math.sin(a) * v, { life: 0.5 + R() * 0.4, s0: 0.14, s1: 0.1, h0: 0.95, h1: 0.5, a: 0.8, kind: 2, grav: 9 });
+      chunk(x, 1 + R() * 0.8, z, Math.cos(a) * v, up * (0.5 + R()), Math.sin(a) * v, { life: 0.5 + R() * 0.4, s0: 0.09, h0: 0.95, h1: 0.5, grav: 9, col: 2 });
     }
   }
   function kill(z, cause, cx, cz, dist) {
@@ -207,45 +180,35 @@ function createGame() {
     if (scoring()) { S.kills++; S.cash += z.value; }
     S.events.push({ type: 'kill' });
     if (cause === 'mg') {
-      S.dying.push(Object.assign(z, { mode: 'fall', t: 0, dir: R() < 0.6 ? 1 : -1, flash: 0.08 }));
-      blood(z.x, z.z, 5, 3);
+      S.dying.push(Object.assign(z, { mode: 'fall', t: 0, flash: 0.08 }));
+      blood(z.x, z.z, 6, 3);
       addDecal(2, z.x + (R() - 0.5), z.z + (R() - 0.5), 1.4 + R(), 0.72, S.t);
       return;
     }
     let dx = z.x - cx, dz = z.z - cz;
     const l = Math.hypot(dx, dz) || 1, f = 1 - Math.min(1, dist / CFG.he.kill), v = 5 + f * 13 + R() * 3;
     dx /= l; dz /= l;
-    const q = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, z.yaw);
-    const axis = new THREE.Vector3(R() - 0.5, R() - 0.5, R() - 0.5).normalize();
-    S.dying.push(Object.assign(z, { mode: 'thrown', t: 0, y: 0.95 * z.scale, vx: dx * v, vy: 7 + f * 13 + R() * 4, vz: dz * v, q, axis, spin: 5 + R() * 9, flash: 0.1 }));
+    S.dying.push(Object.assign(z, { mode: 'thrown', t: 0, y: 1.2, vx: dx * v, vy: 7 + f * 13 + R() * 4, vz: dz * v, flash: 0.1 }));
+    z.right = dx * CR.x + dz * CR.z > 0;
     if (f > 0.5) for (let k = 0; k < 6; k++) {
       const a = R() * TAU, s = 4 + R() * 9;
-      HOT.spawn(z.x, 1, z.z, Math.cos(a) * s, 6 + R() * 10, Math.sin(a) * s, { life: 1 + R() * 0.8, s0: 0.22, s1: 0.18, h0: 0.95, h1: 0.45, a: 1, kind: 2, grav: 14, spin: 6 });
+      chunk(z.x, 1, z.z, Math.cos(a) * s, 6 + R() * 10, Math.sin(a) * s, { life: 1 + R() * 0.8, s0: 0.14, h0: 0.95, h1: 0.45, grav: 14, col: 1 });
     }
   }
-  const QA = new THREE.Quaternion(), QB = new THREE.Quaternion();
   function updateDying(dt) {
     for (const z of S.dying) {
       z.t += dt;
       if (z.flash > 0) z.flash -= dt;
       if (z.mode === 'fall') {
-        if (z.t >= 0.6) {
-          QA.setFromAxisAngle(Y_AXIS, z.yaw); QB.setFromAxisAngle(X_AXIS, -Math.PI / 2 * z.dir);
-          QA.multiply(QB);
-          addCorpse(z, QA, z.x, 0.12 * z.scale, z.z, S.t);
-          z.done = true;
-        }
+        if (z.t >= 0.36) { addCorpse(z, S.t); z.done = true; }
         continue;
       }
       z.vy -= 14 * dt;
       z.x += z.vx * dt; z.y += z.vy * dt; z.z += z.vz * dt;
-      QA.setFromAxisAngle(z.axis, z.spin * dt); z.q.premultiply(QA);
-      if (z.y <= 0.3 * z.scale && z.vy < 0) {
-        QA.setFromAxisAngle(Y_AXIS, R() * TAU); QB.setFromAxisAngle(X_AXIS, (R() < 0.5 ? -1 : 1) * Math.PI / 2);
-        QA.multiply(QB);
-        addCorpse(z, QA, z.x, 0.12 * z.scale, z.z, S.t);
+      if (z.y <= 0.4 && z.vy < 0) {
+        addCorpse(z, S.t);
         addDecal(2, z.x, z.z, 1.8 + R(), 0.75, S.t);
-        for (let k = 0; k < 4; k++) COOL.spawn(z.x, 0.3, z.z, (R() - 0.5) * 3, 1 + R(), (R() - 0.5) * 3, { life: 1.2, s0: 0.6, s1: 1.6, h0: 0.36, h1: 0.33, a: 0.5, kind: 1, drag: 2 });
+        for (let k = 0; k < 4; k++) dust(z.x, 0.3, z.z, (R() - 0.5) * 3, 1 + R(), (R() - 0.5) * 3, { life: 1.2, s0: 0.5, s1: 1.4, h0: 0.36, h1: 0.33, a: 0.6, drag: 2 });
         z.done = true;
       }
     }
@@ -253,24 +216,16 @@ function createGame() {
   }
 
   /* ----------------------------------------------------------- weapons */
-  // The guns sit just under the camera, so their rounds come up from the bottom of the picture. A round's
-  // start rides along with the aircraft while it flies, so the streak always leaves the camera.
-  function gunPort(side, out) {
-    return (out || new THREE.Vector3()).copy(cam.position).addScaledVector(camF, 16).addScaledVector(camR, side * 0.7).addScaledVector(camU, -5.5);
-  }
   function fireMG(target, player) {
-    const a = gunPort(1), b = new THREE.Vector3().copy(target), dist = a.distanceTo(b);
-    const s = CFG.mg.spread * dist * Math.sqrt(R()), ang = R() * TAU;
+    const b = new THREE.Vector3().copy(target), s = CFG.mg.spread * Math.sqrt(R()), ang = R() * TAU;
     b.x += Math.cos(ang) * s; b.z += Math.sin(ang) * s; b.y = 0;
-    const d = a.distanceTo(b);
-    S.rounds.push({ kind: 'mg', side: 1, a, b, age: 0, travel: d / CFG.mg.speed, dist: d, streak: 80, width: 0.09, heat: 2.2, player });
+    S.rounds.push({ kind: 'mg', side: 1, b, age: 0, travel: CFG.mg.travel, dist: 1250, streak: 80, player });
     if (player) { S.shots++; S.mgHeat = Math.min(1, S.mgHeat + CFG.mg.heatPer); S.shake = Math.min(1.2, S.shake + 0.07); S.events.push({ type: 'mg' }); }
   }
   function fireHE(target, player) {
-    const a = gunPort(-1), b = new THREE.Vector3().copy(target);
+    const b = new THREE.Vector3().copy(target);
     b.y = 0;
-    const d = a.distanceTo(b);
-    S.rounds.push({ kind: 'he', side: -1, a, b, age: 0, travel: d / CFG.he.speed, dist: d, streak: 40, width: 0.26, heat: 3.2, player });
+    S.rounds.push({ kind: 'he', side: -1, b, age: 0, travel: CFG.he.travel, dist: 1250, streak: 50, player });
     if (player) { S.heReload = CFG.he.reload; S.shake = Math.min(1.6, S.shake + 0.9); S.events.push({ type: 'cannon' }); }
   }
   function mgImpact(r) {
@@ -284,18 +239,19 @@ function createGame() {
       if (zb.hp <= 0) kill(zb, 'mg', x, z, 0);
     });
     if (hits && r.player) { S.hits++; S.hitT = 0.15; }
-    HOT.spawn(x, 0.6, z, 0, 0.5, 0, { life: 0.09, s0: 2.6, s1: 3.4, h0: 2.6, h1: 1.2, a: 1, kind: 0 });
+    fire(x, 0.6, z, 0, 0.5, 0, { life: 0.08, s0: 1.1, s1: 1.5, h0: 1, h1: 0.7 });
     for (let k = 0; k < 5; k++) {
       const a = R() * TAU, v = 6 + R() * 12;
-      HOT.spawn(x, 0.3, z, Math.cos(a) * v, 3 + R() * 9, Math.sin(a) * v, { life: 0.2 + R() * 0.25, s0: 0.12, h0: 1.8, h1: 0.8, a: 1, kind: 3, grav: 20 });
+      spark(x, 0.3, z, Math.cos(a) * v, 3 + R() * 9, Math.sin(a) * v, { life: 0.2 + R() * 0.25, h0: 1, h1: 0.3, grav: 20 });
     }
     for (let k = 0; k < 4; k++) {
       const a = R() * TAU, v = 1.5 + R() * 4;
-      COOL.spawn(x, 0.3, z, Math.cos(a) * v, 3 + R() * 6, Math.sin(a) * v, { life: 0.7 + R() * 0.5, s0: 0.22, s1: 0.18, h0: 0.38, a: 1, kind: 2, grav: 16 });
+      chunk(x, 0.3, z, Math.cos(a) * v, 3 + R() * 6, Math.sin(a) * v, { life: 0.7 + R() * 0.5, s0: 0.12, h0: 0.38, grav: 16, col: 0 });
     }
-    COOL.spawn(x, 0.8, z, (R() - 0.5), 1.2, (R() - 0.5), { life: 1.6, s0: 1.2, s1: 3.6, h0: 0.5, h1: 0.36, a: 0.55, kind: 1, drag: 1.5 });
+    dust(x, 0.8, z, (R() - 0.5), 1.2, (R() - 0.5), { life: 1.4, s0: 0.6, s1: 1.8, h0: 0.45, h1: 0.36, a: 0.7, drag: 1.5 });
     addDecal(1, x, z, 1.8 + R() * 0.8, 0.85, S.t);
     addHeat(x, z, 2.6, 0.5, 1.4);
+    addLight(x, 1.2, z, 7, [1, 0.75, 0.4], 2.4, 0.07);
   }
   function explode(x, z, player) {
     let killed = 0, value = 0;
@@ -309,40 +265,42 @@ function createGame() {
       value += zb.value; killed++;
       kill(zb, 'he', x, z, d);
     });
-    // the flash, a fireball rolling up, a ring of hot air, earth and sparks thrown out, smoke
-    HOT.spawn(x, 3, z, 0, 0, 0, { life: 0.12, s0: 10, s1: 18, h0: 4, h1: 1.5, a: 1, kind: 0 });
-    for (let k = 0; k < 12; k++) {                     // the fireball, rolling up and cooling
+    // the flash, a fireball rolling up, burning ground, fragments flung out on arcs, earth, smoke, a ring of dust
+    addLight(x, 6, z, 46, [1, 0.72, 0.4], 9, 0.25, 1.2);
+    addLight(x, 5, z, 30, [1, 0.5, 0.18], 4, 1.8, 0.8);
+    addLight(x, 3, z, 22, [1, 0.45, 0.15], 1.2, 7, 0.6);           // the crater smoulders
+    fire(x, 2.5, z, 0, 0, 0, { life: 0.12, s0: 7, s1: 11, h0: 1, h1: 0.9 });
+    for (let k = 0; k < 14; k++) {
       const a = R() * TAU, v = R() * 7, r = R() * 3;
-      HOT.spawn(x + Math.cos(a) * r, 1.5 + R() * 3, z + Math.sin(a) * r, Math.cos(a) * v, 3 + R() * 6, Math.sin(a) * v,
-        { life: 1 + R() * 0.8, s0: 2.5 + R() * 1.5, s1: 7 + R() * 4, h0: 2.4, h1: 0.4, a: 1, kind: 0, grav: -5, drag: 1.6 });
+      fire(x + Math.cos(a) * r, 1.5 + R() * 3, z + Math.sin(a) * r, Math.cos(a) * v, 3 + R() * 6, Math.sin(a) * v,
+        { life: 1 + R() * 0.8, s0: 2.2 + R() * 1.2, s1: 4.5 + R() * 2.5, h0: 1, h1: 0.1, grav: -5, drag: 1.6 });
     }
-    for (let k = 0; k < 6; k++) {                      // burning ground
+    for (let k = 0; k < 6; k++) {
       const a = R() * TAU, r = 2 + R() * 6;
-      HOT.spawn(x + Math.cos(a) * r, 0.8, z + Math.sin(a) * r, 0, 0.6, 0, { life: 2 + R() * 1.5, s0: 3, s1: 5, h0: 1.3, h1: 0.35, a: 1, kind: 0 });
+      fire(x + Math.cos(a) * r, 0.8, z + Math.sin(a) * r, 0, 0.6, 0, { life: 2 + R() * 1.5, s0: 1.6, s1: 2.6, h0: 0.75, h1: 0.15 });
     }
-    for (let k = 0; k < 32; k++) {                     // white-hot fragments flung out on arcs
+    for (let k = 0; k < 32; k++) {
       const a = R() * TAU, v = 10 + R() * 26;
-      HOT.spawn(x, 1, z, Math.cos(a) * v, 10 + R() * 22, Math.sin(a) * v, { life: 0.9 + R() * 1, s0: 0.45, h0: 2.2, h1: 0.6, a: 1, kind: 3, grav: 18, drag: 0.4 });
+      spark(x, 1, z, Math.cos(a) * v, 10 + R() * 22, Math.sin(a) * v, { life: 0.9 + R() * 1, h0: 1, h1: 0.2, grav: 18, drag: 0.4 });
     }
-    for (let k = 0; k < 4; k++) {                      // and a few that keep burning where they land
+    for (let k = 0; k < 4; k++) {
       const a = R() * TAU, r = 9 + R() * 14;
       S.flames.push({ x: x + Math.cos(a) * r, z: z + Math.sin(a) * r, life: 5 + R() * 7 });
     }
     for (let k = 0; k < 45; k++) {
       const a = R() * TAU, v = 6 + R() * 22;
-      COOL.spawn(x, 0.5, z, Math.cos(a) * v, 6 + R() * 20, Math.sin(a) * v, { life: 1.2 + R() * 1.2, s0: 0.35 + R() * 0.3, s1: 0.3, h0: R() < 0.3 ? 0.9 : 0.42, h1: 0.36, a: 1, kind: 2, grav: 20, spin: 8 });
+      chunk(x, 0.5, z, Math.cos(a) * v, 6 + R() * 20, Math.sin(a) * v, { life: 1.2 + R() * 1.2, s0: 0.16 + R() * 0.12, h0: R() < 0.3 ? 0.9 : 0.42, h1: 0.36, grav: 20, col: R() < 0.2 ? 3 : 0 });
     }
     for (let k = 0; k < 14; k++) {
       const a = R() * TAU, r = R() * 6;
-      COOL.spawn(x + Math.cos(a) * r, 2 + R() * 6, z + Math.sin(a) * r, Math.cos(a) * 1.5, 2.5 + R() * 2.5, Math.sin(a) * 1.5,
-        { life: 6 + R() * 4, s0: 4 + R() * 3, s1: 16 + R() * 9, h0: 0.62, h1: 0.34, a: 0.55, kind: 1, drag: 0.5, fadeIn: 0.1 });
+      smoke(x + Math.cos(a) * r, 2 + R() * 6, z + Math.sin(a) * r, Math.cos(a) * 1.5, 2.5 + R() * 2.5, Math.sin(a) * 1.5,
+        { life: 6 + R() * 4, s0: 3 + R() * 2, s1: 9 + R() * 5, h0: 0.5, h1: 0.33, a: 0.7, drag: 0.5, fadeIn: 0.1, col: 0.3 + R() * 0.4 });
     }
     for (let k = 0; k < 16; k++) {
       const a = k / 16 * TAU;
-      COOL.spawn(x + Math.cos(a) * 3, 0.8, z + Math.sin(a) * 3, Math.cos(a) * 26, 1, Math.sin(a) * 26,
-        { life: 1.6, s0: 2.5, s1: 6, h0: 0.45, h1: 0.34, a: 0.5, kind: 1, drag: 3 });
+      dust(x + Math.cos(a) * 3, 0.8, z + Math.sin(a) * 3, Math.cos(a) * 26, 1, Math.sin(a) * 26, { life: 1.6, s0: 1.6, s1: 3.6, h0: 0.45, h1: 0.34, a: 0.7, drag: 3 });
     }
-    addRing(x, z, CFG.he.hurt * 1.5, 2.2);
+    addDecal(4, x, z, CFG.he.hurt * 3, 1.4, S.t);
     addDecal(0, x, z, 20 + R() * 4, 1, S.t);
     addHeat(x, z, 11, 0.9, 1.2);
     addHeat(x, z, 9, 0.16, 25);
@@ -355,30 +313,25 @@ function createGame() {
   function updateRounds(dt) {
     for (const r of S.rounds) {
       r.age += dt;
-      gunPort(r.side, r.a);
-      if (r.kind === 'he' && r.age < r.travel) {
-        const u = r.age / r.travel;
-        HOT.spawn(lerp(r.a.x, r.b.x, u), lerp(r.a.y, r.b.y, u), lerp(r.a.z, r.b.z, u), 0, 0, 0, { life: 0.05, s0: 1.4, h0: 3, a: 1, kind: 0 });
-      }
       if (r.age >= r.travel) { r.done = true; if (r.kind === 'he') explode(r.b.x, r.b.z, r.player); else mgImpact(r); }
     }
     S.rounds = S.rounds.filter((r) => !r.done);
   }
-  // burning wrecks and houses: tongues of fire and a column of warm smoke; little fires left by blasts
+  // burning wrecks and houses: tongues of fire and a column of smoke; little fires left by blasts
   function updateFires(dt) {
     for (const f of S.flames) {
       f.life -= dt;
-      if (R() < dt * 14) HOT.spawn(f.x + (R() - 0.5), 0.4, f.z + (R() - 0.5), 0, 1.5 + R(), 0,
-        { life: 0.35 + R() * 0.3, s0: 0.7 + R() * 0.5, s1: 0.2, h0: 1.4, h1: 0.5, a: 1, kind: 0, grav: -2 });
+      if (R() < dt * 14) fire(f.x + (R() - 0.5), 0.4, f.z + (R() - 0.5), 0, 1.5 + R(), 0, { life: 0.35 + R() * 0.3, s0: 0.45 + R() * 0.3, s1: 0.15, h0: 0.8, h1: 0.2, grav: -2 });
     }
     S.flames = S.flames.filter((f) => f.life > 0);
+    const reach = S.viewR + 30;
     for (const f of ACTIVE.fires) {
-      if (Math.abs(f.x - S.T.x) > 500 || Math.abs(f.z - S.T.z) > 500) continue;
+      if (Math.abs(f.x - S.T.x) > reach || Math.abs(f.z - S.T.z) > reach) continue;
       const k = f.big ? 2.2 : 1, w = f.big ? 6 : 3;
-      if (R() < dt * 30 * k) HOT.spawn(f.x + (R() - 0.5) * w, f.y + R(), f.z + (R() - 0.5) * w * 0.6, (R() - 0.5), 3 + R() * 3, (R() - 0.5),
-        { life: 0.4 + R() * 0.5, s0: (0.9 + R() * 0.8) * (f.big ? 1.4 : 1), s1: 0.3, h0: 1.5, h1: 0.6, a: 1, kind: 0, grav: -2 });
-      if (R() < dt * 5 * k) COOL.spawn(f.x + (R() - 0.5) * w * 0.6, f.y + 2, f.z + (R() - 0.5) * w * 0.6, 0.8 + (R() - 0.5), 3 + R() * 2, (R() - 0.5),
-        { life: 7 + R() * 3, s0: 2 * k, s1: 11 * k, h0: 0.5, h1: 0.34, a: 0.5, kind: 1, drag: 0.3, fadeIn: 0.1 });
+      if (R() < dt * 30 * k) fire(f.x + (R() - 0.5) * w, f.y + R(), f.z + (R() - 0.5) * w * 0.6, (R() - 0.5), 3 + R() * 3, (R() - 0.5),
+        { life: 0.4 + R() * 0.5, s0: (0.6 + R() * 0.5) * (f.big ? 1.4 : 1), s1: 0.2, h0: 0.9, h1: 0.15, grav: -2 });
+      if (R() < dt * 4 * k) smoke(f.x + (R() - 0.5) * w * 0.6, f.y + 2, f.z + (R() - 0.5) * w * 0.6, 0.8 + (R() - 0.5), 3 + R() * 2, (R() - 0.5),
+        { life: 7 + R() * 3, s0: 1.4 * k, s1: 6 * k, h0: 0.5, h1: 0.34, a: 0.6, drag: 0.3, fadeIn: 0.1, col: 0.2 });
     }
   }
   // the title screen: the gunship works the horde on its own
@@ -392,7 +345,7 @@ function createGame() {
     if (S.attractT > 0 || !S.zombies.length) return;
     S.attractT = 1.4 + R() * 1.8;
     const z = S.zombies[Math.floor(R() * S.zombies.length)];
-    if (Math.hypot(z.x - S.T.x, z.z - S.T.z) > S.viewR * 0.55) return;
+    if (Math.hypot(z.x - S.T.x, z.z - S.T.z) > S.viewR * 0.6) return;
     const p = new THREE.Vector3(z.x, 0, z.z);
     if (R() < 0.45) fireHE(p, false); else S.burst = { p, n: 12, cd: 0 };
   }
@@ -402,7 +355,6 @@ function createGame() {
     S.t += dt;
     U.uTime.value = S.t;
     if (S.mode !== 'play') S.pan[0] = S.pan[1] = 0;
-    updateCamera(dt);
     if (S.mode === 'play') {
       S.run += dt; S.fuel -= dt;
       S.mgHeat = Math.max(0, S.mgHeat - CFG.mg.cool * dt * (S.trigger && !S.overheat ? 0.25 : 1));
@@ -418,6 +370,7 @@ function createGame() {
     else if (S.mode === 'ending') { S.endT += dt; if (S.endT > 1.4) S.mode = 'over'; }
     S.hitT = Math.max(0, S.hitT - dt);
     S.shake = Math.max(0, S.shake - dt * 2.5);
+    updateCamera(dt);
     updateWorld(S.T.x, S.T.z);
     updateZombies(dt);
     updateRounds(dt);
@@ -425,6 +378,7 @@ function createGame() {
     updateFires(dt);
     updateFx(dt);
     packHeat(dt, ACTIVE.fires, S.t);
+    packLights(dt, S.t, S.T.x, S.T.z);
     writeTracers(S.rounds);
     writeZombies(S.zombies, S.dying, S.t);
   }
@@ -443,7 +397,5 @@ function createGame() {
     trigger(on) { S.trigger = !!on && S.mode === 'play'; },
     fireHE() { if (S.mode === 'play' && S.heReload <= 0 && S.aimOK) fireHE(S.aim, true); },
     setPan(x, y) { S.pan[0] = x; S.pan[1] = y; },
-    zoom(f) { S.fovT = clamp(S.fovT * f, CFG.fov.min, CFG.fov.max); },
-    cycleZoom() { const steps = [9, 5, 2.6], i = steps.findIndex((v) => v < S.fovT - 0.1); S.fovT = i < 0 ? steps[0] : steps[i]; },
   };
 }

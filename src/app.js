@@ -1,11 +1,14 @@
-/* Sky Reaper: input, sound, screens and the loop. */
+/* Sky Reaper: input, sound, screens, the HUD panels and the loop. */
 const $ = (id) => document.getElementById(id);
 const glCanvas = $('gl'), hudCanvas = $('hud');
-let game = null, GS = null, mode = 'title', invert = false, flash = 0, staticV = 0, last = performance.now(), acc = 0;
-let dprCap = 1.5, slowT = 0, lockFailed = false, wantLock = false, unlockAt = -1e9, touched = false, skipMoves = 0;
+let game = null, GS = null, mode = 'title', thermal = false, invert = false, flash = 0, staticV = 0, last = performance.now(), acc = 0;
+let lockFailed = false, wantLock = false, unlockAt = -1e9, touched = false, skipMoves = 0, slowT = 0;
 let best = 0, bank = 0;
-const DBG = { hold: false, fixedRes: false };      // ?debug: hold the simulation still, keep the resolution (tests)
-try { best = +localStorage.getItem('skyreaper.flir.best') || 0; bank = +localStorage.getItem('skyreaper.flir.bank') || 0; invert = localStorage.getItem('skyreaper.flir.bht') === '1'; } catch (e) { /* storage blocked */ }
+const DBG = { hold: false, noStatic: false };      // ?debug: hold the simulation still, no static (tests)
+try {
+  best = +localStorage.getItem('skyreaper.px.best') || 0; bank = +localStorage.getItem('skyreaper.px.bank') || 0;
+  thermal = localStorage.getItem('skyreaper.px.thermal') === '1'; invert = localStorage.getItem('skyreaper.px.bht') === '1';
+} catch (e) { /* storage blocked */ }
 const save = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) { /* storage blocked */ } };
 
 /* -------------------------------------------------------------- sound
@@ -66,15 +69,30 @@ const SFX = {
   beep() { sTone('square', 1046, 1046, 0.08, 0.045); },
   ui() { sTone('square', 660, 990, 0.07, 0.04); },
   radio() { sNoise('bandpass', 1800, 1800, 0.8, 0.6, 0.12); },
+  click() { sNoise('highpass', 4000, 4000, 1, 0.03, 0.08); sTone('square', 220, 180, 0.05, 0.03); },
 };
 
 /* --------------------------------------------------------------- setup */
 function layout() {
-  const w = innerWidth, h = innerHeight, dpr = Math.min(devicePixelRatio || 1, dprCap);
-  resizeRenderer(w, h, dpr);
-  resizeHud(w, h, Math.min(devicePixelRatio || 1, 2));
+  const dpr = Math.min(devicePixelRatio || 1, 3);
+  sizeView(innerWidth, innerHeight, dpr);
+  glCanvas.style.width = R3.canvasCss[0] + 'px'; glCanvas.style.height = R3.canvasCss[1] + 'px';
+  resizeHud(innerWidth, innerHeight, Math.min(devicePixelRatio || 1, 2));
 }
 addEventListener('resize', layout);
+function zoom(step) {
+  const z = clamp(zoomStep + step, -1, 1);
+  if (z === zoomStep) return;
+  zoomStep = z; layout(); SFX.click(); staticV = Math.max(staticV, 0.25);
+}
+const zoomLabel = () => ['0.5x', '1.0x', '1.5x'][zoomStep + 1];
+function setThermal(on) {
+  thermal = on; save('skyreaper.px.thermal', on ? 1 : 0);
+  document.body.classList.toggle('thermal', on);
+  $('modeColour').setAttribute('aria-pressed', String(!on)); $('modeThermal').setAttribute('aria-pressed', String(on));
+  staticV = Math.max(staticV, 0.5);
+  MAT.fresh = true;
+}
 function setMode(next) {
   mode = next;
   $('titleScreen').hidden = next !== 'title';
@@ -82,6 +100,7 @@ function setMode(next) {
   $('overScreen').hidden = next !== 'over';
   $('btn105').hidden = next !== 'play';
   document.body.classList.toggle('playing', next === 'play');
+  document.body.classList.toggle('live', next === 'play' || next === 'paused');
   if (next !== 'play') { game.trigger(false); game.setPan(0, 0); }
   last = performance.now(); acc = 0;
 }
@@ -112,8 +131,8 @@ function resume() { setMode('play'); lockMouse(); }
 function showOver() {
   if (document.pointerLockElement) document.exitPointerLock();
   const isBest = GS.kills > best;
-  if (isBest) { best = GS.kills; save('skyreaper.flir.best', best); }
-  bank += GS.cash; save('skyreaper.flir.bank', bank);
+  if (isBest) { best = GS.kills; save('skyreaper.px.best', best); }
+  bank += GS.cash; save('skyreaper.px.bank', bank);
   $('sKills').textContent = GS.kills;
   $('sBlast').textContent = GS.bestBlast;
   $('sAcc').textContent = (GS.shots ? Math.round(GS.hits / GS.shots * 100) : 0) + '%';
@@ -148,7 +167,8 @@ addEventListener('mousemove', (e) => {
     const dx = e.movementX || 0, dy = e.movementY || 0;
     if (skipMoves > 0) { skipMoves--; return; }
     if (Math.abs(dx) > innerWidth * 0.3 || Math.abs(dy) > innerHeight * 0.3) return;   // a spurious jump, not a hand
-    if (mode === 'play') game.look(dx, dy);
+    const k = (devicePixelRatio || 1) / VIEW.S;
+    if (mode === 'play') game.look(dx * k, dy * k);
     return;
   }
   GS.cursor.x = clamp(e.clientX / innerWidth, 0, 1); GS.cursor.y = clamp(e.clientY / innerHeight, 0, 1);
@@ -177,11 +197,18 @@ addEventListener('pointermove', (e) => {
 addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') game.trigger(false); });
 addEventListener('pointercancel', () => game.trigger(false));
 glCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
-addEventListener('wheel', (e) => { if (mode === 'play') { e.preventDefault(); game.zoom(e.deltaY > 0 ? 1.15 : 1 / 1.15); } }, { passive: false });
+let wheelAcc = 0;
+addEventListener('wheel', (e) => {
+  if (mode !== 'play') return;
+  e.preventDefault();
+  wheelAcc += e.deltaY;
+  if (Math.abs(wheelAcc) > 60) { zoom(wheelAcc < 0 ? 1 : -1); wheelAcc = 0; }
+}, { passive: false });
 addEventListener('keydown', (e) => {
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && mode === 'play') game.fireHE(); return; }
-  if (e.code === 'KeyT' && !e.repeat) { invert = !invert; save('skyreaper.flir.bht', invert ? 1 : 0); return; }
-  if (e.code === 'KeyZ' && !e.repeat && mode === 'play') { game.cycleZoom(); return; }
+  if (e.code === 'KeyT' && !e.repeat) { setThermal(!thermal); SFX.click(); return; }
+  if (e.code === 'KeyB' && !e.repeat) { invert = !invert; save('skyreaper.px.bht', invert ? 1 : 0); if (!thermal) setThermal(true); SFX.click(); return; }
+  if (e.code === 'KeyZ' && !e.repeat && mode === 'play') { zoom(zoomStep >= 1 ? -2 : 1); return; }
   if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat) { if (mode === 'play') pause(); else if (mode === 'paused' && e.code === 'KeyP') resume(); return; }
   if (e.code === 'Enter' && !e.repeat && (mode === 'title' || mode === 'over') && !$('startBtn').disabled) { start(); return; }
   if (/^(Key[WASD]|Arrow)/.test(e.code)) { keys.add(e.code); if (mode === 'play') updatePan(); e.preventDefault(); }
@@ -193,10 +220,17 @@ $('startBtn').addEventListener('click', start);
 $('againBtn').addEventListener('click', start);
 $('resumeBtn').addEventListener('click', resume);
 $('quitBtn').addEventListener('click', () => { GS.fuel = 0.01; setMode('play'); });
+$('modeColour').addEventListener('click', () => { setThermal(false); SFX.click(); });
+$('modeThermal').addEventListener('click', () => { setThermal(true); SFX.click(); });
 $('btn105').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); audioInit(); game.fireHE(); });
 
 /* --------------------------------------------------------------- events */
 let lastPop = 0;
+function banner(text) {
+  showBanner(text);
+  const b = $('banner');
+  b.textContent = text; b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+}
 function handleEvents() {
   for (const ev of GS.events) {
     if (ev.type === 'mg') SFX.mg();
@@ -204,13 +238,33 @@ function handleEvents() {
     else if (ev.type === 'boom') {
       const near = Math.hypot(ev.x - GS.T.x, ev.z - GS.T.z) < GS.viewR;
       SFX.boom(near ? 1 : 0.35);
-      if (near) flash = Math.max(flash, 0.12);
+      if (near) flash = Math.max(flash, thermal ? 0.12 : 0.08);
     } else if (ev.type === 'kill') { if (GS.t - lastPop > 0.08) { lastPop = GS.t; SFX.pop(); } }
-    else if (ev.type === 'multi') showBanner((ev.kills >= 25 ? 'MASSACRE ×' : ev.kills >= 12 ? 'CARNAGE ×' : 'MULTI KILL ×') + ev.kills + '   +$' + ev.value);
+    else if (ev.type === 'multi') banner((ev.kills >= 25 ? 'MASSACRE ×' : ev.kills >= 12 ? 'CARNAGE ×' : 'MULTI KILL ×') + ev.kills + '   +$' + ev.value);
     else if (ev.type === 'overheat') SFX.overheat();
     else if (ev.type === 'fuelout') SFX.radio();
   }
   GS.events.length = 0;
+}
+// the panels of the colour HUD
+const UI = {};
+function updatePanels() {
+  const S = GS, low = S.fuel < 10;
+  const set = (id, v) => { if (UI[id] !== v) { UI[id] = v; $(id).textContent = v; } };
+  set('fuelNum', mmss(S.fuel)); set('cash', String(S.cash)); set('kills', String(S.kills)); set('horde', String(S.zombies.length));
+  $('fuelFill').style.width = (Math.max(0, S.fuel) / CFG.fuel * 100).toFixed(1) + '%';
+  $('fuelHud').classList.toggle('low', low);
+  set('mgState', S.overheat ? 'HOT' : S.trigger ? 'FIRE' : 'HOLD');
+  $('mgState').classList.toggle('wait', S.overheat);
+  $('mgCard').classList.toggle('hot', S.mgHeat > 0.75);
+  $('mgFill').style.width = (S.mgHeat * 100).toFixed(1) + '%';
+  const ready = S.heReload <= 0;
+  set('heState', ready ? 'READY' : 'LOADING');
+  $('heState').classList.toggle('wait', !ready);
+  $('heFill').style.width = ((1 - S.heReload / CFG.he.reload) * 100).toFixed(1) + '%';
+  const warn = low && S.mode === 'play';
+  if ($('warn').hidden === warn) $('warn').hidden = !warn;
+  $('warn').classList.toggle('on', warn);
 }
 
 /* ---------------------------------------------------------------- loop */
@@ -233,26 +287,36 @@ function frame(now) {
     if (GS.mode === 'over') showOver();
   } else staticV = Math.max(0, staticV - dt);
   flash = Math.max(0, flash - dt * 1.2);
-  renderFrame({ time: GS.t, dt, invert, flash, static: staticV, focus: GS.zoomBlur });
+  if (DBG.noStatic) staticV = 0;
+  renderFrame({ time: GS.t, dt, thermal, invert, flash, static: staticV });
   const hint = mode !== 'play' ? '' : !GS.locked && !lockFailed ? 'CLICK TO TAKE THE GUNS · ESC TO PAUSE'
     : GS.free && GS.run < 8 ? 'AIM WITH THE CURSOR · PUSH IT TO AN EDGE TO MOVE' : '';
-  drawHud(GS, dt, { live: mode === 'play' || mode === 'paused', locked: GS.locked || mode !== 'play', invert, hint });
-  // keep the frame rate: drop the resolution if frames run long
+  drawHud(GS, dt, { live: mode === 'play' || mode === 'paused', locked: GS.locked || mode !== 'play', thermal, invert, hint, zoomLabel: zoomLabel() });
+  if (!thermal && (mode === 'play' || mode === 'paused')) {
+    updatePanels();
+    const h = $('hint');
+    if (h.textContent !== hint) h.textContent = hint;
+    h.hidden = !hint;
+  }
+  // keep the frame rate: light at fewer pixels if frames run long
   slowT = dt > 0.034 ? slowT + dt : Math.max(0, slowT - dt);
-  if (slowT > 2 && dprCap > 0.75 && !DBG.fixedRes) { dprCap = Math.max(0.75, dprCap * 0.8); slowT = 0; layout(); }
+  if (slowT > 2.5 && R3.lightBudget > 6e5 && !DBG.hold) { R3.lightBudget = 6e5; slowT = 0; layout(); }
   requestAnimationFrame(frame);
 }
 
 if (!initRenderer(glCanvas)) {
   $('noGl').hidden = false; $('startBtn').disabled = true; $('loading').hidden = true;
 } else {
-  initWorld(); initZombies(); initFx(); initHud(hudCanvas);
+  initLook(); initWorld(); initZombies(); initFx(); initHud(hudCanvas);
+  NOCAST.push(ground, decalMesh, tracerMesh, wires);
   game = createGame(); GS = game.S;
   layout();
+  setThermal(thermal);
+  staticV = 0;
   setMode('title');
   game.update(1 / 60);
   game.spawnScatter(220);
-  if (/[?&]debug/.test(location.search)) window.__sr = { game, GS, R3, POST, U, DBG, HOT, COOL, ACTIVE };
+  if (/[?&]debug/.test(location.search)) window.__sr = { game, GS, R3, MAT, U, DBG, VIEW, PART, ACTIVE, setThermal, zoom, layout };
   $('loading').hidden = true;
   requestAnimationFrame(frame);
 }
