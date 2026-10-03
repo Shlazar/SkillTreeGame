@@ -472,6 +472,7 @@ function summaryLayout(s, pl) {
   if (s.replay) messages.push(['REPLAY: SCRAP ONLY. NO NEW STARS.', U.blue]);
   messages.push(['YOU KEEP EVERYTHING YOU EARNED.', U.dim]);
   for (const line of s.wall || []) messages.push(line);
+  messages.push(...summaryGoal());
   let notes = messages.flatMap(([message, color]) => wrap(message, inner).map((line) => [line, color]));
   const rowStep = compact ? 10 : 12, moneyStep = compact ? 12 : 15, noteStep = compact ? 9 : 11;
   const sources = 32 + heading.length * 10, money = sources + pl.rows.length * rowStep + 7;

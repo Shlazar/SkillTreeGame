@@ -292,30 +292,27 @@ function setNode(id, l) {
 }
 
 // ---------- the goal line under the summary
-// How many upgrades you can buy now, and the next big unlock to save for. [[text, colour], ...]
+// One useful next choice, using only nodes whose currency and parent have been revealed.
 function summaryGoal() {
-  if (!lv('root')) return [["NEXT: OPEN THE SKILL TREE. IT'S FREE.", U.gold]];
-  const unit = (n) => (n.cur === 'surv' ? ' SURVIVORS' : n.cur === 'gold' ? ' GOLD' : ' SCRAP');
-  const can = NODES.filter((n) => nodeState(n) === 'buy').length;
-  const L = [];
-  if (can) L.push(['YOU CAN BUY ' + can + ' UPGRADE' + (can > 1 ? 'S' : '') + ' NOW!', U.green]);
-  // the cheapest big unlock on the map (scrap ones first)
-  const order = (a, b) => (a.cur === 'surv') - (b.cur === 'surv') || priceOf(a) - priceOf(b);
-  const goal = NODES.filter((n) => n.star && ['poor', 'buy'].includes(nodeState(n))).sort(order)[0];
-  if (goal) {
-    L.push(['NEXT BIG UNLOCK: ' + goal.name + ' (' + fmt(priceOf(goal)) + unit(goal) + ')', U.gold]);
-    if (!canPay(goal)) L.push(['YOU HAVE ' + fmt(SAVE[goal.cur || 'scrap']) + ' / ' + fmt(priceOf(goal)) + unit(goal) + '.', U.dim]);
-  } else if (!can) {
-    const next = NODES.filter((n) => nodeState(n) === 'poor').sort(order)[0];
-    if (next) L.push(['NEXT: ' + nodeLv(next.id, lv(next.id) + 1) + ' (' + fmt(priceOf(next)) + unit(next) + ')', U.gold]);
-  }
-  return L;
+  const demo = NODES.filter((n) => n.id !== 'root' && n.k !== 'tease');
+  if (demo.every((n) => lv(n.id) >= maxLv(n))) return [['ALL DEMO UPGRADES OWNED.', U.green]];
+  const choices = demo.filter((n) => ['buy', 'poor'].includes(nodeState(n)));
+  const order = (a, b) => Number(canPay(b)) - Number(canPay(a)) || priceOf(a) - priceOf(b);
+  const next = choices.filter((n) => n.cur === 'surv').sort(order)[0] || choices.sort(order)[0];
+  if (!next) return [['RIDE TO DISCOVER MORE UPGRADES.', U.dim]];
+  const price = priceOf(next), unit = next.cur === 'surv' ? (price === 1 ? 'SURVIVOR' : 'SURVIVORS') : next.cur === 'gold' ? 'GOLD' : 'SCRAP';
+  const label = next.cur === 'surv' ? 'NEXT NEW UNIT: ' : 'NEXT UPGRADE: ';
+  const color = next.cur === 'surv' ? U.amber : next.cur === 'gold' ? U.gold : U.blue;
+  return [[label + next.name + ' (' + fmt(price) + ' ' + unit + ')', color]];
 }
 // The Depot's bottom bar on the tree tab: what to do here, or null.
 function treeHint() {
-  if (!lv('root')) return ["CLICK THE TRAIN. IT'S FREE.", U.gold];
-  if (NODES.some((n) => nodeState(n) === 'buy')) return ['CLICK A GLOWING NODE TO BUY IT.', U.ink];
-  return null;
+  if (NODES.every((n) => n.k === 'tease' || lv(n.id) >= maxLv(n))) return ['ALL DEMO UPGRADES OWNED. RIDE OR REPLAY.', U.green];
+  if (NODES.some((n) => nodeState(n) === 'buy')) {
+    const fresh = !NODES.some((n) => n.k === 'scrap' && lv(n.id) > 0);
+    return fresh ? ['CLICK A BLUE NODE TO BUY AN UPGRADE.', U.blue] : ['CLICK ANY GLOWING NODE TO BUY IT.', U.ink];
+  }
+  return ['RIDE FOR MORE REWARDS.', U.dim];
 }
 
 // ---------- the view
@@ -349,7 +346,7 @@ function treeZoom(dir, sx, sy) {
 function treeWheel(dy) {
   treeZoom(dy < 0 ? 1 : -1, M.inside ? M.x : null, M.inside ? M.y : null);
 }
-// Back to LAST TRAIN in the middle, at zoom 1.
+// Back to VIPER in the middle, at zoom 1.
 function treeCenter() {
   TREE.zt = 1;
   TREE.anchor = null;

@@ -308,36 +308,15 @@ function drawTipLine() {
 }
 
 // ---------- the Depot: the hint bar and the tags
-// The bottom bar's line for a lesson here, or null.
+// Currency tips own the lessons; treeHint supplies the ordinary bottom-bar guidance.
 function tutHint() {
-  const stars = NODES.filter((n) => n.star && lv(n.id)).length;
-  if (!seen('h_star')) {
-    // * NODES: from the first time one can be bought, until one more is bought
-    if (SAVE.seen.h_starAt == null && NODES.some((n) => n.star && nodeState(n) === 'buy')) {
-      SAVE.seen.h_starAt = stars;
-      saveSave();
-    }
-    if (SAVE.seen.h_starAt != null) {
-      if (stars > SAVE.seen.h_starAt) see('h_star');
-      else return ['ORANGE NODES ARE BIG UNLOCKS.', U.gold];
-    }
-  }
-  if (lv('ram') && !seen('h_ram')) {
-    TUT.after.add('h_ram');
-    return ['E: TURBO RAM. SAVE IT FOR THE DEAD WALL.', U.gold];
-  }
   return null;
 }
-// a node by its name (other parts own the ids)
-const nodeNamed = (name) => NODES.find((n) => n.name === name);
 // The tag that shows now: [node id or 'start', words], or null.
 function tutTag() {
-  const tree = depotTab === 'tree';
-  if (!lv('root')) return tree ? ['root', "CLICK THE TRAIN. IT'S FREE."] : null;
-  if (!SAVE.runs) return ['start', 'CHOOSE A LEG, THEN RIDE.'];
-  const wi = NODE.winch;
-  if (tree && wi && !lv('winch') && nodeState(wi) === 'buy') return ['winch', 'WINCH: SAVE SURVIVORS IN THE FIELD.'];
-  return null;
+  if (depotTab !== 'tree' || NODES.some((n) => n.k === 'scrap' && lv(n.id) > 0)) return null;
+  const first = NODES.find((n) => n.k === 'scrap' && nodeState(n) === 'buy');
+  return first ? [first.id, 'CHOOSE ANY BLUE UPGRADE.'] : null;
 }
 function drawTutTags() {
   if (TUT.tip?.cur) { drawTipLine(); return; }
