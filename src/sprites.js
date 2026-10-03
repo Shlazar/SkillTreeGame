@@ -147,9 +147,10 @@ atlasTex.magFilter = THREE.NearestFilter; atlasTex.minFilter = THREE.NearestFilt
 const frameTex = new THREE.DataTexture(frameData, 64, 2, THREE.RGBAFormat, THREE.FloatType);
 frameTex.magFilter = THREE.NearestFilter; frameTex.minFilter = THREE.NearestFilter; frameTex.needsUpdate = true;
 
-const SKINS = ['#b4c79a', '#d6cfb2', '#a9b2a5', '#c4b49a'].map(hexRGB);
-const SHIRTS = ['#4a68a0', '#a8433c', '#d9d2bf', '#64804f', '#c9a54e', '#7d5d90'].map(hexRGB);
-const PANTS = ['#39405a', '#5c4836', '#4f5249'].map(hexRGB);
+// pale, sickly skin and bright clothes, so the dead stand out from the ground
+const SKINS = ['#bfe0a0', '#e2dcb8', '#b7c9b4', '#d6c49e'].map(hexRGB);
+const SHIRTS = ['#4f7fd0', '#d04a3c', '#ece6d2', '#6fae4c', '#e8b83c', '#a46ad0'].map(hexRGB);
+const PANTS = ['#4c5a86', '#7a5a3e', '#6a6e62'].map(hexRGB);
 const glslList = (name, list) => `vec3 ${name}(float i) {` + list.map((c, k) => `${k < list.length - 1 ? `if (i < ${k}.5) ` : ''}return vec3(${c.map((v) => v.toFixed(3)).join(', ')});`).join(' ') + '}';
 
 /* --------------------------------------------------------------- drawing */
@@ -199,7 +200,7 @@ const zombieMat = new THREE.ShaderMaterial({
       if (vB.x > 0.5) nv.x = -nv.x;
       vec3 n = vB.y > 0.5 ? normalize(vec3(0.0, 1.0, 0.0) + uCR * nv.x * 0.6) : normalize(uCR * nv.x + uCU * nv.y + uCV * sqrt(max(0.05, 1.0 - dot(nv, nv))));
       vec3 skin = skinC(vC.x), shirt = shirtC(vC.y), pants = pantsC(vC.z), col;
-      float cls = 210.0, hk = 1.0;
+      float cls = vB.y > 0.5 ? 210.0 : 230.0, hk = 1.0;           // the living get the gunship's light
       if (code < 0.5) { col = P_hair * 1.2; hk = 0.85; }
       else if (code < 1.5) { col = P_hair; hk = 0.85; }
       else if (code < 2.5) col = skin;

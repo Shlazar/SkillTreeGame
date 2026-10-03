@@ -123,7 +123,7 @@ function initRenderer(canvas) {
 let zoomStep = 0;
 function sizeView(cssW, cssH, dpr) {
   const dw = Math.max(2, Math.round(cssW * dpr)), dh = Math.max(2, Math.round(cssH * dpr));
-  const S0 = clamp(Math.round(dh / 520), 1, 8), S = Math.max(1, S0 + zoomStep);
+  const S0 = clamp(Math.round(dh / 400), 1, 8), S = Math.max(1, S0 + zoomStep);
   // even sizes, so the middle of the frame falls between pixels and sprites land on whole pixels
   const W = Math.ceil(dw / S / 2) * 2, H = Math.ceil(dh / S / 2) * 2;
   let L = 1;
@@ -225,7 +225,7 @@ const GLSL_GB = GLSL_NOISE + GLSL_PAL + `
   // leaves thin out round the crosshair, so nothing under a tree is hidden from the gunner
   bool cutHere() { vec2 d = gl_FragCoord.xy - uCursor; return dot(d, d) < uCutR * uCutR && bayer4(gl_FragCoord.xy) < 0.75; }
   float phash(float s) { return hash12(gpix() * 0.7071 + s * 17.31); }
-  vec3 tex(vec3 c, float t) { return c * (t > 0.5 ? 1.13 : t < -0.5 ? 0.8 : 1.0); }
+  vec3 tex(vec3 c, float t) { return c * (t > 0.5 ? 1.08 : t < -0.5 ? 0.87 : 1.0); }
   vec4 gOut(vec3 alb, float cls, vec3 n, vec3 P, float heat) {
     if (uPass == 0) return vec4(alb, cls / 255.0);
     if (uPass == 1) return vec4(dot(n, uCR), dot(n, uCU), dot(P - uT, uCV), heat);

@@ -332,7 +332,7 @@ function initRenderer(canvas) {
 let zoomStep = 0;
 function sizeView(cssW, cssH, dpr) {
   const dw = Math.max(2, Math.round(cssW * dpr)), dh = Math.max(2, Math.round(cssH * dpr));
-  const S0 = clamp(Math.round(dh / 520), 1, 8), S = Math.max(1, S0 + zoomStep);
+  const S0 = clamp(Math.round(dh / 400), 1, 8), S = Math.max(1, S0 + zoomStep);
   // even sizes, so the middle of the frame falls between pixels and sprites land on whole pixels
   const W = Math.ceil(dw / S / 2) * 2, H = Math.ceil(dh / S / 2) * 2;
   let L = 1;
@@ -434,7 +434,7 @@ const GLSL_GB = GLSL_NOISE + GLSL_PAL + `
   // leaves thin out round the crosshair, so nothing under a tree is hidden from the gunner
   bool cutHere() { vec2 d = gl_FragCoord.xy - uCursor; return dot(d, d) < uCutR * uCutR && bayer4(gl_FragCoord.xy) < 0.75; }
   float phash(float s) { return hash12(gpix() * 0.7071 + s * 17.31); }
-  vec3 tex(vec3 c, float t) { return c * (t > 0.5 ? 1.13 : t < -0.5 ? 0.8 : 1.0); }
+  vec3 tex(vec3 c, float t) { return c * (t > 0.5 ? 1.08 : t < -0.5 ? 0.87 : 1.0); }
   vec4 gOut(vec3 alb, float cls, vec3 n, vec3 P, float heat) {
     if (uPass == 0) return vec4(alb, cls / 255.0);
     if (uPass == 1) return vec4(dot(n, uCR), dot(n, uCU), dot(P - uT, uCV), heat);
@@ -1311,9 +1311,10 @@ atlasTex.magFilter = THREE.NearestFilter; atlasTex.minFilter = THREE.NearestFilt
 const frameTex = new THREE.DataTexture(frameData, 64, 2, THREE.RGBAFormat, THREE.FloatType);
 frameTex.magFilter = THREE.NearestFilter; frameTex.minFilter = THREE.NearestFilter; frameTex.needsUpdate = true;
 
-const SKINS = ['#b4c79a', '#d6cfb2', '#a9b2a5', '#c4b49a'].map(hexRGB);
-const SHIRTS = ['#4a68a0', '#a8433c', '#d9d2bf', '#64804f', '#c9a54e', '#7d5d90'].map(hexRGB);
-const PANTS = ['#39405a', '#5c4836', '#4f5249'].map(hexRGB);
+// pale, sickly skin and bright clothes, so the dead stand out from the ground
+const SKINS = ['#bfe0a0', '#e2dcb8', '#b7c9b4', '#d6c49e'].map(hexRGB);
+const SHIRTS = ['#4f7fd0', '#d04a3c', '#ece6d2', '#6fae4c', '#e8b83c', '#a46ad0'].map(hexRGB);
+const PANTS = ['#4c5a86', '#7a5a3e', '#6a6e62'].map(hexRGB);
 const glslList = (name, list) => `vec3 ${name}(float i) {` + list.map((c, k) => `${k < list.length - 1 ? `if (i < ${k}.5) ` : ''}return vec3(${c.map((v) => v.toFixed(3)).join(', ')});`).join(' ') + '}';
 
 /* --------------------------------------------------------------- drawing */
@@ -1363,7 +1364,7 @@ const zombieMat = new THREE.ShaderMaterial({
       if (vB.x > 0.5) nv.x = -nv.x;
       vec3 n = vB.y > 0.5 ? normalize(vec3(0.0, 1.0, 0.0) + uCR * nv.x * 0.6) : normalize(uCR * nv.x + uCU * nv.y + uCV * sqrt(max(0.05, 1.0 - dot(nv, nv))));
       vec3 skin = skinC(vC.x), shirt = shirtC(vC.y), pants = pantsC(vC.z), col;
-      float cls = 210.0, hk = 1.0;
+      float cls = vB.y > 0.5 ? 210.0 : 230.0, hk = 1.0;           // the living get the gunship's light
       if (code < 0.5) { col = P_hair * 1.2; hk = 0.85; }
       else if (code < 1.5) { col = P_hair; hk = 0.85; }
       else if (code < 2.5) col = skin;
@@ -1799,7 +1800,7 @@ function clearFx() { PART.clear(); clearDecals(); heatSources.length = 0; dynLig
  * grain per art pixel and column noise; white hot or black hot. */
 
 const LOOK = {
-  exposure: 1.1, bloom: 0.34, dof: 0.18, fog: 0.07, air: 1.6, cloud: 0.35,
+  exposure: 1.1, bloom: 0.34, dof: 0.18, fog: 0.045, air: 1.6, cloud: 0.35,
   moon: [0.21, 0.27, 0.52], ambSky: [0.032, 0.048, 0.095], ambGnd: [0.013, 0.015, 0.024], fogCol: [0.05, 0.068, 0.12],
 };
 const MAT = {};
@@ -1857,7 +1858,7 @@ function initLook() {
       else if (c < 128.0) {
         col = A * (c / 127.0) * 7.0;                       // lamps, windows, fire
       } else {
-        bool foliage = abs(c - 210.0) < 0.5, metal = abs(c - 220.0) < 0.5;
+        bool foliage = abs(c - 210.0) < 0.5, metal = abs(c - 220.0) < 0.5, living = abs(c - 230.0) < 0.5;
         float wrap = foliage ? 0.35 : 0.0;
         float vis = moonVis(P, n);
         // ambient occlusion from the depth buffer
@@ -1889,6 +1890,13 @@ function initLook() {
           if (metal) spec += L1.rgb * L1.a * att * pow(max(0.0, dot(n, normalize(l + uCV))), 36.0) * 2.0;
         }
         if (metal) spec += uMoon * vis * pow(max(0.0, dot(n, normalize(uLD + uCV))), 24.0) * 0.8;
+        // the dead are lit by the gunship's illuminator (from the camera) and rimmed by the moon,
+        // so they always read against the ground
+        if (living) {
+          float face = max(0.0, dot(n, uCV));
+          light += vec3(0.62, 0.6, 0.55) * (0.55 + 0.45 * face) + uMoon * pow(1.0 - face, 2.0) * 2.5;
+          ao = 1.0;
+        }
         col = A * light * (0.55 + 0.45 * ao) + spec;
         // silhouettes: a moonlit rim on upper edges, a darker line under objects
         float e = 0.0;
@@ -1981,7 +1989,7 @@ function initLook() {
     void main() {
       float s = 0.0, s2 = 0.0, m = 0.0;
       for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) {
-        float h = texture2D(tSrc, vUv + (vec2(float(i), float(j)) - 1.5) * uStep).w;
+        float h = min(texture2D(tSrc, vUv + (vec2(float(i), float(j)) - 1.5) * uStep).w, 1.0);   // fire must not wash out the dead
         s += h; s2 += h * h; m = max(m, h);
       }
       gl_FragColor = vec4(s / 16.0, s2 / 16.0, m, 1.0);
@@ -2019,7 +2027,7 @@ function initLook() {
     void main() {
       vec4 a = texture2D(tAgc, vec2(0.5));
       float mean = a.r, sd = sqrt(max(a.g - a.r * a.r, 0.0));
-      sd = clamp(mix(sd, 0.05, 0.3), 0.035, 0.3);
+      sd = clamp(mix(sd, 0.05, 0.3), 0.035, 0.16);
       float lo = mean - 2.0 * sd, hi = mean + 3.4 * sd;
       float v = (texture2D(tSrc, vUv).w - lo) / (hi - lo);
       gl_FragColor = vec4(v, clamp((v - 1.0) * 0.125, 0.0, 1.0), 0.0, 1.0);

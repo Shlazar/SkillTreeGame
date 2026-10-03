@@ -10,7 +10,7 @@
  * grain per art pixel and column noise; white hot or black hot. */
 
 const LOOK = {
-  exposure: 1.1, bloom: 0.34, dof: 0.18, fog: 0.07, air: 1.6, cloud: 0.35,
+  exposure: 1.1, bloom: 0.34, dof: 0.18, fog: 0.045, air: 1.6, cloud: 0.35,
   moon: [0.21, 0.27, 0.52], ambSky: [0.032, 0.048, 0.095], ambGnd: [0.013, 0.015, 0.024], fogCol: [0.05, 0.068, 0.12],
 };
 const MAT = {};
@@ -68,7 +68,7 @@ function initLook() {
       else if (c < 128.0) {
         col = A * (c / 127.0) * 7.0;                       // lamps, windows, fire
       } else {
-        bool foliage = abs(c - 210.0) < 0.5, metal = abs(c - 220.0) < 0.5;
+        bool foliage = abs(c - 210.0) < 0.5, metal = abs(c - 220.0) < 0.5, living = abs(c - 230.0) < 0.5;
         float wrap = foliage ? 0.35 : 0.0;
         float vis = moonVis(P, n);
         // ambient occlusion from the depth buffer
@@ -100,6 +100,13 @@ function initLook() {
           if (metal) spec += L1.rgb * L1.a * att * pow(max(0.0, dot(n, normalize(l + uCV))), 36.0) * 2.0;
         }
         if (metal) spec += uMoon * vis * pow(max(0.0, dot(n, normalize(uLD + uCV))), 24.0) * 0.8;
+        // the dead are lit by the gunship's illuminator (from the camera) and rimmed by the moon,
+        // so they always read against the ground
+        if (living) {
+          float face = max(0.0, dot(n, uCV));
+          light += vec3(0.62, 0.6, 0.55) * (0.55 + 0.45 * face) + uMoon * pow(1.0 - face, 2.0) * 2.5;
+          ao = 1.0;
+        }
         col = A * light * (0.55 + 0.45 * ao) + spec;
         // silhouettes: a moonlit rim on upper edges, a darker line under objects
         float e = 0.0;
@@ -192,7 +199,7 @@ function initLook() {
     void main() {
       float s = 0.0, s2 = 0.0, m = 0.0;
       for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) {
-        float h = texture2D(tSrc, vUv + (vec2(float(i), float(j)) - 1.5) * uStep).w;
+        float h = min(texture2D(tSrc, vUv + (vec2(float(i), float(j)) - 1.5) * uStep).w, 1.0);   // fire must not wash out the dead
         s += h; s2 += h * h; m = max(m, h);
       }
       gl_FragColor = vec4(s / 16.0, s2 / 16.0, m, 1.0);
@@ -230,7 +237,7 @@ function initLook() {
     void main() {
       vec4 a = texture2D(tAgc, vec2(0.5));
       float mean = a.r, sd = sqrt(max(a.g - a.r * a.r, 0.0));
-      sd = clamp(mix(sd, 0.05, 0.3), 0.035, 0.3);
+      sd = clamp(mix(sd, 0.05, 0.3), 0.035, 0.16);
       float lo = mean - 2.0 * sd, hi = mean + 3.4 * sd;
       float v = (texture2D(tSrc, vUv).w - lo) / (hi - lo);
       gl_FragColor = vec4(v, clamp((v - 1.0) * 0.125, 0.0, 1.0), 0.0, 1.0);
