@@ -5,8 +5,9 @@
 // summary). Buttons are drawn in the canvas too (from Ball x Archers).
 
 // M = the mouse in game pixels. pressed / released are true for one frame; px, py = where the
-// press started; used = this click was already handled; inside = the mouse is over the game.
-const M = { x: -99, y: -99, down: false, pressed: false, released: false, px: 0, py: 0, used: false, inside: false };
+// press started; used = this click was already handled; inside = the mouse is over the game;
+// rpressed = the right button went down this frame.
+const M = { x: -99, y: -99, down: false, pressed: false, released: false, rpressed: false, px: 0, py: 0, used: false, inside: false };
 let cursor = 'default';
 
 // True when a button at (x, y, w, h) was clicked this frame.
@@ -89,7 +90,7 @@ function drawSight() {
     ctx.fillRect(x + 7, y - 8, 2, 2);
   }
   // the 105 would hit the train too
-  if (G.heReload <= 0 && trainDist(G.camX + G.aimSX, G.camY + G.aimSY, G.tr.v * CFG.he.travel) < CFG.he.close + 4) {
+  if (G.heReload <= 0 && trainDist(G.camX + G.aimSX, G.camY + G.aimSY, G.tr.v * CFG.he.travel) < G.k.heKill - 2) {
     text('DANGER CLOSE', x, y + 17, U.red, { align: 'center' });
   }
   // gun heat: a small bar under the sight while the 25mm is warm
@@ -119,25 +120,29 @@ function drawHUD() {
   ctx.fillRect(0, 0, W, 18);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, 18, W, 1);
-  // cash: the coin hops and the number flashes when cash comes in
-  const cp = G.cashPulse;
+  // the wallet (bank + this run): the coin hops and the number flashes when cash comes in, and
+  // blinks green when it can pay for a new upgrade
+  const cp = G.cashPulse, ready = G.readyT > 0 && Math.floor(realT * 6) % 2 === 0;
   ctx.drawImage(ICON.coin, 5, 5 - (cp > 0.5 ? 1 : 0));
-  text('$' + fmt(G.shownCash), 15, 6, cp > 0 ? '#ffe39a' : U.gold);
+  text('$' + fmt(G.shownCash), 15, 6, ready ? '#8fd18a' : cp > 0 ? '#ffe39a' : U.gold);
   // kills
   ctx.drawImage(ICON.skull, 80, 5);
   text(fmt(G.kills), 90, 6 - (G.killBump > 0.5 ? 1 : 0), U.ink);
-  // the train's health: green, then amber, then red; the part just lost shows pale for a moment
-  const tr = G.tr, f = tr.hp / CFG.train.hp, hx = 150, hw = clamp(Math.round(W * 0.18), 50, 120);
+  // the train's health: green, then amber, then red; the part just lost shows pale for a moment;
+  // the HP left beside it
+  const tr = G.tr, mx = G.k.trainMax, f = tr.hp / mx, hx = 150, hw = clamp(Math.round(W * 0.16), 40, 110);
   ctx.drawImage(ICON.train, hx - 12, 5);
-  bar(hx, 6, hw, 6, tr.hpShown / CFG.train.hp, '#1a1716', '#d8cfb8');
+  bar(hx, 6, hw, 6, tr.hpShown / mx, '#1a1716', '#d8cfb8');
   ctx.fillStyle = f < 0.35 ? '#b8402e' : f < 0.65 ? '#c9862f' : '#6f9a4f';
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 6);
   ctx.fillStyle = f < 0.35 ? '#e06a4f' : f < 0.65 ? '#e8b05a' : '#9cc777';
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 1);
-  // the way to the safe zone: the line, the station halfway, the train on it, the flag, the
-  // distance left (2 px = 1 m)
+  if (!G.demo) text(String(Math.ceil(tr.hp)), hx + hw + 4, 6, f < 0.35 ? U.red : U.dim);
+  // the way to the safe zone: the line, the station halfway, the train on it, the flag; the trip
+  // and the distance left (2 px = 1 m)
   if (!G.demo) {
-    const px = hx + hw + 20, pw = W - 96 - px, left = Math.max(0, Math.round((tr.s - G.goalS) / 2));
+    const left = Math.max(0, Math.round((tr.s - G.goalS) / 2)), lab = 'T' + G.trip + '  ' + left + 'M';
+    const px = hx + hw + 30, pw = W - 30 - tw(lab) - 14 - px;
     const k = clamp((tr.startS - tr.s) / CFG.trip, 0, 1);
     if (pw >= 40) {
       ctx.fillStyle = '#2e3139';
@@ -156,15 +161,19 @@ function drawHUD() {
       ctx.fillRect(px + Math.round(pw * k) - 1, 7, 3, 5);
       ctx.drawImage(ICON.flag, px + pw + 4, 4);
     }
-    text(left + 'M', W - 30, 6, U.dim, { align: 'right' });
+    text(lab, W - 30, 6, U.dim, { align: 'right' });
   }
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) paused = !paused;
   if (Au.muted) text('MUTE', W - 4, 22, U.faint, { align: 'right' });
-  // kill streak: the count and the time left to keep it going
-  const s = G.streak, st = G.t - s.t;
-  if (s.n >= 3 && st < 1.6) {
-    text('STREAK ' + s.n, 5, 24, s.n >= 25 ? '#ffd36a' : U.gold);
-    bar(5, 33, 52, 2, 1 - st / 1.6, '#1a1716', '#e3b04b');
+  // under the wallet: how near it is to the next upgrade, and UPGRADE READY when it gets there
+  if (!G.demo && (mode === 'play' || mode === 'ending')) {
+    const w = wallet(), id = nextTarget(w);
+    if (id) {
+      const c = upgCost(id), fr = clamp(w / c, 0, 1);
+      bar(5, 21, 60, 2, fr, '#1a1716', fr >= 1 ? '#8fd18a' : '#b8862f');
+      if (W >= 500 && G.readyT <= 0) text(UPGMAP[id].name, 69, 19, U.faint, { outline: false });
+    }
+    if (G.readyT > 0) text('UPGRADE READY', 5, 25, '#8fd18a');
   }
 }
 // warnings under the top bar: the dead on the track or on the train, the helicopter too far away,
@@ -176,7 +185,7 @@ function drawWarnings() {
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
   if (G.heli.far) L.push(['STAY WITH THE TRAIN  (F)', U.amber]);
   if (st && st.state === 'boarding') {
-    L.push(['SURVIVORS ABOARD ' + st.saved + ' / ' + CFG.station.people, '#8fd18a']);
+    L.push(['SURVIVORS ABOARD ' + st.saved + ' / ' + G.ti.people, '#8fd18a']);
     if (st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
   }
   L.forEach(([t, c], i) => text(t, W / 2, 24 + i * 10, c, { align: 'center' }));
@@ -271,7 +280,7 @@ function drawWeapons() {
   const y = H - 30, rdy = G.heReload <= 0;
   card(4, y, 96, 26, ICON.mg, '25MM', G.overheat ? 'OVERHEAT' : 'L-CLICK', G.overheat ? U.red : U.faint, G.heat,
     G.overheat ? '#b8402e' : G.heat > 0.75 ? U.amber : '#8b919c');
-  card(104, y, 96, 26, ICON.he, '105MM', rdy ? 'READY' : 'R-CLICK', rdy ? U.gold : U.faint, 1 - G.heReload / CFG.he.reload,
+  card(104, y, 96, 26, ICON.he, '105MM', rdy ? 'READY' : 'R-CLICK', rdy ? U.gold : U.faint, 1 - G.heReload / G.k.heReload,
     rdy ? '#e3b04b' : '#7a6a50');
   text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
 }
@@ -286,7 +295,7 @@ function drawHint() {
 }
 // red screen edge while the train is nearly lost
 function drawTension() {
-  const f = G.tr.hp / CFG.train.hp;
+  const f = G.tr.hp / G.k.trainMax;
   if (mode !== 'play' || G.result || f >= 0.35) return;
   let a = 0.3 + 0.5 * (1 - f / 0.35);
   if (!REDUCED) a *= 0.7 + 0.3 * Math.sin(realT * 7);
@@ -302,66 +311,119 @@ function drawTension() {
 }
 
 // ---------- screens
+// Paused: go on, or quit to the depot (the cash is kept). A click anywhere else goes on too.
 function drawPause() {
   ctx.fillStyle = 'rgba(5,6,8,0.5)';
   ctx.fillRect(0, 19, W, H - 19);
-  text('PAUSED', W / 2, H / 2 - 20, U.ink, { align: 'center', scale: 2 });
-  text('CLICK, ESC OR P TO GO ON', W / 2, H / 2 + 2, U.dim, { align: 'center' });
+  text('PAUSED', W / 2, H / 2 - 34, U.ink, { align: 'center', scale: 2 });
+  if (button(W / 2 - 65, H / 2 - 10, 130, 20, 'GO ON', { primary: true })) paused = false;
+  if (button(W / 2 - 65, H / 2 + 16, 130, 20, 'QUIT TO DEPOT')) {
+    quitRun();
+    return;
+  }
+  text('THE CASH YOU EARNED IS KEPT', W / 2, H / 2 + 42, U.faint, { align: 'center', outline: false });
+  if (M.released && !M.used && M.py >= 19) {
+    M.used = true;
+    paused = false;
+  }
+}
+// the title: RESET SAVE needs a second click within 3 s
+let resetT = 0;
+function playTitle() {
+  if (META.played) toDepot();
+  else startGame(1);
 }
 function drawTitle() {
   ctx.fillStyle = 'rgba(5,6,8,0.35)';
   ctx.fillRect(0, 0, W, H);
   // the menu sits left of the train (on a wide enough screen)
-  const cx = Math.round(W >= 560 ? W * 0.36 : W / 2), pw = 300, ph = 238, px = cx - pw / 2, py = Math.round(H / 2 - ph / 2);
+  const cx = Math.round(W >= 560 ? W * 0.36 : W / 2), pw = 300, ph = 238, px = cx - pw / 2, py = Math.max(2, Math.round(H / 2 - ph / 2));
   ctx.fillStyle = 'rgba(8,9,11,0.78)';
   ctx.fillRect(px, py, pw, ph);
   frame(px, py, pw, ph, '#2e3139');
   text('SKY REAPER', cx, py + 18, U.ink, { align: 'center', scale: 3, drop: true });
   ctx.fillStyle = '#8a6a2a';
   ctx.fillRect(cx - 110, py + 46, 220, 1);
-  text('FLY ESCORT FOR THE LAST TRAIN.', cx, py + 54, U.dim, { align: 'center' });
-  text('PICK UP SURVIVORS. REACH THE SAFE ZONE.', cx, py + 64, U.dim, { align: 'center' });
-  if (button(cx - 75, py + 82, 150, 20, 'START MISSION', { primary: true })) startGame();
-  if (button(cx - 75, py + 108, 150, 20, 'CAMERA: ' + CAMS[thermal])) setThermal((thermal + 1) % 3);
-  if (best.kills > 0) {
-    const s = 'BEST ' + fmt(best.kills) + ' KILLS' + (best.safe ? '   ' + best.safe + ' SAFE' : ''), w = tw(s) + 10;
-    ctx.drawImage(ICON.skull, cx - w / 2, py + 140);
-    text(s, cx - w / 2 + 10, py + 141, U.gold, { outline: false });
+  text('FLY ESCORT FOR THE LAST TRAIN, TRIP AFTER TRIP.', cx, py + 54, U.dim, { align: 'center' });
+  text('EARN CASH. UPGRADE. GO FARTHER UP THE LINE.', cx, py + 64, U.dim, { align: 'center' });
+  if (button(cx - 75, py + 80, 150, 20, 'PLAY', { primary: true })) playTitle();
+  if (button(cx - 75, py + 106, 150, 20, 'CAMERA: ' + CAMS[thermal])) setThermal((thermal + 1) % 3);
+  if (META.played) {
+    const s = 'TRIP ' + META.maxTrip + (META.maxTrip <= 12 ? '/12' : '') + '   $' + fmt(META.cash) + '   CAMP ' + fmt(META.camp);
+    text(s, cx, py + 134, U.gold, { align: 'center' });
+  }
+  if (META.best.kills > 0) {
+    const b = META.best, s = 'BEST ' + fmt(b.kills) + ' KILLS' + (b.safe ? '   ' + b.safe + ' SAFE' : ''), w = tw(s) + 10;
+    ctx.drawImage(ICON.skull, cx - w / 2, py + 145);
+    text(s, cx - w / 2 + 10, py + 146, U.dim, { outline: false });
   }
   const L = ['WASD: FLY.  F: BACK OVER THE TRAIN.  MOUSE: AIM.', 'HOLD LEFT CLICK: 25MM.  RIGHT CLICK / SPACE: 105MM.',
-    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
-  L.forEach((l, i) => text(l, cx, py + 160 + i * 11, U.faint, { align: 'center', outline: false }));
-  text('ENTER TO START', cx, py + 205, U.faint, { align: 'center', outline: false });
+    'Q/E: TRAIN SPEED.  T: THERMAL.  M: SOUND.  P: PAUSE.'];
+  L.forEach((l, i) => text(l, cx, py + 164 + i * 11, U.faint, { align: 'center', outline: false }));
+  text('ENTER TO PLAY', cx, py + 206, U.faint, { align: 'center', outline: false });
+  // erase the save: a small, faint button that asks twice
+  if (META.played) {
+    resetT = Math.max(0, resetT - frameDt);
+    const lab = resetT > 0 ? 'CLICK AGAIN TO ERASE' : 'RESET SAVE', w = tw(lab) + 8, bx = px + pw - w - 4, by = py + ph - 13;
+    const hov = inR(M.x, M.y, bx, by, w, 11);
+    text(lab, bx + 4, by + 2, resetT > 0 ? U.red : hov ? U.dim : '#3e424b', { outline: false });
+    if (hov) cursor = 'pointer';
+    if (clicked(bx, by, w, 11)) {
+      if (resetT > 0) {
+        resetMeta();
+        resetT = 0;
+        banner('SAVE ERASED', '', U.red);
+      } else resetT = 3;
+    }
+  }
 }
-// After the run: safe or lost, and the numbers count up.
+// After the run: safe or lost; the rows come up one by one and their cash counts up, then the
+// total and the wallet.
 function drawSummary() {
   ctx.fillStyle = 'rgba(5,6,8,0.66)';
   ctx.fillRect(0, 0, W, H);
-  const s = G.sum, w = 248, h = 206, x = Math.round(W / 2 - w / 2), y = Math.round(H / 2 - h / 2), safe = s.result === 'safe';
+  const s = G.sum, w = 300, h = 236, x = Math.round(W / 2 - w / 2), y = Math.max(0, Math.round(H / 2 - h / 2)), safe = s.result === 'safe';
   panel(x, y, w, h, '#0f1014');
   text(safe ? 'TRAIN SAFE' : 'TRAIN LOST', x + w / 2, y + 12, safe ? U.gold : U.red, { align: 'center', scale: 2 });
-  if (s.newBest) text('NEW BEST', x + w / 2, y + 30, U.gold, { align: 'center' });
-  const k = ease(clamp((realT - sumStart - 0.3) / 1.4, 0, 1));
-  const rows = [['ZOMBIES KILLED', fmt(Math.round(s.kills * k))], ['SURVIVORS SAVED', Math.round(s.saved * k) + ' / ' + s.people],
-    ['TRAIN HEALTH', Math.round(s.hp * k) + '%'], ['BIGGEST BLAST', fmt(Math.round(s.blast * k))]];
-  rows.forEach((r, i) => {
-    text(r[0], x + 20, y + 44 + i * 15, U.dim);
-    text(r[1], x + w - 20, y + 44 + i * 15, U.ink, { align: 'right' });
-  });
+  if (s.newBest) text('NEW BEST', x + w - 8, y + 6, U.gold, { align: 'right', outline: false });
+  const sub = s.cleared ? 'TRIP ' + s.trip + ' CLEARED!' : safe ? 'BEAT THE BOSS TO GO ON' : 'TRIP ' + s.trip + '.  ALL CASH KEPT';
+  text(sub, x + w / 2, y + 30, s.cleared ? '#8fd18a' : safe ? U.amber : U.dim, { align: 'center' });
+  const t = realT - sumStart, n = s.rows.length, shown = clamp(Math.floor((t - 0.4) / 0.25) + 1, 0, n);
+  while ((G.sumTicks || 0) < shown) {
+    G.sumTicks = (G.sumTicks || 0) + 1;
+    SFX.tick();
+  }
+  for (let i = 0; i < shown; i++) {
+    const r = s.rows[i], k = ease(clamp((t - 0.4 - i * 0.25) / 0.4, 0, 1)), ry = y + 46 + i * 14;
+    text(r[0], x + 20, ry, U.dim);
+    if (r[1]) text(r[1], x + 170, ry, U.ink, { align: 'right' });
+    text('+$' + fmt(r[2] * k), x + w - 20, ry, r[2] ? U.gold : U.faint, { align: 'right' });
+  }
+  const tk = ease(clamp((t - 0.5 - n * 0.25) / 0.8, 0, 1));
   ctx.fillStyle = '#2e3139';
-  ctx.fillRect(x + 16, y + 107, w - 32, 1);
-  ctx.drawImage(ICON.coin, x + 20, y + 115);
-  text('CASH EARNED', x + 30, y + 116, U.ink);
-  text('$' + fmt(Math.round(s.cash * clamp((realT - sumStart - 1.5) / 0.8, 0, 1))), x + w - 20, y + 116, U.gold, { align: 'right' });
-  text('BEST ' + fmt(best.kills) + ' KILLS', x + w - 20, y + 130, U.faint, { align: 'right' });
-  if (button(x + 16, y + h - 32, 104, 20, safe ? 'NEXT TRAIN' : 'TRY AGAIN', { primary: true })) startGame();
-  if (button(x + w - 120, y + h - 32, 104, 20, 'TITLE')) toTitle();
+  ctx.fillRect(x + 16, y + 148, w - 32, 1);
+  text('TOTAL', x + 20, y + 154, U.ink, { scale: 2 });
+  text('$' + fmt(s.total * tk), x + w - 20, y + 154, U.gold, { align: 'right', scale: 2 });
+  ctx.drawImage(ICON.coin, x + 20, y + 173);
+  text('WALLET $' + fmt(s.wallet0 + (s.wallet - s.wallet0) * tk), x + 30, y + 174, U.gold);
+  text(s.camp ? 'CAMP +' + s.camp + ' (' + fmt(META.camp) + ')' : 'CAMP ' + fmt(META.camp), x + w - 20, y + 174, s.camp ? '#8fd18a' : U.faint, { align: 'right' });
+  if (tk >= 1) {
+    if (s.tip) text(s.tip, x + w / 2, y + 190, U.amber, { align: 'center' });
+    else if (s.canBuy) text(s.canBuy > 1 ? 'YOU CAN BUY ' + s.canBuy + ' UPGRADES' : 'YOU CAN BUY AN UPGRADE', x + w / 2, y + 190, '#8fd18a', { align: 'center' });
+  }
+  if (button(x + 16, y + h - 30, 130, 20, 'DEPOT', { primary: true })) toDepot();
+  else if (button(x + w - 146, y + h - 30, 130, 20, s.cleared ? 'NEXT TRIP' : 'TRY AGAIN')) startGame(s.cleared ? s.trip + 1 : s.trip);
 }
 
 // ---------- the UI for the current mode
 function drawUI() {
   if (mode === 'title') {
     drawTitle();
+    drawBanners();
+    return;
+  }
+  if (mode === 'depot') {
+    drawDepot();
     drawBanners();
     return;
   }

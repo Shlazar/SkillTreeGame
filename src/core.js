@@ -99,11 +99,13 @@ function hexRgb(h) {
   const n = parseInt(h.slice(1), 16);
   return [n >> 16 & 255, n >> 8 & 255, n & 255];
 }
-// Short number text: 1,234 / 1.23M
+// Short number text: 1,234 / 12.3K / 1.24M / 1.24B (cut, never rounded up)
 function fmt(n) {
   n = Math.floor(Math.max(0, n));
-  if (n < 1e6) return n.toLocaleString('en-US');
-  return (n / 1e6).toFixed(2) + 'M';
+  if (n < 1e4) return n.toLocaleString('en-US');
+  if (n < 1e6) { const k = Math.floor(n / 100) / 10; return (k < 100 ? k.toFixed(1) : Math.floor(k)) + 'K'; }
+  if (n < 1e9) return (Math.floor(n / 1e4) / 100).toFixed(2) + 'M';
+  return (Math.floor(n / 1e7) / 100).toFixed(2) + 'B';
 }
 // Seeded random generator (mulberry32): a function that gives 0..1.
 function mulberry(a) {

@@ -114,11 +114,13 @@ function hexRgb(h) {
   const n = parseInt(h.slice(1), 16);
   return [n >> 16 & 255, n >> 8 & 255, n & 255];
 }
-// Short number text: 1,234 / 1.23M
+// Short number text: 1,234 / 12.3K / 1.24M / 1.24B (cut, never rounded up)
 function fmt(n) {
   n = Math.floor(Math.max(0, n));
-  if (n < 1e6) return n.toLocaleString('en-US');
-  return (n / 1e6).toFixed(2) + 'M';
+  if (n < 1e4) return n.toLocaleString('en-US');
+  if (n < 1e6) { const k = Math.floor(n / 100) / 10; return (k < 100 ? k.toFixed(1) : Math.floor(k)) + 'K'; }
+  if (n < 1e9) return (Math.floor(n / 1e4) / 100).toFixed(2) + 'M';
+  return (Math.floor(n / 1e7) / 100).toFixed(2) + 'B';
 }
 // Seeded random generator (mulberry32): a function that gives 0..1.
 function mulberry(a) {
@@ -1158,6 +1160,50 @@ function initSprites() {
   ICON.he = outline(pix(5, 9, (r) => {
     r(0, 3, 5, 6, '#626875'); r(0, 3, 1, 6, '#8b919c'); r(1, 1, 3, 2, '#b8862f'); r(2, 0, 1, 1, '#e3b04b'); r(0, 7, 5, 1, '#b8862f');
   }), P.out);
+  ICON.pin = outline(pix(3, 5, (r) => { r(0, 0, 3, 3, '#e3b04b'); r(0, 0, 3, 1, '#f6dc8e'); r(1, 3, 1, 2, '#b4b9c1'); }), P.out);
+  ICON.lock = outline(pix(5, 6, (r) => { r(1, 0, 3, 1, '#8b919c'); r(0, 1, 1, 2, '#8b919c'); r(4, 1, 1, 2, '#8b919c'); r(0, 3, 5, 3, '#626875'); r(2, 4, 1, 1, '#07080a'); }), P.out);
+  ICON.heli = outline(pix(11, 7, (r) => {
+    r(0, 0, 11, 1, '#8b919c'); r(5, 1, 1, 1, '#626875'); r(2, 2, 6, 3, '#5c6b40'); r(2, 2, 6, 1, '#7a8a52'); r(6, 3, 2, 1, '#9fd3f2');
+    r(0, 3, 2, 1, '#5c6b40'); r(0, 2, 1, 1, '#5c6b40'); r(2, 6, 7, 1, '#3e434c'); r(3, 5, 1, 1, '#3e434c'); r(7, 5, 1, 1, '#3e434c');
+  }), P.out);
+  ICON.house = outline(pix(9, 8, (r) => {
+    r(1, 3, 7, 5, '#8a6a4a'); r(0, 2, 9, 1, '#6a2a22'); r(1, 1, 7, 1, '#8e3a30'); r(2, 0, 5, 1, '#8e3a30');
+    r(2, 4, 2, 2, '#fff1c2'); r(5, 4, 2, 4, '#3b2e25');
+  }), P.out);
+  // the upgrade cards: 12 x 12 each
+  const up = (fn) => outline(pix(10, 10, fn), P.out);
+  ICON.up = {
+    dmg: up((r) => { r(4, 0, 2, 1, '#b4b9c1'); r(3, 1, 4, 2, '#8b919c'); r(3, 3, 4, 6, '#b8862f'); r(3, 3, 1, 6, '#e3b04b'); r(3, 9, 4, 1, '#7a5a1c'); }),
+    rate: up((r) => { for (let i = 0; i < 3; i++) { const x = i * 3 + 1, y = i === 1 ? 0 : 1; r(x, y, 2, 2, '#8b919c'); r(x, y + 2, 2, 6, '#b8862f'); r(x, y + 2, 1, 6, '#e3b04b'); } }),
+    cannon: up((r) => { r(3, 0, 4, 1, '#b4b9c1'); r(2, 1, 6, 2, '#8b919c'); r(2, 3, 6, 6, '#626875'); r(2, 1, 1, 8, '#b4b9c1'); r(2, 6, 6, 1, '#b8862f'); r(2, 9, 6, 1, '#7a5a1c'); }),
+    rotors: up((r) => { for (let i = 0; i < 10; i++) { r(i, i, 1, 1, '#b4b9c1'); r(9 - i, i, 1, 1, '#b4b9c1'); } r(4, 4, 2, 2, '#e3b04b'); }),
+    bounty: up((r) => {
+      for (const [x, y, w] of [[1, 7, 8], [2, 4, 7], [1, 1, 7]]) { r(x, y, w, 3, '#a8761f'); r(x, y, w, 1, '#f6dc8e'); r(x + 1, y + 1, 1, 1, '#e8bd55'); }
+    }),
+    armor: up((r) => {
+      r(1, 0, 8, 6, '#465469'); r(2, 6, 6, 2, '#465469'); r(3, 8, 4, 1, '#465469'); r(4, 9, 2, 1, '#465469');
+      r(1, 0, 8, 1, '#9fd3f2'); r(1, 0, 1, 6, '#6d82a3'); r(4, 1, 2, 8, '#6d82a3'); r(2, 2, 1, 1, '#b4b9c1'); r(7, 2, 1, 1, '#b4b9c1');
+    }),
+    cow: up((r) => { for (let y = 0; y < 8; y++) { const w = 2 + y, x = 5 - (w >> 1); r(x, y + 1, w, 1, '#8b919c'); r(x, y + 1, 1, 1, '#d6cdb6'); } r(0, 9, 10, 1, '#b8402e'); }),
+    boiler: up((r) => { r(3, 2, 4, 7, '#e2552f'); r(2, 4, 6, 5, '#e2552f'); r(4, 0, 2, 3, '#ff8a3a'); r(3, 4, 4, 5, '#ff8a3a'); r(4, 6, 2, 3, '#ffcf6a'); r(1, 9, 8, 1, '#626875'); }),
+    gunners: up((r) => {
+      r(2, 0, 3, 3, '#c99a72'); r(2, 0, 3, 1, '#5c6b40'); r(1, 3, 5, 4, '#5c6b40'); r(2, 7, 1, 3, '#3f4c2c'); r(4, 7, 1, 3, '#3f4c2c');
+      r(4, 4, 6, 1, '#4f3826'); r(9, 3, 1, 1, '#b4b9c1');
+    }),
+    mg: up((r) => { r(0, 6, 10, 4, '#a49a78'); r(0, 6, 10, 1, '#c9bf98'); r(0, 8, 10, 1, '#7a7056'); r(3, 6, 1, 2, '#7a7056'); r(7, 8, 1, 2, '#7a7056'); r(3, 2, 3, 4, '#626875'); r(6, 3, 4, 1, '#b4b9c1'); r(4, 1, 1, 1, '#8b919c'); }),
+    mortar: up((r) => { r(1, 8, 8, 2, '#626875'); r(1, 8, 8, 1, '#8b919c'); for (let i = 0; i < 6; i++) r(2 + i, 6 - i, 2, 2, '#5c6b40'); r(7, 0, 3, 2, '#3f4c2c'); r(4, 6, 1, 2, '#3e434c'); }),
+    tesla: up((r) => {
+      r(4, 2, 2, 7, '#b87333'); r(3, 3, 4, 1, '#e3b04b'); r(3, 5, 4, 1, '#e3b04b'); r(3, 7, 4, 1, '#e3b04b'); r(3, 0, 4, 2, '#9fd3f2');
+      r(2, 9, 6, 1, '#626875'); r(8, 0, 1, 2, '#ffffff'); r(7, 2, 1, 1, '#ffffff'); r(1, 1, 1, 2, '#ffffff');
+    }),
+    sniper: up((r) => {
+      const c = '#d0553f';
+      r(3, 0, 4, 1, c); r(3, 9, 4, 1, c); r(0, 3, 1, 4, c); r(9, 3, 1, 4, c); r(1, 1, 2, 1, c); r(7, 1, 2, 1, c); r(1, 8, 2, 1, c); r(7, 8, 2, 1, c);
+      r(1, 2, 1, 1, c); r(8, 2, 1, 1, c); r(1, 7, 1, 1, c); r(8, 7, 1, 1, c);
+      r(4, 1, 2, 3, '#e8dfc8'); r(4, 6, 2, 3, '#e8dfc8'); r(1, 4, 3, 2, '#e8dfc8'); r(6, 4, 3, 2, '#e8dfc8');
+    }),
+    pads: up((r) => { r(0, 3, 10, 6, '#8f897c'); r(0, 3, 10, 1, '#aaa392'); r(0, 8, 10, 1, '#5e5a52'); r(0, 3, 2, 1, '#e3b04b'); r(8, 3, 2, 1, '#e3b04b'); r(0, 4, 1, 1, '#e3b04b'); r(9, 4, 1, 1, '#e3b04b'); r(0, 8, 2, 1, '#e3b04b'); r(8, 8, 2, 1, '#e3b04b'); })
+  };
 }
 
 // world.js - the countryside the railway runs through, built in 128 px chunks as the camera moves.
@@ -2045,10 +2091,22 @@ const SFX = {
     tone(392, 0.14, 'triangle', 0.045);
     tone(587, 0.22, 'triangle', 0.045, null, 0.1);
   },
-  streak() {
+  upgrade() {
+    // the wallet can pay for a new upgrade
     tone(523, 0.1, 'triangle', 0.04);
     tone(659, 0.1, 'triangle', 0.04, null, 0.08);
     tone(784, 0.22, 'triangle', 0.045, null, 0.16);
+  },
+  buy() {
+    // an upgrade bought: a till and a rising chime
+    nz(0.05, 0.05, 'bandpass', 3200, 2);
+    tone(784, 0.06, 'square', 0.02);
+    tone(1175, 0.12, 'triangle', 0.04, null, 0.05);
+    tone(1568, 0.16, 'triangle', 0.03, null, 0.1);
+  },
+  tick() {
+    // a summary row comes up
+    tone(1500, 0.025, 'square', 0.012);
   },
   warn() {
     // the train is nearly lost: two low, urgent notes
@@ -2104,12 +2162,217 @@ const SFX = {
   }
 };
 
-// game.js - the game: escort the last train. You fly a gunship helicopter (WASD) over a railway that
-// winds north. The train runs along it to a walled safe zone, stopping halfway at a station to take
-// on survivors who run for it. The dead walk in from both sides; the ones ahead of the train step
-// onto the rails. The engine runs them down, but each one slows it, and the dead that reach the
-// train climb on and tear at it. When no key is held the helicopter keeps pace with the train.
-// Behind the title the same game runs as a demo.
+// meta.js - what lasts from run to run: the bank of cash, the upgrade levels, the trips cleared,
+// the camp (everyone ever brought home, each worth +0.5% cash for ever), the station layout and the
+// best scores. Saved in localStorage (in memory only when storage is blocked).
+// Also the upgrade table, upgrade prices, the numbers of each trip, and the stats a run uses (G.k).
+
+const META_KEY = 'sky-reaper-meta-v1';
+const META = {};
+// a fresh save
+function metaDefaults() {
+  return {
+    v: 1, cash: 0,
+    lv: { dmg: 0, rate: 0, cannon: 0, rotors: 0, bounty: 0, armor: 0, cow: 0, boiler: 0, gunners: 0,
+      mg: 1, mortar: 0, tesla: 0, sniper: 0, pads: 0 },
+    trip: 1, maxTrip: 1, cleared: [], perfect: [], camp: 0,
+    layout: ['mg', 'mg', null, null, null, null], pin: null, hints: {}, best: { kills: 0, safe: 0 }, played: false
+  };
+}
+
+// ---------- the upgrades
+// group (0 helicopter, 1 train, 2 station), name, max level, price base and growth (the price of the
+// next level = base x growth^(L - start)), start level, the trip that shows it (towers), a few faint
+// words on its card (role), what level L gives (val(L) + unit, shown "now > next"), and a longer line
+// for the info strip (info(L)).
+const tw1 = (v) => (Math.round(v * 100) / 100).toFixed(2);
+const UPG = [
+  { id: 'dmg', group: 0, name: '25MM DAMAGE', max: 30, base: 80, growth: 1.45, role: 'BRUTES + BOSSES',
+    val: (L) => fmtNum(1.25 ** L), unit: 'DMG',
+    info: (L) => 'EACH ROUND HITS FOR ' + fmtNum(1.25 ** L) + '. WALKERS DIE TO ONE ROUND ANYWAY: THIS IS FOR BRUTES AND BOSSES.' },
+  { id: 'rate', group: 0, name: '25MM RATE', max: 10, base: 100, growth: 1.5, role: 'FIRE FASTER',
+    val: (L) => String(12 + L), unit: 'ROUNDS/S',
+    info: (L) => (12 + L) + ' ROUNDS A SECOND, AND EACH ONE HEATS THE GUN ' + Math.round(100 - 100 * 0.92 ** L) + '% LESS.' },
+  { id: 'cannon', group: 0, name: '105MM CANNON', max: 30, base: 120, growth: 1.45, role: 'BIGGER BLASTS',
+    val: (L) => tw1(2.4 - 0.06 * Math.min(L, 20)) + 'S', unit: 'RELOAD',
+    info: (L) => 'RELOAD ' + tw1(2.4 - 0.06 * Math.min(L, 20)) + 'S.  KILL RADIUS ' + (34 + Math.min(L, 20)) + 'PX.  BOSS HIT ' + fmtNum(20 * 1.25 ** L) + '.' },
+  { id: 'rotors', group: 0, name: 'ROTORS', max: 5, base: 150, growth: 2, role: 'FLY FAR, FIND MORE',
+    val: (L) => String(470 + 40 * L), unit: 'PX RANGE',
+    info: (L) => 'FLY ' + (470 + 40 * L) + 'PX FROM THE TRAIN, ' + Math.round(6 * L) + '% FASTER. ' + (L ? L + ' DEEP CRATE' + (L > 1 ? 'S' : '') + ' FAR OUT ON EACH TRIP.' : 'EACH LEVEL HIDES A DEEP CRATE FAR OUT.') },
+  { id: 'bounty', group: 0, name: 'BOUNTY', max: 30, base: 200, growth: 1.5, role: 'ALL CASH UP',
+    val: (L) => '+' + (10 * L) + '%', unit: 'CASH',
+    info: (L) => 'EVERY DOLLAR YOU EARN IS WORTH ' + (10 * L) + '% MORE.' },
+  { id: 'armor', group: 1, name: 'ARMOR', max: 30, base: 60, growth: 1.42, role: 'TRAIN HEALTH',
+    val: (L) => String(150 + 20 * L), unit: 'TRAIN HP',
+    info: (L) => 'THE TRAIN HAS ' + (150 + 20 * L) + ' HP. A ZOMBIE ON IT TEARS OFF 0.5 HP A SECOND, A BRUTE 2.' },
+  { id: 'cow', group: 1, name: 'COW CATCHER', max: 5, base: 100, growth: 1.6, role: 'RAM THE DEAD',
+    val: (L) => (15 - 2 * L) + '%', unit: 'SPEED LOST',
+    info: (L) => 'RUNNING ONE DOWN COSTS ' + (15 - 2 * L) + '% SPEED (A BRUTE ' + (65 - 5 * L) + '%) AND ' + Math.round(100 - 15 * L) + '% DAMAGE.' },
+  { id: 'boiler', group: 1, name: 'BOILER', max: 5, base: 100, growth: 1.6, role: 'FAST GEAR',
+    val: (L) => String(40 + 3 * L), unit: 'PX/S FAST',
+    info: (L) => 'FAST GEAR RUNS AT ' + (40 + 3 * L) + ' PX/S. THE TRAIN GETS BACK TO SPEED ' + (7 + L) + ' PX/S EACH SECOND.' },
+  { id: 'gunners', group: 1, name: 'ROOF GUNNERS', max: 10, base: 150, growth: 1.55, role: 'RIDERS SHOOT',
+    val: (L) => fmtNum(gunShots(L)), unit: 'SHOTS/S',
+    info: (L) => L ? Math.min(4, L) + ' RIDER' + (L > 1 ? 'S' : '') + ' SHOOT EVERY ' + tw1(gunGap(L)) + 'S AT THE DEAD CLOSE TO THE TRAIN (HALF YOUR 25MM DAMAGE).' : 'THE RIDERS ON THE FLATCAR PICK UP RIFLES AND SHOOT THE DEAD THAT CLIMB ON.' },
+  { id: 'mg', group: 2, name: 'MG NEST', max: 30, base: 100, growth: 1.45, start: 1, role: 'RUNNERS, GRABBERS',
+    val: (L) => fmtNum((2.5 + 0.15 * (L - 1)) * 1.2 ** (L - 1)), unit: 'DPS',
+    info: (L) => 'STATION TOWER. RANGE ' + Math.min(120, 80 + 2 * (L - 1)) + 'PX, ' + fmtNum(Math.min(6, 2.5 + 0.15 * (L - 1))) + ' SHOTS/S, ' + fmtNum(1.2 ** (L - 1)) + ' DAMAGE. SHOOTS GRABBERS FIRST.' },
+  { id: 'mortar', group: 2, name: 'MORTAR', max: 30, base: 300, growth: 1.45, trip: 2, role: 'CROWDS',
+    val: (L) => fmtNum(8 * 1.25 ** (L - 1)), unit: 'BLAST DMG',
+    info: (L) => 'STATION TOWER. SHELLS THE THICKEST CROWD EVERY ' + tw1(Math.max(1.5, 3.5 - 0.1 * (L - 1))) + 'S. KILLS WALKERS IN ' + Math.min(34, 22 + L - 1) + 'PX, HITS BRUTES FOR ' + fmtNum(8 * 1.25 ** (L - 1)) + '.' },
+  { id: 'tesla', group: 2, name: 'TESLA COIL', max: 30, base: 250, growth: 1.45, trip: 3, role: 'THE DOOR',
+    val: (L) => fmtNum(3 * 1.2 ** (L - 1)), unit: 'ZAP DMG',
+    info: (L) => 'STATION TOWER. ZAPS ' + Math.min(8, 2 + Math.floor((L - 1) / 3)) + ' ZOMBIES AT ONCE FOR ' + fmtNum(3 * 1.2 ** (L - 1)) + '. A ZAP FREES A GRABBED SURVIVOR.' },
+  { id: 'sniper', group: 2, name: 'SNIPER', max: 30, base: 500, growth: 1.45, trip: 4, role: 'BRUTES + BOSSES',
+    val: (L) => fmtNum(15 * 1.25 ** (L - 1)), unit: 'SHOT DMG',
+    info: (L) => 'STATION TOWER. ONE SHOT EVERY ' + tw1(Math.max(1, 2 - 0.05 * (L - 1))) + 'S FOR ' + fmtNum(15 * 1.25 ** (L - 1)) + ', THROUGH 3 ZOMBIES. X3 ON AN OPEN WEAK POINT.' },
+  { id: 'pads', group: 2, name: 'PADS', max: 4, base: 400, growth: 3, role: 'MORE TOWERS',
+    val: (L) => String(2 + L), unit: 'PADS',
+    info: (L) => (2 + L) + ' OF 6 BUILD PADS AT THE STATION. EACH PAD HOLDS ONE TOWER.' }
+];
+// roof gunners: the gap between two shots of one rider, and shots a second from all of them
+const gunGap = (L) => (L > 4 ? 1.2 * 0.85 ** (L - 4) : 1.2);
+const gunShots = (L) => (L ? Math.min(4, L) / gunGap(L) : 0);
+const UPGMAP = {};
+for (const u of UPG) UPGMAP[u.id] = u;
+const GROUPS = ['HELICOPTER', 'TRAIN', 'STATION'];
+// a short number: 2, 2.4, 12, 1.2K
+const fmtNum = (v) => v < 10 ? String(Math.round(v * 10) / 10) : fmt(v);
+
+const lvl = (id) => META.lv[id] || 0;
+const upgMaxed = (id) => lvl(id) >= UPGMAP[id].max;
+const upgLocked = (id) => (UPGMAP[id].trip || 1) > META.maxTrip;
+function upgCost(id) {
+  const u = UPGMAP[id];
+  return Math.round(u.base * u.growth ** (lvl(id) - (u.start || 0)));
+}
+// Buy the next level of upgrade id with banked cash. True when it was bought.
+function buyUpg(id) {
+  const u = UPGMAP[id];
+  if (!u || upgMaxed(id) || upgLocked(id)) return false;
+  const c = upgCost(id);
+  if (META.cash < c) return false;
+  META.cash -= c;
+  META.lv[id] = lvl(id) + 1;
+  // a tower built for the first time goes on a free pad
+  if (u.group === 2 && id !== 'pads' && META.lv[id] === 1) {
+    const free = META.layout.findIndex((t, i) => !t && i < 2 + lvl('pads'));
+    if (free >= 0) META.layout[free] = id;
+  }
+  if (META.pin === id && upgMaxed(id)) META.pin = null;
+  saveMeta();
+  return true;
+}
+// how many cards the wallet w could buy now (one level each)
+function affordableCount(w) {
+  let n = 0;
+  for (const u of UPG) if (!upgMaxed(u.id) && !upgLocked(u.id) && upgCost(u.id) <= w) n++;
+  return n;
+}
+// The card to save up for: the pinned one, or else the cheapest one the wallet w cannot pay yet.
+function nextTarget(w) {
+  if (META.pin && !upgMaxed(META.pin) && !upgLocked(META.pin)) return META.pin;
+  let best = null, bc = Infinity;
+  for (const u of UPG) {
+    if (upgMaxed(u.id) || upgLocked(u.id)) continue;
+    const c = upgCost(u.id);
+    if (c > w && c < bc) { bc = c; best = u.id; }
+  }
+  return best;
+}
+
+// ---------- trips
+const BOSSES = ['butcher', 'spitter', 'brood'];
+const BOSS_NAME = { butcher: 'THE BUTCHER', spitter: 'THE SPITTER', brood: 'THE BROOD MOTHER' };
+// Everything that changes from trip to trip.
+function tripInfo(T) {
+  const t = T - 1;
+  return {
+    T, mult: 1.15 ** t, bruteHp: 8 * 1.2 ** t,
+    start: Math.min(220, 110 + 10 * t), perSec: Math.min(7, 3.5 + 0.25 * t), cap: Math.min(520, 400 + 15 * t),
+    runner: Math.min(0.3, 0.12 + 0.015 * t), brute: Math.min(0.2, 0.05 + 0.01 * t), railExtra: Math.floor(t / 3),
+    people: Math.min(14, 8 + Math.floor(t / 2)), bossHp: 1.3 ** t, bossDmg: 1.1 ** t,
+    firstClear: Math.round(300 * 1.15 ** t), boss: BOSSES[t % 3], twin: T % 6 === 0
+  };
+}
+// All cash is multiplied: by the trip, by BOUNTY and by the camp.
+const cashMult = (T) => 1.15 ** (T - 1) * (1 + 0.1 * lvl('bounty')) * (1 + 0.005 * META.camp);
+
+// The stats of a run, from the upgrade levels.
+function runStats() {
+  const L = lvl;
+  return {
+    mgDmg: 1.25 ** L('dmg'), mgRate: 12 + L('rate'), heatPer: 0.025 * 0.92 ** L('rate'),
+    heReload: 2.4 - 0.06 * Math.min(L('cannon'), 20), heKill: 34 + Math.min(L('cannon'), 20),
+    heBoss: 20 * 1.25 ** L('cannon'), heRing: 4 * 1.25 ** L('cannon'),
+    leash: 470 + 40 * L('rotors'), heliSpeed: 170 * (1 + 0.06 * L('rotors')),
+    trainMax: 150 + 20 * L('armor'), fullSpeed: 40 + 3 * L('boiler'), accel: 7 + L('boiler'),
+    crushLoss: 0.15 - 0.02 * L('cow'), crushBrute: 0.65 - 0.05 * L('cow'), crushDmg: 1 - 0.15 * L('cow'), cow: L('cow'),
+    gunners: Math.min(4, L('gunners')), gunRate: gunGap(L('gunners')),
+    deep: L('rotors'), pads: 2 + L('pads'),
+    tower: { mg: L('mg'), mortar: L('mortar'), tesla: L('tesla'), sniper: L('sniper') }
+  };
+}
+// The stats with no upgrades (the demo behind the title).
+function baseStats() {
+  const keep = META.lv;
+  META.lv = metaDefaults().lv;
+  const k = runStats();
+  META.lv = keep;
+  return k;
+}
+
+// ---------- save and load
+function loadMeta() {
+  Object.assign(META, metaDefaults());
+  let o = null;
+  try { o = JSON.parse(localStorage.getItem(META_KEY) || 'null'); } catch (e) { o = null; }
+  if (o && typeof o === 'object') {
+    const num = (v, lo, hi, d) => (Number.isFinite(+v) ? clamp(+v, lo, hi) : d);
+    META.cash = num(o.cash, 0, 1e15, 0);
+    for (const u of UPG) META.lv[u.id] = Math.floor(num(o.lv && o.lv[u.id], u.start || 0, u.max, u.start || 0));
+    META.maxTrip = Math.floor(num(o.maxTrip, 1, 9999, 1));
+    META.trip = Math.floor(num(o.trip, 1, META.maxTrip, 1));
+    META.camp = Math.floor(num(o.camp, 0, 1e9, 0));
+    META.cleared = Array.isArray(o.cleared) ? o.cleared.filter((t) => Number.isInteger(t)) : [];
+    META.perfect = Array.isArray(o.perfect) ? o.perfect.filter((t) => Number.isInteger(t)) : [];
+    if (Array.isArray(o.layout)) META.layout = [0, 1, 2, 3, 4, 5].map((i) => (UPGMAP[o.layout[i]] && UPGMAP[o.layout[i]].group === 2 && o.layout[i] !== 'pads' ? o.layout[i] : null));
+    META.pin = UPGMAP[o.pin] ? o.pin : null;
+    META.hints = o.hints && typeof o.hints === 'object' ? o.hints : {};
+    META.best = { kills: Math.floor(num(o.best && o.best.kills, 0, 1e9, 0)), safe: Math.floor(num(o.best && o.best.safe, 0, 1e9, 0)) };
+    META.played = !!o.played;
+  } else {
+    // the best score of the old save
+    try {
+      const b = JSON.parse(localStorage.getItem('sky-reaper-escort') || 'null');
+      if (b) META.best = { kills: Math.max(0, b.kills | 0), safe: Math.max(0, b.safe | 0) };
+    } catch (e) { /* nothing to bring over */ }
+  }
+}
+function saveMeta() {
+  try { localStorage.setItem(META_KEY, JSON.stringify(META)); } catch (e) { /* storage blocked: kept in memory */ }
+}
+function resetMeta() {
+  const keepBest = META.best;
+  Object.assign(META, metaDefaults());
+  META.best = keepBest;
+  saveMeta();
+}
+// Show a hint the first time only.
+function hintOnce(id, text) {
+  if (META.hints[id]) return;
+  META.hints[id] = 1;
+  saveMeta();
+  banner(text, '', U.ink, 1);
+}
+
+// game.js - the game: escort the last train, trip after trip. You fly a gunship helicopter (WASD)
+// over a railway that winds north. The train runs along it to a walled safe zone, stopping halfway
+// at a station to take on survivors who run for it. The dead walk in from both sides; the ones ahead
+// of the train step onto the rails. The engine runs them down, but each one slows it, and the dead
+// that reach the train climb on and tear at it. When no key is held the helicopter keeps pace with
+// the train. Every run's cash is banked for upgrades (meta.js); G.k holds the upgraded stats and
+// G.ti the numbers of this trip. Behind the title the same game runs as a demo.
 // Units are world pixels and seconds; y on the ground is squashed by FORE; the train runs to -y.
 
 const CFG = {
@@ -2142,41 +2405,28 @@ const CFG = {
 // the cars: length on the ground, the gap between two, half the width, how many (TRAIN in sprites)
 const CAR = { L: 28, gap: 4, half: 8, n: 5 };
 const TRAIN_LEN = CAR.n * (CAR.L + CAR.gap) - CAR.gap;
-// streak bonuses: [kills in a row, cash]
-const STREAKS = [[10, 5], [25, 15], [50, 30], [100, 60], [200, 120]];
 const CAMS = ['COLOUR', 'WHITE HOT', 'BLACK HOT'];
 
 // G = this run (or the demo behind the title). mode = 'title', 'play', 'ending' or 'summary'.
 // thermal = camera: 0 colour, 1 white hot, 2 black hot.
 let G = null, mode = 'title', paused = false, realT = 0, frameDt = 0, sumStart = 0, thermal = 0;
 
-// best score, kept in this browser
-const BEST_KEY = 'sky-reaper-escort';
-const best = { kills: 0, safe: 0, saved: 0 };
-function loadBest() {
-  try {
-    const o = JSON.parse(localStorage.getItem(BEST_KEY) || '{}');
-    best.kills = Math.max(0, o.kills | 0);
-    best.safe = Math.max(0, o.safe | 0);
-    best.saved = Math.max(0, o.saved | 0);
-  } catch (e) { /* no storage: the best is not kept */ }
-}
-function saveBest() {
-  try { localStorage.setItem(BEST_KEY, JSON.stringify(best)); } catch (e) { /* ignore */ }
-}
-
 // ---------- a run
-function newGame(demo) {
-  const y0 = Math.round(rnd(-40000, 40000)), s0 = trackS(y0);
+// G.cash = cash earned this run (G.banked of it already in the bank), G.earn = where it came from.
+function newGame(demo, trip) {
+  const y0 = Math.round(rnd(-40000, 40000)), s0 = trackS(y0), T = demo ? 1 : trip || META.trip;
+  const k = demo ? baseStats() : runStats();
   const cars = [];
   for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
-    demo: !!demo, t: 0, run: 0, endT: 0, result: '', bonus: 0,
-    kills: 0, cash: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
+    demo: !!demo, t: 0, run: 0, endT: 0, result: '', bonus: 0, trip: T, ti: tripInfo(T), k, mult: demo ? 1 : cashMult(T),
+    kills: 0, cash: 0, banked: 0, shownCash: META.cash, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
+    earn: { kills: 0, bonus: 0, finds: 0, station: 0, boss: 0, arrival: 0, first: 0 },
+    afford: 0, readyT: 0,
     trigger: false, mgCd: 0, heat: 0, overheat: false, heReload: 0, heQueue: false, hitT: 0, muzzle: [0, 0],
     // the train: s = distance along the rails of the engine's nose (it falls as the train runs north),
     // v = speed, hit[k] = car k flashes red, fx / fy = the nose on the ground
-    tr: { s: s0, startS: s0, v: CFG.train.cruise, hp: CFG.train.hp, hpShown: CFG.train.hp, hit: [0, 0, 0, 0, 0],
+    tr: { s: s0, startS: s0, v: CFG.train.cruise, hp: k.trainMax, hpShown: k.trainMax, hit: [0, 0, 0, 0, 0],
       clack: 0, smokeT: 0, hornT: 0, fx: trackX(y0), fy: y0, cars },
     // the helicopter: ox / oy = where it is from the engine's nose, vx / vy = its speed against the
     // train, hd = its heading, home = flying back over the train
@@ -2185,10 +2435,10 @@ function newGame(demo) {
     camX: 0, camY: 0, aimSX: W / 2, aimSY: H / 2,
     lock: null, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
-    streak: { n: 0, t: -9, best: 0 },
     spawnCd: 0, railCd: rnd(5, 7), onTrain: 0, blocked: false, decalT: 0, sum: null,
     bot: false, botT: 0, botZ: null
   };
+  G.afford = demo ? 0 : affordableCount(META.cash);
   clearFX();
   GRID.clear();
   layoutTrain();
@@ -2200,34 +2450,95 @@ function newGame(demo) {
   placeCamera();
   scatter();
 }
-function startGame() {
+function startGame(trip) {
   audioInit();
-  newGame(false);
+  newGame(false, trip);
+  META.trip = G.trip;
+  META.played = true;
+  saveMeta();
   mode = 'play';
   paused = false;
-  banner('ESCORT THE TRAIN', 'PICK UP SURVIVORS AT THE STATION', U.gold);
+  banner('TRIP ' + G.trip, 'ESCORT THE TRAIN. PICK UP SURVIVORS AT THE STATION.', U.gold);
   SFX.horn();
 }
+// Pay cash into this run (times the run's cash multiplier). kind = which summary row it counts for.
+// Returns what was paid.
+function pay(base, kind) {
+  if (G.demo) return 0;
+  const v = base * G.mult;
+  G.cash += v;
+  G.earn[kind] += v;
+  return v;
+}
+// The cash to spend: the bank plus this run's cash not banked yet.
+const wallet = () => META.cash + (G && !G.demo ? G.cash - G.banked : 0);
+// Put this run's cash in the bank (only what is not there yet) and save.
+function bankRun() {
+  if (G.demo) return;
+  META.cash += G.cash - G.banked;
+  G.banked = G.cash;
+  saveMeta();
+}
+// The run is over: first-clear pay, the camp, the bank, the best scores, and the summary rows.
 function endGame() {
   mode = 'summary';
   sumStart = realT;
   G.trigger = false;
-  const nb = G.kills > best.kills, st = G.station;
-  G.sum = {
-    result: G.result, kills: G.kills, cash: Math.round(G.cash), streak: G.streak.best, blast: G.bestBlast,
-    hp: Math.round(G.tr.hp / CFG.train.hp * 100), saved: st ? st.saved : 0, people: CFG.station.people,
-    newBest: nb && G.kills > 0
-  };
-  if (nb) best.kills = G.kills;
-  if (G.result === 'safe') {
-    best.safe++;
-    best.saved = Math.max(best.saved, G.sum.saved);
+  G.sumTicks = 0;
+  const st = G.station, T = G.trip, safe = G.result === 'safe', cleared = safe;
+  let first = 0, camp = 0;
+  if (cleared && META.cleared.indexOf(T) < 0) {
+    META.cleared.push(T);
+    first = pay(300, 'first');
   }
-  saveBest();
+  if (cleared) {
+    META.maxTrip = Math.max(META.maxTrip, T + 1);
+    META.trip = T + 1;
+  }
+  if (safe && st) camp += st.saved;
+  META.camp += camp;
+  const wallet0 = META.cash - G.banked, e = G.earn;
+  bankRun();
+  const nb = G.kills > META.best.kills;
+  if (nb) META.best.kills = G.kills;
+  if (safe) META.best.safe++;
+  saveMeta();
+  // the rows: name, count, cash
+  const rows = [['KILLS', fmt(G.kills), e.kills + e.bonus], ['STATION', (st ? st.saved : 0) + '/' + G.ti.people, e.station]];
+  if (safe) rows.push(['ARRIVAL', Math.round(G.tr.hp / G.k.trainMax * 100) + '% HP', e.arrival]);
+  if (first) rows.push(['FIRST CLEAR', '', first]);
+  G.sum = {
+    result: G.result, trip: T, cleared, first, camp, rows, total: G.cash, wallet: META.cash, wallet0,
+    newBest: nb && G.kills > 0, canBuy: affordableCount(META.cash),
+    tip: safe ? '' : lossTip(st && st.state === 'boarding')
+  };
+}
+// After a loss: the cheapest card that would have helped (at the station: the guns; out on the
+// line: the train).
+function lossTip(atStation) {
+  let best = null, bc = Infinity;
+  for (const id of atStation ? ['dmg', 'cannon', 'sniper'] : ['armor', 'cow', 'gunners']) {
+    if (upgMaxed(id) || upgLocked(id)) continue;
+    const c = upgCost(id);
+    if (c < bc) { bc = c; best = id; }
+  }
+  if (!best) return '';
+  const u = UPGMAP[best];
+  return 'TIP: ' + u.name + ' $' + fmt(bc) + ' = ' + u.val(lvl(best) + 1) + ' ' + u.unit;
+}
+// Leave a run from the pause screen: the cash is kept, the run counts as lost.
+function quitRun() {
+  bankRun();
+  toDepot();
 }
 function toTitle() {
   newGame(true);
   mode = 'title';
+  paused = false;
+}
+function toDepot() {
+  newGame(true);
+  mode = 'depot';
   paused = false;
 }
 const scoring = () => !G.demo && (mode === 'play' || mode === 'ending');
@@ -2278,7 +2589,7 @@ function carNear(x, y) {
 }
 function hurtTrain(a, car) {
   if (G.demo || G.result) return;
-  const tr = G.tr, was = tr.hp, low = CFG.train.hp * 0.35;
+  const tr = G.tr, was = tr.hp, low = G.k.trainMax * 0.35;
   tr.hp = Math.max(0, tr.hp - a);
   tr.hit[car] = 0.12;
   if (tr.hp <= 0) lose();
@@ -2319,7 +2630,7 @@ function buildStation(s) {
     G.statics.push({ d: STATION.lamp, x, y: Math.round(yy), k: Math.round(yy), lamp: true });
   }
   G.statics.push({ d: STATION.house, x: Math.round(hx), y: Math.round(hy), k: Math.round(hy) });
-  for (let i = 0; i < CFG.station.people; i++) {
+  for (let i = 0; i < G.ti.people; i++) {
     G.people.push({ person: true, x: hx + rnd(-8, 8), y: hy + rnd(3, 7), st: 'wait', go: 0.6 + i * CFG.station.gap,
       sv: SURV[i % SURV.length], anim: rnd(2), left: Math.random() < 0.5, k: 0, by: null, gt: 0 });
   }
@@ -2333,9 +2644,8 @@ function arrive() {
   G.trigger = false;
   G.lock = null;
   const st = G.station, saved = st ? st.saved : 0;
-  G.bonus = Math.round(G.tr.hp / CFG.train.hp * 100) * 2 + saved * 20;
-  G.cash += G.bonus;
-  banner('TRAIN SAFE', saved + ' SURVIVORS SAVED.  +$' + G.bonus, U.gold, 9);
+  G.bonus = pay(Math.round(G.tr.hp / G.k.trainMax * 100) * 3, 'arrival');
+  banner('TRAIN SAFE', saved + ' SURVIVORS SAVED.  +$' + fmt(G.bonus), U.gold, 9);
   SFX.horn();
   for (const z of G.zombies) if (z.st === 2) later(rnd(0.2, 1.4), () => {
     if (z.dead) return;
@@ -2365,9 +2675,9 @@ function lose() {
 
 // ---------- the dead
 function makeZombie(x, y, type) {
-  const T = CFG.types[type], sets = ZS[type];
+  const T = CFG.types[type], sets = ZS[type], hp = T.big ? Math.round(G.ti.bruteHp) : T.hp;
   return {
-    x, y, type, S: sets[(Math.random() * sets.length) | 0], hp: T.hp, max: T.hp, value: T.value, run: !!T.run, big: !!T.big,
+    x, y, type, S: sets[(Math.random() * sets.length) | 0], hp, max: hp, value: T.value, run: !!T.run, big: !!T.big,
     sp: rnd(T.speed[0], T.speed[1]), dps: T.dps, wob: rnd(TAU), anim: rnd(2), left: Math.random() < 0.5,
     vx: 0, vy: 0, kbx: 0, kby: 0, flash: 0, pending: 0, block: [], blockT: rnd(0.5), dead: false, gone: false, qd: 0, k: y,
     // st: 0 walking, 1 on the rails ahead of the train, 2 holding on to the train
@@ -2375,10 +2685,10 @@ function makeZombie(x, y, type) {
   };
 }
 function pickType() {
-  const r = Math.random();
+  const r = Math.random(), ti = G.ti;
   if (G.demo) return r < 0.03 ? 2 : r < 0.1 ? 1 : 0;
-  if (G.run > 15 && r < 0.05) return 2;
-  if (G.run > 5 && r < 0.17) return 1;
+  if (G.run > 15 && r < ti.brute) return 2;
+  if (G.run > 5 && r < ti.brute + ti.runner) return 1;
   return 0;
 }
 function pack(n, hx, hy) {
@@ -2430,7 +2740,7 @@ function scatter() {
 }
 function spawn(dt) {
   const st = G.station, stopped = st && st.state === 'boarding';
-  const want = G.demo ? 300 : Math.min(CFG.pop.max, CFG.pop.start + CFG.pop.perSec * G.run);
+  const ti = G.ti, want = G.demo ? 300 : Math.min(ti.cap, ti.start + ti.perSec * G.run);
   G.spawnCd -= dt;
   if (G.spawnCd <= 0 && G.zombies.length < want + (stopped ? 50 : 0)) {
     if (stopped) sidePack(rndi(4, 8), -240, 300);
@@ -2439,7 +2749,7 @@ function spawn(dt) {
   }
   G.railCd -= dt;
   if (G.railCd <= 0 && !stopped) {
-    railGroup(rndi(3, 6) + Math.min(5, Math.floor(G.run / 20)));
+    railGroup(rndi(3, 6) + G.ti.railExtra + Math.min(5, Math.floor(G.run / 20)));
     G.railCd = Math.max(3.6, rnd(7, 10) - G.run * 0.04);
   }
 }
@@ -2665,6 +2975,7 @@ function grabPerson(p, z) {
   p.st = 'grab';
   p.by = z;
   p.gt = CFG.station.grab;
+  if (G.demo) return;
   if (!G.demo) {
     floatText(p.x, p.y - 8, 'HELP!', U.red);
     SFX.hit();
@@ -2723,8 +3034,9 @@ function updateStation(dt) {
       if (d < 3) {
         p.st = 'in';
         st.saved++;
+        const v = pay(25, 'station');
         if (!G.demo) {
-          floatText(p.x, p.y - 6, '+1 SAVED', '#8fd18a');
+          floatText(p.x, p.y - 6, '+1 SAVED +$' + fmt(v), '#8fd18a');
           SFX.saved();
         }
         continue;
@@ -2737,7 +3049,7 @@ function updateStation(dt) {
     st.blockedT = waiting && near ? st.blockedT + dt : 0;
     if (!busy && st.t >= CFG.station.minStop) {
       st.state = 'leaving';
-      banner('ALL ABOARD', st.saved + ' OF ' + CFG.station.people + ' SURVIVORS SAVED', '#8fd18a', 3);
+      banner('ALL ABOARD', st.saved + ' OF ' + G.ti.people + ' SURVIVORS SAVED', '#8fd18a', 3);
       SFX.horn();
     }
   }
@@ -2766,13 +3078,14 @@ function updateHeli(dt) {
     const l = Math.hypot(ix, iy);
     if (l > 1) { ix /= l; iy /= l; }
     if (l > 0.05) h.home = false;
-    let tx = ix * c.speed, ty = iy * c.speed;
+    const sp = G.k.heliSpeed;
+    let tx = ix * sp, ty = iy * sp;
     if (h.home) {
       const dx = -h.ox, dy = homeY - h.oy, d = Math.hypot(dx, dy);
       if (d < 3) h.home = false;
       else {
-        tx = dx / d * Math.min(c.speed, d * 2.5);
-        ty = dy / d * Math.min(c.speed, d * 2.5);
+        tx = dx / d * Math.min(sp, d * 2.5);
+        ty = dy / d * Math.min(sp, d * 2.5);
       }
     }
     const k = Math.min(1, dt * c.accel);
@@ -2782,9 +3095,10 @@ function updateHeli(dt) {
     h.oy += h.vy * dt;
     // the leash: pulled back softly past it
     const d = Math.hypot(h.ox, h.oy - homeY);
-    h.far = d > c.leash * 0.85;
-    if (d > c.leash) {
-      const f = c.leash / d;
+    const leash = G.k.leash;
+    h.far = d > leash * 0.85;
+    if (d > leash) {
+      const f = leash / d;
       h.ox *= f;
       h.oy = homeY + (h.oy - homeY) * f;
       h.vx *= 0.8;
@@ -2825,7 +3139,7 @@ function findLock() {
     let d2 = dx * dx + dy * dy;
     if (d2 > r2) continue;
     if (z === keep) d2 *= 0.45;
-    if (z.pending < z.hp) {
+    if (z.pending * G.k.mgDmg < z.hp) {
       const w = d2 > r1 ? d2 * 1.5 : d2;
       if (w < fd) { fd = w; fresh = z; }
     } else if (d2 < dd) { dd = d2; done = z; }
@@ -2854,7 +3168,7 @@ function fireMG(player, tx, ty) {
   G.muzzle[0] = 0.05;
   if (player) {
     G.shots++;
-    G.heat = Math.min(1, G.heat + CFG.mg.heatPer);
+    G.heat = Math.min(1, G.heat + G.k.heatPer);
     addShake(0.06);
     kick(rnd(-0.3, 0.3), 0.5);
     SFX.mg();
@@ -2871,7 +3185,7 @@ function fireHE(player, tx, ty) {
   G.rounds.push({ kind: 'he', bx, by, tgt: null, age: 0, T: CFG.he.travel, side: -1, j: 0, player });
   G.muzzle[1] = 0.12;
   if (player) {
-    G.heReload = CFG.he.reload;
+    G.heReload = G.k.heReload;
     addShake(0.45);
     kick(rnd(-1, 1), 2.5);
     SFX.cannon();
@@ -2903,19 +3217,6 @@ function blood(x, y, n, zh) {
   for (let k = 0; k < n; k++) part({ x: x + rnd(-1, 1), y, z: rnd(3, zh), vx: rnd(-35, 35), vy: rnd(-45, 12), vz: rnd(15, 70),
     g: 240, life: 1.4, max: 1.4, s: 1, c: pick([P.bl0, P.bl1, P.bl2, P.bl2]), land: 1 });
 }
-function streak(n) {
-  const s = G.streak;
-  if (G.t - s.t > 1.6) s.n = 0;
-  const before = s.n;
-  s.n += n;
-  s.t = G.t;
-  s.best = Math.max(s.best, s.n);
-  for (const [m, bonus] of STREAKS) if (before < m && s.n >= m) {
-    G.cash += bonus;
-    banner('STREAK ×' + m, '+$' + bonus + ' BONUS', U.gold, 1);
-    SFX.streak();
-  }
-}
 // cause = 'mg' (a 25mm round), 'he' (the 105 at (cx, cy), dist away) or 'train' (run down).
 // free = not the player's kill (no score).
 function kill(z, cause, cx, cy, dist, free) {
@@ -2924,15 +3225,15 @@ function kill(z, cause, cx, cy, dist, free) {
   z.hp = 0;
   if (G.lock === z) G.lock = null;
   const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160;
+  let paid = 0;
   if (sc) {
     G.kills++;
-    G.cash += z.value;
+    paid = pay(z.value, 'kills');
     G.killBump = 1;
-    streak(1);
   }
   if (cause === 'he') {
     // thrown away from the blast, turning over
-    const dx = z.x - cx, dy = (z.y - cy) / FORE, l = Math.hypot(dx, dy) || 1, f = 1 - Math.min(1, dist / CFG.he.hurt);
+    const dx = z.x - cx, dy = (z.y - cy) / FORE, l = Math.hypot(dx, dy) || 1, f = 1 - Math.min(1, dist / (G.k.heKill + 22));
     const v = (35 + f * 80) * (z.big ? 0.4 : 1) * rnd(0.8, 1.2);
     if (room) bs.push({ S, x: z.x, y: z.y, z: 2, vx: dx / l * v, vy: dy / l * v * FORE,
       vz: (50 + f * 130) * (z.big ? 0.5 : 1) * rnd(0.8, 1.2), spin: rnd(8, 16) * (dx < 0 ? -1 : 1), rot: 0, fall: false, age: 0 });
@@ -2947,7 +3248,7 @@ function kill(z, cause, cx, cy, dist, free) {
       spin: rnd(10, 18) * s, rot: 0, fall: false, age: 0 });
     else stampCorpse(S, z.x, z.y);
     blood(z.x, z.y, z.big ? 16 : 10, S.h * 0.6);
-    if (sc) addTotal(z.x, z.y - S.h, z.value, U.gold, false);
+    if (sc) addTotal(z.x, z.y - S.h, paid, U.gold, false);
   } else {
     // a 25mm round: knocked over backwards, away from the gun, or off the side of the train
     if (room) {
@@ -2960,7 +3261,7 @@ function kill(z, cause, cx, cy, dist, free) {
     blood(z.x, z.y, z.big ? 14 : 8, S.h * 0.6);
     part({ x: z.x, y: z.y, z: S.h * 0.5, vx: rnd(-4, 4), vy: rnd(-6, 0), vz: rnd(4, 10), g: 0, life: 0.45, max: 0.45, s: 3,
       c: 'rgba(110,24,20,0.55)', grow: 7, drag: 3, smoke: true });
-    if (sc) addTotal(z.x, z.y - S.h, z.value, U.gold, false);
+    if (sc) addTotal(z.x, z.y - S.h, paid, U.gold, false);
     if (!G.demo) SFX.splat();
   }
   if (sc && (Math.random() < 0.3 || z.big) && coins.length < 45) coins.push({ x0: z.x - G.camX, y0: z.y - G.camY - 8, t: 0, T: rnd(0.55, 0.8) });
@@ -2970,7 +3271,7 @@ function kill(z, cause, cx, cy, dist, free) {
   }
 }
 function hitZombie(z) {
-  z.hp -= 1;
+  z.hp -= G.k.mgDmg;
   z.flash = 0.1;
   if (z.hp <= 0) {
     kill(z, 'mg', 0, 0, 0);
@@ -3036,8 +3337,9 @@ function boomFx(x, y, big) {
     const a = rnd(TAU), r = rnd(10, 22);
     addBoom(x + Math.cos(a) * r, y + Math.sin(a) * r * FORE, 12, 4, 0.5, 6, rnd(0.03, 0.15));
   }
-  rings.push({ x, y, r0: 8, r1: CFG.he.kill * 1.25, t: 0, T: 0.3, c: '#ffd8a0', w: 2 });
-  rings.push({ x, y, r0: 20, r1: CFG.he.hurt * 1.5, t: 0, T: 0.55, c: '#a89878' });
+  const kr = G.k.heKill;
+  rings.push({ x, y, r0: 8, r1: kr * 1.25, t: 0, T: 0.3, c: '#ffd8a0', w: 2 });
+  rings.push({ x, y, r0: 20, r1: (kr + 22) * 1.5, t: 0, T: 0.55, c: '#a89878' });
   for (let k = 0; k < 16; k++) part({ x: x + rnd(-14, 14), y: y + rnd(-8, 8), z: rnd(4, 18), vx: rnd(-14, 14) + 4, vy: rnd(-6, 6),
     vz: rnd(10, 34), g: 0, life: rnd(1.4, 2.8), max: 2.8, s: rnd(4, 8),
     c: pick(['rgba(58,50,46,0.75)', 'rgba(40,36,34,0.7)', 'rgba(74,64,56,0.6)']), grow: 6, drag: 1, smoke: true });
@@ -3061,9 +3363,10 @@ function boomFx(x, y, big) {
 // the train, the blast hurts the train as well; it kills survivors on foot too.
 function explode(x, y, player) {
   let killed = 0, value = 0;
-  queryEll(x, y, CFG.he.hurt, (z, d) => {
-    if (d >= CFG.he.kill) {
-      z.hp -= 4;
+  const kr = G.k.heKill, close = kr - 6;
+  queryEll(x, y, kr + 22, (z, d) => {
+    if (d >= kr) {
+      z.hp -= G.k.heRing;
       z.flash = 0.25;
       if (z.st !== 2) {
         const dx = z.x - x, dy = (z.y - y) / FORE, l = Math.hypot(dx, dy) || 1;
@@ -3082,10 +3385,10 @@ function explode(x, y, player) {
     hitStop(killed >= 12 ? 0.1 : 0.04, 0.25);
     SFX.boom();
   }
-  for (const p of G.people) if ((p.st === 'run' || p.st === 'grab') && Math.hypot(p.x - x, (p.y - y) / FORE) < CFG.he.kill) catchPerson(p);
+  for (const p of G.people) if ((p.st === 'run' || p.st === 'grab') && Math.hypot(p.x - x, (p.y - y) / FORE) < kr) catchPerson(p);
   const td = trainDist(x, y);
-  if (player && td < CFG.he.close && !G.demo && !G.result) {
-    const a = Math.round(14 * (1 - td / CFG.he.close)) + 3, k = carNear(x, y), c = G.tr.cars[k];
+  if (player && td < close && !G.demo && !G.result) {
+    const a = Math.round(14 * (1 - td / close)) + 3, k = carNear(x, y), c = G.tr.cars[k];
     hurtTrain(a, k);
     floatText(c.cx, c.cy - 8, '-' + a, U.red);
     banner('CHECK FIRE!', 'YOUR SHELL HIT THE TRAIN', U.red, 3);
@@ -3093,10 +3396,13 @@ function explode(x, y, player) {
   }
   if (player && scoring()) {
     G.bestBlast = Math.max(G.bestBlast, killed);
-    if (killed) addTotal(x, y - 10, value, U.gold, true);
+    const v = value * G.mult;
+    if (killed) addTotal(x, y - 10, v, U.gold, true);
     if (killed >= 4) {
+      // the big ones pay a bonus too
       const name = killed >= 25 ? 'MASSACRE' : killed >= 12 ? 'CARNAGE' : 'MULTI KILL';
-      banner(name + ' ×' + killed, '+$' + value, killed >= 12 ? '#ff7a4a' : U.amber, 2);
+      const b = pay(killed >= 25 ? 50 : killed >= 12 ? 20 : 5, 'bonus');
+      banner(name + ' ×' + killed, '+$' + fmt(v) + '   +$' + fmt(b) + ' BONUS', killed >= 12 ? '#ff7a4a' : U.amber, 2);
     }
   }
 }
@@ -3218,7 +3524,7 @@ function step(dt) {
       SFX.radio();
     }
   } else if (st && st.state === 'boarding') tr.v = 0;
-  else tr.v = Math.min(CFG.train.cruise, tr.v + CFG.train.accel * dt);
+  else tr.v = Math.min(CFG.train.cruise, tr.v + G.k.accel * dt);
   tr.s -= tr.v * dt;
   layoutTrain();
   for (let k = 0; k < CAR.n; k++) if (tr.hit[k] > 0) tr.hit[k] -= dt;
@@ -3261,7 +3567,7 @@ function step(dt) {
       G.mgCd -= dt;
       while (G.mgCd <= 0 && !G.overheat) {
         fireMG(true, G.camX + G.aimSX, G.camY + G.aimSY);
-        G.mgCd += 1 / CFG.mg.rate;
+        G.mgCd += 1 / G.k.mgRate;
         findLock();
         if (G.heat >= 1) {
           G.overheat = true;
@@ -3280,10 +3586,17 @@ function step(dt) {
       }
     }
     if (!G.result && tr.s <= G.goalS) arrive();
+    // the wallet passes the price of another upgrade: UPGRADE READY
+    const n = affordableCount(wallet());
+    if (n > G.afford) {
+      G.readyT = 2;
+      SFX.upgrade();
+    }
+    G.afford = n;
   } else {
     G.aimSX = W / 2;
     G.aimSY = H / 2;
-    if (mode === 'title') attract(dt);
+    if (G.demo) attract(dt);
     else if (mode === 'ending') {
       G.endT += dt;
       if (G.endT > 3.4 && (G.result !== 'safe' || tr.v < 0.5) || G.endT > 14) endGame();
@@ -3294,6 +3607,7 @@ function step(dt) {
   G.muzzle[1] = Math.max(0, G.muzzle[1] - dt);
   G.killBump = Math.max(0, G.killBump - dt * 6);
   G.cashPulse = Math.max(0, G.cashPulse - dt * 3);
+  G.readyT = Math.max(0, G.readyT - dt);
   updateStation(dt);
   updateZombies(dt);
   updateRounds(dt);
@@ -3541,8 +3855,8 @@ function drawBodies() {
 function drawShellMarks() {
   for (const r of G.rounds) {
     if (r.kind !== 'he' || !r.player) continue;
-    const u = r.age / r.T, rr = lerp(CFG.he.kill * 1.5, CFG.he.kill, ease(u));
-    const col = thermal ? '#ffffff' : trainDist(r.bx, r.by, G.tr.v * (r.T - r.age)) < CFG.he.close ? '#ff2a1a' : '#ff6a28';
+    const u = r.age / r.T, rr = lerp(G.k.heKill * 1.5, G.k.heKill, ease(u));
+    const col = thermal ? '#ffffff' : trainDist(r.bx, r.by, G.tr.v * (r.T - r.age)) < G.k.heKill - 6 ? '#ff2a1a' : '#ff6a28';
     ctx.globalAlpha = 0.35 + 0.3 * (Math.sin(realT * 22) > 0 ? 1 : 0);
     pell(r.bx, r.by, rr, rr * FORE, col);
     ctx.fillStyle = col;
@@ -3769,8 +4083,9 @@ function render() {
 // summary). Buttons are drawn in the canvas too (from Ball x Archers).
 
 // M = the mouse in game pixels. pressed / released are true for one frame; px, py = where the
-// press started; used = this click was already handled; inside = the mouse is over the game.
-const M = { x: -99, y: -99, down: false, pressed: false, released: false, px: 0, py: 0, used: false, inside: false };
+// press started; used = this click was already handled; inside = the mouse is over the game;
+// rpressed = the right button went down this frame.
+const M = { x: -99, y: -99, down: false, pressed: false, released: false, rpressed: false, px: 0, py: 0, used: false, inside: false };
 let cursor = 'default';
 
 // True when a button at (x, y, w, h) was clicked this frame.
@@ -3853,7 +4168,7 @@ function drawSight() {
     ctx.fillRect(x + 7, y - 8, 2, 2);
   }
   // the 105 would hit the train too
-  if (G.heReload <= 0 && trainDist(G.camX + G.aimSX, G.camY + G.aimSY, G.tr.v * CFG.he.travel) < CFG.he.close + 4) {
+  if (G.heReload <= 0 && trainDist(G.camX + G.aimSX, G.camY + G.aimSY, G.tr.v * CFG.he.travel) < G.k.heKill - 2) {
     text('DANGER CLOSE', x, y + 17, U.red, { align: 'center' });
   }
   // gun heat: a small bar under the sight while the 25mm is warm
@@ -3883,25 +4198,29 @@ function drawHUD() {
   ctx.fillRect(0, 0, W, 18);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, 18, W, 1);
-  // cash: the coin hops and the number flashes when cash comes in
-  const cp = G.cashPulse;
+  // the wallet (bank + this run): the coin hops and the number flashes when cash comes in, and
+  // blinks green when it can pay for a new upgrade
+  const cp = G.cashPulse, ready = G.readyT > 0 && Math.floor(realT * 6) % 2 === 0;
   ctx.drawImage(ICON.coin, 5, 5 - (cp > 0.5 ? 1 : 0));
-  text('$' + fmt(G.shownCash), 15, 6, cp > 0 ? '#ffe39a' : U.gold);
+  text('$' + fmt(G.shownCash), 15, 6, ready ? '#8fd18a' : cp > 0 ? '#ffe39a' : U.gold);
   // kills
   ctx.drawImage(ICON.skull, 80, 5);
   text(fmt(G.kills), 90, 6 - (G.killBump > 0.5 ? 1 : 0), U.ink);
-  // the train's health: green, then amber, then red; the part just lost shows pale for a moment
-  const tr = G.tr, f = tr.hp / CFG.train.hp, hx = 150, hw = clamp(Math.round(W * 0.18), 50, 120);
+  // the train's health: green, then amber, then red; the part just lost shows pale for a moment;
+  // the HP left beside it
+  const tr = G.tr, mx = G.k.trainMax, f = tr.hp / mx, hx = 150, hw = clamp(Math.round(W * 0.16), 40, 110);
   ctx.drawImage(ICON.train, hx - 12, 5);
-  bar(hx, 6, hw, 6, tr.hpShown / CFG.train.hp, '#1a1716', '#d8cfb8');
+  bar(hx, 6, hw, 6, tr.hpShown / mx, '#1a1716', '#d8cfb8');
   ctx.fillStyle = f < 0.35 ? '#b8402e' : f < 0.65 ? '#c9862f' : '#6f9a4f';
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 6);
   ctx.fillStyle = f < 0.35 ? '#e06a4f' : f < 0.65 ? '#e8b05a' : '#9cc777';
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 1);
-  // the way to the safe zone: the line, the station halfway, the train on it, the flag, the
-  // distance left (2 px = 1 m)
+  if (!G.demo) text(String(Math.ceil(tr.hp)), hx + hw + 4, 6, f < 0.35 ? U.red : U.dim);
+  // the way to the safe zone: the line, the station halfway, the train on it, the flag; the trip
+  // and the distance left (2 px = 1 m)
   if (!G.demo) {
-    const px = hx + hw + 20, pw = W - 96 - px, left = Math.max(0, Math.round((tr.s - G.goalS) / 2));
+    const left = Math.max(0, Math.round((tr.s - G.goalS) / 2)), lab = 'T' + G.trip + '  ' + left + 'M';
+    const px = hx + hw + 30, pw = W - 30 - tw(lab) - 14 - px;
     const k = clamp((tr.startS - tr.s) / CFG.trip, 0, 1);
     if (pw >= 40) {
       ctx.fillStyle = '#2e3139';
@@ -3920,15 +4239,19 @@ function drawHUD() {
       ctx.fillRect(px + Math.round(pw * k) - 1, 7, 3, 5);
       ctx.drawImage(ICON.flag, px + pw + 4, 4);
     }
-    text(left + 'M', W - 30, 6, U.dim, { align: 'right' });
+    text(lab, W - 30, 6, U.dim, { align: 'right' });
   }
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) paused = !paused;
   if (Au.muted) text('MUTE', W - 4, 22, U.faint, { align: 'right' });
-  // kill streak: the count and the time left to keep it going
-  const s = G.streak, st = G.t - s.t;
-  if (s.n >= 3 && st < 1.6) {
-    text('STREAK ' + s.n, 5, 24, s.n >= 25 ? '#ffd36a' : U.gold);
-    bar(5, 33, 52, 2, 1 - st / 1.6, '#1a1716', '#e3b04b');
+  // under the wallet: how near it is to the next upgrade, and UPGRADE READY when it gets there
+  if (!G.demo && (mode === 'play' || mode === 'ending')) {
+    const w = wallet(), id = nextTarget(w);
+    if (id) {
+      const c = upgCost(id), fr = clamp(w / c, 0, 1);
+      bar(5, 21, 60, 2, fr, '#1a1716', fr >= 1 ? '#8fd18a' : '#b8862f');
+      if (W >= 500 && G.readyT <= 0) text(UPGMAP[id].name, 69, 19, U.faint, { outline: false });
+    }
+    if (G.readyT > 0) text('UPGRADE READY', 5, 25, '#8fd18a');
   }
 }
 // warnings under the top bar: the dead on the track or on the train, the helicopter too far away,
@@ -3940,7 +4263,7 @@ function drawWarnings() {
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
   if (G.heli.far) L.push(['STAY WITH THE TRAIN  (F)', U.amber]);
   if (st && st.state === 'boarding') {
-    L.push(['SURVIVORS ABOARD ' + st.saved + ' / ' + CFG.station.people, '#8fd18a']);
+    L.push(['SURVIVORS ABOARD ' + st.saved + ' / ' + G.ti.people, '#8fd18a']);
     if (st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
   }
   L.forEach(([t, c], i) => text(t, W / 2, 24 + i * 10, c, { align: 'center' }));
@@ -4035,7 +4358,7 @@ function drawWeapons() {
   const y = H - 30, rdy = G.heReload <= 0;
   card(4, y, 96, 26, ICON.mg, '25MM', G.overheat ? 'OVERHEAT' : 'L-CLICK', G.overheat ? U.red : U.faint, G.heat,
     G.overheat ? '#b8402e' : G.heat > 0.75 ? U.amber : '#8b919c');
-  card(104, y, 96, 26, ICON.he, '105MM', rdy ? 'READY' : 'R-CLICK', rdy ? U.gold : U.faint, 1 - G.heReload / CFG.he.reload,
+  card(104, y, 96, 26, ICON.he, '105MM', rdy ? 'READY' : 'R-CLICK', rdy ? U.gold : U.faint, 1 - G.heReload / G.k.heReload,
     rdy ? '#e3b04b' : '#7a6a50');
   text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
 }
@@ -4050,7 +4373,7 @@ function drawHint() {
 }
 // red screen edge while the train is nearly lost
 function drawTension() {
-  const f = G.tr.hp / CFG.train.hp;
+  const f = G.tr.hp / G.k.trainMax;
   if (mode !== 'play' || G.result || f >= 0.35) return;
   let a = 0.3 + 0.5 * (1 - f / 0.35);
   if (!REDUCED) a *= 0.7 + 0.3 * Math.sin(realT * 7);
@@ -4066,66 +4389,119 @@ function drawTension() {
 }
 
 // ---------- screens
+// Paused: go on, or quit to the depot (the cash is kept). A click anywhere else goes on too.
 function drawPause() {
   ctx.fillStyle = 'rgba(5,6,8,0.5)';
   ctx.fillRect(0, 19, W, H - 19);
-  text('PAUSED', W / 2, H / 2 - 20, U.ink, { align: 'center', scale: 2 });
-  text('CLICK, ESC OR P TO GO ON', W / 2, H / 2 + 2, U.dim, { align: 'center' });
+  text('PAUSED', W / 2, H / 2 - 34, U.ink, { align: 'center', scale: 2 });
+  if (button(W / 2 - 65, H / 2 - 10, 130, 20, 'GO ON', { primary: true })) paused = false;
+  if (button(W / 2 - 65, H / 2 + 16, 130, 20, 'QUIT TO DEPOT')) {
+    quitRun();
+    return;
+  }
+  text('THE CASH YOU EARNED IS KEPT', W / 2, H / 2 + 42, U.faint, { align: 'center', outline: false });
+  if (M.released && !M.used && M.py >= 19) {
+    M.used = true;
+    paused = false;
+  }
+}
+// the title: RESET SAVE needs a second click within 3 s
+let resetT = 0;
+function playTitle() {
+  if (META.played) toDepot();
+  else startGame(1);
 }
 function drawTitle() {
   ctx.fillStyle = 'rgba(5,6,8,0.35)';
   ctx.fillRect(0, 0, W, H);
   // the menu sits left of the train (on a wide enough screen)
-  const cx = Math.round(W >= 560 ? W * 0.36 : W / 2), pw = 300, ph = 238, px = cx - pw / 2, py = Math.round(H / 2 - ph / 2);
+  const cx = Math.round(W >= 560 ? W * 0.36 : W / 2), pw = 300, ph = 238, px = cx - pw / 2, py = Math.max(2, Math.round(H / 2 - ph / 2));
   ctx.fillStyle = 'rgba(8,9,11,0.78)';
   ctx.fillRect(px, py, pw, ph);
   frame(px, py, pw, ph, '#2e3139');
   text('SKY REAPER', cx, py + 18, U.ink, { align: 'center', scale: 3, drop: true });
   ctx.fillStyle = '#8a6a2a';
   ctx.fillRect(cx - 110, py + 46, 220, 1);
-  text('FLY ESCORT FOR THE LAST TRAIN.', cx, py + 54, U.dim, { align: 'center' });
-  text('PICK UP SURVIVORS. REACH THE SAFE ZONE.', cx, py + 64, U.dim, { align: 'center' });
-  if (button(cx - 75, py + 82, 150, 20, 'START MISSION', { primary: true })) startGame();
-  if (button(cx - 75, py + 108, 150, 20, 'CAMERA: ' + CAMS[thermal])) setThermal((thermal + 1) % 3);
-  if (best.kills > 0) {
-    const s = 'BEST ' + fmt(best.kills) + ' KILLS' + (best.safe ? '   ' + best.safe + ' SAFE' : ''), w = tw(s) + 10;
-    ctx.drawImage(ICON.skull, cx - w / 2, py + 140);
-    text(s, cx - w / 2 + 10, py + 141, U.gold, { outline: false });
+  text('FLY ESCORT FOR THE LAST TRAIN, TRIP AFTER TRIP.', cx, py + 54, U.dim, { align: 'center' });
+  text('EARN CASH. UPGRADE. GO FARTHER UP THE LINE.', cx, py + 64, U.dim, { align: 'center' });
+  if (button(cx - 75, py + 80, 150, 20, 'PLAY', { primary: true })) playTitle();
+  if (button(cx - 75, py + 106, 150, 20, 'CAMERA: ' + CAMS[thermal])) setThermal((thermal + 1) % 3);
+  if (META.played) {
+    const s = 'TRIP ' + META.maxTrip + (META.maxTrip <= 12 ? '/12' : '') + '   $' + fmt(META.cash) + '   CAMP ' + fmt(META.camp);
+    text(s, cx, py + 134, U.gold, { align: 'center' });
+  }
+  if (META.best.kills > 0) {
+    const b = META.best, s = 'BEST ' + fmt(b.kills) + ' KILLS' + (b.safe ? '   ' + b.safe + ' SAFE' : ''), w = tw(s) + 10;
+    ctx.drawImage(ICON.skull, cx - w / 2, py + 145);
+    text(s, cx - w / 2 + 10, py + 146, U.dim, { outline: false });
   }
   const L = ['WASD: FLY.  F: BACK OVER THE TRAIN.  MOUSE: AIM.', 'HOLD LEFT CLICK: 25MM.  RIGHT CLICK / SPACE: 105MM.',
-    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
-  L.forEach((l, i) => text(l, cx, py + 160 + i * 11, U.faint, { align: 'center', outline: false }));
-  text('ENTER TO START', cx, py + 205, U.faint, { align: 'center', outline: false });
+    'Q/E: TRAIN SPEED.  T: THERMAL.  M: SOUND.  P: PAUSE.'];
+  L.forEach((l, i) => text(l, cx, py + 164 + i * 11, U.faint, { align: 'center', outline: false }));
+  text('ENTER TO PLAY', cx, py + 206, U.faint, { align: 'center', outline: false });
+  // erase the save: a small, faint button that asks twice
+  if (META.played) {
+    resetT = Math.max(0, resetT - frameDt);
+    const lab = resetT > 0 ? 'CLICK AGAIN TO ERASE' : 'RESET SAVE', w = tw(lab) + 8, bx = px + pw - w - 4, by = py + ph - 13;
+    const hov = inR(M.x, M.y, bx, by, w, 11);
+    text(lab, bx + 4, by + 2, resetT > 0 ? U.red : hov ? U.dim : '#3e424b', { outline: false });
+    if (hov) cursor = 'pointer';
+    if (clicked(bx, by, w, 11)) {
+      if (resetT > 0) {
+        resetMeta();
+        resetT = 0;
+        banner('SAVE ERASED', '', U.red);
+      } else resetT = 3;
+    }
+  }
 }
-// After the run: safe or lost, and the numbers count up.
+// After the run: safe or lost; the rows come up one by one and their cash counts up, then the
+// total and the wallet.
 function drawSummary() {
   ctx.fillStyle = 'rgba(5,6,8,0.66)';
   ctx.fillRect(0, 0, W, H);
-  const s = G.sum, w = 248, h = 206, x = Math.round(W / 2 - w / 2), y = Math.round(H / 2 - h / 2), safe = s.result === 'safe';
+  const s = G.sum, w = 300, h = 236, x = Math.round(W / 2 - w / 2), y = Math.max(0, Math.round(H / 2 - h / 2)), safe = s.result === 'safe';
   panel(x, y, w, h, '#0f1014');
   text(safe ? 'TRAIN SAFE' : 'TRAIN LOST', x + w / 2, y + 12, safe ? U.gold : U.red, { align: 'center', scale: 2 });
-  if (s.newBest) text('NEW BEST', x + w / 2, y + 30, U.gold, { align: 'center' });
-  const k = ease(clamp((realT - sumStart - 0.3) / 1.4, 0, 1));
-  const rows = [['ZOMBIES KILLED', fmt(Math.round(s.kills * k))], ['SURVIVORS SAVED', Math.round(s.saved * k) + ' / ' + s.people],
-    ['TRAIN HEALTH', Math.round(s.hp * k) + '%'], ['BIGGEST BLAST', fmt(Math.round(s.blast * k))]];
-  rows.forEach((r, i) => {
-    text(r[0], x + 20, y + 44 + i * 15, U.dim);
-    text(r[1], x + w - 20, y + 44 + i * 15, U.ink, { align: 'right' });
-  });
+  if (s.newBest) text('NEW BEST', x + w - 8, y + 6, U.gold, { align: 'right', outline: false });
+  const sub = s.cleared ? 'TRIP ' + s.trip + ' CLEARED!' : safe ? 'BEAT THE BOSS TO GO ON' : 'TRIP ' + s.trip + '.  ALL CASH KEPT';
+  text(sub, x + w / 2, y + 30, s.cleared ? '#8fd18a' : safe ? U.amber : U.dim, { align: 'center' });
+  const t = realT - sumStart, n = s.rows.length, shown = clamp(Math.floor((t - 0.4) / 0.25) + 1, 0, n);
+  while ((G.sumTicks || 0) < shown) {
+    G.sumTicks = (G.sumTicks || 0) + 1;
+    SFX.tick();
+  }
+  for (let i = 0; i < shown; i++) {
+    const r = s.rows[i], k = ease(clamp((t - 0.4 - i * 0.25) / 0.4, 0, 1)), ry = y + 46 + i * 14;
+    text(r[0], x + 20, ry, U.dim);
+    if (r[1]) text(r[1], x + 170, ry, U.ink, { align: 'right' });
+    text('+$' + fmt(r[2] * k), x + w - 20, ry, r[2] ? U.gold : U.faint, { align: 'right' });
+  }
+  const tk = ease(clamp((t - 0.5 - n * 0.25) / 0.8, 0, 1));
   ctx.fillStyle = '#2e3139';
-  ctx.fillRect(x + 16, y + 107, w - 32, 1);
-  ctx.drawImage(ICON.coin, x + 20, y + 115);
-  text('CASH EARNED', x + 30, y + 116, U.ink);
-  text('$' + fmt(Math.round(s.cash * clamp((realT - sumStart - 1.5) / 0.8, 0, 1))), x + w - 20, y + 116, U.gold, { align: 'right' });
-  text('BEST ' + fmt(best.kills) + ' KILLS', x + w - 20, y + 130, U.faint, { align: 'right' });
-  if (button(x + 16, y + h - 32, 104, 20, safe ? 'NEXT TRAIN' : 'TRY AGAIN', { primary: true })) startGame();
-  if (button(x + w - 120, y + h - 32, 104, 20, 'TITLE')) toTitle();
+  ctx.fillRect(x + 16, y + 148, w - 32, 1);
+  text('TOTAL', x + 20, y + 154, U.ink, { scale: 2 });
+  text('$' + fmt(s.total * tk), x + w - 20, y + 154, U.gold, { align: 'right', scale: 2 });
+  ctx.drawImage(ICON.coin, x + 20, y + 173);
+  text('WALLET $' + fmt(s.wallet0 + (s.wallet - s.wallet0) * tk), x + 30, y + 174, U.gold);
+  text(s.camp ? 'CAMP +' + s.camp + ' (' + fmt(META.camp) + ')' : 'CAMP ' + fmt(META.camp), x + w - 20, y + 174, s.camp ? '#8fd18a' : U.faint, { align: 'right' });
+  if (tk >= 1) {
+    if (s.tip) text(s.tip, x + w / 2, y + 190, U.amber, { align: 'center' });
+    else if (s.canBuy) text(s.canBuy > 1 ? 'YOU CAN BUY ' + s.canBuy + ' UPGRADES' : 'YOU CAN BUY AN UPGRADE', x + w / 2, y + 190, '#8fd18a', { align: 'center' });
+  }
+  if (button(x + 16, y + h - 30, 130, 20, 'DEPOT', { primary: true })) toDepot();
+  else if (button(x + w - 146, y + h - 30, 130, 20, s.cleared ? 'NEXT TRIP' : 'TRY AGAIN')) startGame(s.cleared ? s.trip + 1 : s.trip);
 }
 
 // ---------- the UI for the current mode
 function drawUI() {
   if (mode === 'title') {
     drawTitle();
+    drawBanners();
+    return;
+  }
+  if (mode === 'depot') {
+    drawDepot();
     drawBanners();
     return;
   }
@@ -4142,6 +4518,214 @@ function drawUI() {
     if (paused) drawPause();
     drawTension();
   } else if (mode === 'summary') drawSummary();
+}
+
+// depot.js - the DEPOT between runs: spend the bank on upgrades (14 cards in 3 columns: the
+// helicopter, the train and the station), pick a trip on the route, and go. The title demo runs on
+// behind a dark veil. On a narrow screen the columns become tabs; on a short one the cards are
+// smaller and lose their effect line.
+
+// tab = the column shown on a narrow screen, flash[id] = time left of a bought card's flash,
+// pops = rising "+1"s
+const DEP = { tab: 0, flash: {}, pops: [] };
+const GROUP_ICON = () => [ICON.heli, ICON.train, ICON.house];
+
+// Where everything goes at this screen size.
+function depotLayout() {
+  const narrow = W < 632, short = H < 360, ch = short ? 30 : 44, gap = short ? 32 : 48;
+  const top = narrow ? 42 : 38, py = H - (short ? 64 : 68), x0 = Math.floor((W - 624) / 2);
+  const cards = [];
+  for (const u of UPG) {
+    if (narrow && u.group !== DEP.tab) continue;
+    const i = cards.filter((c) => c.u.group === u.group).length;
+    cards.push({ u, x: narrow ? Math.floor((W - 200) / 2) : x0 + u.group * 212, y: top + i * gap, w: 200, h: ch });
+  }
+  return { narrow, short, cards, x0, py, rw: narrow ? Math.max(100, W - 200) : 360 };
+}
+
+// One upgrade card. Left click buys, right click pins it (the run's top bar then counts toward it).
+function depotCard(c, w, sh) {
+  const u = c.u, id = u.id, L = lvl(id), max = upgMaxed(id), locked = upgLocked(id), cost = upgCost(id);
+  const can = !max && !locked && cost <= w, hov = inR(M.x, M.y, c.x, c.y, c.w, c.h), fl = DEP.flash[id] > 0;
+  const x = c.x, y = c.y;
+  ctx.fillStyle = fl ? '#d8d2c0' : hov ? '#17191e' : '#101115';
+  ctx.fillRect(x + 1, y + 1, c.w - 2, c.h - 2);
+  frame(x, y, c.w, c.h, can ? (Math.sin(realT * 6) > 0 ? '#f0c264' : '#9a7228') : hov ? '#4a4f5a' : '#2e3139');
+  ctx.fillStyle = '#1c1e24';
+  ctx.fillRect(x + 2, y + 1, c.w - 4, 1);
+  ctx.globalAlpha = locked ? 0.35 : 1;
+  ctx.drawImage(ICON.up[id], x + 6, y + (sh ? 9 : 6));
+  ctx.globalAlpha = 1;
+  text(locked ? '???' : u.name, x + 24, y + 5, locked ? U.faint : U.ink);
+  if (!locked) text(max ? 'MAX' : 'LV ' + L, x + 194, y + 5, max ? '#8fd18a' : U.dim, { align: 'right' });
+  if (!sh && !locked) {
+    const fx = max ? u.val(L) + ' ' + u.unit : u.group === 2 && id !== 'pads' && !L ? 'NOT BUILT > BUILD' : u.val(L) + ' > ' + u.val(L + 1) + ' ' + u.unit;
+    text(fx, x + 24, y + 17, U.dim, { outline: false });
+  }
+  const ry = y + (sh ? 17 : 30), pyy = y + (sh ? 15 : 27);
+  if (!locked) text(u.role, x + 24, ry, '#4e525b', { outline: false });
+  if (locked) text('REACH TRIP ' + u.trip, x + 194, pyy + 3, U.faint, { align: 'right', outline: false });
+  else if (!max) {
+    ctx.fillStyle = can ? '#2e2310' : '#17181c';
+    ctx.fillRect(x + 137, pyy + 1, 56, 11);
+    frame(x + 136, pyy, 58, 13, can ? U.gold : '#3a3e48');
+    text('$' + fmt(cost), x + 165, pyy + 3, can ? U.gold : U.faint, { align: 'center', outline: false });
+  }
+  if (META.pin === id) ctx.drawImage(ICON.pin, x + 2, y + 2);
+  if (hov && !locked) cursor = 'pointer';
+  if (hov && M.rpressed && !locked && !max) {
+    META.pin = META.pin === id ? null : id;
+    saveMeta();
+    SFX.ui();
+  }
+  if (M.released && !M.used && inR(M.px, M.py, x, y, c.w, c.h) && hov) {
+    M.used = true;
+    if (buyUpg(id)) {
+      DEP.flash[id] = 0.15;
+      DEP.pops.push({ x: x + 165, y: y + 4, t: 0 });
+      SFX.buy();
+    } else if (!locked && !max) SFX.ui();
+  }
+  return hov;
+}
+
+// Pick the trip: one step back or on (only up to the farthest one unlocked).
+function depotTrip(d) {
+  const t = clamp(META.trip + d, 1, META.maxTrip);
+  if (t !== META.trip) {
+    META.trip = t;
+    saveMeta();
+    SFX.ui();
+  }
+}
+// The longest of the strings that fits in width w.
+const fitText = (list, w) => list.find((s) => tw(s) <= w) || list[list.length - 1];
+// Split a long line into lines no wider than w.
+function wrapText(s, w) {
+  const out = [];
+  let line = '';
+  for (const word of s.split(' ')) {
+    const t = line ? line + ' ' + word : word;
+    if (line && tw(t) > w) {
+      out.push(line);
+      line = word;
+    } else line = t;
+  }
+  if (line) out.push(line);
+  return out;
+}
+
+function drawDepot() {
+  ctx.fillStyle = 'rgba(5,6,8,0.7)';
+  ctx.fillRect(0, 0, W, H);
+  const Lo = depotLayout(), w = wallet();
+  for (const id in DEP.flash) DEP.flash[id] -= frameDt;
+  // the top bar: DEPOT, the wallet, the camp
+  ctx.fillStyle = 'rgba(6,7,9,0.92)';
+  ctx.fillRect(0, 0, W, 20);
+  ctx.fillStyle = '#24272e';
+  ctx.fillRect(0, 20, W, 1);
+  text('DEPOT', 8, 7, U.ink);
+  const ws = '$' + fmt(G.shownCash), ww = tw(ws, 2) + 10, wx = Math.round(W / 2 - ww / 2);
+  ctx.drawImage(ICON.coin, wx, 6);
+  text(ws, wx + 10, 3, U.gold, { scale: 2 });
+  text('CAMP ' + fmt(META.camp) + (META.camp ? ' +' + fmtNum(META.camp * 0.5) + '%' : ''), W - 8, 7, '#8fd18a', { align: 'right' });
+  // the column heads, or the tabs on a narrow screen
+  const gi = GROUP_ICON();
+  if (Lo.narrow) {
+    ['HELI', 'TRAIN', 'STATION'].forEach((n, i) => {
+      if (button(Math.round(W / 2 - 100 + i * 68), 24, 64, 14, n, { primary: DEP.tab === i })) DEP.tab = i;
+    });
+  } else {
+    GROUPS.forEach((n, i) => {
+      const x = Lo.x0 + i * 212;
+      ctx.drawImage(gi[i], x, 25);
+      text(n, x + gi[i].width + 4, 26, U.dim);
+    });
+  }
+  // the cards
+  let hover = null;
+  for (const c of Lo.cards) if (depotCard(c, w, Lo.short)) hover = c.u;
+  // the info strip: the hovered card in full, or how the depot works
+  const iy = Lo.py - 12;
+  let info = 'LEFT CLICK: BUY.   RIGHT CLICK: PIN A CARD (THE TOP BAR COUNTS UP TO IT IN A RUN).';
+  if (hover) info = upgLocked(hover.id) ? 'REACH TRIP ' + hover.trip + ' TO UNLOCK THIS TOWER.' : hover.info(Math.max(1, lvl(hover.id)));
+  const lines = wrapText(info, W - 16);
+  if (!Lo.short || hover) {
+    ctx.fillStyle = 'rgba(6,7,9,0.8)';
+    ctx.fillRect(0, iy - (lines.length - 1) * 10 - 2, W, lines.length * 10 + 1);
+    lines.forEach((l, i) => text(l, W / 2, iy - (lines.length - 1 - i) * 10, hover ? U.dim : U.faint, { align: 'center', outline: false }));
+  }
+  // the bottom panel: the route, the trip and what it holds, GO and TITLE
+  const py = Lo.py, sel = META.trip, first = META.maxTrip <= 12 && sel <= 12 ? 1 : Math.max(1, sel - 6);
+  panel(8, py, W - 16, 60, '#0f1014');
+  const sp = Lo.rw / 11;
+  ctx.fillStyle = '#2e3139';
+  ctx.fillRect(24 + 2, py + 14, Math.round(sp * 11), 1);
+  for (let i = 0; i < 12; i++) {
+    const T = first + i, dx = Math.round(24 + i * sp), dy = py + 12, open = T <= META.maxTrip;
+    const cl = META.cleared.indexOf(T) >= 0, pf = META.perfect.indexOf(T) >= 0, on = T === sel;
+    ctx.fillStyle = '#07080a';
+    ctx.fillRect(dx - 1, dy - 1, 7, 7);
+    if (!open) frame(dx, dy, 5, 5, '#3e434c');
+    else {
+      ctx.fillStyle = cl ? U.gold : '#3e434c';
+      ctx.fillRect(dx, dy, 5, 5);
+      if (pf) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(dx + 2, dy + 2, 1, 1);
+      }
+      if (on) {
+        if (Math.floor(realT * 3) % 2 === 0) frame(dx - 1, dy - 1, 7, 7, U.ink);
+        ctx.drawImage(ICON.skull, dx - 1, dy - 9);
+      }
+      if (inR(M.x, M.y, dx - 2, dy - 2, 9, 9)) {
+        cursor = 'pointer';
+        if (clicked(dx - 2, dy - 2, 9, 9)) {
+          META.trip = T;
+          saveMeta();
+        }
+      }
+    }
+  }
+  if (button(22, py + 23, 12, 12, '<')) depotTrip(-1);
+  const tl = 'TRIP ' + sel;
+  text(tl, 40, py + 26, U.ink);
+  const ax = 40 + tw(tl) + 6;
+  if (button(ax, py + 23, 12, 12, '>')) depotTrip(1);
+  const ti = tripInfo(sel), room = W - 174 - 24, bx = Math.max(110, ax + 20);
+  text(fitText(['BOSS: ' + BOSS_NAME[ti.boss], BOSS_NAME[ti.boss].replace('THE ', '')], W - 174 - bx), bx, py + 26, U.red);
+  const cm = cashMult(sel), done = META.perfect.indexOf(sel) >= 0 ? 'PERFECT' : META.cleared.indexOf(sel) >= 0 ? 'CLEARED' : 'FIRST CLEAR +$' + fmt(300 * cm);
+  const info2 = fitText(['BRUTES ' + Math.round(ti.bruteHp) + 'HP   CASH ×' + cm.toFixed(2) + '   ' + done,
+    'CASH ×' + cm.toFixed(2) + '   ' + done, 'CASH ×' + cm.toFixed(2)], room);
+  text(info2, 24, py + 40, done === 'CLEARED' || done === 'PERFECT' ? U.gold : U.dim);
+  if (button(W - 166, py + 8, 150, 28, 'GO!', { primary: true })) depotGo();
+  if (button(W - 166, py + 41, 60, 14, 'TITLE')) toTitle();
+  text('ENTER', W - 16, py + 45, U.faint, { align: 'right', outline: false });
+  // the "+1"s rise from the price of a card just bought
+  for (let i = DEP.pops.length - 1; i >= 0; i--) {
+    const p = DEP.pops[i];
+    p.t += frameDt;
+    if (p.t > 0.7) {
+      DEP.pops.splice(i, 1);
+      continue;
+    }
+    ctx.globalAlpha = clamp((0.7 - p.t) * 4, 0, 1);
+    text('+1', p.x, p.y - p.t * 24, '#8fd18a', { align: 'center', scale: 2 });
+    ctx.globalAlpha = 1;
+  }
+}
+function depotGo() {
+  startGame(META.trip);
+}
+// keys in the depot: Enter goes, Esc to the title, A / D (or the arrows) pick the trip, Tab
+// changes the column on a narrow screen
+function depotKey(k) {
+  if (k === 'Enter') depotGo();
+  else if (k === 'Escape') toTitle();
+  else if (k === 'a' || k === 'ArrowLeft') depotTrip(-1);
+  else if (k === 'd' || k === 'ArrowRight') depotTrip(1);
+  else if (k === 'Tab') DEP.tab = (DEP.tab + 1) % 3;
 }
 
 // main.js - input (mouse, keys, wheel), the camera mode, the main loop (fixed steps with hit-stop)
@@ -4173,8 +4757,10 @@ cv.addEventListener('pointerdown', (e) => {
   M.x = p.x;
   M.y = p.y;
   M.inside = true;
+  // right click: the 105 in play, a UI click (pin, empty a pad) elsewhere
   if (e.button === 2) {
-    tryHE();
+    M.rpressed = true;
+    if (mode === 'play' && !paused) tryHE();
     return;
   }
   if (e.button !== 0) return;
@@ -4183,12 +4769,8 @@ cv.addEventListener('pointerdown', (e) => {
   M.px = p.x;
   M.py = p.y;
   try { cv.setPointerCapture(e.pointerId); } catch (_) { /* fine without */ }
-  if (mode !== 'play' || p.y < 19) return;
-  // a click on the field goes on after a pause; otherwise it is the trigger
-  if (paused) {
-    paused = false;
-    M.used = true;
-  } else G.trigger = true;
+  if (mode !== 'play' || p.y < 19 || paused) return;
+  G.trigger = true;
 });
 cv.addEventListener('pointerup', (e) => {
   const p = toCanvas(e);
@@ -4247,9 +4829,12 @@ addEventListener('keydown', (e) => {
       G.trigger = false;
     }
   } else if (mode === 'title') {
-    if (k === 'Enter' || k === ' ') startGame();
+    if (k === 'Enter' || k === ' ') playTitle();
+  } else if (mode === 'depot') {
+    if (k === 'Tab') e.preventDefault();
+    depotKey(k);
   } else if (mode === 'summary') {
-    if (k === 'Enter') startGame();
+    if (k === 'Enter') toDepot();
     else if (k === 'Escape') toTitle();
   }
 });
@@ -4262,7 +4847,13 @@ function lostFocus() {
   if (mode === 'play') paused = true;
 }
 addEventListener('blur', lostFocus);
-document.addEventListener('visibilitychange', () => { if (document.hidden) lostFocus(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  lostFocus();
+  if (G && !G.demo) bankRun();
+});
+// the page is closing: the run's cash goes in the bank
+addEventListener('pagehide', () => { if (G && !G.demo) bankRun(); });
 function onResize() {
   if (resize()) {
     bakeOverlays();
@@ -4319,7 +4910,8 @@ function loop(now) {
     if (n >= 8) acc = 0;
   }
   updateCam(dt);
-  G.shownCash = Math.abs(G.shownCash - G.cash) < 1 ? G.cash : lerp(G.shownCash, G.cash, 1 - Math.exp(-10 * dt));
+  const wl = wallet();
+  G.shownCash = Math.abs(G.shownCash - wl) < 1 ? wl : lerp(G.shownCash, wl, 1 - Math.exp(-10 * dt));
   // the engine hum: loud in play, quiet behind the menus
   const dl = mode === 'play' && !paused ? 1 : mode === 'ending' ? 0.7 : 0.4;
   if (Au.ctx && dl !== droneLevel) {
@@ -4340,6 +4932,7 @@ function loop(now) {
   cv.style.cursor = mode === 'play' && !paused && M.y >= 19 && cursor === 'default' ? 'none' : cursor;
   M.pressed = false;
   M.released = false;
+  M.rpressed = false;
   M.used = false;
 }
 
@@ -4350,7 +4943,7 @@ function boot() {
   resize();
   bakeStatic();
   bakeOverlays();
-  loadBest();
+  loadMeta();
   newGame(true);
   mode = 'title';
   window.__sr = {
@@ -4360,8 +4953,25 @@ function boot() {
     CFG,
     // the sprites, for a test sheet
     art: () => ({ TRAIN, FOOT, HELI, STATION, SURV, ZS }),
-    start: startGame,
+    start: (trip) => startGame(trip),
     title: toTitle,
+    depot: toDepot,
+    // the save: meta() = it, setMeta(o) = change it (lv merges), resetMeta() = erase it,
+    // buy(id) = buy one level, trip(n) = unlock trip n and start it
+    meta: () => META,
+    setMeta: (o) => {
+      const lv = o.lv;
+      Object.assign(META, o);
+      if (lv) META.lv = Object.assign(metaDefaults().lv, lv);
+      saveMeta();
+      return META;
+    },
+    resetMeta: () => { resetMeta(); return META; },
+    buy: (id) => buyUpg(id),
+    trip: (n) => {
+      META.maxTrip = Math.max(META.maxTrip, n);
+      startGame(n);
+    },
     // sim(sec): run the game for sec seconds at once, without drawing
     sim: (sec) => {
       const n = Math.round(sec / STEP);
@@ -4401,6 +5011,7 @@ function boot() {
     },
     stats: () => ({
       mode, result: G.result, kills: G.kills, cash: Math.round(G.cash), hp: Math.round(G.tr.hp), speed: +G.tr.v.toFixed(1),
+      trip: G.trip, wallet: Math.round(wallet()), bank: Math.round(META.cash), mult: +G.mult.toFixed(2), camp: META.camp,
       left: Math.round(G.tr.s - G.goalS), onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length,
       station: G.station ? G.station.state + ' ' + G.station.saved + '/' + G.station.lost : '-',
       heli: [Math.round(G.heli.ox), Math.round(G.heli.oy)],

@@ -1,9 +1,10 @@
-// game.js - the game: escort the last train. You fly a gunship helicopter (WASD) over a railway that
-// winds north. The train runs along it to a walled safe zone, stopping halfway at a station to take
-// on survivors who run for it. The dead walk in from both sides; the ones ahead of the train step
-// onto the rails. The engine runs them down, but each one slows it, and the dead that reach the
-// train climb on and tear at it. When no key is held the helicopter keeps pace with the train.
-// Behind the title the same game runs as a demo.
+// game.js - the game: escort the last train, trip after trip. You fly a gunship helicopter (WASD)
+// over a railway that winds north. The train runs along it to a walled safe zone, stopping halfway
+// at a station to take on survivors who run for it. The dead walk in from both sides; the ones ahead
+// of the train step onto the rails. The engine runs them down, but each one slows it, and the dead
+// that reach the train climb on and tear at it. When no key is held the helicopter keeps pace with
+// the train. Every run's cash is banked for upgrades (meta.js); G.k holds the upgraded stats and
+// G.ti the numbers of this trip. Behind the title the same game runs as a demo.
 // Units are world pixels and seconds; y on the ground is squashed by FORE; the train runs to -y.
 
 const CFG = {
@@ -36,41 +37,28 @@ const CFG = {
 // the cars: length on the ground, the gap between two, half the width, how many (TRAIN in sprites)
 const CAR = { L: 28, gap: 4, half: 8, n: 5 };
 const TRAIN_LEN = CAR.n * (CAR.L + CAR.gap) - CAR.gap;
-// streak bonuses: [kills in a row, cash]
-const STREAKS = [[10, 5], [25, 15], [50, 30], [100, 60], [200, 120]];
 const CAMS = ['COLOUR', 'WHITE HOT', 'BLACK HOT'];
 
 // G = this run (or the demo behind the title). mode = 'title', 'play', 'ending' or 'summary'.
 // thermal = camera: 0 colour, 1 white hot, 2 black hot.
 let G = null, mode = 'title', paused = false, realT = 0, frameDt = 0, sumStart = 0, thermal = 0;
 
-// best score, kept in this browser
-const BEST_KEY = 'sky-reaper-escort';
-const best = { kills: 0, safe: 0, saved: 0 };
-function loadBest() {
-  try {
-    const o = JSON.parse(localStorage.getItem(BEST_KEY) || '{}');
-    best.kills = Math.max(0, o.kills | 0);
-    best.safe = Math.max(0, o.safe | 0);
-    best.saved = Math.max(0, o.saved | 0);
-  } catch (e) { /* no storage: the best is not kept */ }
-}
-function saveBest() {
-  try { localStorage.setItem(BEST_KEY, JSON.stringify(best)); } catch (e) { /* ignore */ }
-}
-
 // ---------- a run
-function newGame(demo) {
-  const y0 = Math.round(rnd(-40000, 40000)), s0 = trackS(y0);
+// G.cash = cash earned this run (G.banked of it already in the bank), G.earn = where it came from.
+function newGame(demo, trip) {
+  const y0 = Math.round(rnd(-40000, 40000)), s0 = trackS(y0), T = demo ? 1 : trip || META.trip;
+  const k = demo ? baseStats() : runStats();
   const cars = [];
   for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
-    demo: !!demo, t: 0, run: 0, endT: 0, result: '', bonus: 0,
-    kills: 0, cash: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
+    demo: !!demo, t: 0, run: 0, endT: 0, result: '', bonus: 0, trip: T, ti: tripInfo(T), k, mult: demo ? 1 : cashMult(T),
+    kills: 0, cash: 0, banked: 0, shownCash: META.cash, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
+    earn: { kills: 0, bonus: 0, finds: 0, station: 0, boss: 0, arrival: 0, first: 0 },
+    afford: 0, readyT: 0,
     trigger: false, mgCd: 0, heat: 0, overheat: false, heReload: 0, heQueue: false, hitT: 0, muzzle: [0, 0],
     // the train: s = distance along the rails of the engine's nose (it falls as the train runs north),
     // v = speed, hit[k] = car k flashes red, fx / fy = the nose on the ground
-    tr: { s: s0, startS: s0, v: CFG.train.cruise, hp: CFG.train.hp, hpShown: CFG.train.hp, hit: [0, 0, 0, 0, 0],
+    tr: { s: s0, startS: s0, v: CFG.train.cruise, hp: k.trainMax, hpShown: k.trainMax, hit: [0, 0, 0, 0, 0],
       clack: 0, smokeT: 0, hornT: 0, fx: trackX(y0), fy: y0, cars },
     // the helicopter: ox / oy = where it is from the engine's nose, vx / vy = its speed against the
     // train, hd = its heading, home = flying back over the train
@@ -79,10 +67,10 @@ function newGame(demo) {
     camX: 0, camY: 0, aimSX: W / 2, aimSY: H / 2,
     lock: null, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
-    streak: { n: 0, t: -9, best: 0 },
     spawnCd: 0, railCd: rnd(5, 7), onTrain: 0, blocked: false, decalT: 0, sum: null,
     bot: false, botT: 0, botZ: null
   };
+  G.afford = demo ? 0 : affordableCount(META.cash);
   clearFX();
   GRID.clear();
   layoutTrain();
@@ -94,34 +82,95 @@ function newGame(demo) {
   placeCamera();
   scatter();
 }
-function startGame() {
+function startGame(trip) {
   audioInit();
-  newGame(false);
+  newGame(false, trip);
+  META.trip = G.trip;
+  META.played = true;
+  saveMeta();
   mode = 'play';
   paused = false;
-  banner('ESCORT THE TRAIN', 'PICK UP SURVIVORS AT THE STATION', U.gold);
+  banner('TRIP ' + G.trip, 'ESCORT THE TRAIN. PICK UP SURVIVORS AT THE STATION.', U.gold);
   SFX.horn();
 }
+// Pay cash into this run (times the run's cash multiplier). kind = which summary row it counts for.
+// Returns what was paid.
+function pay(base, kind) {
+  if (G.demo) return 0;
+  const v = base * G.mult;
+  G.cash += v;
+  G.earn[kind] += v;
+  return v;
+}
+// The cash to spend: the bank plus this run's cash not banked yet.
+const wallet = () => META.cash + (G && !G.demo ? G.cash - G.banked : 0);
+// Put this run's cash in the bank (only what is not there yet) and save.
+function bankRun() {
+  if (G.demo) return;
+  META.cash += G.cash - G.banked;
+  G.banked = G.cash;
+  saveMeta();
+}
+// The run is over: first-clear pay, the camp, the bank, the best scores, and the summary rows.
 function endGame() {
   mode = 'summary';
   sumStart = realT;
   G.trigger = false;
-  const nb = G.kills > best.kills, st = G.station;
-  G.sum = {
-    result: G.result, kills: G.kills, cash: Math.round(G.cash), streak: G.streak.best, blast: G.bestBlast,
-    hp: Math.round(G.tr.hp / CFG.train.hp * 100), saved: st ? st.saved : 0, people: CFG.station.people,
-    newBest: nb && G.kills > 0
-  };
-  if (nb) best.kills = G.kills;
-  if (G.result === 'safe') {
-    best.safe++;
-    best.saved = Math.max(best.saved, G.sum.saved);
+  G.sumTicks = 0;
+  const st = G.station, T = G.trip, safe = G.result === 'safe', cleared = safe;
+  let first = 0, camp = 0;
+  if (cleared && META.cleared.indexOf(T) < 0) {
+    META.cleared.push(T);
+    first = pay(300, 'first');
   }
-  saveBest();
+  if (cleared) {
+    META.maxTrip = Math.max(META.maxTrip, T + 1);
+    META.trip = T + 1;
+  }
+  if (safe && st) camp += st.saved;
+  META.camp += camp;
+  const wallet0 = META.cash - G.banked, e = G.earn;
+  bankRun();
+  const nb = G.kills > META.best.kills;
+  if (nb) META.best.kills = G.kills;
+  if (safe) META.best.safe++;
+  saveMeta();
+  // the rows: name, count, cash
+  const rows = [['KILLS', fmt(G.kills), e.kills + e.bonus], ['STATION', (st ? st.saved : 0) + '/' + G.ti.people, e.station]];
+  if (safe) rows.push(['ARRIVAL', Math.round(G.tr.hp / G.k.trainMax * 100) + '% HP', e.arrival]);
+  if (first) rows.push(['FIRST CLEAR', '', first]);
+  G.sum = {
+    result: G.result, trip: T, cleared, first, camp, rows, total: G.cash, wallet: META.cash, wallet0,
+    newBest: nb && G.kills > 0, canBuy: affordableCount(META.cash),
+    tip: safe ? '' : lossTip(st && st.state === 'boarding')
+  };
+}
+// After a loss: the cheapest card that would have helped (at the station: the guns; out on the
+// line: the train).
+function lossTip(atStation) {
+  let best = null, bc = Infinity;
+  for (const id of atStation ? ['dmg', 'cannon', 'sniper'] : ['armor', 'cow', 'gunners']) {
+    if (upgMaxed(id) || upgLocked(id)) continue;
+    const c = upgCost(id);
+    if (c < bc) { bc = c; best = id; }
+  }
+  if (!best) return '';
+  const u = UPGMAP[best];
+  return 'TIP: ' + u.name + ' $' + fmt(bc) + ' = ' + u.val(lvl(best) + 1) + ' ' + u.unit;
+}
+// Leave a run from the pause screen: the cash is kept, the run counts as lost.
+function quitRun() {
+  bankRun();
+  toDepot();
 }
 function toTitle() {
   newGame(true);
   mode = 'title';
+  paused = false;
+}
+function toDepot() {
+  newGame(true);
+  mode = 'depot';
   paused = false;
 }
 const scoring = () => !G.demo && (mode === 'play' || mode === 'ending');
@@ -172,7 +221,7 @@ function carNear(x, y) {
 }
 function hurtTrain(a, car) {
   if (G.demo || G.result) return;
-  const tr = G.tr, was = tr.hp, low = CFG.train.hp * 0.35;
+  const tr = G.tr, was = tr.hp, low = G.k.trainMax * 0.35;
   tr.hp = Math.max(0, tr.hp - a);
   tr.hit[car] = 0.12;
   if (tr.hp <= 0) lose();
@@ -213,7 +262,7 @@ function buildStation(s) {
     G.statics.push({ d: STATION.lamp, x, y: Math.round(yy), k: Math.round(yy), lamp: true });
   }
   G.statics.push({ d: STATION.house, x: Math.round(hx), y: Math.round(hy), k: Math.round(hy) });
-  for (let i = 0; i < CFG.station.people; i++) {
+  for (let i = 0; i < G.ti.people; i++) {
     G.people.push({ person: true, x: hx + rnd(-8, 8), y: hy + rnd(3, 7), st: 'wait', go: 0.6 + i * CFG.station.gap,
       sv: SURV[i % SURV.length], anim: rnd(2), left: Math.random() < 0.5, k: 0, by: null, gt: 0 });
   }
@@ -227,9 +276,8 @@ function arrive() {
   G.trigger = false;
   G.lock = null;
   const st = G.station, saved = st ? st.saved : 0;
-  G.bonus = Math.round(G.tr.hp / CFG.train.hp * 100) * 2 + saved * 20;
-  G.cash += G.bonus;
-  banner('TRAIN SAFE', saved + ' SURVIVORS SAVED.  +$' + G.bonus, U.gold, 9);
+  G.bonus = pay(Math.round(G.tr.hp / G.k.trainMax * 100) * 3, 'arrival');
+  banner('TRAIN SAFE', saved + ' SURVIVORS SAVED.  +$' + fmt(G.bonus), U.gold, 9);
   SFX.horn();
   for (const z of G.zombies) if (z.st === 2) later(rnd(0.2, 1.4), () => {
     if (z.dead) return;
@@ -259,9 +307,9 @@ function lose() {
 
 // ---------- the dead
 function makeZombie(x, y, type) {
-  const T = CFG.types[type], sets = ZS[type];
+  const T = CFG.types[type], sets = ZS[type], hp = T.big ? Math.round(G.ti.bruteHp) : T.hp;
   return {
-    x, y, type, S: sets[(Math.random() * sets.length) | 0], hp: T.hp, max: T.hp, value: T.value, run: !!T.run, big: !!T.big,
+    x, y, type, S: sets[(Math.random() * sets.length) | 0], hp, max: hp, value: T.value, run: !!T.run, big: !!T.big,
     sp: rnd(T.speed[0], T.speed[1]), dps: T.dps, wob: rnd(TAU), anim: rnd(2), left: Math.random() < 0.5,
     vx: 0, vy: 0, kbx: 0, kby: 0, flash: 0, pending: 0, block: [], blockT: rnd(0.5), dead: false, gone: false, qd: 0, k: y,
     // st: 0 walking, 1 on the rails ahead of the train, 2 holding on to the train
@@ -269,10 +317,10 @@ function makeZombie(x, y, type) {
   };
 }
 function pickType() {
-  const r = Math.random();
+  const r = Math.random(), ti = G.ti;
   if (G.demo) return r < 0.03 ? 2 : r < 0.1 ? 1 : 0;
-  if (G.run > 15 && r < 0.05) return 2;
-  if (G.run > 5 && r < 0.17) return 1;
+  if (G.run > 15 && r < ti.brute) return 2;
+  if (G.run > 5 && r < ti.brute + ti.runner) return 1;
   return 0;
 }
 function pack(n, hx, hy) {
@@ -324,7 +372,7 @@ function scatter() {
 }
 function spawn(dt) {
   const st = G.station, stopped = st && st.state === 'boarding';
-  const want = G.demo ? 300 : Math.min(CFG.pop.max, CFG.pop.start + CFG.pop.perSec * G.run);
+  const ti = G.ti, want = G.demo ? 300 : Math.min(ti.cap, ti.start + ti.perSec * G.run);
   G.spawnCd -= dt;
   if (G.spawnCd <= 0 && G.zombies.length < want + (stopped ? 50 : 0)) {
     if (stopped) sidePack(rndi(4, 8), -240, 300);
@@ -333,7 +381,7 @@ function spawn(dt) {
   }
   G.railCd -= dt;
   if (G.railCd <= 0 && !stopped) {
-    railGroup(rndi(3, 6) + Math.min(5, Math.floor(G.run / 20)));
+    railGroup(rndi(3, 6) + G.ti.railExtra + Math.min(5, Math.floor(G.run / 20)));
     G.railCd = Math.max(3.6, rnd(7, 10) - G.run * 0.04);
   }
 }
@@ -559,6 +607,7 @@ function grabPerson(p, z) {
   p.st = 'grab';
   p.by = z;
   p.gt = CFG.station.grab;
+  if (G.demo) return;
   if (!G.demo) {
     floatText(p.x, p.y - 8, 'HELP!', U.red);
     SFX.hit();
@@ -617,8 +666,9 @@ function updateStation(dt) {
       if (d < 3) {
         p.st = 'in';
         st.saved++;
+        const v = pay(25, 'station');
         if (!G.demo) {
-          floatText(p.x, p.y - 6, '+1 SAVED', '#8fd18a');
+          floatText(p.x, p.y - 6, '+1 SAVED +$' + fmt(v), '#8fd18a');
           SFX.saved();
         }
         continue;
@@ -631,7 +681,7 @@ function updateStation(dt) {
     st.blockedT = waiting && near ? st.blockedT + dt : 0;
     if (!busy && st.t >= CFG.station.minStop) {
       st.state = 'leaving';
-      banner('ALL ABOARD', st.saved + ' OF ' + CFG.station.people + ' SURVIVORS SAVED', '#8fd18a', 3);
+      banner('ALL ABOARD', st.saved + ' OF ' + G.ti.people + ' SURVIVORS SAVED', '#8fd18a', 3);
       SFX.horn();
     }
   }
@@ -660,13 +710,14 @@ function updateHeli(dt) {
     const l = Math.hypot(ix, iy);
     if (l > 1) { ix /= l; iy /= l; }
     if (l > 0.05) h.home = false;
-    let tx = ix * c.speed, ty = iy * c.speed;
+    const sp = G.k.heliSpeed;
+    let tx = ix * sp, ty = iy * sp;
     if (h.home) {
       const dx = -h.ox, dy = homeY - h.oy, d = Math.hypot(dx, dy);
       if (d < 3) h.home = false;
       else {
-        tx = dx / d * Math.min(c.speed, d * 2.5);
-        ty = dy / d * Math.min(c.speed, d * 2.5);
+        tx = dx / d * Math.min(sp, d * 2.5);
+        ty = dy / d * Math.min(sp, d * 2.5);
       }
     }
     const k = Math.min(1, dt * c.accel);
@@ -676,9 +727,10 @@ function updateHeli(dt) {
     h.oy += h.vy * dt;
     // the leash: pulled back softly past it
     const d = Math.hypot(h.ox, h.oy - homeY);
-    h.far = d > c.leash * 0.85;
-    if (d > c.leash) {
-      const f = c.leash / d;
+    const leash = G.k.leash;
+    h.far = d > leash * 0.85;
+    if (d > leash) {
+      const f = leash / d;
       h.ox *= f;
       h.oy = homeY + (h.oy - homeY) * f;
       h.vx *= 0.8;
@@ -719,7 +771,7 @@ function findLock() {
     let d2 = dx * dx + dy * dy;
     if (d2 > r2) continue;
     if (z === keep) d2 *= 0.45;
-    if (z.pending < z.hp) {
+    if (z.pending * G.k.mgDmg < z.hp) {
       const w = d2 > r1 ? d2 * 1.5 : d2;
       if (w < fd) { fd = w; fresh = z; }
     } else if (d2 < dd) { dd = d2; done = z; }
@@ -748,7 +800,7 @@ function fireMG(player, tx, ty) {
   G.muzzle[0] = 0.05;
   if (player) {
     G.shots++;
-    G.heat = Math.min(1, G.heat + CFG.mg.heatPer);
+    G.heat = Math.min(1, G.heat + G.k.heatPer);
     addShake(0.06);
     kick(rnd(-0.3, 0.3), 0.5);
     SFX.mg();
@@ -765,7 +817,7 @@ function fireHE(player, tx, ty) {
   G.rounds.push({ kind: 'he', bx, by, tgt: null, age: 0, T: CFG.he.travel, side: -1, j: 0, player });
   G.muzzle[1] = 0.12;
   if (player) {
-    G.heReload = CFG.he.reload;
+    G.heReload = G.k.heReload;
     addShake(0.45);
     kick(rnd(-1, 1), 2.5);
     SFX.cannon();
@@ -797,19 +849,6 @@ function blood(x, y, n, zh) {
   for (let k = 0; k < n; k++) part({ x: x + rnd(-1, 1), y, z: rnd(3, zh), vx: rnd(-35, 35), vy: rnd(-45, 12), vz: rnd(15, 70),
     g: 240, life: 1.4, max: 1.4, s: 1, c: pick([P.bl0, P.bl1, P.bl2, P.bl2]), land: 1 });
 }
-function streak(n) {
-  const s = G.streak;
-  if (G.t - s.t > 1.6) s.n = 0;
-  const before = s.n;
-  s.n += n;
-  s.t = G.t;
-  s.best = Math.max(s.best, s.n);
-  for (const [m, bonus] of STREAKS) if (before < m && s.n >= m) {
-    G.cash += bonus;
-    banner('STREAK ×' + m, '+$' + bonus + ' BONUS', U.gold, 1);
-    SFX.streak();
-  }
-}
 // cause = 'mg' (a 25mm round), 'he' (the 105 at (cx, cy), dist away) or 'train' (run down).
 // free = not the player's kill (no score).
 function kill(z, cause, cx, cy, dist, free) {
@@ -818,15 +857,15 @@ function kill(z, cause, cx, cy, dist, free) {
   z.hp = 0;
   if (G.lock === z) G.lock = null;
   const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160;
+  let paid = 0;
   if (sc) {
     G.kills++;
-    G.cash += z.value;
+    paid = pay(z.value, 'kills');
     G.killBump = 1;
-    streak(1);
   }
   if (cause === 'he') {
     // thrown away from the blast, turning over
-    const dx = z.x - cx, dy = (z.y - cy) / FORE, l = Math.hypot(dx, dy) || 1, f = 1 - Math.min(1, dist / CFG.he.hurt);
+    const dx = z.x - cx, dy = (z.y - cy) / FORE, l = Math.hypot(dx, dy) || 1, f = 1 - Math.min(1, dist / (G.k.heKill + 22));
     const v = (35 + f * 80) * (z.big ? 0.4 : 1) * rnd(0.8, 1.2);
     if (room) bs.push({ S, x: z.x, y: z.y, z: 2, vx: dx / l * v, vy: dy / l * v * FORE,
       vz: (50 + f * 130) * (z.big ? 0.5 : 1) * rnd(0.8, 1.2), spin: rnd(8, 16) * (dx < 0 ? -1 : 1), rot: 0, fall: false, age: 0 });
@@ -841,7 +880,7 @@ function kill(z, cause, cx, cy, dist, free) {
       spin: rnd(10, 18) * s, rot: 0, fall: false, age: 0 });
     else stampCorpse(S, z.x, z.y);
     blood(z.x, z.y, z.big ? 16 : 10, S.h * 0.6);
-    if (sc) addTotal(z.x, z.y - S.h, z.value, U.gold, false);
+    if (sc) addTotal(z.x, z.y - S.h, paid, U.gold, false);
   } else {
     // a 25mm round: knocked over backwards, away from the gun, or off the side of the train
     if (room) {
@@ -854,7 +893,7 @@ function kill(z, cause, cx, cy, dist, free) {
     blood(z.x, z.y, z.big ? 14 : 8, S.h * 0.6);
     part({ x: z.x, y: z.y, z: S.h * 0.5, vx: rnd(-4, 4), vy: rnd(-6, 0), vz: rnd(4, 10), g: 0, life: 0.45, max: 0.45, s: 3,
       c: 'rgba(110,24,20,0.55)', grow: 7, drag: 3, smoke: true });
-    if (sc) addTotal(z.x, z.y - S.h, z.value, U.gold, false);
+    if (sc) addTotal(z.x, z.y - S.h, paid, U.gold, false);
     if (!G.demo) SFX.splat();
   }
   if (sc && (Math.random() < 0.3 || z.big) && coins.length < 45) coins.push({ x0: z.x - G.camX, y0: z.y - G.camY - 8, t: 0, T: rnd(0.55, 0.8) });
@@ -864,7 +903,7 @@ function kill(z, cause, cx, cy, dist, free) {
   }
 }
 function hitZombie(z) {
-  z.hp -= 1;
+  z.hp -= G.k.mgDmg;
   z.flash = 0.1;
   if (z.hp <= 0) {
     kill(z, 'mg', 0, 0, 0);
@@ -930,8 +969,9 @@ function boomFx(x, y, big) {
     const a = rnd(TAU), r = rnd(10, 22);
     addBoom(x + Math.cos(a) * r, y + Math.sin(a) * r * FORE, 12, 4, 0.5, 6, rnd(0.03, 0.15));
   }
-  rings.push({ x, y, r0: 8, r1: CFG.he.kill * 1.25, t: 0, T: 0.3, c: '#ffd8a0', w: 2 });
-  rings.push({ x, y, r0: 20, r1: CFG.he.hurt * 1.5, t: 0, T: 0.55, c: '#a89878' });
+  const kr = G.k.heKill;
+  rings.push({ x, y, r0: 8, r1: kr * 1.25, t: 0, T: 0.3, c: '#ffd8a0', w: 2 });
+  rings.push({ x, y, r0: 20, r1: (kr + 22) * 1.5, t: 0, T: 0.55, c: '#a89878' });
   for (let k = 0; k < 16; k++) part({ x: x + rnd(-14, 14), y: y + rnd(-8, 8), z: rnd(4, 18), vx: rnd(-14, 14) + 4, vy: rnd(-6, 6),
     vz: rnd(10, 34), g: 0, life: rnd(1.4, 2.8), max: 2.8, s: rnd(4, 8),
     c: pick(['rgba(58,50,46,0.75)', 'rgba(40,36,34,0.7)', 'rgba(74,64,56,0.6)']), grow: 6, drag: 1, smoke: true });
@@ -955,9 +995,10 @@ function boomFx(x, y, big) {
 // the train, the blast hurts the train as well; it kills survivors on foot too.
 function explode(x, y, player) {
   let killed = 0, value = 0;
-  queryEll(x, y, CFG.he.hurt, (z, d) => {
-    if (d >= CFG.he.kill) {
-      z.hp -= 4;
+  const kr = G.k.heKill, close = kr - 6;
+  queryEll(x, y, kr + 22, (z, d) => {
+    if (d >= kr) {
+      z.hp -= G.k.heRing;
       z.flash = 0.25;
       if (z.st !== 2) {
         const dx = z.x - x, dy = (z.y - y) / FORE, l = Math.hypot(dx, dy) || 1;
@@ -976,10 +1017,10 @@ function explode(x, y, player) {
     hitStop(killed >= 12 ? 0.1 : 0.04, 0.25);
     SFX.boom();
   }
-  for (const p of G.people) if ((p.st === 'run' || p.st === 'grab') && Math.hypot(p.x - x, (p.y - y) / FORE) < CFG.he.kill) catchPerson(p);
+  for (const p of G.people) if ((p.st === 'run' || p.st === 'grab') && Math.hypot(p.x - x, (p.y - y) / FORE) < kr) catchPerson(p);
   const td = trainDist(x, y);
-  if (player && td < CFG.he.close && !G.demo && !G.result) {
-    const a = Math.round(14 * (1 - td / CFG.he.close)) + 3, k = carNear(x, y), c = G.tr.cars[k];
+  if (player && td < close && !G.demo && !G.result) {
+    const a = Math.round(14 * (1 - td / close)) + 3, k = carNear(x, y), c = G.tr.cars[k];
     hurtTrain(a, k);
     floatText(c.cx, c.cy - 8, '-' + a, U.red);
     banner('CHECK FIRE!', 'YOUR SHELL HIT THE TRAIN', U.red, 3);
@@ -987,10 +1028,13 @@ function explode(x, y, player) {
   }
   if (player && scoring()) {
     G.bestBlast = Math.max(G.bestBlast, killed);
-    if (killed) addTotal(x, y - 10, value, U.gold, true);
+    const v = value * G.mult;
+    if (killed) addTotal(x, y - 10, v, U.gold, true);
     if (killed >= 4) {
+      // the big ones pay a bonus too
       const name = killed >= 25 ? 'MASSACRE' : killed >= 12 ? 'CARNAGE' : 'MULTI KILL';
-      banner(name + ' ×' + killed, '+$' + value, killed >= 12 ? '#ff7a4a' : U.amber, 2);
+      const b = pay(killed >= 25 ? 50 : killed >= 12 ? 20 : 5, 'bonus');
+      banner(name + ' ×' + killed, '+$' + fmt(v) + '   +$' + fmt(b) + ' BONUS', killed >= 12 ? '#ff7a4a' : U.amber, 2);
     }
   }
 }
@@ -1112,7 +1156,7 @@ function step(dt) {
       SFX.radio();
     }
   } else if (st && st.state === 'boarding') tr.v = 0;
-  else tr.v = Math.min(CFG.train.cruise, tr.v + CFG.train.accel * dt);
+  else tr.v = Math.min(CFG.train.cruise, tr.v + G.k.accel * dt);
   tr.s -= tr.v * dt;
   layoutTrain();
   for (let k = 0; k < CAR.n; k++) if (tr.hit[k] > 0) tr.hit[k] -= dt;
@@ -1155,7 +1199,7 @@ function step(dt) {
       G.mgCd -= dt;
       while (G.mgCd <= 0 && !G.overheat) {
         fireMG(true, G.camX + G.aimSX, G.camY + G.aimSY);
-        G.mgCd += 1 / CFG.mg.rate;
+        G.mgCd += 1 / G.k.mgRate;
         findLock();
         if (G.heat >= 1) {
           G.overheat = true;
@@ -1174,10 +1218,17 @@ function step(dt) {
       }
     }
     if (!G.result && tr.s <= G.goalS) arrive();
+    // the wallet passes the price of another upgrade: UPGRADE READY
+    const n = affordableCount(wallet());
+    if (n > G.afford) {
+      G.readyT = 2;
+      SFX.upgrade();
+    }
+    G.afford = n;
   } else {
     G.aimSX = W / 2;
     G.aimSY = H / 2;
-    if (mode === 'title') attract(dt);
+    if (G.demo) attract(dt);
     else if (mode === 'ending') {
       G.endT += dt;
       if (G.endT > 3.4 && (G.result !== 'safe' || tr.v < 0.5) || G.endT > 14) endGame();
@@ -1188,6 +1239,7 @@ function step(dt) {
   G.muzzle[1] = Math.max(0, G.muzzle[1] - dt);
   G.killBump = Math.max(0, G.killBump - dt * 6);
   G.cashPulse = Math.max(0, G.cashPulse - dt * 3);
+  G.readyT = Math.max(0, G.readyT - dt);
   updateStation(dt);
   updateZombies(dt);
   updateRounds(dt);

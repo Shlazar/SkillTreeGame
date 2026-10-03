@@ -27,8 +27,10 @@ cv.addEventListener('pointerdown', (e) => {
   M.x = p.x;
   M.y = p.y;
   M.inside = true;
+  // right click: the 105 in play, a UI click (pin, empty a pad) elsewhere
   if (e.button === 2) {
-    tryHE();
+    M.rpressed = true;
+    if (mode === 'play' && !paused) tryHE();
     return;
   }
   if (e.button !== 0) return;
@@ -37,12 +39,8 @@ cv.addEventListener('pointerdown', (e) => {
   M.px = p.x;
   M.py = p.y;
   try { cv.setPointerCapture(e.pointerId); } catch (_) { /* fine without */ }
-  if (mode !== 'play' || p.y < 19) return;
-  // a click on the field goes on after a pause; otherwise it is the trigger
-  if (paused) {
-    paused = false;
-    M.used = true;
-  } else G.trigger = true;
+  if (mode !== 'play' || p.y < 19 || paused) return;
+  G.trigger = true;
 });
 cv.addEventListener('pointerup', (e) => {
   const p = toCanvas(e);
@@ -101,9 +99,12 @@ addEventListener('keydown', (e) => {
       G.trigger = false;
     }
   } else if (mode === 'title') {
-    if (k === 'Enter' || k === ' ') startGame();
+    if (k === 'Enter' || k === ' ') playTitle();
+  } else if (mode === 'depot') {
+    if (k === 'Tab') e.preventDefault();
+    depotKey(k);
   } else if (mode === 'summary') {
-    if (k === 'Enter') startGame();
+    if (k === 'Enter') toDepot();
     else if (k === 'Escape') toTitle();
   }
 });
@@ -116,7 +117,13 @@ function lostFocus() {
   if (mode === 'play') paused = true;
 }
 addEventListener('blur', lostFocus);
-document.addEventListener('visibilitychange', () => { if (document.hidden) lostFocus(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  lostFocus();
+  if (G && !G.demo) bankRun();
+});
+// the page is closing: the run's cash goes in the bank
+addEventListener('pagehide', () => { if (G && !G.demo) bankRun(); });
 function onResize() {
   if (resize()) {
     bakeOverlays();
@@ -173,7 +180,8 @@ function loop(now) {
     if (n >= 8) acc = 0;
   }
   updateCam(dt);
-  G.shownCash = Math.abs(G.shownCash - G.cash) < 1 ? G.cash : lerp(G.shownCash, G.cash, 1 - Math.exp(-10 * dt));
+  const wl = wallet();
+  G.shownCash = Math.abs(G.shownCash - wl) < 1 ? wl : lerp(G.shownCash, wl, 1 - Math.exp(-10 * dt));
   // the engine hum: loud in play, quiet behind the menus
   const dl = mode === 'play' && !paused ? 1 : mode === 'ending' ? 0.7 : 0.4;
   if (Au.ctx && dl !== droneLevel) {
@@ -194,6 +202,7 @@ function loop(now) {
   cv.style.cursor = mode === 'play' && !paused && M.y >= 19 && cursor === 'default' ? 'none' : cursor;
   M.pressed = false;
   M.released = false;
+  M.rpressed = false;
   M.used = false;
 }
 
@@ -204,7 +213,7 @@ function boot() {
   resize();
   bakeStatic();
   bakeOverlays();
-  loadBest();
+  loadMeta();
   newGame(true);
   mode = 'title';
   window.__sr = {
@@ -214,8 +223,25 @@ function boot() {
     CFG,
     // the sprites, for a test sheet
     art: () => ({ TRAIN, FOOT, HELI, STATION, SURV, ZS }),
-    start: startGame,
+    start: (trip) => startGame(trip),
     title: toTitle,
+    depot: toDepot,
+    // the save: meta() = it, setMeta(o) = change it (lv merges), resetMeta() = erase it,
+    // buy(id) = buy one level, trip(n) = unlock trip n and start it
+    meta: () => META,
+    setMeta: (o) => {
+      const lv = o.lv;
+      Object.assign(META, o);
+      if (lv) META.lv = Object.assign(metaDefaults().lv, lv);
+      saveMeta();
+      return META;
+    },
+    resetMeta: () => { resetMeta(); return META; },
+    buy: (id) => buyUpg(id),
+    trip: (n) => {
+      META.maxTrip = Math.max(META.maxTrip, n);
+      startGame(n);
+    },
     // sim(sec): run the game for sec seconds at once, without drawing
     sim: (sec) => {
       const n = Math.round(sec / STEP);
@@ -255,6 +281,7 @@ function boot() {
     },
     stats: () => ({
       mode, result: G.result, kills: G.kills, cash: Math.round(G.cash), hp: Math.round(G.tr.hp), speed: +G.tr.v.toFixed(1),
+      trip: G.trip, wallet: Math.round(wallet()), bank: Math.round(META.cash), mult: +G.mult.toFixed(2), camp: META.camp,
       left: Math.round(G.tr.s - G.goalS), onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length,
       station: G.station ? G.station.state + ' ' + G.station.saved + '/' + G.station.lost : '-',
       heli: [Math.round(G.heli.ox), Math.round(G.heli.oy)],

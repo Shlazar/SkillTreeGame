@@ -230,8 +230,8 @@ function drawBodies() {
 function drawShellMarks() {
   for (const r of G.rounds) {
     if (r.kind !== 'he' || !r.player) continue;
-    const u = r.age / r.T, rr = lerp(CFG.he.kill * 1.5, CFG.he.kill, ease(u));
-    const col = thermal ? '#ffffff' : trainDist(r.bx, r.by, G.tr.v * (r.T - r.age)) < CFG.he.close ? '#ff2a1a' : '#ff6a28';
+    const u = r.age / r.T, rr = lerp(G.k.heKill * 1.5, G.k.heKill, ease(u));
+    const col = thermal ? '#ffffff' : trainDist(r.bx, r.by, G.tr.v * (r.T - r.age)) < G.k.heKill - 6 ? '#ff2a1a' : '#ff6a28';
     ctx.globalAlpha = 0.35 + 0.3 * (Math.sin(realT * 22) > 0 ? 1 : 0);
     pell(r.bx, r.by, rr, rr * FORE, col);
     ctx.fillStyle = col;

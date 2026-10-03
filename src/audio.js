@@ -207,10 +207,22 @@ const SFX = {
     tone(392, 0.14, 'triangle', 0.045);
     tone(587, 0.22, 'triangle', 0.045, null, 0.1);
   },
-  streak() {
+  upgrade() {
+    // the wallet can pay for a new upgrade
     tone(523, 0.1, 'triangle', 0.04);
     tone(659, 0.1, 'triangle', 0.04, null, 0.08);
     tone(784, 0.22, 'triangle', 0.045, null, 0.16);
+  },
+  buy() {
+    // an upgrade bought: a till and a rising chime
+    nz(0.05, 0.05, 'bandpass', 3200, 2);
+    tone(784, 0.06, 'square', 0.02);
+    tone(1175, 0.12, 'triangle', 0.04, null, 0.05);
+    tone(1568, 0.16, 'triangle', 0.03, null, 0.1);
+  },
+  tick() {
+    // a summary row comes up
+    tone(1500, 0.025, 'square', 0.012);
   },
   warn() {
     // the train is nearly lost: two low, urgent notes
