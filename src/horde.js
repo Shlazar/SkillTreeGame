@@ -754,15 +754,15 @@ function popKill(z, cause) {
     bloodPool(z.x, z.y, S);
   }
 }
-// Silver zombies: SILVER_PAY times their scrap; how many glow at most.
-const SILVER_PAY = 6;
+// Scrap for a silver zombie, regardless of its base type. (proposal)
+const SILVER_PAY = 15;
 // Called by makeZombie: roll silver (never in the demo, never a brute).
 function silverRoll(z) {
   const c = G && !G.demo && G.up ? G.up.silver || 0 : 0;
   if (c > 0 && !z.big && Math.random() < c) {
     z.silver = true;
     z.S = silverSet(z.S);
-    z.value *= SILVER_PAY;
+    z.value = SILVER_PAY;
   }
   return z;
 }

@@ -26,10 +26,8 @@ const CFG = {
   // survivor before it is too late, how near the door the dead keep the survivors in (and for how
   // long, at most)
   station: { again: 3, gap: 1.1, run: 24, minStop: 12, grab: 1.4, clear: 34, wait: 8 },
-  // scrap for the ride (1 for every dist px, so 1 per 20 m) and for a station stop (the first time
-  // it is held, then each time after); kill = the share of a zombie's value it pays (the rest
-  // waits for the next kill: the horde is big)
-  pay: { dist: 40, stop: 50, stopAgain: 25, kill: 0.4 },
+  // Share of each zombie's scrap value paid now; fractions wait in the kill pot. (proposal)
+  pay: { kill: 1 },
   // a Dead Wall: px along the rails it fills, px from the rail middle, how near the train comes
   // before it moves, how far ahead it is placed, how far ahead the warning comes (px)
   wall: { len: 120, half: 12, wake: 110, place: 600, warn: 300 },
@@ -52,8 +50,8 @@ const CFG = {
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 1, speed: [15, 20], value: 1, dps: 0.25 },               // walker
-    { hp: 1, speed: [42, 52], value: 2, dps: 0.3, run: true },     // runner
-    { hp: 6, speed: [10, 13], value: 10, dps: 2, big: true }       // brute
+    { hp: 1, speed: [42, 52], value: 1, dps: 0.3, run: true },     // runner
+    { hp: 6, speed: [10, 13], value: 5, dps: 2, big: true }        // brute
   ]
 };
 // the cars: length on the ground, the gap between two, half the width, how many (TRAIN in sprites)
@@ -131,7 +129,7 @@ function newGame(demo, number, replay) {
   for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
     demo: !!demo, leg: leg ? leg.n : 0, replay: !!replay, events: [], t: 0, run: 0, endT: 0, result: '', up,
-    kills: 0, cash: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0, scavAcc: 0, scavPaid: 0,
+    kills: 0, cash: 0, gold: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0, scavAcc: 0, scavPaid: 0,
     trigger: false, mgCd: 0, heat: 0, overheat: false, heReload: 0, heQueue: false, hitT: 0, muzzle: [0, 0],
     // the train: s = distance along the rails of the engine's nose (it falls as the train runs north),
     // v = speed, hp / max = its health now and when whole, hit[k] = car k flashes red, fx / fy = the
@@ -150,7 +148,7 @@ function newGame(demo, number, replay) {
     spawnCd: 0, waveCd: null, waves: 0, killAcc: 0, railCd: rnd(4, 6), onTrain: 0, blocked: false, decalT: 0, sum: null,
     // this run's scrap by where it came from (the summary lists them), the survivors aboard, the px
     // the train has ridden, the furthest km, and what is already in the save
-    pay: { kills: 0, dist: 0, stop: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0 },
+    pay: { kills: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0, gold: 0 },
     bot: false, botT: 0, botZ: null, hurt: { crush: 0, claw: 0, shell: 0 },
     // the rail cannon on the flatcar (cannon.js)
     gun: newCannon(),
@@ -198,11 +196,13 @@ function startGame(number, replay) {
 // Put what this run has earned so far in the save. You keep it all, whatever happens to the train.
 function bankRun() {
   if (!G || G.demo) return;
-  const sc = Math.floor(G.cash) - G.banked.scrap, sv = G.surv - G.banked.surv;
+  const sc = Math.floor(G.cash) - G.banked.scrap, sv = G.surv - G.banked.surv, gd = G.gold - G.banked.gold;
   SAVE.scrap += sc;
   SAVE.surv += sv;
+  SAVE.gold += gd;
   G.banked.scrap += sc;
   G.banked.surv += sv;
+  G.banked.gold += gd;
   saveSave();
 }
 // The run is over: bank it and build the summary (drawn by drawSummary).
@@ -218,7 +218,7 @@ function endGame() {
   bankRun();
   G.sum = {
     result: G.result, km: km2(k), ride: km2(G.ride / CFG.line.km), kills: G.kills, pay: Object.assign({}, G.pay),
-    scrap: Math.floor(G.cash), surv: G.surv, stops: G.stopNames.slice(),
+    scrap: Math.floor(G.cash), surv: G.surv, gold: G.gold, stops: G.stopNames.slice(),
     near: nearMiss(k), wall: wallStop(k), goal: summaryGoal(), sounds: 0
   };
 }
@@ -1114,14 +1114,9 @@ function botPlay(dt) {
 }
 
 // ---------- the ride
-// Distance bookkeeping; distance pay is removed when the new scrap economy is connected.
+// Distance is only route bookkeeping. Riding alone never creates scrap.
 function ride(d) {
   G.ride += d;
-  const due = Math.floor(G.ride / CFG.pay.dist) - G.pay.dist;
-  if (due > 0) {
-    G.cash += due;
-    G.pay.dist += due;
-  }
   G.maxKm = Math.max(G.maxKm, DK());
 }
 

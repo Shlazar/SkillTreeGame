@@ -39,9 +39,11 @@ function legSave(n) {
 function payGold(itemId, amount, scrapIfNot) {
   const out = { gold: 0, scrap: 0 };
   if (!G || G.demo || G.result || typeof itemId !== 'string' || !itemId) return out;
-  amount = Math.max(0, Math.floor(Number(amount) || 0));
-  scrapIfNot = Math.max(0, Math.floor(Number(scrapIfNot) || 0));
+  amount = Number(amount);
+  scrapIfNot = Number(scrapIfNot);
   if (!Number.isFinite(amount) || !Number.isFinite(scrapIfNot)) return out;
+  amount = Math.max(0, Math.floor(amount));
+  scrapIfNot = Math.max(0, Math.floor(scrapIfNot));
   const record = legSave(G.leg);
   if (G.replay || record.won || Object.prototype.hasOwnProperty.call(record.paid, itemId)) {
     out.scrap = scrapIfNot;
@@ -51,9 +53,7 @@ function payGold(itemId, amount, scrapIfNot) {
   } else if (amount) {
     Object.defineProperty(record.paid, itemId, { value: true, enumerable: true, writable: true, configurable: true });
     out.gold = amount;
-    G.gold = (G.gold || 0) + amount;
-    G.banked.gold = (G.banked.gold || 0) + amount;
-    SAVE.gold += amount;
+    G.gold += amount;
   }
   bankRun();
   return out;

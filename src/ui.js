@@ -424,9 +424,7 @@ function drawTitle() {
 // The times (s after the summary opens) are worked out once; sounds play as each time passes.
 function sumPlan(s) {
   // [label, scrap, a short note on how it pays]
-  const p = s.pay, rows = [['ZOMBIES ' + fmt(s.kills), p.kills, ''],
-    ['DISTANCE ' + s.ride.toFixed(2) + ' KM', p.dist, '+1 PER ' + CFG.pay.dist / 2 + ' M']];
-  if (p.stop) rows.push(['STATION', p.stop, s.stops.join(' + ')]);
+  const p = s.pay, rows = [['ZOMBIES ' + fmt(s.kills), p.kills, '']];
   if (p.loot) rows.push(['LOOT', p.loot, '']);
   if (p.bonus) rows.push(['BONUS', p.bonus, 'FROM THE SKILL TREE']);
   const t = rows.map((r, i) => 0.55 + i * 0.32), total = t[t.length - 1] + 0.45, surv = total + 0.7;
