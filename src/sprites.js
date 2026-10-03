@@ -1,12 +1,8 @@
 // sprites.js - every sprite is drawn in code at startup (no image files).
-// Inside: the palettes (P for pixel art, U for the UI), the zombie drawings (dWalker, dRunner,
-// dBrute) with their colour sets, makeZSet() that builds a zombie's frames, the train (engine and
-// four cars, the survivors on the flatcar), the props (trees, bushes, rocks, stumps, wrecks, barrels,
-// crates, ruined walls, telegraph poles), the safe zone (wall, gate, watchtowers) and the icons.
-//
-// A zombie drawing takes (r, f, c): r = rectangle painter r(x, y, w, h, color) from pix(),
-// f = walk frame 0 or 1, c = its colours. Inside, o() is like r() but moves up 1 px on frame 1
-// (a body bob). The drawings face right. The rows below are art data: x, y, w, h, color.
+// Inside: the palettes (P for pixel art, U for the UI), the zombie sets (ZS, drawn in horde.js),
+// the train (engine and four cars, the survivors on the flatcar), the props (trees, bushes, rocks,
+// stumps, wrecks, barrels, crates, ruined walls, telegraph poles), the safe zone (wall, gate,
+// watchtowers) and the icons. The rows below are art data: x, y, w, h, color.
 
 // ---------- palette
 const P = {
@@ -22,132 +18,7 @@ const U = {
   ink: '#e8dfc8', dim: '#9a9ca3', faint: '#5d616b', gold: '#e3b04b', red: '#d0553f', teal: '#56c2a8',
   blue: '#9fd3f2', amber: '#e8913a', green: '#8fd18a'
 };
-// zombie colours: skins (dark to light), shirts, trousers, hair
-const ZSKIN = [
-  ['#3f4a37', '#5f6d50', '#808f69', '#a6b388'],     // grave green
-  ['#45433f', '#67645d', '#8d887d', '#b2ab9b'],     // ash grey
-  ['#4f4632', '#71654a', '#978863', '#b9ab80'],     // sallow
-  ['#3a4548', '#5a686a', '#7f8f8d', '#a4b2ac'],     // drowned
-  ['#4a3634', '#6d504a', '#937066', '#b89488'],     // bruised
-  ['#38424e', '#52626e', '#768c96', '#a0b6bc']      // frozen blue
-];
-const ZSHIRT = [
-  ['#3a1412', '#6a2420', '#94372c'], ['#1a2238', '#2c3d62', '#45608e'], ['#4e4a42', '#7d776b', '#aaa290'],
-  ['#262f1c', '#3f4c2c', '#5c6b40'], ['#2e2016', '#4f3826', '#6f5034'], ['#4a3a14', '#7a6224', '#a68a3c'],
-  ['#5a2a0a', '#a2501c', '#d8782c'], ['#2c2c34', '#4a4a56', '#6e6e7c'], ['#4e1624', '#7e2638', '#a84456'],
-  ['#5e5e56', '#8e8e82', '#bcbcae']
-];
-const ZPANTS = [['#16181d', '#262931', '#3a3e4a'], ['#221a14', '#352920', '#4c3b2c'], ['#1e2420', '#303a33', '#46524a'],
-  ['#18223a', '#26365a', '#3a5080']];
-const ZHAIR = ['#1c1612', '#2e2620', '#4a4238', '#3a1e14', '#6e6048', '#5a3a20'];
-
-// ---------- zombie drawings
-// Four walk frames: 0 and 2 a stride (the near leg ahead, then behind), 1 and 3 passing (the body
-// up 1 px, one foot lifted). The near leg is the lighter one.
-// Walker: shuffles, one arm reaching out, head pushed forward. 9x16 px.
-function dWalker(r, f, c) {
-  const b = f & 1 ? -1 : 0, st = f === 0 ? 1 : f === 2 ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
-  const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
-  // a leg: d = 1 ahead, -1 behind
-  const leg = (d, col) => {
-    if (d > 0) { r(4, 11, 1, 2, col); r(5, 13, 1, 2, col); r(5, 15, 2, 1, P.dk); }
-    else { r(3, 11, 1, 2, col); r(2, 13, 1, 2, col); r(1, 15, 2, 1, P.dk); }
-  };
-  if (st) {
-    leg(-st, p0);
-    leg(st, p1);
-    if (st > 0) r(5, 13, 1, 1, s1);
-  } else {
-    // passing: the far foot drags up behind, the near leg straight under the body
-    r(4, 10, 1, 3, p0); r(4, 13, 1, 1, p0); r(4, 14, 2, 1, P.dk);
-    r(3, 10, 1, 5, p1); r(3, 12, 1, 1, s1); r(2, 15, 3, 1, P.dk);
-  }
-  o(2, 10, 4, 1, p2); o(2, 10, 1, 1, p1);
-  // torso: a torn shirt lit on the left, a wound, a ragged hem
-  o(2, 5, 4, 5, h1); o(2, 5, 1, 5, h2); o(5, 6, 1, 4, h0); o(3, 5, 2, 1, h2);
-  o(3, 7, 1, 1, s1);
-  o(4, 8, 1, 2, P.bl2); o(4, 9, 1, 1, P.bl1);
-  o(2, 9, 1, 1, h0); o(5, 9, 1, 1, P.rag0);
-  // the back arm hangs and swings with the stride
-  o(1, 6, 1, 3, s1); o(st > 0 ? 0 : 1, 9, 1, 1, s0);
-  // head pushed forward: lit top and left, a dark socket, one glowing eye, a slack jaw
-  o(3, 1, 4, 4, s2); o(3, 1, 4, 1, s3); o(3, 1, 1, 3, s3); o(6, 2, 1, 3, s1);
-  o(3, 0, 3, 1, c.hr); o(3, 1, 1, 1, c.hr);
-  o(5, 2, 1, 1, P.em); o(4, 2, 1, 1, s0);
-  o(5, 4, 2, 1, s0); o(6, 4, 1, 1, P.bl2);
-  o(4, 5, 1, 1, s1);
-  // the front arm reaches out, hand open (it sags a little as the body rises)
-  const ay = 6 + (b ? 1 : 0);
-  o(5, ay, 1, 1, h2); o(6, ay, 2, 1, s2); o(8, ay, 1, 1, s3); o(6, ay + 1, 2, 1, s1); o(8, ay + 1, 1, 1, s2);
-}
-// Runner: fast, bent low, arms clawing. 10x14 px.
-function dRunner(r, f, c) {
-  const b = f & 1 ? -1 : 0, st = f === 0 ? 1 : f === 2 ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
-  const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
-  const leg = (d, col) => {
-    if (d > 0) { r(6, 10, 1, 2, col); r(7, 12, 1, 1, col); r(7, 13, 2, 1, P.dk); }
-    else { r(2, 10, 1, 2, col); r(1, 12, 1, 1, col); r(0, 13, 2, 1, P.dk); }
-  };
-  if (st) {
-    leg(-st, p0);
-    leg(st, p1);
-  } else {
-    // passing: the far knee comes up in front, the near leg pushes off under the body
-    r(5, 9, 1, 1, p0); r(6, 10, 1, 1, p0); r(6, 11, 1, 1, p0); r(5, 12, 1, 1, P.dk);
-    r(3, 9, 1, 4, p1); r(3, 13, 2, 1, P.dk);
-  }
-  o(2, 9, 5, 1, p2);
-  // torso leaning forward
-  o(2, 6, 4, 3, h1); o(3, 5, 4, 1, h1); o(4, 4, 3, 1, h2); o(2, 6, 1, 3, h2); o(5, 7, 1, 2, h0);
-  o(3, 7, 1, 1, P.bl2);
-  // arms: they swing against the legs; the front one claws
-  if (st >= 0) { o(1, 6, 1, 1, s1); o(0, 7, 1, 2, s1); o(6, 5, 2, 1, s2); o(8, 6, 1, 1, s3); o(7, 6, 1, 1, s1); }
-  else { o(1, 6, 1, 2, s1); o(1, 8, 1, 1, s0); o(6, 5, 1, 1, s2); o(7, 4, 1, 1, s2); o(8, 4, 1, 1, s3); o(7, 5, 1, 1, s1); }
-  // head low and forward
-  o(6, 1, 3, 3, s2); o(6, 1, 3, 1, s3); o(6, 1, 1, 2, s3); o(9, 2, 1, 2, s1);
-  o(6, 0, 3, 1, c.hr);
-  o(8, 2, 1, 1, P.em); o(7, 2, 1, 1, s0); o(8, 3, 1, 1, s0);
-}
-// Brute: bloated and slow, ribs through the skin, long heavy arms. 15x21 px.
-function dBrute(r, f, c) {
-  const b = f & 1 ? -1 : 0, st = f === 0 ? 1 : f === 2 ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
-  const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
-  const leg = (d, col, lit) => {
-    if (d > 0) { r(8, 15, 3, 3, col); r(9, 18, 3, 2, col); r(9, 20, 4, 1, P.dk); if (lit) r(8, 15, 1, 3, p2); }
-    else { r(4, 15, 3, 3, col); r(3, 18, 3, 2, col); r(2, 20, 4, 1, P.dk); if (lit) r(3, 18, 1, 2, p2); }
-  };
-  if (st) {
-    leg(-st, p0, false);
-    leg(st, p1, true);
-  } else {
-    // passing: the far foot lifted, the near leg planted
-    r(8, 15, 3, 3, p0); r(8, 18, 4, 1, P.dk);
-    r(5, 15, 3, 5, p1); r(5, 15, 1, 4, p2); r(4, 20, 4, 1, P.dk);
-  }
-  // belly and chest, bare and bloated
-  o(3, 7, 9, 8, s2); o(3, 7, 2, 8, s3); o(10, 8, 2, 7, s1); o(5, 13, 5, 2, s1);
-  // ribs in pairs either side of a dark breastbone, an open wound low on the belly
-  for (let k = 0; k < 3; k++) { o(5, 8 + k * 2, 2, 1, P.bone); o(8, 8 + k * 2, 2, 1, '#b3a990'); }
-  o(7, 8, 1, 5, s0); o(5, 9, 1, 1, P.bl0);
-  o(8, 13, 2, 1, P.bl2); o(8, 14, 2, 1, P.bl0); o(9, 12, 1, 1, P.bl1);
-  o(3, 14, 9, 1, p2);
-  // shoulders under a torn vest
-  o(2, 6, 11, 2, h1); o(2, 6, 11, 1, h2); o(11, 7, 2, 4, h0); o(2, 7, 2, 5, h1);
-  // a small head sunk between the shoulders
-  o(6, 1, 5, 5, s2); o(6, 1, 5, 1, s3); o(6, 1, 1, 4, s3); o(10, 2, 1, 4, s1);
-  o(6, 0, 4, 1, c.hr);
-  o(9, 3, 1, 1, P.em); o(8, 3, 1, 1, s0); o(8, 5, 3, 1, s0); o(9, 5, 1, 1, P.bone);
-  // arms down to the knees, swinging with the stride; the front one reaching
-  const sw = st > 0 ? 1 : 0, lift = st < 0 ? 1 : 0;
-  o(0, 8 - sw, 3, 7, s1); o(0, 8 - sw, 1, 7, s2); o(0, 15 - sw, 3, 2, s0);
-  o(12, 8, 3, 3, s2); o(13, 11, 2, 4 - lift, s1); o(12, 15 - lift, 3, 2, s2); o(14, 15 - lift, 1, 1, s3);
-}
-
-// ---------- zombie frame sets
-// Every frame has n = normal, w = white (hit flash), h = hot (thermal camera), s = shadow, each also
-// mirrored (nf, wf, hf, sf) for a zombie that walks left. Plus the body turned on its side (dead),
-// tilt = half fallen (a body knocked over), the 8 eighth turns of a thrown body (spin) and two
-// corpses with a pool of blood.
+// ---------- zombie frame sets (made in horde.js)
 // A copy of src turned by angle a (nearest pixel, hard edges), on a square canvas.
 function rotA(src, a) {
   const s = Math.ceil(Math.hypot(src.width, src.height)) + 1;
@@ -159,43 +30,6 @@ function rotA(src, a) {
   for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
   g.putImageData(im, 0, 0);
   return c;
-}
-function makeZSet(w, h, draw, pal, shw) {
-  const S = { walk: [] };
-  for (let f = 0; f < 4; f++) {
-    const raw = pix(w, h, (r) => draw(r, f, pal));
-    const n = selOut(rimLight(raw, '#f0e6cc', 0.3));
-    const hot = outline(hotSpr(raw), '#161616');
-    const nf = flipH(n), hf = flipH(hot);
-    S.walk.push({
-      n, nf, w: tint(n, '#fff3dc', 0.85), wf: tint(nf, '#fff3dc', 0.85), h: hot, hf,
-      s: unitShadow(n, shw), sf: unitShadow(nf, shw)
-    });
-  }
-  const c0 = S.walk[0].n;
-  S.ax = c0.width >> 1;
-  S.ay = c0.height - 1;
-  S.h = c0.height;
-  S.shp = S.walk[0].s.pad || 0;
-  S.dead = rot90(c0);
-  S.deadH = rot90(S.walk[0].h);
-  S.tilt = rotA(c0, Math.PI / 4);
-  S.dax = S.dead.width >> 1;
-  S.day = S.dead.height - 1;
-  // a body thrown by a blast turns over in the air: 8 eighth turns (normal and hot)
-  S.spin = [];
-  S.spinH = [];
-  for (let k = 0; k < 8; k++) {
-    S.spin.push(k & 1 ? rotA(c0, k * Math.PI / 4) : k === 0 ? c0 : k === 2 ? S.dead : k === 4 ? rot90(S.dead) : rot90(rot90(S.dead)));
-    S.spinH.push(k & 1 ? rotA(S.walk[0].h, k * Math.PI / 4) : k === 0 ? S.walk[0].h : k === 2 ? S.deadH : k === 4 ? rot90(S.deadH) : rot90(rot90(S.deadH)));
-  }
-  const raw0 = pix(w, h, (r) => draw(r, 0, pal));
-  S.corpses = [corpseSpr(raw0, false), corpseSpr(raw0, true)];
-  S.cax = S.corpses[0].width >> 1;
-  S.cay = S.corpses[0].height - 2;
-  // its colours, for the bits a big hit tears off (skin, shirt, trousers)
-  S.pal = pal;
-  return S;
 }
 // ZS[type] = the colour variants of each type (0 walker, 1 runner, 2 brute)
 const ZS = [[], [], []];
@@ -744,10 +578,8 @@ const NODE_ART = {
 function initSprites() {
   const rng = mulberry(2024);
   // the dead: 8 walkers, 4 runners and 3 brutes, each in its own clothes
-  const pal = (k) => ({ sk: ZSKIN[k % 6], sh: ZSHIRT[(k * 7 + 1) % 10], pa: ZPANTS[(k * 3) % 4], hr: ZHAIR[(k * 5) % 6] });
-  for (let k = 0; k < 12; k++) ZS[0].push(makeZSet(9, 16, dWalker, pal(k), 7));
-  for (let k = 0; k < 6; k++) ZS[1].push(makeZSet(10, 14, dRunner, pal(k + 3), 6));
-  for (let k = 0; k < 4; k++) ZS[2].push(makeZSet(15, 21, dBrute, pal(k + 1), 12));
+  // (the horde's own look is in horde.js)
+  makeHordeSprites();
   // trees and scenery
   const PINE = [['#142018', '#1d2b20', '#2f4229'], ['#101a14', '#18241b', '#283a26'], ['#1a261c', '#243323', '#35492d']];
   for (let k = 0; k < 10; k++) PROPS.pine.push(prop(pineSpr(24 + ((rng() * 16) | 0), rng, PINE[k % 3]), 3, { tree: true }));

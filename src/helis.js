@@ -192,7 +192,7 @@ const hDist = (h, z) => Math.hypot(z.x - h.x, (z.y - h.y) / FORE);
 function heliTarget(h) {
   let best = null, bk = Infinity;
   const s0 = G.tr.s;
-  queryEll(h.x, h.y, HC.range, (z, d) => {
+  queryEll(h.x, h.y, heliRange(), (z, d) => {
     if (z.pending >= z.hp || z.gate && z.still) return;
     const k = z.st === 2 ? d : z.st === 1 && trackLocal(z.x, z.y, TL).a < s0 ? 1000 + d : 2000 + d;
     if (k < bk) {
@@ -217,7 +217,7 @@ function updateHelis(dt) {
       fy = c0.dy * tv;
     } else if (o.kind === 'move') [tx, ty] = [o.x, o.y];
     else {
-      const z = o.z, d = hDist(h, z) || 1, r = Math.min(d, HC.range * 0.55);
+      const z = o.z, d = hDist(h, z) || 1, r = Math.min(d, heliRange() * 0.55);
       tx = z.x + (h.x - z.x) / d * r;
       ty = z.y + (h.y - z.y) / d * r;
     }
@@ -244,14 +244,14 @@ function updateHelis(dt) {
     h.alt += (ta - h.alt) * Math.min(1, dt * 1.4);
     // the target: its order's zombie, or the best one in reach (looked for again every 0.12 s)
     let z = o && o.kind === 'attack' ? o.z : h.tgt;
-    if (z && !(o && o.z === z) && (z.dead || hDist(h, z) > HC.range + 8)) z = null;
+    if (z && !(o && o.z === z) && (z.dead || hDist(h, z) > heliRange() + 8)) z = null;
     h.look -= dt;
     if (!(o && o.kind === 'attack') && (!z || h.look <= 0 || z.pending >= z.hp)) {
       z = heliTarget(h) || (z && !z.dead && z.pending < z.hp ? z : null);
       h.look = HC.look;
     }
     h.tgt = z;
-    const inR = z && hDist(h, z) <= HC.range;
+    const inR = z && hDist(h, z) <= heliRange();
     // it turns its nose to the target in reach, else to where it flies (or the train's way)
     const own = Math.hypot(h.vx - fx, h.vy - fy);
     let aim = h.hd;
@@ -271,7 +271,7 @@ function updateHelis(dt) {
       h.cd -= dt;
       while (h.cd <= 0 && !h.hot && z.pending < z.hp) {
         heliShot(h, z);
-        h.cd += 1 / G.up.rate;
+        h.cd += 1 / heliRate();
       }
       if (z.pending >= z.hp) h.look = 0;
     } else h.cd = Math.max(0, h.cd - dt);
@@ -303,10 +303,12 @@ function updateHelis(dt) {
 // One nose gun round at zombie z: it hits 0.07 s later where z will be, with the 25mm's burst.
 function heliShot(h, z) {
   const T = CFG.mg.travel, s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU);
-  z.pending += G.up.dmg;
+  z.pending += heliDmg();
   G.rounds.push({ kind: 'heli', h, bx: z.x + z.vx * T + Math.cos(a) * s, by: z.y + z.vy * T + Math.sin(a) * s * FORE, tgt: z, age: 0, T,
     side: 0, j: 0, player: true });
-  h.flash = 0.05;
+  // (each shot's muzzle flash is a new star)
+  h.flash = 0.07;
+  h.fs = (Math.random() * 1e6) | 0;
   h.heat = Math.min(1, h.heat + G.up.heat);
   // a spent case jumps out of its right side and falls to the ground
   const [ox, oy] = turnXY(h.hd, 4, -14), [rx, ry] = turnXY(h.hd, 1, 0);
@@ -652,21 +654,10 @@ function noseXY(h) {
   const [nx, ny] = turnXY(h.hd, 0, -HC.nose);
   return [h.x + nx, h.y - h.alt + ny - 1];
 }
-// A nose gun round: a tracer from the muzzle to the target, hot at its head.
+// A nose gun round: nothing is drawn in the air (the muzzle flash and the hit tell it all); a 105
+// shell is drawn on its way.
 function drawHeliRound(r) {
-  if (r.kind === 'he') {
-    drawHeShell(r);
-    return;
-  }
-  const [sx, sy] = noseXY(r.h), u = r.age / r.T, ex = r.bx, ey = r.by - 3;
-  const hd = clamp(u * 1.25, 0, 1), t0 = Math.max(0, hd - 0.55);
-  const hx = lerp(sx, ex, hd), hy = lerp(sy, ey, hd);
-  pl(ctx, lerp(sx, ex, t0), lerp(sy, ey, t0), hx, hy, '#c9772f');
-  pl(ctx, lerp(sx, ex, (t0 + hd) / 2), lerp(sy, ey, (t0 + hd) / 2), hx, hy, '#ffd27a');
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = '#fff6e0';
-  ctx.fillRect(Math.round(hx), Math.round(hy), 1, 1);
-  light(hx, hy, 5, '#ffb347', 0.55);
+  if (r.kind === 'he') drawHeShell(r);
 }
 // A 105 shell on its way: up and over from the heli's side to the spot, a bright head, a smoke
 // trail behind it (left in updateHeShells).
@@ -704,10 +695,7 @@ function drawHeliFx() {
   for (const h of G.helis) {
     if (h.sx == null) continue;
     const X = h.sx, Y = h.sy;
-    if (h.flash > 0) {
-      const [nx, ny] = turnXY(h.hd, 0, -HC.nose - 2);
-      light(X + nx, Y + ny, 12, '#ffc27a', h.flash / 0.05 * 0.7);
-    }
+    if (h.flash > 0) drawMuzzle(h);
     const t = (G.t + h.ph) % 1.2, on = t < 0.5;
     if (on) {
       for (const [dx, col] of [[-11, '#ff3a2a'], [11, '#5aff7a']]) {
@@ -728,6 +716,7 @@ function drawHeliFx() {
       light(X + ox, Y + oy - 6, 6, '#ffffff', 0.9);
     }
   }
+  drawHits();
   ctx.globalAlpha = 1;
 }
 // Over the helis: the gun heat of each selected one (a small bar over it), the name of the one

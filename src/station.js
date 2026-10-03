@@ -20,13 +20,13 @@ const FARM_MAP = [
   '......==......'
 ];
 const mirrorMap = (m) => m.map((r) => r.split('').reverse().join(''));
-// a later visit (and a run that starts at the station): 25 s, 3 survivors (they leave the house at
-// 2, 8 and 14 s), the 20 dead waiting there, waves that start at the near edge of the corn (px from
+// a later visit (and a run that starts at the station): 20 s, 3 survivors (they leave the house at
+// 2, 6 and 10 s), the 20 dead waiting there, waves that start at the near edge of the corn (px from
 // the rail middle). Wave side: -1 = the side away from the house, 1 = the house side, 0 = both.
 // w / r / b = walkers, runners, brutes. brute = px out on the house side where the brute starts.
 const HOLD_LATER = {
-  T: 25, people: 3, outs: [2, 8, 14], dead: 20, far: [120, 140], brute: 120,
-  waves: [{ t: 0, side: -1, w: 30, r: 0, b: 0 }, { t: 6, side: 1, w: 32, r: 6, b: 0 }, { t: 11, side: 0, w: 42, r: 8, b: 1 }]
+  T: 20, people: 3, outs: [2, 6, 10], dead: 20, far: [120, 140], brute: 120,
+  waves: [{ t: 0, side: -1, w: 30, r: 0, b: 0 }, { t: 5, side: 1, w: 32, r: 6, b: 0 }, { t: 9, side: 0, w: 42, r: 8, b: 1 }]
 };
 const DEPOT = { id: 'depot', name: 'DEPOT', km: 0 };
 // side = where the house is (1 = east of the rails). kit = the free towers the people there built:
@@ -34,13 +34,13 @@ const DEPOT = { id: 'depot', name: 'DEPOT', km: 0 };
 const STATIONS = [
   { id: 'farm', name: 'FARM STOP', km: 1, side: 1, map: FARM_MAP,
     kit: [['nest', 4, 4], ['bag', 2, 0], ['bag', 2, 1], ['bag', 2, 2], ['bag', 2, 6], ['bag', 2, 7], ['bag', 2, 8]],
-    first: { T: 40, people: 8, out0: 2, gap: 4.5, dead: 20, far: [150, 200], brute: 140,
-      waves: [{ t: 0, side: -1, w: 35, r: 0, b: 0 }, { t: 10, side: 1, w: 39, r: 6, b: 0 }, { t: 20, side: 0, w: 52, r: 8, b: 1 }] },
+    first: { T: 30, people: 8, out0: 2, gap: 3.2, dead: 20, far: [150, 200], brute: 140,
+      waves: [{ t: 0, side: -1, w: 35, r: 0, b: 0 }, { t: 8, side: 1, w: 39, r: 6, b: 0 }, { t: 15, side: 0, w: 52, r: 8, b: 1 }] },
     later: HOLD_LATER },
   { id: 'mill', name: 'MILL TOWN', km: 2, side: -1, map: mirrorMap(FARM_MAP),
     kit: [['nest', 9, 4], ['bag', 11, 0], ['bag', 11, 1], ['bag', 11, 2], ['bag', 11, 6], ['bag', 11, 7], ['bag', 11, 8]],
-    first: { T: 50, people: 10, out0: 2, gap: 4.5, dead: 20, far: [150, 200], brute: 140,
-      waves: [{ t: 0, side: -1, w: 44, r: 0, b: 0 }, { t: 12, side: 1, w: 49, r: 8, b: 0 }, { t: 24, side: 0, w: 65, r: 10, b: 1 }] },
+    first: { T: 36, people: 10, out0: 2, gap: 3.2, dead: 20, far: [150, 200], brute: 140,
+      waves: [{ t: 0, side: -1, w: 44, r: 0, b: 0 }, { t: 9, side: 1, w: 49, r: 8, b: 0 }, { t: 18, side: 0, w: 65, r: 10, b: 1 }] },
     later: HOLD_LATER }
 ];
 // the rows the dead walk in on (the lanes), how near the door the dead keep a survivor inside (px)
