@@ -393,7 +393,7 @@ const hintT0 = () => (G.taste ? 11 : 1.2);
 const hintOn = () => G.run >= hintT0() && G.run < hintT0() + 8.8 && !G.result;
 function drawHint() {
   const a = clamp((hintT0() + 8.8 - G.run) / 1.5, 0, 1);
-  if (!hintOn()) return;
+  if (!hintOn() || G.prompt) return;
   const keys = ['F: BACK OVER THE TRAIN.', 'LEFT CLICK: 25MM.'];
   if (G.up.he) keys.push('RIGHT CLICK: 105MM.');
   if (G.up.ram) keys.push('E: TURBO RAM.');

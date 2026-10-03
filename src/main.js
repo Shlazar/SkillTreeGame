@@ -265,6 +265,8 @@ function boot() {
     get SAVE() { return SAVE; },
     FPS,
     CFG,
+    // the horde by distance (rows of HORDE in game.js), for balance tests
+    HORDE,
     // the sprites, for a test sheet
     art: () => ({ TRAIN, FOOT, HELI, STATION, SURV, ZS, ICON, TURRET }),
     // start(from): a run from 'depot' (the default) or a reached station ('farm', 'mill')
@@ -444,7 +446,7 @@ function boot() {
       scrap: SAVE.scrap, survivors: SAVE.surv, best: SAVE.best, runs: SAVE.runs,
       pay: Object.assign({}, G.pay), hp: Math.round(G.tr.hp), max: G.tr.max, speed: +G.tr.v.toFixed(1),
       onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length, up: Object.assign({}, G.up),
-      shots: G.shots, scavPaid: G.scavPaid, overheat: G.overheat, heReload: +G.heReload.toFixed(2), far: G.heli.far,
+      shots: G.shots, scavPaid: G.scavPaid, overheat: G.overheat, heReload: +G.heReload.toFixed(2), far: G.heli.far, hurt: Object.assign({}, G.hurt),
       station: G.station ? G.station.id + ' ' + G.station.state + ' ' + G.station.saved + '/' + G.station.people + ' lost ' + G.station.lost : '-',
       walls: G.walls.map((w) => w.km + (w.awake ? ' awake' : w.placed ? ' placed' : ' ahead')),
       heli: [Math.round(G.heli.ox), Math.round(G.heli.oy)],
