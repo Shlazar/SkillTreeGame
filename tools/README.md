@@ -315,6 +315,8 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 - `currencyState()`: shown currencies, their screen x targets, saved chest state and saved gold.
 - `depotRoute()`: selected leg, replay flag, ride label, loss message, and each leg's clickable midpoint/availability.
 - `summaryView()`: current summary layout and its Depot button rectangle, or null when there is no summary.
+- `treeOverlap()`: pairs of nodes less than 1.2 cells apart; a valid tree returns `[]`.
+- `treeArt()`: each current node's baked icon dimensions; a 12×12 drawing with its outline is 14×14.
 
 ### 5.15 Tutorial (src/tut.js)
 

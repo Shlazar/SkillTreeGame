@@ -10,10 +10,6 @@
 // (a puff of fire every 3rd, a big blast every 8th), half / dmg = the band and the damage before upgrades, bombR = px
 // a bomb kills round it
 const JETC = { speed: 320, alt: 46, dive: 12, len: 230, lead: 44, step: 4, half: 13, dmg: 3, bombR: 34, N: 32 };
-Object.assign(UP, {
-  strafeW: (l) => JETC.half + 4 * l,    // WIDE RUN: half the band's width (px)
-  strafeD: (l) => JETC.dmg + l          // STRAFE DAMAGE: damage each hit does
-});
 
 // ---------- the jet
 // A twin-engine attack jet seen from right above, its nose up: straight wings with bombs under

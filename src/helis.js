@@ -150,13 +150,6 @@ function bakeHelis() {
     'xx..vvv..xx', '....xvx....', '.....v.....', '.....v.....', '...vvvvv...', '.....v.....'], NPAL), P.out);
   for (const c of [...HSPR.n, ...HSPR.h, ...ROTOR, HICON]) atl(c);
 }
-// the skill tree's icons for the new heli nodes (sprites.js turns them into NICON at startup)
-Object.assign(NODE_ART, {
-  // FAST ROTORS: a rotor and speed lines
-  radio: ['............', 'll........ll', '.ll......ll.', '..ll....ll..', '...llmmll...', '....mddm....',
-    '....mddm....', '...llmmll...', '..ll....ll..', '.ll......ll.', 'll........ll', '............']
-});
-
 // ---------- the units
 // A point on the heli at (dx, dy) from its middle (slice px: +y = to the tail), turned to heading a.
 const turnXY = (a, dx, dy) => [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];

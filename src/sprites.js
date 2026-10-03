@@ -520,68 +520,125 @@ const NPAL = {
   n: '#4a3420', N: '#7b5735', u: '#7a6444', T: '#b49a6a'
 };
 const NICON = {};
-const NODE_ART = {
-  // LAST TRAIN: the engine, side on
-  root: ['............', '........dd..', 'dddd....ld..', 'dBBd....ld..', 'dBBdlllllld.', 'dsssssssssdG',
-    'dllllllllldd', 'dggggggggggd', 'dmmmmmmmmmmd', '.ls..ls..ls.', '.sl..sl..sl.', '............'],
-  // COW CATCHER: the steel plow on the engine's nose, seen from the front
-  cow: ['............', 'dddddddddddd', 'dmmmmmmmmmmd', '.slslslslsl.', '.slslslslsl.', '..lslslsls..',
-    '..lslslsls..', '...slslsl...', '...slslsl...', '....lsls....', '....mmmm....', '............'],
-  // GOLDEN ZOMBIES: a gold zombie with sparkles
-  goldz: ['.........w..', '...yyyy.wGw.', '..yGGGGy.w..', '..yGkGky....', '..yGGGGy....', '..yGkkGy..w.',
-    '...yGGy..wGw', '..yyggyy..w.', '.yGGggGgy...', 'yGGgggggGy..', 'yGgggggggy..', 'yyyyyyyyyy..'],
-  // ARMOR: a steel shield with a gold plus
-  armor: ['............', '.mssssssssm.', '.slllGglllm.', '.slllGglllm.', '.slGGGggglm.', '.slgggyyylm.',
-    '.slllgylllm.', '..sllgyllm..', '..sllllllm..', '...sllllm...', '....slmm....', '.....mm.....'],
-  // RAIL CANNON: a heavy turret on a flatcar, its long barrel glowing at the muzzle
-  gun: ['..........YO', '........slsY', '.......slmm.', '......sl....', '.....sl.....', '...dsl......',
-    '.dmslmmd....', 'dlllllllmd..', 'dgkgkgkgkd..', 'NNNNNNNNNNNN', 'nnnnnnnnnnnn', '.ls......ls.'],
-  // GUN SPEED: rounds stacked higher and higher
-  gunspd: ['............', '.........s..', '........sll.', '.....s..Ggy.', '....sll.Ggy.', '.s..Ggy.Ggy.',
-    'sll.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'yyy.yyy.yyy.'],
-  // TURBO RAM: two fiery arrows forward
-  ram: ['............', 'YO....YO....', '.YO....YO...', '..YO....YO..', '...YO....YO.', '....YO....YO',
-    '....YO....YO', '...YO....YO.', '..YO....YO..', '.YO....YO...', 'YO....YO....', '............'],
-  // COOLING: a snowflake
-  cool: ['....B.B.....', '.....B......', '.B...B...B..', '..B..B..B...', 'B..B.B.B..B.', '.BBBBwBBBB..',
-    'B..B.B.B..B.', '..B..B..B...', '.B...B...B..', '.....B......', '....B.B.....', '............'],
-  // FAST FEED: an ammo belt
-  feed: ['............', '............', '.s..s..s..s.', 'sl.sl.sl.sl.', 'Gg.Gg.Gg.Gg.', 'mmmmmmmmmmm.',
-    'Gg.Gg.Gg.Gg.', 'Gy.Gy.Gy.Gy.', 'mmmmmmmmmmm.', 'yy.yy.yy.yy.', '............', '............'],
-  // HEAVY ROUNDS: one big round
-  heavy: ['.....ss.....', '....slll....', '...sllllm...', '...sllllm...', '...yyyyyy...', '...GGgggy...',
-    '...Gggggy...', '...Gggggy...', '...Gggggy...', '...Gggggy...', '...yyyyyy...', '..yyyyyyyy..'],
-  // 105MM CANNON: a big olive shell with gold bands
-  he: ['.....ll.....', '....slll....', '....sllm....', '...VVvvvx...', '...VVvvvx...', '...Gggggy...',
-    '...VVvvvx...', '...VVvvvx...', '...VVvvvx...', '...Gggggy...', '...mmmmmd...', '............'],
-  // FAST RELOAD: a shell and an arrow up
-  reload: ['............', '..ll.....G..', '.slll...GGg.', '.sllm..GGGgy', '.VVvx....Gy.', '.VVvx....Gy.',
-    '.Gggy....Gy.', '.VVvx....Gy.', '.VVvx....Gy.', '.Gggy.......', '.mmmd.......', '............'],
-  // RADIO RANGE: a mast sending waves
-  radio: ['............', '.E........E.', 'E..E....E..E', 'E.E..RR..E.E', 'E.E..RR..E.E', 'E..E.ll.E..E',
-    '.E...ll...E.', '.....ll.....', '....l..l....', '....l..l....', '...l....l...', '..mmmmmmmm..'],
-  // MAGNET: a magnet pulling up a bolt
-  magnet: ['...RRRRRR...', '..RRrrrrRR..', '.RRr....rRR.', '.Rr......Rr.', '.Rr......Rr.', '.Rr......Rr.',
-    '.ss......ss.', '.ll......ll.', '............', '.....Gg.....', '.....gy.....', '.....gy.....'],
-  // SCAVENGER: a bolt of scrap and a plus
-  scav: ['............', 'GGGGG.......', 'Ggggy...EE..', 'yyyyy...EE..', '.Ggy..EEEEEE', '.Ggy..eeeeee',
-    '.gyy....EE..', '.Ggy....ee..', '.gyy........', '.Ggy........', '.yyy........', '............'],
-  // WINCH: a drum, a rope and a hook
-  winch: ['.mmmmmmmmmm.', 'dlsssssssssd', '.mmmmmmmmmm.', '.....N......', '.....N......', '.....N......',
-    '....lsl.....', '.....s......', '.l...s......', '.s...s......', '..ssss......', '............'],
-  // FARM STOP: a red barn
-  farm: ['.....dd.....', '....dmmd....', '...dmwwmd...', '..dmmwwmmd..', '.dmmmmmmmmd.', 'dddddddddddd',
-    '..RRRRRRRR..', '..RRwRRwRR..', '..RRRwwRRR..', '..RRRwwRRR..', '..RRwRRwRR..', '..rrrrrrrr..'],
-  // NEST SPEED: an MG nest behind sandbags
-  nestspd: ['............', '............', '............', '....dd......', '...dmmssssss', '...dmmddd...',
-    '...dmmd.....', '.TTTuTTTuTT.', '.uuuuuuuuuu.', 'TTuTTTuTTTuT', 'uuuuuuuuuuuu', '............'],
-  // BARBED WIRE: coils of wire between two posts
-  wire: ['............', '............', 'N..........N', 'N..........N', 'N.ss.ss.ss.N', 'Ns..s..s..sN',
-    'Ns..s..s..sN', 'N.ss.ss.ss.N', 'N..........N', 'N..........N', 'n..........n', '............'],
-  // MORTAR PIT: a mortar tube in a ring of sandbags
-  mortar: ['.........dd.', '........dlsd', '.......dls..', '......dls...', '.....dls....', '....dls.....',
-    '...dls......', '..mdd.ll....', '.TTTuTTTuTT.', '.uuuuuuuuuu.', 'TTuTTTuTTTuT', 'uuuuuuuuuuuu']
-};
+const NODE_ART = (() => {
+  // Unit silhouettes stay visible below each upgrade mark, so a chain reads as one weapon.
+  const art = {
+    // VIPER: olive fuselage, blue canopy and a broad rotor, viewed from above.
+    root: ['.....m......', '....xvx.....', '....vBv.....', '....vBv.....', 'xx..vvv..xx.', 'vVvvvVvvvVv.',
+      'xx..vvv..xx.', '....xvx.....', '.....v......', '.....v......', '...vvvvv....', '.....v......'],
+    hdmg: ['...l........', '..lsl.......', '..lsl.......', '.yGGg.......', '.yGgg...RR..', '.yGgg...RR..',
+      '.yGgg.RRRRRR', '.yGgg.RRRRRR', '.yGgg...RR..', '.yGgg...RR..', '.yyyy.......', '............'],
+    hrate: ['............', '............', '..d...yGGGl.', '.d...yGGGGsl', '..d...yGGGl.', '............',
+      '............', '.d..yGGGl...', 'd..yGGGGsl..', '.d..yGGGl...', '............', '............'],
+    hrange: ['....BBBB....', '..BB....BB..', '.B........B.', '.B...ll...B.', 'B...l..l...B', 'B..l.RR.l..B',
+      'B..l.RR.l..B', 'B...l..l...B', '.B...ll...B.', '.B........B.', '..BB....BB..', '....BBBB....'],
+    // ROCKETS and PODS: a finned round, then a pair of tubes with six dark sockets.
+    rockets: ['.....s......', '....sls.....', '....slm.....', '....VVx.....', '....VGx.....', '....VGx.....',
+      '....VVx.....', '...lVVxl....', '..llVVxll...', '....mmx.....', '....OYO.....', '.....Y......'],
+    rocketPods: ['............', '............', '..ss....ss..', '.sllm..sllm.', '.slkm..slkm.', '.slkm..slkm.',
+      'xslkmvvslkmx', 'VsllmVVsllmv', '.sllm..sllm.', '.mddm..mddm.', '..dd....dd..', '............'],
+    // HELLFIRE: a long white missile with dark fins and a red guidance band.
+    hellfire: ['.....s......', '....sws.....', '....slm.....', '....slm.....', '...lslm.....', '..llslmll...',
+      '....RRr.....', '....slm.....', '....slm.....', '...mslm.....', '..mmmlmmm...', '.....O......'],
+    armor: ['............', '.mssssssssm.', '.slllGglllm.', '.slllGglllm.', '.slGGGggglm.', '.slgggyyylm.',
+      '.slllgylllm.', '..sllgyllm..', '..sllllllm..', '...sllllm...', '....slmm....', '.....mm.....'],
+    // The car deck and wheels distinguish train weapons from the airborne versions.
+    mgCar: ['............', '............', '.....ss.....', '....slssssss', '...dsldddd..', '..dmslmd....',
+      '..sllllmd...', 'dssssssssssd', 'dlllllllllmd', 'dddddddddddd', '..ls....ls..', '..sl....sl..'],
+    katyusha: ['............', '...s.s.s.s..', '..lslmlmlm..', '.lslmlmlm...', 'lslmVxVx....', 'mlmVVxVx....',
+      '.mVVVVx.....', 'dssssssssssd', 'dVVVVVVVVVxd', 'dddddddddddd', '..ls....ls..', '..sl....sl..'],
+    ram: ['............', 'YO....YO....', '.YO....YO...', '..YO....YO..', '...YO....YO.', '....YO....YO',
+      '....YO....YO', '...YO....YO.', '..YO....YO..', '.YO....YO...', 'YO....YO....', '............'],
+    steamVent: ['..s..w..s...', '.sw..s..ws..', '..wss..sw...', '...swss.....', '....sss.....', '...dmmmd....',
+      '..dsssssmd..', '..slmlmlmd..', '..slmlmlmd..', '.dsssssssmd.', '.dmmmmmmmdd.', '............'],
+    // The three demo aircraft keep different wing and engine silhouettes.
+    a10: ['.....ll.....', '.....ss.....', '.....BB.....', '.....ll.....', 'ssssssssssss', 'mllllllllllm',
+      '.....ll.....', '...dmllmd...', '...dmllmd...', '.....ll.....', '..llllllll..', '..m..mm..m..'],
+    f4: ['.....s......', '....slm.....', '....sBm.....', '....sBm.....', '...sllmm....', '..ssllmmm...',
+      '.sslllmmmm..', 'ssllllmmmmm.', '...sllmm....', '...sllmm....', '..ssllmmm...', '....mm......'],
+    b52: ['.....ss.....', '.....BB.....', '.....ll.....', '..ss.ll.ss..', 'ssllsllsllss', 'mllllllllllm',
+      '..mm.ll.mm..', '.....ll.....', '.....ll.....', '...llllll...', '..llllllll..', '.....mm.....'],
+    magnet: ['...RRRRRR...', '..RRrrrrRR..', '.RRr....rRR.', '.Rr......Rr.', '.Rr......Rr.', '.Rr......Rr.',
+      '.ss......ss.', '.ll......ll.', '............', '.....BB.....', '.....lm.....', '.....md.....'],
+    salvageCrew: ['............', 'BBBBB.......', 'Bsssm...EE..', 'mmmmm...EE..', '.Bsm..EEEEEE', '.Bsm..eeeeee',
+      '.lmm....EE..', '.Bsm....ee..', '.lmm........', '.Bsm........', '.mmm........', '............'],
+    goldHunt: ['.........w..', '...yyyy.wGw.', '..yGGGGy.w..', '..yGkGky....', '..yGGGGy....', '..yGkkGy..w.',
+      '...yGGy..wGw', '..yyggyy..w.', '.yGGggGgy...', 'yGGgggggGy..', 'yGgggggggy..', 'yyyyyyyyyy..'],
+    boomHunt: ['.......Y.O..', '........Y...', '.......dY...', '......d.....', '...dddd.....', '..dmmmmd....',
+      '.dmllmmmd...', '.dmlmmmmd...', '.dmmmmmmd...', '.dmmmmmmd...', '..dmmmmd....', '...dddd.....'],
+    // Full-game silhouettes are still complete; the tree adds the lock over them.
+    doorGunner: ['............', '............', 'sssssssss...', '....l.......', '..xVVxxx....', '.VVBvVxvxx..',
+      'xVBBvVxdddss', '.VVVxVxll...', '..xxxxxd....', '..l....l....', '.llllllll...', '............'],
+    apache: ['....ss......', '....BB......', '...vBBx.....', '...VVVx.....', '.llVVVxll...', 'ssmVVVxmsss.',
+      '.mmVVVxmm...', '...VVVx.....', '....Vx......', '....Vx......', '..vvVVxx....', '....vx......'],
+    railCannon: ['..........YO', '........slsY', '.......slmm.', '......sl....', '.....sl.....', '...dsl......',
+      '.dmslmmd....', 'dlllllllmd..', 'dgkgkgkgkd..', 'NNNNNNNNNNNN', 'nnnnnnnnnnnn', '.ls......ls.'],
+    cowCatcher: ['............', 'dddddddddddd', 'dmmmmmmmmmmd', '.slslslslsl.', '.slslslslsl.', '..lslslsls..',
+      '..lslslsls..', '...slslsl...', '...slslsl...', '....lsls....', '....mmmm....', '............'],
+    mineLayer: ['............', '............', '..sssssss...', '..slmlmlmd..', '..slmlmlmd..', '.dllllllmd..',
+      'dssssssssssd', 'dlllllllllmd', 'dddddddddddd', '.ls......ls.', '....s..s....', '...dmdmdmd..'],
+    twinMG: ['............', '..s....s....', '..l....l....', '..l....l....', '.slm..slm...', '.slm..slm...',
+      '..mm..mm....', 'dssssssssssd', 'dlllllllllmd', 'dddddddddddd', '..ls....ls..', '..sl....sl..'],
+    hangar3: ['.....ss.....', '....sllm....', '...sllllm...', '..sllllllm..', '.sllllllllm.', 'ssssssssssss',
+      'sdddddddddds', 'slssslssslms', 'sl...l...lms', 'sl...l...lms', 'sl...l...lms', 'ssssssssssss'],
+    hangar4: ['.....ss.....', '....sllm....', '...sllllm...', '..sllllllm..', '.sllllllllm.', 'ssssssssssss',
+      'sdddddddddds', 'slslslssslms', 'sl.l.l...lms', 'sl.l.l...lms', 'sl.l.l...lms', 'ssssssssssss'],
+    b2: ['.....ss.....', '....sBBm....', '...ssllmm...', '..sssllmmm..', '.ssssllmmmm.', 'sssssllmmmmm',
+      'slllsssslllm', '.mml....lmm.', '..mm....mm..', '...m....m...', '............', '............'],
+    ac130: ['.....ss.....', '.....BB.....', '.....ll.....', '.....ll.....', 'llllllllllll', 'ssllsllsllss',
+      '.mm..ll..mm.', '..ssssll....', '..ssssll....', '.....ll.....', '...llllll...', '.....mm.....']
+  };
+  // Marks are five pixels wide: material and outline still come from NPAL, never new colours.
+  const marks = {
+    damage: ['.RR..', '.RR..', 'RRRRR', '.rr..', '.rr..'],
+    rate: ['..B..', '...B.', 'BBBBB', '...B.', '..B..'],
+    reload: ['.sss.', 's...s', 's..ss', '.ss.s', '....s'],
+    cooldown: ['.BBB.', 'B.w.B', 'B.wwB', 'B...B', '.BBB.'],
+    range: ['.BBB.', 'B...B', 'B.w.B', 'B...B', '.BBB.'],
+    blast: ['..Y..', '.YYY.', 'YYwYY', '.YYY.', '..Y..'],
+    salvo: ['s.s.s', 'l.l.l', 'G.G.G', 'g.g.g', 'y.y.y'],
+    missiles: ['.s.s.', '.l.l.', '.V.V.', '.G.G.', 'O...O'],
+    fire: ['..Y..', '.YOY.', 'YOwOY', 'YOYOY', '.OOO.'],
+    turrets: ['s.s.s', 'm.m.m', 'lllll', 'mdmdm', 'ddddd'],
+    pierce: ['..s.s', 'Gllls', 'GGGGG', 'gllls', '..s.s'],
+    cluster: ['..s..', '..l..', '.lll.', 'l...l', 'O.O.O'],
+    duration: ['sssss', '.lml.', '..w..', '.lml.', 'sssss'],
+    shock: ['.YYY.', 'YO.OY', 'Y.w.Y', 'YO.OY', '.YYY.'],
+    reach: ['.B.B.', 'B.B.B', '.BwB.', 'B.B.B', '.B.B.'],
+    cloud: ['.www.', 'wwYww', 'wYOYw', '.OOO.', '..O..'],
+    lines: ['B.B.B', 'B.B.B', 's.s.s', 'O.O.O', '.Y.Y.'],
+    bomb: ['.l.l.', '..m..', '.mmm.', '.mmm.', '..O..'],
+    charge: ['..G..', '.GGG.', 'GGwGG', '.gGg.', '..g..'],
+    length: ['O...O', 'OO.OO', 'OOOOO', 'OO.OO', 'O...O'],
+    wall: ['Y.Y.Y', 'OYOYO', 'OYOYO', 'OOOOO', 'rrrrr'],
+    bombs: ['s.s.s', 'm.m.m', 'm.m.m', '.O.O.', '..Y..'],
+    auto: ['.EEE.', 'E.E.E', 'EEwEE', 'E.E.E', '.EEE.']
+  };
+  const marked = (unit, mark) => unit.map((row, y) => y < 5 ? row.slice(0, 7) + mark[y] : row);
+  for (const [id, unit, mark] of [
+    ['podDamage', 'rocketPods', 'damage'], ['podReload', 'rocketPods', 'reload'],
+    ['podSalvo', 'rocketPods', 'salvo'], ['napalm', 'rocketPods', 'fire'],
+    ['hellfireDamage', 'hellfire', 'damage'], ['hellfireReload', 'hellfire', 'reload'],
+    ['hellfireBlast', 'hellfire', 'blast'], ['doubleHellfire', 'hellfire', 'missiles'],
+    ['mgDamage', 'mgCar', 'damage'], ['mgRate', 'mgCar', 'rate'], ['mgRange', 'mgCar', 'range'],
+    ['mgTurrets', 'mgCar', 'turrets'], ['apRounds', 'mgCar', 'pierce'],
+    ['katyushaRockets', 'katyusha', 'salvo'], ['katyushaReload', 'katyusha', 'reload'],
+    ['katyushaBlast', 'katyusha', 'blast'], ['clusterRockets', 'katyusha', 'cluster'],
+    ['ramPower', 'ram', 'damage'], ['ramCooldown', 'ram', 'cooldown'],
+    ['ramDuration', 'ram', 'duration'], ['shockwave', 'ram', 'shock'],
+    ['steamDamage', 'steamVent', 'damage'], ['steamSpeed', 'steamVent', 'rate'],
+    ['steamReach', 'steamVent', 'reach'], ['hotCloud', 'steamVent', 'cloud'],
+    ['a10Damage', 'a10', 'damage'], ['a10Cooldown', 'a10', 'cooldown'],
+    ['a10Lines', 'a10', 'lines'], ['bombRun', 'a10', 'bomb'], ['a10Charge', 'a10', 'charge'],
+    ['fireDamage', 'f4', 'damage'], ['f4Cooldown', 'f4', 'cooldown'],
+    ['fireLength', 'f4', 'length'], ['fireWall', 'f4', 'wall'], ['f4Charge', 'f4', 'charge'],
+    ['b52Bombs', 'b52', 'bombs'], ['b52Cooldown', 'b52', 'cooldown'],
+    ['b52Blast', 'b52', 'blast'], ['fireBombs', 'b52', 'fire'], ['b52Charge', 'b52', 'charge'],
+    ['autoPilotA10', 'a10', 'auto'], ['autoPilotF4', 'f4', 'auto'], ['autoPilotB52', 'b52', 'auto']
+  ]) art[id] = marked(art[unit], marks[mark]);
+  art.silverHunt = art.goldHunt.map((row) => row.replace(/y/g, 'm').replace(/G/g, 'w').replace(/g/g, 's'));
+  return art;
+})();
 
 // Build every sprite. Called once at startup.
 function initSprites() {

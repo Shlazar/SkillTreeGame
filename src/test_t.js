@@ -34,7 +34,9 @@ Object.assign(window.__sr, {
     return callStrafe(G.camX + sx, G.camY + sy, a / l, b / l);
   },
   strafeState: () => (srSync(), { left: STRAF.left, arm: STRAF.arm, jets: STRAF.jets.length, bombs: STRAF.bombs.length, up: G.up.strafe }),
-  treeNodes: () => NODES.map((n) => ({ id: n.id, p: n.p || null, lv: lv(n.id), max: maxLv(n), st: nodeState(n), cost: n.cost, cur: n.cur || 'scrap' }))
+  treeNodes: () => NODES.map((n) => ({ id: n.id, name: n.name, p: n.p || null, k: n.k, cur: n.cur || 'scrap',
+    cost: n.cost.slice(), charge: !!n.charge, star: !!n.star, x: n.x, y: n.y,
+    lv: lv(n.id), max: maxLv(n), st: nodeState(n) }))
 });
 // fx() = how many effects are alive; fxDrop(name) empties one list (tests: what a frame costs)
 Object.assign(window.__sr, {

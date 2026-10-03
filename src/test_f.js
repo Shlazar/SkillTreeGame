@@ -1,5 +1,14 @@
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  treeArt: () => NODES.map((n) => ({ id: n.id, w: NICON[n.id]?.width || 0, h: NICON[n.id]?.height || 0 })),
+  treeOverlap: () => {
+    const pairs = [];
+    for (let i = 0; i < NODES.length; i++) for (let j = i + 1; j < NODES.length; j++) {
+      const a = NODES[i], b = NODES[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < 1.2) pairs.push({ a: a.id, b: b.id, distance: +d.toFixed(3) });
+    }
+    return pairs;
+  },
   summaryView: () => G.sum ? summaryLayout(G.sum, G.sum.plan || sumPlan(G.sum)) : null,
   depotRoute: () => depotRouteState(),
   currencyState: () => ({ shown: { scrap: true, surv: !!SAVE.flags.survShown, gold: !!SAVE.flags.goldShown },

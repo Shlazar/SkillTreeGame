@@ -2,9 +2,8 @@
 // Depot, how each node looks, the tooltip (what it does, NOW > NEXT, the price), buying, and the goal
 // line under the summary. What a node does in a run is read from the UP numbers (game.js, and the new
 // ones below), the same numbers the tooltip shows.
-// The look: a dark starry panel, glowing neon nodes and lines that grow out from LAST TRAIN in the
-// middle. Blue = a small upgrade (many levels, cheap, bought often), orange = a big unlock, pink =
-// something special. Drag to move the map, the wheel zooms, C centres it.
+// The look: a dark starry panel with glowing nodes and lines around VIPER. Drag to move the map,
+// use the wheel to zoom, and C to centre it. The three currency colours are updated in T2.2.
 
 // ---------- colours and numbers
 // Each kind of node: c = bright, m = mid, d = dark (the body when maxed), g = its glow.
@@ -12,109 +11,171 @@ const NODE_KIND = {
   root: { c: '#ffd36a', m: '#a07a30', d: '#2e2410', g: '#ffb040' },
   up: { c: '#62c8ff', m: '#2f6f9e', d: '#0b2234', g: '#2a9dff' },
   big: { c: '#ffa448', m: '#a55a1e', d: '#331b08', g: '#ff7a1a' },
-  spec: { c: '#ff70d4', m: '#9e3a84', d: '#2e0c26', g: '#ff3ab8' }
+  spec: { c: '#ff70d4', m: '#9e3a84', d: '#2e0c26', g: '#ff3ab8' },
+  tease: { c: '#3a4458', m: '#202838', d: '#10141c', g: '#3a4458' }
 };
 // A value with its unit, for the tooltip. (2 px on the ground = 1 m.)
 const perS = (v) => +v.toFixed(1) + '/S', secs = (v) => +v.toFixed(1) + ' S', metres = (px) => Math.round(px / 2) + ' M';
-const hotS = (t) => (isFinite(t) ? Math.round(t) + ' S' : 'NEVER');
 const pctS = (v) => Math.round(v * 100) + '%';
-// The prices of n levels: base, then each one k times the one before (rounded to 5, or 10 from 100).
-function nodeCosts(base, n, k) {
-  const a = [];
-  let p = base;
-  for (let i = 0; i < n; i++) {
-    a.push(p < 100 ? Math.round(p / 5) * 5 : Math.round(p / 10) * 10);
-    p *= k;
-  }
-  return a;
-}
+const TRACKS = {
+  A: [15, 23, 34, 51, 76, 114, 171, 256],
+  B: [20, 30, 45, 68, 101, 152],
+  C: [25, 38, 56, 84, 127],
+  D: [30, 45, 68, 101, 152],
+  E: [40, 60, 90, 135],
+  F: [40, 64, 102, 164]
+};
 
-// ---------- what the new nodes do (numbers at level l; game.js has the older ones)
+// ---------- node values
+// These are the demo's numbers at level l. New weapons read them when their systems are added;
+// treeUp below bridges only the weapons that are already active.
 Object.assign(UP, {
-  hdmg: (l) => 1 + 0.15 * l,       // HELI DAMAGE: x the heli guns' damage
-  hrate: (l) => 1 + 0.08 * l,      // HELI FIRE RATE: x the heli guns' rounds per second
-  hrange: (l) => 1 + 0.1 * l,      // HELI RANGE: x how far the heli guns reach
-  bonus: (l) => 10 * l,            // BONUS SCRAP: scrap added at the end of a run
-  bonusP: (l) => 0.05 * l,         // BIG BONUS: share of the run's scrap added at its end
-  boom: (l) => 0.03 * l,           // EXPLOSIVE ZOMBIES: chance a zombie blows up when it dies
-  boomR: (l) => 18 + 4 * l,        // BLAST RADIUS: how far that blast reaches (px)
-  silver: (l) => 0.02 * l,         // SILVER ZOMBIES: chance a zombie is silver (worth more)
-  ramTime: (l) => 0.5 * l,         // RAM TIME: seconds added to the Turbo Ram
-  ramCharge: (l) => 20 * l         // RAM CHARGE: fewer kills to fill the Ram again
+  hdmg: (l) => 1 + 0.2 * l,
+  hrate: (l) => 1 + 0.12 * l,
+  hrange: (l) => 1 + 0.15 * l,
+  rockets: (l) => [0, 0.05, 0.08, 0.11, 0.14, 0.18][l],
+  podDamage: (l) => 1 + 0.25 * l,
+  podReload: (l) => [8, 7, 6, 5.5, 5][l],
+  podSalvo: (l) => 4 + l,
+  napalm: (l) => l ? 3 : 0,
+  hellfireDamage: (l) => 1 + 0.3 * l,
+  hellfireReload: (l) => 10 - l,
+  hellfireBlast: (l) => 1 + 0.2 * l,
+  doubleHellfire: (l) => l ? 2 : 1,
+  mgDamage: (l) => 1 + 0.25 * l,
+  mgRate: (l) => 2 * (1 + 0.15 * l),
+  mgRange: (l) => 1 + 0.15 * l,
+  mgTurrets: (l) => 1 + l,
+  apRounds: (l) => l ? 3 : 1,
+  katyushaRockets: (l) => 6 + 2 * l,
+  katyushaReload: (l) => 15 - 1.5 * l,
+  katyushaBlast: (l) => 1 + 0.2 * l,
+  clusterRockets: (l) => l ? 3 : 0,
+  ramPower: (l) => 1 + 0.3 * l,
+  ramCooldown: (l) => 20 - 2 * l,
+  ramDuration: (l) => 2 + 0.5 * l,
+  shockwave: (l) => l > 0,
+  steamDamage: (l) => 1 + 0.25 * l,
+  steamSpeed: (l) => [5, 4.4, 3.8, 3.2, 2.5][l],
+  steamReach: (l) => l,
+  hotCloud: (l) => l ? 2 : 0,
+  a10Damage: (l) => 1 + 0.25 * l,
+  a10Cooldown: (l) => [25, 22, 19, 16, 14, 12][l],
+  a10Lines: (l) => 1 + l,
+  bombRun: (l) => l ? 4 : 0,
+  a10Charge: (l) => 1 + l,
+  fireDamage: (l) => 1 + 0.25 * l,
+  f4Cooldown: (l) => 30 - 3 * l,
+  fireLength: (l) => 1 + 0.2 * l,
+  fireDuration: (l) => 4 + l,
+  fireWall: (l) => l ? 12 : 4,
+  f4Charge: (l) => 1 + l,
+  b52Bombs: (l) => 8 + 2 * l,
+  b52Cooldown: (l) => 45 - 5 * l,
+  b52Blast: (l) => 1 + 0.2 * l,
+  fireBombs: (l) => l > 0,
+  b52Charge: (l) => 1 + l,
+  salvageCrew: (l) => 1 + 0.08 * l,
+  silverHunt: (l) => l,
+  boomHunt: (l) => l,
+  goldHunt: (l) => l
 });
 
 // ---------- the nodes
-// Each node: id, name, k = kind ('up', 'big', 'spec'), p = the node it grows from, x, y = its place
-// (in cells of 36 px, LAST TRAIN at 0, 0; -y is up), need = the level p must have (1 if not said),
-// cost = the price of each level (as many levels as prices), cur = 'surv' when it nodeCosts survivors
-// (else scrap), desc = one short sentence, stat (and stat2) = [label, value at level l] for the
-// NOW > NEXT line. soon = shown with its price, not for sale yet.
-// later = from later in the game: a padlock for now.
+// p is the neighbouring parent, x/y are 36 px cells, and cost has one price per level.
+// Explicit currencies keep table data and buying consistent. Charges are single-level gold nodes.
+function scrapNode(id, name, p, x, y, track, levels, desc, stat, stat2) {
+  return { id, name, k: 'up', p, x, y, cost: typeof track === 'string' ? TRACKS[track].slice(0, levels) : track.slice(),
+    cur: 'scrap', desc, stat, stat2 };
+}
+function unlockNode(id, name, p, x, y, desc, stat, stat2) {
+  return { id, name, k: 'big', p, x, y, cost: [1], cur: 'surv', star: true, desc, stat, stat2 };
+}
+function goldNode(id, name, p, x, y, cost, desc, stat, charge = false) {
+  return { id, name, k: 'spec', p, x, y, cost, cur: 'gold', charge, desc, stat };
+}
+function teaseNode(id, name, p, x, y) {
+  return { id, name, k: 'tease', p, x, y, cost: [], cur: 'scrap', desc: 'AVAILABLE IN THE FULL GAME.' };
+}
 const NODES = [
-  { id: 'root', name: 'LAST TRAIN', k: 'root', x: 0, y: 0, cost: [0], desc: 'THE START OF YOUR WHOLE TREE.',
-    stat: ['BRANCHES OPEN', (l) => (l ? 5 : 0)] },
-  // HELIS (west)
-  { id: 'hdmg', name: 'HELI DAMAGE', k: 'up', p: 'root', x: -1.7, y: 0, cost: nodeCosts(15, 10, 1.4),
-    desc: 'EVERY HELI ROUND HITS HARDER.', stat: ['HELI DAMAGE', (l) => pctS(UP.hdmg(l))] },
-  { id: 'hrate', name: 'HELI FIRE RATE', k: 'up', p: 'hdmg', x: -3.0, y: -0.85, cost: nodeCosts(20, 10, 1.4),
-    desc: 'HELI GUNS FIRE FASTER.', stat: ['FIRE RATE', (l) => pctS(UP.hrate(l))] },
-  { id: 'cool', name: 'COOLING', k: 'up', p: 'hrate', x: -4.25, y: -1.55, cost: [25, 50, 100],
-    desc: 'HELI GUNS GET HOT MORE SLOWLY.', stat: ['OVERHEAT AFTER', (l) => hotS(UP.hot(l))] },
-  { id: 'feed', name: 'FAST FEED', k: 'up', p: 'cool', x: -5.55, y: -1.95, cost: [40, 80, 160, 320, 640],
-    desc: '+1 ROUND A SECOND, NO MORE HEAT.', stat: ['EACH HELI GUN', (l) => perS(UP.rate(l))] },
-  { id: 'heavy', name: 'HEAVY ROUNDS', k: 'up', p: 'feed', x: -6.85, y: -2.45, cost: [120, 300, 700],
-    desc: 'BIG ROUNDS: +1 DAMAGE EACH.', stat: ['DAMAGE A ROUND', (l) => UP.dmg(l)],
-    stat2: ['HITS TO KILL A BRUTE', (l) => Math.ceil(CFG.types[2].hp / UP.dmg(l))] },
-  { id: 'hrange', name: 'HELI RANGE', k: 'up', p: 'hdmg', x: -2.65, y: 1.55, cost: nodeCosts(25, 5, 1.5),
-    desc: 'HELI GUNS REACH FURTHER.', stat: ['GUN RANGE', (l) => metres(HC.range * UP.hrange(l))] },
-  { id: 'radio', name: 'FAST ROTORS', k: 'up', p: 'hrange', x: -3.45, y: 2.75, cost: nodeCosts(20, 5, 1.6),
-    desc: 'YOUR HELIS FLY FASTER.', stat: ['HELI SPEED', (l) => UP.fly(l) + ' PX/S'] },
-  // TRAIN (east)
-  { id: 'armor', name: 'ARMOR', k: 'up', p: 'root', x: 1.7, y: 0, cost: nodeCosts(15, 10, 1.38),
-    desc: 'STEEL PLATES: MORE TRAIN HEALTH.', stat: ['TRAIN HP', (l) => UP.hp(l)] },
-  { id: 'ram', name: 'TURBO RAM', k: 'big', p: 'armor', x: 5.0, y: 1.65, cost: [350], star: true,
-    desc: 'PRESS E: SMASH THROUGH THE DEAD.',
-    stat: ['TURBO RAM', (l) => (l ? CFG.ram.dur + ' S AT ' + Math.round(CFG.ram.speed / CFG.train.cruise) + '× SPEED' : 'NONE')],
-    stat2: ['FULL AGAIN AFTER', () => CFG.ram.charge + ' KILLS'] },
-  { id: 'ramtime', name: 'RAM TIME', k: 'up', p: 'ram', x: 6.35, y: 2.15, cost: nodeCosts(40, 5, 1.6),
-    desc: 'THE TURBO RAM LASTS LONGER.', stat: ['RAM LASTS', (l) => secs(CFG.ram.dur + UP.ramTime(l))] },
-  { id: 'charge', name: 'RAM CHARGE', k: 'up', p: 'ram', x: 4.6, y: 3.0, cost: nodeCosts(40, 5, 1.6),
-    desc: 'FEWER KILLS FILL THE RAM AGAIN.', stat: ['FULL AGAIN AFTER', (l) => CFG.ram.charge - UP.ramCharge(l) + ' KILLS'] },
-  // LOOT (north)
-  { id: 'bonus', name: 'BONUS SCRAP', k: 'up', p: 'root', x: 0, y: -1.6, cost: nodeCosts(20, 10, 1.4),
-    desc: 'MORE SCRAP AT THE END OF A RUN.', stat: ['RUN BONUS', (l) => '+' + UP.bonus(l)] },
-  { id: 'goldz', name: 'GOLDEN ZOMBIES', k: 'spec', p: 'bonus', x: 1.15, y: -2.6, cost: [30, 80, 200],
-    desc: 'RARE GOLD ZOMBIES. CHASE THEM DOWN!', stat: ['GOLDEN ZOMBIES', (l) => (l ? '1 IN ' + UP.gold(l) : 0)],
-    stat2: ['EACH ONE PAYS', () => SK.gold.value + ' SCRAP'] },
-  { id: 'silver', name: 'SILVER ZOMBIES', k: 'spec', p: 'bonus', x: -1.15, y: -2.6, cost: nodeCosts(30, 5, 1.5),
-    desc: 'SOME ZOMBIES ARE SILVER: MORE SCRAP.', stat: ['SILVER ZOMBIES', (l) => pctS(UP.silver(l))] },
-  { id: 'scav', name: 'SCAVENGER', k: 'up', p: 'bonus', x: 0, y: -3.1, cost: nodeCosts(50, 5, 1.8),
-    desc: 'MORE SCRAP FROM EVERY KILL.', stat: ['KILL SCRAP', (l) => '+' + Math.round(UP.scav(l) * 100) + '%'] },
-  { id: 'magnet', name: 'MAGNET', k: 'up', p: 'scav', x: 1.15, y: -4.1, cost: [20, 40, 80],
-    desc: 'GRAB LOOT FROM FURTHER AWAY.', stat: ['PICKUP RANGE', (l) => metres(UP.pickup(l))] },
-  { id: 'winch', name: 'WINCH', k: 'big', p: 'scav', x: -1.15, y: -4.1, cost: [5], cur: 'surv', star: true,
-    desc: 'LIFT SURVIVORS OUT OF THE FIELD.', stat: ['WINCH', (l) => (l ? 'LIFTS IN ' + secs(CFG.winch.hover) : 'NONE')] },
-  { id: 'bonusP', name: 'BIG BONUS', k: 'up', p: 'scav', x: 0, y: -4.75, cost: nodeCosts(80, 5, 1.7),
-    desc: 'A SHARE MORE OF THE RUN\'S SCRAP.', stat: ['END OF RUN', (l) => '+' + pctS(UP.bonusP(l))] },
-  // EXPLOSIVES (north-east)
-  { id: 'boom', name: 'EXPLOSIVE ZOMBIES', k: 'spec', p: 'root', x: 2.35, y: -2.2, cost: nodeCosts(25, 10, 1.4),
-    desc: 'SOME ZOMBIES BLOW UP WHEN THEY DIE.', stat: ['CHANCE', (l) => pctS(UP.boom(l))] },
-  { id: 'boomR', name: 'BLAST RADIUS', k: 'spec', p: 'boom', x: 3.7, y: -2.75, cost: nodeCosts(30, 5, 1.6),
-    desc: 'THEIR BLASTS REACH FURTHER.', stat: ['BLAST', (l) => metres(UP.boomR(l) * 2) + ' WIDE'] },
-  // AIR STRIKE (north-west)
-  { id: 'strafe', name: 'STRAFING RUN', k: 'big', p: 'root', x: -2.35, y: -2.25, cost: [200], star: true,
-    desc: 'PRESS Q: A JET STRAFES A LINE OF DEAD.', stat: ['STRAFING RUNS', (l) => (l ? '1 A RUN' : 'NONE')],
-    stat2: ['FIRE WITH', () => 'Q, THEN CLICK THE MAP'] },
-  { id: 'strafeD', name: 'STRAFE DAMAGE', k: 'up', p: 'strafe', x: -3.65, y: -2.95, cost: nodeCosts(40, 5, 1.6),
-    desc: 'THE JET\'S GUNS HIT HARDER.', stat: ['DAMAGE A HIT', (l) => UP.strafeD(l)] },
-  { id: 'strafeW', name: 'WIDE RUN', k: 'up', p: 'strafeD', x: -4.95, y: -3.35, cost: nodeCosts(40, 5, 1.6),
-    desc: 'THE JET STRAFES A WIDER LINE.', stat: ['LINE WIDTH', (l) => metres(UP.strafeW(l) * 2)] },
-  { id: 'strafeN', name: 'MORE RUNS', k: 'spec', p: 'strafe', x: -2.6, y: -3.75, cost: [150, 300, 600],
-    desc: 'ONE MORE STRAFING RUN EACH RUN.', stat: ['STRAFING RUNS', (l) => 1 + l + ' A RUN'] },
-  { id: 'strafeB', name: 'BOMB RUN', k: 'spec', p: 'strafeN', x: -2.05, y: -5.05, cost: [250],
-    desc: 'THE JET DROPS BOMBS AT THE END.', stat: ['BOMBS', (l) => (l ? 3 : 0)] },
-  { id: 'twin', name: 'TWIN JETS', k: 'big', p: 'strafeN', x: -3.5, y: -4.85, cost: [4], cur: 'surv', star: true,
-    desc: 'TWO JETS FLY EVERY STRAFING RUN!', stat: ['JETS', (l) => 1 + l] },
+  { id: 'root', name: 'VIPER', k: 'root', x: 0, y: 0, cost: [0], cur: 'scrap',
+    desc: 'YOUR HELI FLIES AND FIRES BY ITSELF.', stat: ['GUN', () => '4/S, 2 HITS'] },
+  // HELI: north
+  scrapNode('hdmg', 'GUN DAMAGE', 'root', -1.5, -1.5, 'A', 8, 'EVERY BULLET HITS 20% HARDER.', ['DAMAGE', (l) => pctS(UP.hdmg(l))]),
+  scrapNode('hrate', 'FIRE RATE', 'root', 0, -1.5, 'B', 6, 'FIRE 12% MORE SHOTS PER SECOND.', ['FIRE RATE', (l) => perS(4 * UP.hrate(l))]),
+  scrapNode('hrange', 'GUN RANGE', 'hrate', 0, -3, 'C', 4, 'THE GUN REACHES 15% FURTHER.', ['RANGE', (l) => pctS(UP.hrange(l))]),
+  goldNode('rockets', 'ROCKETS', 'hrange', -1.5, -4.5, [4, 6, 8, 10, 12], 'BULLETS SOMETIMES BECOME ROCKETS.', ['ROCKET CHANCE', (l) => pctS(UP.rockets(l))]),
+  unlockNode('rocketPods', 'ROCKET PODS', 'rockets', -3, -6, 'FIRE FOUR ROCKETS AT A CROWD.', ['SALVO', (l) => l ? '4 / 8 S' : 'NONE']),
+  scrapNode('podDamage', 'POD DAMAGE', 'rocketPods', -3, -7.5, 'C', 4, 'POD ROCKETS HIT 25% HARDER.', ['DAMAGE', (l) => pctS(UP.podDamage(l))]),
+  scrapNode('podReload', 'POD RELOAD', 'podDamage', -3, -9, 'C', 4, 'RELOAD THE PODS MORE QUICKLY.', ['RELOAD', (l) => secs(UP.podReload(l))]),
+  scrapNode('podSalvo', 'POD SALVO', 'podReload', -3, -10.5, 'E', 3, 'ADD ONE ROCKET TO EACH SALVO.', ['ROCKETS', UP.podSalvo]),
+  goldNode('napalm', 'NAPALM', 'podSalvo', -3, -12, [12], 'POD ROCKETS LEAVE BURNING GROUND.', ['BURN', (l) => secs(UP.napalm(l))]),
+  unlockNode('hellfire', 'HELLFIRE', 'hrange', 1.5, -4.5, 'HIT THE TOUGHEST TARGET IN RANGE.', ['MISSILES', (l) => l ? '1 / 10 S' : 'NONE']),
+  scrapNode('hellfireDamage', 'HELLFIRE DAMAGE', 'hellfire', 1.5, -6, 'C', 4, 'MISSILES HIT 30% HARDER.', ['DAMAGE', (l) => pctS(UP.hellfireDamage(l))]),
+  scrapNode('hellfireReload', 'HELLFIRE RELOAD', 'hellfireDamage', 1.5, -7.5, 'C', 4, 'FIRE THE NEXT MISSILE SOONER.', ['RELOAD', (l) => secs(UP.hellfireReload(l))]),
+  scrapNode('hellfireBlast', 'HELLFIRE BLAST', 'hellfireReload', 1.5, -9, 'E', 3, 'MISSILE BLASTS GROW BY 20%.', ['BLAST', (l) => pctS(UP.hellfireBlast(l))]),
+  goldNode('doubleHellfire', 'DOUBLE HELLFIRE', 'hellfireBlast', 1.5, -10.5, [12], 'FIRE AT TWO DIFFERENT TARGETS.', ['MISSILES', UP.doubleHellfire]),
+  teaseNode('doorGunner', 'DOOR GUNNER', 'hrange', -1.5, -3),
+  teaseNode('apache', 'APACHE', 'rocketPods', -4.5, -6),
+  // TRAIN: cars north-east, gadgets south-east
+  scrapNode('armor', 'TRAIN ARMOR', 'root', 1.5, 0, 'A', 6, 'ADD 15% MORE TRAIN HEALTH.', ['TRAIN HP', (l) => Math.round(UP.hp(l))]),
+  unlockNode('mgCar', 'MG CAR', 'armor', 3, -1.5, 'ADD A TURRET TO THE TRAIN.', ['TURRETS', (l) => l ? 1 : 'NONE'], ['FIRE RATE', (l) => l ? '2/S' : 'NONE']),
+  scrapNode('mgDamage', 'MG DAMAGE', 'mgCar', 4.5, -1.5, 'B', 5, 'TURRET BULLETS HIT 25% HARDER.', ['DAMAGE', (l) => pctS(UP.mgDamage(l))]),
+  scrapNode('mgRate', 'MG FIRE RATE', 'mgDamage', 6, -1.5, 'B', 5, 'TURRETS FIRE 15% FASTER.', ['FIRE RATE', (l) => perS(UP.mgRate(l))]),
+  scrapNode('mgRange', 'MG RANGE', 'mgRate', 7.5, -1.5, 'C', 3, 'TURRETS REACH 15% FURTHER.', ['RANGE', (l) => pctS(UP.mgRange(l))]),
+  scrapNode('mgTurrets', '+1 TURRET', 'mgRange', 9, -1.5, [40, 100], 2, 'ADD ONE MORE TURRET TO THE CAR.', ['TURRETS', UP.mgTurrets]),
+  goldNode('apRounds', 'AP ROUNDS', 'mgTurrets', 10.5, -1.5, [12], 'BULLETS GO THROUGH THREE ZOMBIES.', ['TARGETS', UP.apRounds]),
+  unlockNode('katyusha', 'KATYUSHA CAR', 'mgRate', 6, -3, 'FIRE SIX ROCKETS AT A CROWD.', ['SALVO', (l) => l ? '6 / 15 S' : 'NONE']),
+  scrapNode('katyushaRockets', 'MORE ROCKETS', 'katyusha', 7.5, -3, 'D', 4, 'ADD TWO ROCKETS TO EACH SALVO.', ['ROCKETS', UP.katyushaRockets]),
+  scrapNode('katyushaReload', 'KATYUSHA RELOAD', 'katyushaRockets', 9, -3, 'D', 4, 'FIRE THE NEXT SALVO SOONER.', ['RELOAD', (l) => secs(UP.katyushaReload(l))]),
+  scrapNode('katyushaBlast', 'KATYUSHA BLAST', 'katyushaReload', 10.5, -3, 'E', 3, 'ROCKET BLASTS GROW BY 20%.', ['BLAST', (l) => pctS(UP.katyushaBlast(l))]),
+  goldNode('clusterRockets', 'CLUSTER ROCKETS', 'katyushaBlast', 12, -3, [15], 'ROCKETS SPLIT INTO SMALL BOMBS.', ['BOMBS / ROCKET', UP.clusterRockets]),
+  unlockNode('ram', 'TURBO RAM', 'armor', 3, 1.5, 'SPACE: SMASH THROUGH THE DEAD.', ['CHARGE', (l) => l ? '2 S' : 'NONE'], ['COOLDOWN', (l) => l ? '20 S' : 'NONE']),
+  scrapNode('ramPower', 'RAM POWER', 'ram', 4.5, 1.5, 'C', 4, 'THE RAM SMASHES 30% HARDER.', ['POWER', (l) => pctS(UP.ramPower(l))]),
+  scrapNode('ramCooldown', 'RAM COOLDOWN', 'ramPower', 6, 1.5, 'C', 4, 'THE RAM IS READY TWO SECONDS EARLIER.', ['COOLDOWN', (l) => secs(UP.ramCooldown(l))]),
+  scrapNode('ramDuration', 'LONG CHARGE', 'ramCooldown', 7.5, 1.5, 'E', 3, 'THE CHARGE LASTS LONGER AND WIDENS.', ['CHARGE', (l) => secs(UP.ramDuration(l))]),
+  goldNode('shockwave', 'SHOCKWAVE', 'ramDuration', 9, 1.5, [10], 'END THE CHARGE WITH A RING BLAST.', ['SHOCKWAVE', (l) => UP.shockwave(l) ? 'ON' : 'OFF']),
+  unlockNode('steamVent', 'STEAM VENT', 'armor', 3, 4.5, 'BLAST CLIMBERS WITH HOT STEAM.', ['BLAST EVERY', (l) => l ? '5 S' : 'NONE']),
+  scrapNode('steamDamage', 'STEAM DAMAGE', 'steamVent', 4.5, 4.5, 'B', 4, 'THE STEAM HITS 25% HARDER.', ['DAMAGE', (l) => pctS(UP.steamDamage(l))]),
+  scrapNode('steamSpeed', 'VENT SPEED', 'steamDamage', 6, 4.5, 'B', 4, 'VENT STEAM MORE OFTEN.', ['BLAST EVERY', (l) => secs(UP.steamSpeed(l))]),
+  scrapNode('steamReach', 'STEAM REACH', 'steamSpeed', 7.5, 4.5, 'D', 3, 'GROW THE CLOUD TO HIT NEARBY DEAD.', ['REACH LEVEL', UP.steamReach]),
+  goldNode('hotCloud', 'HOT CLOUD', 'steamReach', 9, 4.5, [10], 'STEAM STAYS AND HURTS NEW ARRIVALS.', ['CLOUD LASTS', (l) => secs(UP.hotCloud(l))]),
+  teaseNode('railCannon', 'RAIL CANNON CAR', 'katyusha', 6, -4.5),
+  teaseNode('cowCatcher', 'COW CATCHER', 'ram', 3, 3),
+  teaseNode('mineLayer', 'MINE LAYER', 'steamVent', 3, 6),
+  teaseNode('twinMG', 'TWIN MG CAR', 'apRounds', 12, -1.5),
+  // AIR: south
+  unlockNode('a10', 'A-10', 'root', 0, 1.5, 'CALL A THIN LINE OF GUN FIRE.', ['COOLDOWN', (l) => l ? '25 S' : 'NONE']),
+  scrapNode('a10Damage', 'A-10 DAMAGE', 'a10', 0, 3, 'C', 4, 'THE A-10 HITS 25% HARDER.', ['DAMAGE', (l) => pctS(UP.a10Damage(l))]),
+  scrapNode('a10Cooldown', 'A-10 COOLDOWN', 'a10Damage', 0, 4.5, 'C', 5, 'CALL THE NEXT STRIKE SOONER.', ['COOLDOWN', (l) => secs(UP.a10Cooldown(l))]),
+  scrapNode('a10Lines', 'WIDER LINE', 'a10Cooldown', 0, 6, 'E', 3, 'ADD ONE MORE LINE OF GUN FIRE.', ['GUN LINES', UP.a10Lines]),
+  goldNode('bombRun', 'BOMB RUN', 'a10Lines', 0, 7.5, [12], 'DROP FOUR BOMBS AFTER THE STRAFE.', ['BOMBS', UP.bombRun]),
+  goldNode('a10Charge', 'A-10 +1 CHARGE', 'a10Cooldown', 1.5, 4.5, [15], 'HOLD TWO STRIKES READY TO CALL.', ['CHARGES', UP.a10Charge], true),
+  unlockNode('f4', 'F-4', 'a10', -1.5, 1.5, 'LAY A LINE OF NAPALM FIRE.', ['COOLDOWN', (l) => l ? '30 S' : 'NONE'], ['BURN', (l) => l ? '4 S' : 'NONE']),
+  scrapNode('fireDamage', 'FIRE DAMAGE', 'f4', -3, 3, 'D', 4, 'NAPALM HITS 25% HARDER.', ['DAMAGE', (l) => pctS(UP.fireDamage(l))]),
+  scrapNode('f4Cooldown', 'F-4 COOLDOWN', 'fireDamage', -3, 4.5, 'D', 5, 'CALL THE NEXT FIRE LINE SOONER.', ['COOLDOWN', (l) => secs(UP.f4Cooldown(l))]),
+  scrapNode('fireLength', 'LONGER FIRE', 'f4Cooldown', -3, 6, 'E', 3, 'ADD 20% LENGTH AND ONE SECOND.', ['LENGTH', (l) => pctS(UP.fireLength(l))], ['BURN', (l) => secs(UP.fireDuration(l))]),
+  goldNode('fireWall', 'FIRE WALL', 'fireLength', -3, 7.5, [15], 'FIRE BURNS LONGER AND BLOCKS DEAD.', ['BURN', (l) => secs(UP.fireWall(l))]),
+  goldNode('f4Charge', 'F-4 +1 CHARGE', 'f4Cooldown', -4.5, 4.5, [18], 'HOLD TWO FIRE STRIKES READY.', ['CHARGES', UP.f4Charge], true),
+  unlockNode('b52', 'B-52', 'f4Cooldown', -6, 6, 'DROP EIGHT BOMBS ALONG A LANE.', ['COOLDOWN', (l) => l ? '45 S' : 'NONE'], ['BOMBS', (l) => l ? 8 : 0]),
+  scrapNode('b52Bombs', 'MORE BOMBS', 'b52', -6, 7.5, 'E', 4, 'ADD TWO BOMBS TO EACH RUN.', ['BOMBS', UP.b52Bombs]),
+  scrapNode('b52Cooldown', 'B-52 COOLDOWN', 'b52Bombs', -6, 9, 'E', 4, 'CALL THE NEXT BOMBER SOONER.', ['COOLDOWN', (l) => secs(UP.b52Cooldown(l))]),
+  scrapNode('b52Blast', 'BIGGER BOMBS', 'b52Cooldown', -6, 10.5, 'F', 3, 'BOMB BLASTS GROW BY 20%.', ['BLAST', (l) => pctS(UP.b52Blast(l))]),
+  goldNode('fireBombs', 'FIRE BOMBS', 'b52Blast', -6, 12, [15], 'BOMBS LEAVE BURNING GROUND.', ['FIRE BOMBS', (l) => UP.fireBombs(l) ? 'ON' : 'OFF']),
+  goldNode('b52Charge', 'B-52 +1 CHARGE', 'b52Cooldown', -7.5, 9, [20], 'HOLD TWO BOMB RUNS READY.', ['CHARGES', UP.b52Charge], true),
+  teaseNode('autoPilotA10', 'A-10 AUTO PILOT', 'bombRun', 0, 9),
+  teaseNode('autoPilotF4', 'F-4 AUTO PILOT', 'fireWall', -3, 9),
+  teaseNode('autoPilotB52', 'B-52 AUTO PILOT', 'fireBombs', -6, 13.5),
+  teaseNode('hangar3', 'HANGAR SLOT 3', 'b52Charge', -7.5, 10.5),
+  teaseNode('hangar4', 'HANGAR SLOT 4', 'b52Charge', -9, 10.5),
+  teaseNode('b2', 'B-2', 'fireBombs', -7.5, 12),
+  teaseNode('ac130', 'AC-130', 'bombRun', 1.5, 7.5),
+  // SALVAGE: west
+  scrapNode('magnet', 'SCRAP MAGNET', 'root', -1.5, 0, 'A', 5, 'LOOT PICKUP REACH GROWS BY 25%.', ['PICKUP', (l) => metres(UP.pickup(l))]),
+  scrapNode('salvageCrew', 'SALVAGE CREW', 'magnet', -3, 0, 'D', 4, 'EARN 8% MORE SCRAP FROM EVERYTHING.', ['SCRAP', (l) => pctS(UP.salvageCrew(l))]),
+  scrapNode('silverHunt', 'SILVER HUNT', 'salvageCrew', -4.5, -1.5, 'E', 3, 'FIND MORE SILVER ZOMBIES.', ['HUNT LEVEL', UP.silverHunt]),
+  scrapNode('boomHunt', 'BOOM HUNT', 'salvageCrew', -4.5, 1.5, 'E', 3, 'FIND MORE EXPLOSIVE ZOMBIES.', ['HUNT LEVEL', UP.boomHunt]),
+  scrapNode('goldHunt', 'GOLD HUNT', 'silverHunt', -6, -1.5, 'F', 3, 'FIND MORE GOLDEN ZOMBIES.', ['EXTRA GOLDEN', UP.goldHunt])
 ];
 const NODE = {};
 for (const n of NODES) NODE[n.id] = n;
@@ -125,8 +186,8 @@ const parentOf = (n) => (n.p ? NODE[n.p] : null);
 const needOf = (n) => n.need || 1;
 const needsMet = (n) => !n.p || lv(n.p) >= needOf(n);
 // the price of the next level, and whether you can pay it
-const priceOf = (n) => n.cost[Math.min(lv(n.id), maxLv(n) - 1)];
-const canPay = (n) => (n.cur === 'surv' ? SAVE.surv : SAVE.scrap) >= priceOf(n);
+const priceOf = (n) => n.cost[Math.min(lv(n.id), maxLv(n) - 1)] || 0;
+const canPay = (n) => n.k !== 'tease' && SAVE[n.cur || 'scrap'] >= priceOf(n);
 // "ARMOR 1", "FAST ROTORS 2": a node at a level, as NEEDS: and the goal line say it
 const nodeLv = (id, l) => NODE[id].name + (maxLv(NODE[id]) > 1 ? ' ' + l : '');
 // What a node is now:
@@ -137,6 +198,7 @@ const nodeLv = (id, l) => NODE[id].name + (maxLv(NODE[id]) > 1 ? ' ' + l : '');
 //  'buy'    for sale, and you can pay
 //  'max'    every level bought
 function nodeState(n) {
+  if (n.k === 'tease') return n.p && lv(n.p) > 0 ? 'hidden' : 'off';
   if (lv(n.id) >= maxLv(n)) return 'max';
   const p = parentOf(n);
   // (a node with a level always shows: an old save may own one whose parent has none)
@@ -152,9 +214,8 @@ function nodeState(n) {
 const shownAs = (n) => ({ off: 0, hidden: 1 })[nodeState(n)] ?? 2;
 
 // ---------- into a run
-// The new nodes' numbers for a run (runUp in game.js calls this; L(id) = a node's level, 0 for the
-// demo). HELI DAMAGE and HELI FIRE RATE are folded into the 25mm's dmg and rate (with the heat per
-// round lowered, so a faster gun does not overheat sooner); heliRange is read in helis.js.
+// The active Viper upgrades are folded into the current gun. Weapons added in phases 3-5 use
+// the new UP values above; their old runtime fields stay neutral until then.
 function treeUp(L, up) {
   const hd = UP.hdmg(L('hdmg')), hr = UP.hrate(L('hrate'));
   up.dmg *= hd;
@@ -162,20 +223,10 @@ function treeUp(L, up) {
   up.heat /= hr;
   return Object.assign(up, {
     heliDmg: hd, heliRate: hr, heliRange: UP.hrange(L('hrange')),
-    bonus: UP.bonus(L('bonus')), bonusP: UP.bonusP(L('bonusP')),
-    boom: UP.boom(L('boom')), boomR: UP.boomR(L('boomR')), silver: UP.silver(L('silver')),
-    ramTime: UP.ramTime(L('ramtime')), ramCharge: UP.ramCharge(L('charge')), power: false,
-    strafe: L('strafe') ? 1 + L('strafeN') : 0, strafeW: UP.strafeW(L('strafeW')), strafeD: UP.strafeD(L('strafeD')),
-    strafeBomb: L('strafeB') > 0, twin: L('twin') > 0
+    boom: 0, boomR: 18, silver: 0,
+    ramTime: 0, ramCharge: 0, power: false,
+    strafe: 0, strafeW: JETC.half, strafeD: JETC.dmg, strafeBomb: false, twin: false
   });
-}
-// BONUS SCRAP and BIG BONUS: paid when the run ends (endGame calls this before the run is banked).
-function payBonus() {
-  if (!G || G.demo || G.pay.bonus) return;
-  const b = Math.floor((G.up.bonus || 0) + Math.floor(G.cash) * (G.up.bonusP || 0));
-  if (b <= 0) return;
-  G.pay.bonus = b;
-  G.cash += b;
 }
 
 // ---------- buying
@@ -185,7 +236,7 @@ function payBonus() {
 // cam = the view (x, y = the cell in the middle of the panel, z = zoom; zt = the zoom it goes to,
 // anchor = the point that stays under the mouse while it zooms), drag = a drag of the map.
 const TREE = {};
-const ZOOMS = [0.5, 0.75, 1, 1.5, 2];
+const ZOOMS = [0.25, 0.5, 0.75, 1, 1.5, 2];
 function resetTree() {
   Object.assign(TREE, { born: {}, pop: {}, lit: {}, flash: {}, shake: {}, rings: [], sparks: [], floats: [], hov: null, sel: null,
     cam: { x: 0, y: 0, z: 1 }, zt: 1, anchor: null, drag: null, lastBuy: -9, y0: 19, y1: 331 });
@@ -195,10 +246,9 @@ const GROW = 0.3;
 // Buy one level of node id. True when it was bought. It is saved at once.
 function buyNode(id) {
   const n = NODE[id];
-  if (!n || nodeState(n) !== 'buy') return false;
+  if (!n || n.k === 'tease' || nodeState(n) !== 'buy') return false;
   const before = NODES.map(shownAs), p = priceOf(n);
-  if (n.cur === 'surv') SAVE.surv -= p;
-  else SAVE.scrap -= p;
+  SAVE[n.cur || 'scrap'] -= p;
   SAVE.nodes[id] = lv(id) + 1;
   if (p > 0 && (!n.cur || n.cur === 'scrap')) SAVE.flags.survShown = true;
   saveSave();
@@ -237,7 +287,7 @@ function grew(before) {
 // Set a node's level (tests): no price, no show.
 function setNode(id, l) {
   const n = NODE[id];
-  if (!n) return false;
+  if (!n || n.k === 'tease') return false;
   l = clamp(l | 0, 0, maxLv(n));
   if (l) SAVE.nodes[id] = l;
   else delete SAVE.nodes[id];
@@ -249,7 +299,7 @@ function setNode(id, l) {
 // How many upgrades you can buy now, and the next big unlock to save for. [[text, colour], ...]
 function summaryGoal() {
   if (!lv('root')) return [["NEXT: OPEN THE SKILL TREE. IT'S FREE.", U.gold]];
-  const unit = (n) => (n.cur === 'surv' ? ' SURVIVORS' : ' SCRAP');
+  const unit = (n) => (n.cur === 'surv' ? ' SURVIVORS' : n.cur === 'gold' ? ' GOLD' : ' SCRAP');
   const can = NODES.filter((n) => nodeState(n) === 'buy').length;
   const L = [];
   if (can) L.push(['YOU CAN BUY ' + can + ' UPGRADE' + (can > 1 ? 'S' : '') + ' NOW!', U.green]);
@@ -258,7 +308,7 @@ function summaryGoal() {
   const goal = NODES.filter((n) => n.star && ['poor', 'buy'].includes(nodeState(n))).sort(order)[0];
   if (goal) {
     L.push(['NEXT BIG UNLOCK: ' + goal.name + ' (' + fmt(priceOf(goal)) + unit(goal) + ')', U.gold]);
-    if (!canPay(goal)) L.push(['YOU HAVE ' + fmt(goal.cur === 'surv' ? SAVE.surv : SAVE.scrap) + ' / ' + fmt(priceOf(goal)) + unit(goal) + '.', U.dim]);
+    if (!canPay(goal)) L.push(['YOU HAVE ' + fmt(SAVE[goal.cur || 'scrap']) + ' / ' + fmt(priceOf(goal)) + unit(goal) + '.', U.dim]);
   } else if (!can) {
     const next = NODES.filter((n) => nodeState(n) === 'poor').sort(order)[0];
     if (next) L.push(['NEXT: ' + nodeLv(next.id, lv(next.id) + 1) + ' (' + fmt(priceOf(next)) + unit(next) + ')', U.gold]);
@@ -757,16 +807,18 @@ function drawInfo(n, st, y0, y1) {
   const desc = wrap(named ? n.desc : '???', inner);
   const vals = lock || !n.stat ? [] : [n.stat, n.stat2].filter(Boolean).map((s) => statSegs(s, l, l >= m));
   // the foot: [price text, colour, price icon, right text, colour]
-  const surv = n.cur === 'surv', pr = priceOf(n), have = surv ? SAVE.surv : SAVE.scrap, icon = surv ? ICON.survS : ICON.boltS;
-  const pcol = !canPay(n) ? U.red : surv ? U.green : U.gold;
+  const surv = n.cur === 'surv', gold = n.cur === 'gold', pr = priceOf(n), have = SAVE[n.cur || 'scrap'];
+  const icon = surv ? ICON.survS : gold ? ICON.goldS : ICON.boltS;
+  const pcol = !canPay(n) ? U.red : surv ? U.amber : gold ? U.gold : U.blue;
   let foot;
-  if (n.later) foot = ['', U.faint, null, 'COMING SOON', U.faint];
+  if (n.k === 'tease') foot = ['', U.faint, null, 'FULL GAME', U.faint];
+  else if (n.later) foot = ['', U.faint, null, 'COMING SOON', U.faint];
   else if (lock) foot = [fmt(pr), canPay(n) ? U.dim : U.red, icon, 'NEEDS: ' + nodeLv(p.id, needOf(n)), U.amber];
   else if (st === 'max') foot = ['', U.dim, null, n.id === 'root' || m === 1 ? 'OWNED' : 'MAXED', K.c];
   else if (st === 'soon') foot = [fmt(pr), U.faint, icon, 'COMING SOON', U.faint];
   else if (st === 'poor') foot = [fmt(pr), U.red, icon, 'NEED ' + fmt(pr - have) + ' MORE', U.red];
   else foot = pr ? [fmt(pr), pcol, icon, 'CLICK TO BUY', U.gold] : ['FREE', U.gold, null, 'CLICK TO TAKE IT', U.gold];
-  const kindName = n.id === 'root' ? 'THE ROOT' : n.star ? 'BIG UNLOCK' : n.k === 'spec' ? 'SPECIAL' : 'UPGRADE';
+  const kindName = n.k === 'tease' ? 'FULL GAME' : n.id === 'root' ? 'THE ROOT' : n.star ? 'BIG UNLOCK' : n.k === 'spec' ? 'SPECIAL' : 'UPGRADE';
   const w = INFO_W, h = 31 + desc.length * 10 + vals.length * 10 + 17;
   // beside the node (right, else left), kept on the panel
   const q = nodeXY(n.id), hn = halfOf(n);
@@ -821,56 +873,3 @@ function drawInfo(n, st, y0, y1) {
 // The world is not drawn (nor run) while the skill tree covers it.
 const treeCovers = () => mode === 'depot' && depotTab === 'tree';
 
-// ---------- the new nodes' icons (12 x 12; sprites.js turns them into NICON at startup)
-Object.assign(NODE_ART, {
-  // HELI DAMAGE: a round and a red plus
-  hdmg: ['...l........', '..lsl.......', '..lsl.......', '.yGGg.......', '.yGgg...RR..', '.yGgg...RR..',
-    '.yGgg.RRRRRR', '.yGgg.RRRRRR', '.yGgg...RR..', '.yGgg...RR..', '.yyyy.......', '............'],
-  // HELI FIRE RATE: rounds flying, with speed lines
-  hrate: ['............', '............', '..d...yGGGl.', '.d...yGGGGsl', '..d...yGGGl.', '............',
-    '............', '.d..yGGGl...', 'd..yGGGGsl..', '.d..yGGGl...', '............', '............'],
-  // HELI RANGE: a radar ring round a red dot
-  hrange: ['....BBBB....', '..BB....BB..', '.B........B.', '.B...ll...B.', 'B...l..l...B', 'B..l.RR.l..B',
-    'B..l.RR.l..B', 'B...l..l...B', '.B...ll...B.', '.B........B.', '..BB....BB..', '....BBBB....'],
-  // BONUS SCRAP: a stack of gold and a green plus
-  bonus: ['.........E..', '........EEE.', '.........E..', '...yGGGy....', '..ygggggy...', '..yGGGGGy...',
-    '..ygggggy...', '..yGGGGGy...', '..ygggggy...', '..yGGGGGy...', '..yyyyyyy...', '............'],
-  // BIG BONUS: a sack of scrap
-  bonusP: ['....n..n....', '.....nn.....', '....nNNn....', '...nNNNNn...', '..nNNGNNNn..', '.nNNGGGNNNn.',
-    '.nNNNGNNNNn.', '.nNNGGGNNNn.', '.nNNNNGNNNn.', '.nNNGGGNNNn.', '..nnnnnnnn..', '............'],
-  // EXPLOSIVE ZOMBIES: a bomb with a lit fuse
-  boom: ['.......Y.O..', '........Y...', '.......dY...', '......d.....', '...dddd.....', '..dmmmmd....',
-    '.dmllmmmd...', '.dmlmmmmd...', '.dmmmmmmd...', '.dmmmmmmd...', '..dmmmmd....', '...dddd.....'],
-  // BLAST RADIUS: a burst of fire
-  boomR: ['.....O......', '..O..Y..O...', '...OYYYO....', '..OYwwwYO...', '.OYwwwwwYO..', 'OOYwwwwwYOO.',
-    '.OYwwwwwYO..', '..OYwwwYO...', '...OYYYO....', '..O..Y..O...', '.....O......', '............'],
-  // RAM TIME: a clock and the Ram's chevrons
-  ramtime: ['...dlllld...', '..l......l..', '.l...w....l.', 'l....w.....l', 'l....w.....l', 'l....wwww..l',
-    'l..........l', '.l........l.', '..l......l..', '...dlllld...', '....YO.YO...', '...YO.YO....'],
-  // RAM CHARGE: a battery with a bolt
-  charge: ['....llll....', '..llllllll..', '..l......l..', '..l...Y..l..', '..l..YY..l..', '..lOOYOOOl..',
-    '..lOYYYYOl..', '..lOOOYYOl..', '..lOOOYOOl..', '..lOOOOOOl..', '..llllllll..', '............'],
-  // POWER SHOT: a huge glowing shell
-  power: ['.....ww.....', '....wYYw....', '...wYOOYw...', '...YOOOOY...', '...lsssss...', '...lslllm...',
-    '...lslllm...', '...lslllm...', '...lslllm...', '...ggggGg...', '...yggggy...', '...yyyyyy...'],
-  // STRAFING RUN: the attack jet from above
-  strafe: ['.....ll.....', '.....ss.....', '.....BB.....', '.....ll.....', 'ssssssssssss', 'mllllllllllm',
-    '.....ll.....', '...dmllmd...', '...dmllmd...', '.....ll.....', '..llllllll..', '..m..mm..m..'],
-  // STRAFE DAMAGE: a row of hits
-  strafeD: ['............', '.........O..', '........OYO.', '.........O..', '......O.....', '.....OYO....',
-    '......O.....', '...O........', '..OYO.......', '...O........', 'l...........', 'sl..........'],
-  // WIDE RUN: arrows apart
-  strafeW: ['............', '............', '..O......O..', '.OO......OO.', 'OOOOOOOOOOOO', '.OO......OO.',
-    '..O......O..', '............', 'llllllllllll', '............', '............', '............'],
-  // MORE RUNS: a jet and a pink plus
-  strafeN: ['...l........', '...s........', '...B........', 'sssssss.....', 'mlllllm.....', '...l........',
-    '..lll...RR..', '........RR..', '......RRRRRR', '......RRRRRR', '........RR..', '........RR..'],
-  // BOMB RUN: a falling bomb
-  strafeB: ['....l..l....', '....lmml....', '.....mm.....', '....mllm....', '....mllm....', '....mlmm....',
-    '....mlmm....', '....mmmm....', '.....mm.....', '..O..O...O..', '.OYO.Y..OYO.', '..O.....O...'],
-  // TWIN JETS: two jets side by side
-  twin: ['..l......l..', '..s......s..', '..B......B..', 'sssss..sssss', 'mlllm..mlllm', '..l......l..',
-    '.lll....lll.', '............', '............', '............', '............', '............']
-});
-// SILVER ZOMBIES: the golden zombie's icon in silver
-NODE_ART.silver = NODE_ART.goldz.map((r) => r.replace(/y/g, 'm').replace(/G/g, 'w').replace(/g/g, 's'));

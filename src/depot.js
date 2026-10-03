@@ -12,7 +12,7 @@ const SAVE_KEY = 'sky-reaper-save-1', SAVE_V = 2;
 function freshSave() {
   return {
     v: SAVE_V, scrap: 0, surv: 0, gold: 0, leg: 1, legs: {}, rescues: [], rescueDue: [], chest: 0,
-    hangar: [null, null], nodes: {}, runs: 0, seen: {}, flags: {}
+    hangar: [null, null], nodes: { root: 1 }, runs: 0, seen: {}, flags: {}
   };
 }
 let SAVE = freshSave();

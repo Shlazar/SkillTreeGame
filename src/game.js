@@ -80,22 +80,8 @@ const yOfS = (s) => yAtS(s, yAtS(s, s / 1.0354));
 // Each number at level l of its node. The game reads them through G.up (set when a run starts) and
 // the skill tree's info box shows the very same numbers, so the two always agree.
 const UP = {
-  hp: (l) => CFG.train.hp + CFG.up.armor * l,                        // ARMOR: the train's health
-  rate: (l) => CFG.mg.rate + CFG.up.feed * l,                        // FAST FEED: 25mm rounds per second
-  // the 25mm's heat per round: COOLING multiplies it (the levels stack); FAST FEED lowers it so the
-  // heat per second stays the same
-  heat: (cool, feed) => CFG.mg.heatPer * Math.pow(CFG.up.cool, cool) * CFG.mg.rate / UP.rate(feed),
-  // seconds of held fire before the 25mm overheats (it cools a quarter as fast while it fires)
-  hot: (cool) => {
-    const k = UP.rate(0) * UP.heat(cool, 0) - CFG.mg.cool * 0.25;
-    return k > 0 ? 1 / k : Infinity;
-  },
-  dmg: (l) => 1 + CFG.up.heavy * l,                                  // HEAVY ROUNDS: damage per hit
-  reload: (l) => CFG.he.reload - CFG.up.reload * l,                  // FAST RELOAD: 105mm reload (s)
-  fly: (l) => CFG.heli.speed + CFG.up.rotor * l,                     // FAST ROTORS: heli speed (px/s)
-  pickup: (l) => CFG.heli.pickup + CFG.up.magnet * l,                // MAGNET: pickup reach (px)
-  scav: (l) => CFG.up.scav * l,                                      // SCAVENGER: extra kill scrap
-  gun: (l) => CFG.gun.reload - CFG.gun.fast * l                      // GUN SPEED: rail cannon reload (s)
+  hp: (l) => CFG.train.hp * (1 + 0.15 * l),
+  pickup: (l) => CFG.heli.pickup * (1 + 0.25 * l)
 };
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
 // menus uses the plain numbers and shows off the Turbo Ram for now.
@@ -104,13 +90,12 @@ function runUp(demo) {
   const L = demo ? () => 0 : lv;
   // (tree.js adds the newer nodes' numbers: treeUp)
   return treeUp(L, {
-    hp: UP.hp(L('armor')), rate: UP.rate(L('feed')), heat: UP.heat(L('cool'), L('feed')), dmg: UP.dmg(L('heavy')),
-    he: false, reload: UP.reload(0), fly: UP.fly(L('radio')), pickup: UP.pickup(L('magnet')),
+    hp: UP.hp(L('armor')), rate: CFG.mg.rate, heat: CFG.mg.heatPer, dmg: 1,
+    he: false, reload: CFG.he.reload, fly: CFG.heli.speed, pickup: UP.pickup(L('magnet')),
     helis: 1,
-    scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: 0, ram: demo || L('ram') > 0,
-    // The first ring (skills.js): the cow catcher, 1 golden zombie in this many (0 = none),
-    // and the armor level (its plates show on the engine)
-    cow: false, gold: UP.gold(L('goldz')), armor: L('armor')
+    scav: 0, winch: false, gun: 0, ram: demo || L('ram') > 0,
+    // Full-game plow and legacy gold spawns stay disabled; armor still dresses the engine.
+    cow: false, gold: 0, armor: L('armor')
   });
 }
 // The train's full health.
@@ -214,7 +199,6 @@ function endGame() {
   M.px = M.py = -1e4;
   // where the run ended (the train may roll on a little after it is lost; that does not count)
   const k = G.maxKm;
-  payBonus();
   bankRun();
   G.sum = {
     leg: G.leg, destination: legDef(G.leg).to.name, replay: G.replay,

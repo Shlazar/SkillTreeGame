@@ -7,10 +7,6 @@
 const SK = {
   gold: { every: [0, 60, 40, 25], value: 25, speed: [26, 31], fear: 190 }
 };
-// What a level of the new nodes gives (the tree's info box shows the same numbers).
-Object.assign(UP, {
-  gold: (l) => SK.gold.every[l] || 0        // GOLDEN ZOMBIES: 1 in this many (0 = none)
-});
 // A tutorial moment for part D's prompts (nothing happens when they are not there).
 function skillEvent(name, data) {
   if (typeof tutEvent === 'function') tutEvent(name, data || {});
