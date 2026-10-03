@@ -140,11 +140,13 @@ function makeGold(z) {
   z.sp = rnd(SK.gold.speed[0], SK.gold.speed[1]);
   return z;
 }
-// Where a golden zombie runs: away from the heli (the middle of the view) and from the rails, when
-// either is near; else it strolls out into the field. [x, y] on the ground.
+// Where a golden zombie runs: away from the nearest heli and from the rails, when either is near;
+// else it strolls out into the field. [x, y] on the ground.
 const GF = [0, 0];
 function goldFlee(z) {
-  const F = SK.gold.fear, hx = G.camX + W / 2, hy = G.camY + H / 2;
+  let hx = 1e9, hy = 1e9;
+  for (const h of G.helis) if (Math.hypot(h.x - z.x, h.y - z.y) < Math.hypot(hx - z.x, hy - z.y)) [hx, hy] = [h.x, h.y];
+  const F = SK.gold.fear;
   const ax = z.x - hx, ay = (z.y - hy) / FORE, ad = Math.hypot(ax, ay) || 1, side = z.x < trackX(z.y) ? -1 : 1;
   const rd = Math.abs(z.x - trackX(z.y));
   let vx = side * (rd < F ? 1.2 * (1 - rd / F) + 0.2 : 0.15), vy = -0.15;

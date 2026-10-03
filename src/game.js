@@ -1,11 +1,11 @@
-// game.js - the game: escort the last train. You fly a gunship helicopter (WASD) over a railway that
-// winds north. The line is fixed: the train leaves the Depot (at y = 0), stops at the stations on the
+// game.js - the game: escort the last train. Your gunship helicopters (helis.js) fly over a railway
+// that winds north, fighting by themselves or where you send them. The line is fixed: the train leaves the Depot (at y = 0), stops at the stations on the
 // way to take on survivors, and the safe zone wall stands at the far end. The dead walk in from both
 // sides, more of them the further the train gets; the ones ahead of the train step onto the rails,
 // and before each station a Dead Wall of them stands on the track. The engine runs them down, but
 // each one slows it and hurts it, and the dead that reach the train climb on and tear at it. The run
-// ends when the train breaks; every scrap and survivor of the run is kept. When no key is held the
-// helicopter keeps pace with the train. Behind the title and the Depot the same game runs as a demo.
+// ends when the train breaks; every scrap and survivor of the run is kept. The view follows the
+// train and shows the whole battlefield. Behind the title and the Depot the same game runs as a demo.
 // Units are world pixels and seconds; y on the ground is squashed by FORE; the train runs to -y.
 
 const CFG = {
@@ -14,10 +14,8 @@ const CFG = {
   // the train: top speed (px/s), how fast it gets back up to speed, how hard it brakes, its health,
   // and the health it loses for each zombie it runs over (a brute costs more)
   train: { cruise: 26, accel: 7, brake: 10, hp: 80, crush: 2, crushBig: 10 },
-  // the helicopter: top speed against the train, how fast it gets there, how far from the engine it
-  // may fly (its radio range), how near loot must be to pick it up, its height (where its shadow falls)
-  heli: { speed: 170, accel: 3.2, range: 300, pickup: 14, alt: 100 },
-  lock: 12,                    // px round the sight that a zombie is locked within
+  // a helicopter: its top speed, how fast it gets there, how near loot must be to pick it up
+  heli: { speed: 170, accel: 3.2, pickup: 14 },
   // 25mm: rounds per second, flight time (short: the hit lands at once), spread without a lock,
   // burst radius, most zombies one round can hit, heat per round, cooling per second
   mg: { rate: 6, travel: 0.07, spread: 5, splash: 7, victims: 4, heatPer: 0.05, cool: 0.55 },
@@ -55,9 +53,9 @@ const CFG = {
   winch: { hover: 1.5 },
   // what one level of a skill tree node adds: train HP (ARMOR), the 25mm's heat per round is
   // multiplied (COOLING), 25mm rounds per second (FAST FEED), 25mm damage (HEAVY ROUNDS), 105mm
-  // reload seconds taken off (FAST RELOAD), px of flying range (RADIO RANGE), px of pickup reach
+  // reload seconds taken off (FAST RELOAD), heli px/s (FAST ROTORS), px of pickup reach
   // (MAGNET), share of kill scrap (SCAVENGER), rounds per second (GUN SPEED, NEST SPEED)
-  up: { armor: 20, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, radio: 60, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
+  up: { armor: 20, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, rotor: 25, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 1, speed: [11, 16], value: 1, dps: 0.5 },                // walker
@@ -103,20 +101,22 @@ const UP = {
   },
   dmg: (l) => 1 + CFG.up.heavy * l,                                  // HEAVY ROUNDS: damage per hit
   reload: (l) => CFG.he.reload - CFG.up.reload * l,                  // FAST RELOAD: 105mm reload (s)
-  range: (l) => CFG.heli.range + CFG.up.radio * l,                   // RADIO RANGE: flying range (px)
+  fly: (l) => CFG.heli.speed + CFG.up.rotor * l,                     // FAST ROTORS: heli speed (px/s)
   pickup: (l) => CFG.heli.pickup + CFG.up.magnet * l,                // MAGNET: pickup reach (px)
   scav: (l) => CFG.up.scav * l,                                      // SCAVENGER: extra kill scrap
   gun: (l) => CFG.gun.rate + CFG.up.gun * l,                         // GUN SPEED: flatcar gun rounds/s
   nest: (l) => CFG.nest.rate + CFG.up.nest * l                       // NEST SPEED: MG nest rounds/s
 };
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
-// menus uses the plain numbers, but shows off the 105mm, the flatcar gun and the Turbo Ram. he,
-// winch, ram, wire = owned; gun = the flatcar gun's rounds per second (0 = none).
+// menus uses the plain numbers, but shows off two helis, the 105mm, the flatcar gun and the Turbo
+// Ram. he, winch, ram, wire = owned; gun = the flatcar gun's rounds per second (0 = none); helis =
+// how many (1, and WINGMAN and EXTRA HELI add one each).
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
   return {
     hp: UP.hp(L('armor')), rate: UP.rate(L('feed')), heat: UP.heat(L('cool'), L('feed')), dmg: UP.dmg(L('heavy')),
-    he: demo || L('he') > 0, reload: UP.reload(L('reload')), range: UP.range(L('radio')), pickup: UP.pickup(L('magnet')),
+    he: demo || L('he') > 0, reload: UP.reload(L('reload')), fly: UP.fly(L('radio')), pickup: UP.pickup(L('magnet')),
+    helis: demo ? 2 : 1 + L('wingman') + L('extra'),
     scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: demo || L('gun') > 0 ? UP.gun(L('gunspd')) : 0, ram: demo || L('ram') > 0,
     nest: UP.nest(L('nestspd')), wire: L('wire') > 0,
     // the first ring (skills.js): chain jumps, the cow catcher, 1 golden zombie in this many (0 = none),
@@ -148,9 +148,8 @@ function newGame(demo, from) {
     // nose on the ground
     tr: { s: s0, startS: s0, v: CFG.train.cruise, hp, max: hp, hpShown: hp, hit: [0, 0, 0, 0, 0],
       clack: 0, smokeT: 0, hornT: 0, fx: trackX(y0), fy: y0, cars },
-    // the helicopter: ox / oy = where it is from the engine's nose, vx / vy = its speed against the
-    // train, hd = its heading, home = flying back over the train
-    heli: { ox: 0, oy: Math.round(H * 0.12), vx: 0, vy: 0, hd: 0, home: false, far: false },
+    // the helicopters (helis.js)
+    helis: [],
     goalS: demo ? -1e12 : sAtKm(CFG.line.end), goalY: -1e9,
     // the stops on this run (the Depot and the stations ahead), the stations alone, the one the
     // train goes to next (or stands at), and the Dead Walls ahead
@@ -184,6 +183,7 @@ function newGame(demo, from) {
   clearFX();
   GRID.clear();
   layoutTrain();
+  makeHelis();
   if (!demo) {
     G.goalY = yOfS(G.goalS);
     G.maxKm = DK();
@@ -814,74 +814,19 @@ function updateZombies(dt) {
   zs.length = j;
 }
 
-// ---------- the helicopter
-// The keys push it about; with no key held it keeps its place over the train. F flies it back
-// over the engine. It cannot fly further from the train than its radio range.
-function updateHeli(dt) {
-  const h = G.heli, c = CFG.heli, homeY = Math.round(H * 0.12);
-  if (G.demo || mode === 'title') {
-    // the title: a slow circle off to the side of the train, the menu on the left
-    const off = W >= 560 ? -W * 0.22 : 0;
-    h.ox = off + Math.cos(G.t * 0.15) * 30;
-    h.oy = homeY + Math.sin(G.t * 0.15) * 24;
-    h.vx = -Math.sin(G.t * 0.15) * 4.5;
-    h.vy = Math.cos(G.t * 0.15) * 3.6;
-  } else {
-    let [ix, iy] = mode === 'play' ? keyAxis() : [0, 0];
-    if (mode === 'play' && M.inside && !G.bot) {
-      const ex = M.x / W * 2 - 1, ey = M.y / H * 2 - 1;
-      ix = clamp(ix + Math.sign(ex) * smooth(0.94, 0.995, Math.abs(ex)), -1, 1);
-      iy = clamp(iy + Math.sign(ey) * smooth(0.92, 0.99, Math.abs(ey)), -1, 1);
-    }
-    const l = Math.hypot(ix, iy);
-    if (l > 1) { ix /= l; iy /= l; }
-    if (l > 0.05) h.home = false;
-    let tx = ix * c.speed, ty = iy * c.speed;
-    if (h.home) {
-      const dx = -h.ox, dy = homeY - h.oy, d = Math.hypot(dx, dy);
-      if (d < 3) h.home = false;
-      else {
-        tx = dx / d * Math.min(c.speed, d * 2.5);
-        ty = dy / d * Math.min(c.speed, d * 2.5);
-      }
-    }
-    const k = Math.min(1, dt * c.accel);
-    h.vx += (tx - h.vx) * k;
-    h.vy += (ty - h.vy) * k;
-    h.ox += h.vx * dt;
-    h.oy += h.vy * dt;
-    // the radio range: pulled back softly past it (the warning shows from 95% of it)
-    const d = Math.hypot(h.ox, h.oy - homeY), range = G.up.range;
-    h.far = d > range * 0.95;
-    if (d > range) {
-      const f = range / d;
-      h.ox *= f;
-      h.oy = homeY + (h.oy - homeY) * f;
-      h.vx *= 0.8;
-      h.vy *= 0.8;
-    }
-  }
-  // the heading follows where it flies (the train's way plus its own)
-  const t0 = G.tr.cars[0], gx = t0.dx * G.tr.v + h.vx, gy = t0.dy * G.tr.v + h.vy;
-  if (Math.hypot(gx, gy) > 10) {
-    let a = Math.atan2(gx, -gy) - h.hd;
-    a = mod(a + Math.PI, TAU) - Math.PI;
-    h.hd += clamp(a, -2.4 * dt, 2.4 * dt);
-  }
-}
-// The view: over the helicopter, swinging a little ahead of where it flies, swaying as it hovers,
-// and moved on by G.lead (camLead).
+// The view: it follows the train, and is moved on by G.lead (camLead).
 function placeCamera() {
   camBase(CB);
   G.camX = Math.round(CB[0] + G.lead[0] - W / 2);
   G.camY = Math.round(CB[1] + G.lead[1] - H / 2);
 }
-// the middle of the view before the lead: over the helicopter, a little ahead of where it flies
+// the middle of the view before the lead: ahead of the train's middle car, so the train sits a
+// little below the middle and you see what comes (behind the menus it stands right of the menu)
 const CB = [0, 0];
 function camBase(o) {
-  const h = G.heli, sw = REDUCED ? 0 : 1;
-  o[0] = G.tr.fx + h.ox + h.vx * 0.22 + Math.sin(G.t * 0.9) * 1.3 * sw;
-  o[1] = G.tr.fy + h.oy + h.vy * 0.22 + Math.sin(G.t * 1.27 + 1) * 0.9 * sw;
+  const c = G.tr.cars[2], f = G.tr.cars[0], a = H * 0.12, off = G.demo && W >= 560 ? W * 0.22 : 0;
+  o[0] = c.cx + f.dx * a - off;
+  o[1] = c.cy + f.dy * a;
   return o;
 }
 // G.lead = px the view is moved by (the heli's shadow stays where the heli is): 40 px up the line
@@ -920,88 +865,25 @@ function viewChunks() {
   return [Math.floor(G.camX / CH), Math.floor(G.camY / CH), Math.floor((G.camX + W) / CH), Math.floor((G.camY + H) / CH)];
 }
 
-// ---------- lock-on
-// The zombie nearest the sight on screen (a little wider than the lock, so after a kill it jumps
-// to the next one). A locked zombie that the rounds in the air will kill stays locked until it
-// falls, and no other doomed one is picked: no round is wasted. G.lockWait = the gun waits for a
-// doomed one to fall (a few hundredths of a second). quiet = no lock beep.
-function findLock(quiet) {
-  const keep = G.lock && !G.lock.dead ? G.lock : null, r1 = CFG.lock * CFG.lock, r2 = r1 * 5;
-  if (keep && keep.pending >= keep.hp) {
-    const dx = keep.x - G.camX - G.aimSX, dy = keep.y - G.camY - keep.S.h * 0.5 - G.aimSY;
-    if (dx * dx + dy * dy <= r2) {
-      G.lockWait = true;
-      return;
-    }
-  }
-  let fresh = null, fd = r2, doomed = false;
-  for (const z of G.zombies) {
-    if (z.dead) continue;
-    const dx = z.x - G.camX - G.aimSX, dy = z.y - G.camY - z.S.h * 0.5 - G.aimSY;
-    let d2 = dx * dx + dy * dy;
-    if (d2 > r2) continue;
-    if (z.pending >= z.hp) {
-      if (d2 <= r1) doomed = true;
-      continue;
-    }
-    if (z === keep) d2 *= 0.45;
-    const w = d2 > r1 ? d2 * 1.5 : d2;
-    if (w < fd) { fd = w; fresh = z; }
-  }
-  if (fresh && !G.lock && mode === 'play' && !quiet) SFX.lock();
-  G.lock = fresh;
-  G.lockWait = !fresh && doomed;
-}
-
 // ---------- the guns
-// A 25mm round. With a lock it leads the target; without, it lands near (tx, ty).
-function fireMG(player, tx, ty) {
-  let bx, by, tgt = null;
-  if (player && G.lock) {
-    tgt = G.lock;
-    const s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU);
-    bx = tgt.x + tgt.vx * CFG.mg.travel + Math.cos(a) * s;
-    by = tgt.y + tgt.vy * CFG.mg.travel + Math.sin(a) * s * FORE;
-    tgt.pending += G.up.dmg;                         // spoken for: the next round goes elsewhere
-  } else {
-    const s = Math.sqrt(Math.random()) * CFG.mg.spread, a = rnd(TAU);
-    bx = tx + Math.cos(a) * s;
-    by = ty + Math.sin(a) * s * FORE;
-  }
-  G.rounds.push({ kind: 'mg', bx, by, tgt, age: 0, T: CFG.mg.travel, side: 1, j: rnd(-1, 1), player });
-  G.muzzle[0] = 0.05;
+// A 105mm shell from heli h at (tx, ty) (heFire in helis.js leads it to where the crowd will be).
+function fireHE(player, tx, ty, h) {
+  const [ox, oy] = turnXY(h.hd, -11, -8);
+  G.rounds.push({ kind: 'he', bx: tx, by: ty, tgt: null, age: 0, T: CFG.he.travel, side: -1, j: 0, player, h, sx: h.x + ox, sy: h.y + oy, sz: h.alt + 3 });
+  heliRecoil(h);
   if (player) {
-    G.shots++;
-    G.heat = Math.min(1, G.heat + G.up.heat);
-    addShake(0.06);
-    kick(rnd(-0.3, 0.3), 0.5);
-    SFX.mg();
-  }
-}
-// A 105mm shell at (tx, ty). With a lock it leads: it lands where the crowd under the sight
-// will have walked to by then.
-function fireHE(player, tx, ty) {
-  let bx = tx, by = ty;
-  if (player && G.lock) {
-    bx += G.lock.vx * CFG.he.travel;
-    by += G.lock.vy * CFG.he.travel;
-  }
-  G.rounds.push({ kind: 'he', bx, by, tgt: null, age: 0, T: CFG.he.travel, side: -1, j: 0, player });
-  G.muzzle[1] = 0.12;
-  if (player) {
-    G.heReload = G.up.reload;
+    h.heR = G.up.reload;
     addShake(0.45);
     kick(rnd(-1, 1), 2.5);
     SFX.cannon();
     SFX.whistle(CFG.he.travel);
   }
 }
-// Right click or Space. Pressed just before the gun is loaded, it fires the moment it is. Nothing
-// happens until the 105MM CANNON is bought in the skill tree.
+// Space: the selected helis (or all) fire a 105 at the mouse. Nothing happens until the 105MM
+// CANNON is bought in the skill tree.
 function tryHE() {
   if (mode !== 'play' || paused || !G.up.he) return;
-  if (G.heReload <= 0) fireHE(true, G.camX + G.aimSX, G.camY + G.aimSY);
-  else if (G.heReload < 0.5) G.heQueue = true;
+  heFire(G.camX + G.aimSX, G.camY + G.aimSY);
 }
 function updateRounds(dt) {
   const rs = G.rounds;
@@ -1285,7 +1167,7 @@ function blood(x, y, n, zh) {
   for (let k = 0; k < n; k++) part({ x: x + rnd(-1, 1), y, z: rnd(3, zh), vx: rnd(-35, 35), vy: rnd(-45, 12), vz: rnd(15, 70),
     g: 240, life: 1.4, max: 1.4, s: 1, c: pick([P.bl0, P.bl1, P.bl2, P.bl2]), land: 1 });
 }
-// cause = 'mg' (a 25mm round), 'gun' (the flatcar gun), 'he' (the 105 at (cx, cy), dist away),
+// cause = 'mg' (a heli's nose gun round), 'gun' (the flatcar gun), 'he' (the 105 at (cx, cy), dist away),
 // 'train' (run down) or 'ram' (the Turbo Ram). free = not the player's kill (no score).
 function kill(z, cause, cx, cy, dist, free) {
   if (z.dead) return;
@@ -1293,11 +1175,6 @@ function kill(z, cause, cx, cy, dist, free) {
   z.dead = true;
   z.hp = 0;
   z.paid = 0;
-  // the lock jumps at once to the next zombie near the sight
-  if (G.lock === z) {
-    G.lock = null;
-    if (mode === 'play') findLock(true);
-  }
   const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160, ram = cause === 'ram';
   // every kill but the Ram's own fills the Ram again
   if (!ram && !free) chargeRam();
@@ -1587,32 +1464,15 @@ function autopilot(dt) {
   if (ramState() === 'ready' && (G.prompt || wallAhead(130) || G.railAhead >= 6 && !wallAhead(1200))) tryRam(true);
   return { z: G.botZ && !G.botZ.dead ? G.botZ : null, he };
 }
-// the title demo: bursts of 25mm and a 105 now and then
+// the title demo: the helis fight by themselves, and a 105 now and then
 function attract(dt) {
   const b = autopilot(dt);
-  G.mgCd -= dt;
-  if (b.z && G.t % 1.8 < 1.1) {
-    while (G.mgCd <= 0) {
-      fireMG(false, b.z.x + b.z.vx * CFG.mg.travel + rnd(-2, 2), b.z.y + b.z.vy * CFG.mg.travel + rnd(-2, 2));
-      G.mgCd += 1 / CFG.mg.rate;
-    }
-  } else G.mgCd = Math.max(0, G.mgCd);
-  G.heReload -= dt;
-  if (b.he && G.heReload <= 0) {
-    fireHE(false, b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel);
-    G.heReload = 3.5;
-  }
+  if (b.he) botHE(b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel, false);
 }
-// in play with the bot on: it moves the sight and pulls the triggers
+// in play with the bot on: the helis fight by themselves; it fires the 105 and rams
 function botPlay(dt) {
   const b = autopilot(dt);
-  if (b.z) {
-    M.x = b.z.x - G.camX;
-    M.y = b.z.y - G.camY - b.z.S.h * 0.5;
-    M.inside = true;
-  }
-  G.trigger = !!b.z;
-  if (b.he && G.up.he && G.heReload <= 0) fireHE(true, b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel);
+  if (b.he && G.up.he) botHE(b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel, true);
 }
 
 // ---------- the ride
@@ -1679,7 +1539,7 @@ function step(dt) {
       life: rnd(1.6, 2.6) - k * 0.6, max: 2.6, s: rnd(2, 3) + k, c: k > 0.5 ? pick(['rgba(20,18,18,0.7)', 'rgba(32,30,28,0.65)'])
         : pick(['rgba(40,38,36,0.6)', 'rgba(56,52,48,0.55)']), grow: 3 + k * 2, drag: 0.8, smoke: true });
   }
-  updateHeli(dt);
+  updateHelis(dt);
   placeCamera();
   if (G.up.gun && !G.result) updateGun(dt);
   for (let i = G.timers.length - 1; i >= 0; i--) {
@@ -1693,39 +1553,9 @@ function step(dt) {
   if (mode === 'play') {
     G.run += dt;
     if (G.bot) botPlay(dt);
+    // (the mouse: where the 105 goes)
     G.aimSX = clamp(M.x, 0, W - 1);
     G.aimSY = clamp(M.y, 0, H - 1);
-    findLock();
-    // the 25mm heats up while it fires and cools when it rests; too hot and it stops for a moment
-    G.heat = Math.max(0, G.heat - CFG.mg.cool * dt * (G.trigger && !G.overheat ? 0.25 : 1));
-    if (G.overheat && G.heat < 0.35) G.overheat = false;
-    if (G.trigger && !G.overheat) {
-      G.mgCd -= dt;
-      while (G.mgCd <= 0 && !G.overheat) {
-        // (only a zombie already done for under the sight: wait, the round would be wasted)
-        if (G.lockWait) {
-          G.mgCd = 0;
-          break;
-        }
-        fireMG(true, G.camX + G.aimSX, G.camY + G.aimSY);
-        G.mgCd += 1 / G.up.rate;
-        findLock(true);
-        if (G.heat >= 1) {
-          G.overheat = true;
-          SFX.overheat();
-          floatText(G.camX + G.aimSX, G.camY + G.aimSY + 8, 'OVERHEAT', U.red);
-        }
-      }
-    } else G.mgCd = Math.max(0, G.mgCd - dt);
-    if (G.heReload > 0) {
-      G.heReload = Math.max(0, G.heReload - dt);
-      if (G.heReload <= 0) {
-        if (G.heQueue) {
-          G.heQueue = false;
-          fireHE(true, G.camX + G.aimSX, G.camY + G.aimSY);
-        } else SFX.ready();
-      }
-    }
     if (!G.result && tr.s <= G.goalS) arrive();
   } else {
     G.aimSX = W / 2;

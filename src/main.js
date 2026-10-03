@@ -30,7 +30,7 @@ cv.addEventListener('pointerdown', (e) => {
   M.inside = true;
   if (e.button === 2) {
     if (mode === 'depot') M.rpressed = true;
-    tryHE();
+    if (mode === 'play' && !paused && p.y >= 19) heliRight(p.x, p.y);
     return;
   }
   if (e.button !== 0) return;
@@ -48,13 +48,13 @@ cv.addEventListener('pointerdown', (e) => {
   try { cv.setPointerCapture(e.pointerId); } catch (_) { /* fine without */ }
   if (mode === 'summary' && realT - sumStart > 0.6) sumSkip();
   if (mode !== 'play' || p.y < 19) return;
-  // a click on the field goes on after a pause; otherwise it is the trigger
+  // a click on the field goes on after a pause; otherwise it selects helis (helis.js)
   if (paused) {
     if (!pauseHit(p.x, p.y)) {
       setPaused(false);
       M.used = true;
     }
-  } else G.trigger = true;
+  } else heliDown(p.x, p.y, e.shiftKey);
 });
 cv.addEventListener('pointerup', (e) => {
   const p = toCanvas(e);
@@ -65,7 +65,8 @@ cv.addEventListener('pointerup', (e) => {
     M.down = false;
     M.released = true;
   }
-  if (G) G.trigger = false;
+  if (mode === 'play' && !paused) heliUp(p.x, p.y);
+  else HUI.box = null;
 });
 cv.addEventListener('pointercancel', () => {
   M.down = false;
@@ -82,13 +83,9 @@ cv.addEventListener('wheel', (e) => {
   }
 }, { passive: false });
 
-// KEYS[k] = true while key k is held. keyAxis() = the way WASD / the arrow keys push, [x, y].
+// KEYS[k] = true while key k is held.
 const KEYS = {};
 const keyName = (e) => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
-function keyAxis() {
-  return [(KEYS.d || KEYS.ArrowRight ? 1 : 0) - (KEYS.a || KEYS.ArrowLeft ? 1 : 0),
-    (KEYS.s || KEYS.ArrowDown ? 1 : 0) - (KEYS.w || KEYS.ArrowUp ? 1 : 0)];
-}
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = keyName(e);
@@ -111,8 +108,8 @@ addEventListener('keydown', (e) => {
     if (G.prompt && REDUCED && k !== 'e') G.prompt = null;
     if (k === ' ') tryHE();
     else if (k === 'e') { if (!paused) tryRam(); }
-    else if (k === 'f') G.heli.home = true;
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
+    else if (!paused) heliKey(k);
   } else if (mode === 'title') {
     if (k === 'Enter' || k === ' ') titleGo();
     else if (k === 'Escape') titleAsk = false;
@@ -247,8 +244,7 @@ function oneFrame(dt) {
       console.error(err);
     }
   }
-  // the game draws its own sight, so the mouse pointer hides in play
-  cv.style.cursor = mode === 'play' && !paused && M.y >= 19 && cursor === 'default' ? 'none' : cursor;
+  cv.style.cursor = cursor;
   M.pressed = false;
   M.released = false;
   M.used = false;
@@ -274,7 +270,7 @@ function boot() {
     // the horde by distance (rows of HORDE in game.js), for balance tests
     HORDE,
     // the sprites, for a test sheet
-    art: () => ({ TRAIN, FOOT, HELI, STATION, SURV, ZS, ICON, TURRET }),
+    art: () => ({ TRAIN, FOOT, HSPR, ROTOR, STATION, SURV, ZS, ICON, TURRET }),
     // start(from): a run from 'depot' (the default) or a reached station ('farm', 'mill')
     start: (from) => startGame(from || 'depot'),
     title: toTitle,
@@ -452,12 +448,12 @@ function boot() {
       scrap: SAVE.scrap, survivors: SAVE.surv, best: SAVE.best, runs: SAVE.runs,
       pay: Object.assign({}, G.pay), hp: Math.round(G.tr.hp), max: G.tr.max, speed: +G.tr.v.toFixed(1),
       onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length, up: Object.assign({}, G.up),
-      shots: G.shots, scavPaid: G.scavPaid, overheat: G.overheat, heReload: +G.heReload.toFixed(2), far: G.heli.far, hurt: Object.assign({}, G.hurt),
+      shots: G.shots, scavPaid: G.scavPaid, overheat: G.overheat, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),
       station: G.station ? G.station.id + ' ' + G.station.state + ' ' + G.station.saved + '/' + G.station.people + ' lost ' + G.station.lost : '-',
       walls: G.walls.map((w) => w.km + (w.awake ? ' awake' : w.placed ? ' placed' : ' ahead')),
-      heli: [Math.round(G.heli.ox), Math.round(G.heli.oy)],
+      helis: G.helis.map((h) => [Math.round(h.x - G.tr.fx), Math.round(h.y - G.tr.fy)]),
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
-      W, H, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), lock: !!G.lock, heat: +G.heat.toFixed(2),
+      W, H, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),
       gun: { rate: G.up.gun, shots: G.gun.shots, kills: G.gun.kills, ang: +G.gun.ang.toFixed(2), tgt: G.gun.tgt ? G.gun.tgt.st : -1 },
       ram: { state: ramState(), on: G.ram.on, t: +G.ram.t.toFixed(2), charge: +ramCharge().toFixed(3), kills: G.ram.kills, pay: G.ram.pay,
         uses: G.ram.uses, total: G.ram.total, taste: G.taste, prompt: !!G.prompt }

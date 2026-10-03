@@ -1,5 +1,4 @@
-// ui.js - everything drawn over the world, in screen pixels: the gun sight and lock brackets, the
-// top bar (scrap, survivors, kills, the train's health, the route up the line), warnings, arrows on
+// ui.js - everything drawn over the world, in screen pixels: the top bar (scrap, survivors, kills, the train's health, the route up the line), warnings, arrows on
 // the screen edge to the train and to trouble out of view, the radar, the weapon cards, coins,
 // banners, hints, the red edge when the train is nearly lost, and the screens (title, pause,
 // summary; the Depot is in depot.js). Buttons are drawn in the canvas too (from Ball x Archers).
@@ -35,7 +34,7 @@ function button(x, y, w, h, label, o) {
   return clicked(x, y, w, h);
 }
 
-// ---------- the sight
+// ---------- corners (the skill tree, a helis' attack mark)
 // L-shaped corners round a box, with dark edges.
 function corners(x, y, w, h, col) {
   const L = 3;
@@ -50,62 +49,6 @@ function corners(x, y, w, h, col) {
     ctx.fillRect(cx, Math.min(cy, cy + sy * (L - 1)), 1, L);
   }
 }
-const TICKS = [[-8, 0, 5, 1], [4, 0, 5, 1], [0, -8, 1, 5], [0, 4, 1, 5]];
-function drawSight() {
-  const x = Math.round(G.aimSX), y = Math.round(G.aimSY);
-  // lock brackets: they slide to the locked zombie and close round it
-  const z = G.lock;
-  if (z && !z.dead) {
-    const S = z.S, w = S.walk[0].n.width + 4, h = S.h + 4;
-    const tx = z.x - G.camX - S.ax - 2, ty = z.y - G.camY - S.ay - 2;
-    const b = G.box || (G.box = { x: x - 14, y: y - 14, w: 28, h: 28 });
-    const k = 1 - Math.exp(-frameDt * 28);
-    b.x += (tx - b.x) * k;
-    b.y += (ty - b.y) * k;
-    b.w += (w - b.w) * k;
-    b.h += (h - b.h) * k;
-    corners(Math.round(b.x), Math.round(b.y), Math.round(b.w), Math.round(b.h), thermal ? '#ffffff' : '#ff5a3a');
-  } else G.box = null;
-  // the sight: 4 ticks round a gap and a dot, with dark edges so it reads on any ground
-  const col = G.overheat ? U.red : thermal ? '#f4f4f4' : '#e8dfc8';
-  ctx.fillStyle = '#07080a';
-  for (const t of TICKS) ctx.fillRect(x + t[0] - 1, y + t[1] - 1, t[2] + 2, t[3] + 2);
-  ctx.fillRect(x - 1, y - 1, 3, 3);
-  ctx.fillStyle = col;
-  for (const t of TICKS) ctx.fillRect(x + t[0], y + t[1], t[2], t[3]);
-  ctx.fillRect(x, y, 1, 1);
-  // hit marker: a white X when rounds hit
-  if (G.hitT > 0) {
-    ctx.fillStyle = '#ffffff';
-    for (const d of [2, 3]) {
-      ctx.fillRect(x - d, y - d, 1, 1);
-      ctx.fillRect(x + d, y - d, 1, 1);
-      ctx.fillRect(x - d, y + d, 1, 1);
-      ctx.fillRect(x + d, y + d, 1, 1);
-    }
-  }
-  // the 105 is loaded: a gold pip at the top right of the sight (once the 105mm is bought)
-  const he = G.up.he && G.heReload <= 0;
-  if (he) {
-    ctx.fillStyle = '#07080a';
-    ctx.fillRect(x + 6, y - 9, 4, 4);
-    ctx.fillStyle = thermal ? '#ffffff' : U.gold;
-    ctx.fillRect(x + 7, y - 8, 2, 2);
-  }
-  // the 105 would hit the train too
-  if (he && trainDist(G.camX + G.aimSX, G.camY + G.aimSY, G.tr.v * CFG.he.travel) < CFG.he.close + 4) {
-    text('DANGER CLOSE', x, y + 17, U.red, { align: 'center' });
-  }
-  // gun heat: a small bar under the sight while the 25mm is warm
-  if (G.heat > 0.15) {
-    const hw = 13;
-    ctx.fillStyle = '#07080a';
-    ctx.fillRect(x - 7, y + 11, hw + 2, 3);
-    ctx.fillStyle = G.overheat ? U.red : G.heat > 0.75 ? U.amber : '#8b919c';
-    ctx.fillRect(x - 6, y + 12, Math.round(hw * G.heat), 1);
-  }
-}
-
 // ---------- in play
 // A weapon card: icon, name (nc = its colour), a tag on the right (the key, READY, a %...) and a bar.
 function card(x, y, w, h, icon, name, tag, tagc, f, fc, nc) {
@@ -209,14 +152,12 @@ function drawRoute(x0, x1) {
   ctx.fillStyle = stop && Math.floor(realT * 3) % 2 ? U.green : '#e8dfc8';
   ctx.fillRect(tx - 1, y - 2, 3, 5);
 }
-// warnings under the top bar: the dead on the track or on the train, the helicopter too far away,
-// the station hold
+// warnings under the top bar: the dead on the track or on the train, the station hold
 function drawWarnings() {
   if (G.result) return;
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', st = G.station, L = [];
   if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (E: RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
-  if (G.heli.far) L.push(['RADIO RANGE LIMIT  (F: BACK)', U.amber]);
   if (st && st.state === 'hold' && st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
   // the station hold bar comes first (stationtab.js), under the task box when they would touch;
   // then the lines, beside the task box or under it (tut.js)
@@ -308,6 +249,7 @@ function drawRadar() {
   for (const p of G.people) if (p.st === 'run' || p.st === 'wait' || p.st === 'grab') dot(p.x, p.y, '#8fd18a', 1);
   lootRadar(dot);
   for (const c of G.tr.cars) dot(c.cx - 1, c.cy - 1, '#e8dfc8', 2);
+  for (const h of G.helis) dot(h.x - 1, h.y - 1, h.sel ? U.green : '#9fd3f2', 2);
   // the view
   const vx = Math.round(cx - W / 2 * k), vy = Math.round(cy - H / 2 * k);
   ctx.globalAlpha = 0.55;
@@ -315,16 +257,12 @@ function drawRadar() {
   ctx.globalAlpha = 1;
   text('N', cx, y0 + 2, U.faint, { align: 'center', outline: false });
 }
-// The weapon cards, bottom left: the 25mm, then the 105mm once it is bought in the skill tree, then
-// the Turbo Ram.
+// The cards, bottom left: one for each heli and the 105mm once it is bought (helis.js), then the
+// Turbo Ram.
 function drawWeapons() {
-  const y = H - 30, rdy = G.heReload <= 0;
-  card(4, y, 96, 26, ICON.mg, '25MM', G.overheat ? 'OVERHEAT' : 'L-CLICK', G.overheat ? U.red : U.faint, G.heat,
-    G.overheat ? '#b8402e' : G.heat > 0.75 ? U.amber : '#8b919c');
-  if (G.up.he) card(104, y, 96, 26, ICON.he, '105MM', rdy ? 'READY' : 'R-CLICK', rdy ? U.gold : U.faint, 1 - G.heReload / G.up.reload,
-    rdy ? '#e3b04b' : '#7a6a50');
-  // (on a window too narrow for three cards in a row, the Ram's goes over the 25mm's)
-  let rx = G.up.he ? 204 : 104, ry = y;
+  const y = H - 30;
+  // (on a window too narrow for all the cards in a row, the Ram's goes over the first)
+  let rx = drawUnitCards(4, y), ry = y;
   if (rx + RAMCARD.w > W - 82) [rx, ry] = [4, y - 30];
   drawRamCard(rx, ry);
   text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
@@ -522,8 +460,8 @@ function drawTitle() {
     if (button(cx - 75, y, 150, 20, 'PLAY', { primary: true })) titleGo();
     y += 30;
   }
-  const L = ['WASD: FLY.  F: BACK OVER THE TRAIN.  MOUSE: AIM.',
-    lv('he') ? 'HOLD LEFT CLICK: 25MM.  RIGHT CLICK / SPACE: 105MM.' : 'HOLD LEFT CLICK: SHOOT THE 25MM GUN.',
+  const L = ['YOUR HELIS FIGHT BY THEMSELVES.  CLICK OR DRAG: SELECT.',
+    lv('he') ? 'RIGHT CLICK: ATTACK OR MOVE.  SPACE: 105MM.' : 'RIGHT CLICK: ATTACK OR MOVE.  A: ALL HELIS.',
     'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
   L.forEach((l, i) => text(l, cx, y + i * 11, U.faint, { align: 'center', outline: false }));
   text(ask ? 'ESC: GO BACK' : 'ENTER: ' + (prog ? 'CONTINUE' : 'PLAY'), cx, y + 42, U.faint, { align: 'center', outline: false });
@@ -653,7 +591,7 @@ function drawUI() {
     drawArrows();
     drawBanners();
     drawPrompt();
-    if (mode === 'play' && !paused) drawSight();
+    if (mode === 'play' && !paused) drawHeliCursor();
     if (paused) drawPause();
     drawTension();
   } else if (mode === 'summary') drawSummary();
