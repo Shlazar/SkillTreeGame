@@ -162,7 +162,8 @@ function cannonReach(x, y, ux, uy) {
 function onLine(z, gx, gy, ux, uy, L) {
   const dx = z.x - gx, dy = z.y - 4 - gy, t = dx * ux + dy * uy;
   if (t < 3 || t > L) return -1;
-  return Math.abs(dx * uy - dy * ux) <= CFG.gun.hw + (z.big ? 3 : 0) ? t : -1;
+  // (POWER SHOT: every 3rd shot's line is 3 times as wide)
+  return Math.abs(dx * uy - dy * ux) <= CFG.gun.hw * (G.gun.wide ? 3 : 1) + (z.big ? 3 : 0) ? t : -1;
 }
 // The best line: through each one of the dead on the train (if any are), else through each one on the
 // screen; the one that kills the most wins (the nearer target when they tie).
@@ -253,6 +254,7 @@ function cannonFire(gx, gy, a) {
   g.ang = a;
   g.ready = false;
   g.cd = G.up.gun;
+  const big = g.wide = !!G.up.power && (g.shots + 1) % 3 === 0;
   g.shots++;
   g.recT = 0;
   g.joltT = 0;
@@ -287,8 +289,9 @@ function cannonFire(gx, gy, a) {
     stampScorch(z.x, z.y, z.big ? 2 : 1);
   }
   g.last = hit.length;
+  g.wide = !!G.up.power && (g.shots + 1) % 3 === 0;
   // the line: a beam that fades, the ground lit, a row of small blasts and dust, a burnt groove
-  g.beams.push({ x0: mx, y0: my, ux, uy, L, t: 0, seed: rnd(1000) });
+  g.beams.push({ x0: mx, y0: my, ux, uy, L, t: 0, seed: rnd(1000), big });
   for (let s = 18; s < L; s += rnd(16, 26)) {
     const x = gx + ux * s + rnd(-2, 2), y = gy + uy * s + rnd(-2, 2), dl = s / 1800;
     addBoom(x, y, rnd(4, 6.5), 4, 0.35, 3, dl);
@@ -303,6 +306,7 @@ function cannonFire(gx, gy, a) {
     if (s % 3 < 1) lights.push({ x, y, z: 2, r: rnd(14, 20), c: '#ffb060', life: 0.3, max: 0.3, a: 0.55 });
   }
   cannonScorch(gx, gy, ux, uy, L);
+  if (big) powerShotFx(gx, gy, mx, my, ux, uy, L, demo);
   // the muzzle: a fireball, side blasts out of the brake, a smoke ring, a shock ring, a flash of light
   addBoom(mx, my + 1, 12, 7, 0.32, 5.5);
   lights.push({ x: mx, y: my, z: CB_H, r: 46, c: '#ffd27a', life: 0.16, max: 0.16, a: 1 });
@@ -334,6 +338,16 @@ function cannonFire(gx, gy, a) {
     kick(-ux * 3, -uy * 3);
     SFX.cannon();
     if (hit.length > 2) SFX.boom();
+  }
+}
+// POWER SHOT: a second row of blasts on each side of the line, a white flash, a bigger kick.
+function powerShotFx(gx, gy, mx, my, ux, uy, L, demo) {
+  for (let s = 24; s < L; s += rnd(22, 34)) for (const sd of [-1, 1]) addBoom(gx + ux * s - uy * sd * 10, gy + uy * s + ux * sd * 10, rnd(6, 9), 4, 0.4, 4, s / 1800);
+  rings.push({ x: mx, y: my, r0: 6, r1: 60, t: 0, T: 0.35, c: '#ffd0f0', w: 2 });
+  JUICE.flash = Math.max(JUICE.flash, 0.08);
+  if (!demo) {
+    addShake(0.5);
+    floatText(mx, my - 14, 'POWER SHOT!', '#ff70d4');
   }
 }
 // The groove the shot burns into the ground: a black core, earth thrown up on both sides, and scorch
@@ -428,7 +442,7 @@ function drawBeam(b) {
   }
   if (t > 0.3) return;
   // the beam: its start at the muzzle (CB_H up), its end at chest height
-  const v = t / 0.3, w = Math.round(3 * Math.pow(1 - v, 1.5)), sx = x0, sy = y0 - CB_H, fx = ex, fy = ey - 5;
+  const v = t / 0.3, w = Math.round((b.big ? 7 : 3) * Math.pow(1 - v, 1.5)), sx = x0, sy = y0 - CB_H, fx = ex, fy = ey - 5;
   const steep = Math.abs(fy - sy) > Math.abs(fx - sx);
   for (let o = -w - 1; o <= w + 1; o++) {
     const ao = Math.abs(o), col = ao === 0 ? '#fff6e0' : ao <= w - 1 ? '#ffe2a0' : ao <= w ? '#ffb347' : '#e2552f';

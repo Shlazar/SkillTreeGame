@@ -2644,7 +2644,7 @@ const CFG = {
   // multiplied (COOLING), 25mm rounds per second (FAST FEED), 25mm damage (HEAVY ROUNDS), 105mm
   // reload seconds taken off (FAST RELOAD), heli px/s (FAST ROTORS), px of pickup reach
   // (MAGNET), share of kill scrap (SCAVENGER), rounds per second (GUN SPEED, NEST SPEED)
-  up: { armor: 20, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, rotor: 25, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
+  up: { armor: 10, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, rotor: 25, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 1, speed: [11, 16], value: 1, dps: 0.5 },                // walker
@@ -2702,7 +2702,8 @@ const UP = {
 // how many (1, and WINGMAN and EXTRA HELI add one each).
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
-  return {
+  // (tree.js adds the newer nodes' numbers: treeUp)
+  return treeUp(L, {
     hp: UP.hp(L('armor')), rate: UP.rate(L('feed')), heat: UP.heat(L('cool'), L('feed')), dmg: UP.dmg(L('heavy')),
     he: demo || L('he') > 0, reload: UP.reload(L('reload')), fly: UP.fly(L('radio')), pickup: UP.pickup(L('magnet')),
     helis: demo ? 2 : 1 + L('wingman') + L('extra'),
@@ -2711,7 +2712,7 @@ function runUp(demo) {
     // the first ring (skills.js): chain jumps, the cow catcher, 1 golden zombie in this many (0 = none),
     // and the armor level (its plates show on the engine)
     chain: UP.chain(L('chain')), cow: L('cow') > 0, gold: UP.gold(L('goldz')), armor: L('armor')
-  };
+  });
 }
 // The train's full health.
 function maxHP() {
@@ -2826,6 +2827,7 @@ function endGame() {
   // where the run ended (the train may roll on a little after it is lost; that does not count)
   const k = G.maxKm;
   refillHouses();
+  payBonus();
   bankRun();
   G.sum = {
     result: G.result, km: km2(k), ride: km2(G.ride / CFG.line.km), kills: G.kills, pay: Object.assign({}, G.pay),
@@ -3506,7 +3508,9 @@ function ramState() {
   return r.left > 0 ? 'charge' : 'ready';
 }
 // 0..1: how full the Ram is
-const ramCharge = () => 1 - G.ram.left / CFG.ram.charge;
+const ramCharge = () => 1 - G.ram.left / ramFill();
+// kills to fill the Ram (RAM CHARGE takes some off)
+const ramFill = () => CFG.ram.charge - (G.up.ramCharge || 0);
 // true while the train brakes for a station or stands at one, or the next one is less than d px ahead
 function nearStop(d) {
   const st = G.station;
@@ -3545,9 +3549,9 @@ function tryRam(bot) {
 }
 function ramStart(taste) {
   const r = G.ram, tr = G.tr, c = tr.cars[0];
-  Object.assign(r, { on: true, t: 0, taste: !!taste, dur: taste ? CFG.ram.tasteDur : CFG.ram.dur, kills: 0, pay: 0, hissed: false, card: true,
+  Object.assign(r, { on: true, t: 0, taste: !!taste, dur: taste ? CFG.ram.tasteDur : CFG.ram.dur + (G.up.ramTime || 0), kills: 0, pay: 0, hissed: false, card: true,
     pop: 0, popT: -9 });
-  r.left = CFG.ram.charge;
+  r.left = ramFill();
   r.uses++;
   G.prompt = null;
   // the dead holding the engine's nose die at once
@@ -4107,6 +4111,7 @@ function step(dt) {
   updateBodies(dt);
   updateFireSpots(dt);
   updateSkills(dt);
+  updatePlanes(dt);
   if (!G.demo) updateLoot(dt);
   updateJuice(dt);
   updateScenery(dt);
@@ -5226,6 +5231,8 @@ function makeHelis() {
       cmdT: -9, spin: rnd(8), dust: 0, smoke: rnd(0.2), lean: 0 });
   }
 }
+// how far the heli guns reach this run (HELI RANGE makes it more)
+const hRange = () => HC.range * (G.up.heliRange || 1);
 // ground distance from heli h to zombie z (round the ellipse the view squashes, like queryEll)
 const hDist = (h, z) => Math.hypot(z.x - h.x, (z.y - h.y) / FORE);
 // The best target in reach of heli h (one the rounds in the air will not already kill), or null:
@@ -5234,7 +5241,7 @@ const hDist = (h, z) => Math.hypot(z.x - h.x, (z.y - h.y) / FORE);
 function heliTarget(h) {
   let best = null, bk = Infinity;
   const s0 = G.tr.s;
-  queryEll(h.x, h.y, HC.range, (z, d) => {
+  queryEll(h.x, h.y, hRange(), (z, d) => {
     if (z.pending >= z.hp || z.gate && z.still) return;
     const k = z.st === 2 ? d : z.st === 1 && trackLocal(z.x, z.y, TL).a < s0 ? 1000 + d : 2000 + d;
     if (k < bk) {
@@ -5259,7 +5266,7 @@ function updateHelis(dt) {
       fy = c0.dy * tv;
     } else if (o.kind === 'move') [tx, ty] = [o.x, o.y];
     else {
-      const z = o.z, d = hDist(h, z) || 1, r = Math.min(d, HC.range * 0.55);
+      const z = o.z, d = hDist(h, z) || 1, r = Math.min(d, hRange() * 0.55);
       tx = z.x + (h.x - z.x) / d * r;
       ty = z.y + (h.y - z.y) / d * r;
     }
@@ -5286,14 +5293,14 @@ function updateHelis(dt) {
     h.alt += (ta - h.alt) * Math.min(1, dt * 1.4);
     // the target: its order's zombie, or the best one in reach (looked for again every 0.12 s)
     let z = o && o.kind === 'attack' ? o.z : h.tgt;
-    if (z && !(o && o.z === z) && (z.dead || hDist(h, z) > HC.range + 8)) z = null;
+    if (z && !(o && o.z === z) && (z.dead || hDist(h, z) > hRange() + 8)) z = null;
     h.look -= dt;
     if (!(o && o.kind === 'attack') && (!z || h.look <= 0 || z.pending >= z.hp)) {
       z = heliTarget(h) || (z && !z.dead && z.pending < z.hp ? z : null);
       h.look = HC.look;
     }
     h.tgt = z;
-    const inR = z && hDist(h, z) <= HC.range;
+    const inR = z && hDist(h, z) <= hRange();
     // it turns its nose to the target in reach, else to where it flies (or the train's way)
     const own = Math.hypot(h.vx - fx, h.vy - fy);
     let aim = h.hd;
@@ -7026,6 +7033,8 @@ function render() {
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = '#060708';
   ctx.fillRect(0, 0, W, H);
+  // (the skill tree covers the whole world: nothing to draw under it)
+  if (treeCovers()) return;
   const [sx, sy] = shakeOff();
   const ci0 = Math.floor((G.camX - 8) / CH), ci1 = Math.floor((G.camX + W + 8) / CH);
   const cj0 = Math.floor((G.camY - 8) / CH), cj1 = Math.floor((G.camY + H + 8) / CH);
@@ -7059,6 +7068,7 @@ function render() {
   for (const b of G.bodies) blit(BODYSH, Math.round(b.x - 4), Math.round(b.y - 2));
   ctx.globalAlpha = 1;
   drawHeliGround();
+  drawPlaneShadows();
   // trees, props, the train and the dead, back to front. A tree under the sight fades so you can
   // see past it.
   const ax = G.camX + G.aimSX, ay = G.camY + G.aimSY, aiming = mode === 'play';
@@ -7153,6 +7163,7 @@ function render() {
   }
   drawLoot();
   drawHeliTop();
+  drawPlanes();
   drawTexts();
   drawRamCount();
   ctx.restore();
@@ -7452,6 +7463,7 @@ function drawWeapons() {
   let rx = drawUnitCards(4, y), ry = y;
   if (rx + RAMCARD.w > W - 82) [rx, ry] = [4, y - 30];
   drawRamCard(rx, ry);
+  drawStrafeCard(rx, ry, y);
   text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
 }
 // The Turbo Ram's card: E in gold when it is full, the % while it fills (the bar is the charge),
@@ -7662,6 +7674,7 @@ function sumPlan(s) {
     ['DISTANCE ' + s.ride.toFixed(2) + ' KM', p.dist, '+1 PER ' + CFG.pay.dist / 2 + ' M']];
   if (p.stop) rows.push(['STATION', p.stop, s.stops.join(' + ')]);
   if (p.loot) rows.push(['LOOT', p.loot, '']);
+  if (p.bonus) rows.push(['BONUS', p.bonus, 'FROM THE SKILL TREE']);
   const t = rows.map((r, i) => 0.55 + i * 0.32), total = t[t.length - 1] + 0.45, surv = total + 0.7;
   const icons = Math.min(s.surv, 12), best = surv + (s.surv ? icons * 0.14 + 0.25 : 0) + 0.15;
   const ev = t.map((x) => [x, 'tick']).concat([[total, 'total']]);
@@ -7886,6 +7899,7 @@ function setTab(t) {
 // back to the title. (On the Station tab, 1-3 pick a tower and ESC first drops it.)
 function depotKey(k) {
   if (depotTab === 'station' && stationKey(k)) return;
+  if (depotTab === 'tree' && treeKey(k)) return;
   if (k === 'Tab') {
     setTab(depotTab === 'tree' ? 'station' : 'tree');
     SFX.ui();
@@ -8036,145 +8050,235 @@ function drawDepotBottom() {
 // stationtab.js.)
 
 // tree.js - the skill tree. One table, NODES, drives all of it: the map on the SKILL TREE tab of the
-// Depot, how each node looks, the info box (what it does, NOW > NEXT, the price), buying, and the
-// goal line under the summary. What a node does in a run is read from the UP numbers in game.js,
-// the same numbers the info box shows.
+// Depot, how each node looks, the tooltip (what it does, NOW > NEXT, the price), buying, and the goal
+// line under the summary. What a node does in a run is read from the UP numbers (game.js, and the new
+// ones below), the same numbers the tooltip shows.
+// The look: a dark starry panel, glowing neon nodes and lines that grow out from LAST TRAIN in the
+// middle. Blue = a small upgrade (many levels, cheap, bought often), orange = a big unlock, pink =
+// something special. Drag to move the map, the wheel zooms, C centres it.
+
+// ---------- colours and numbers
+// Each kind of node: c = bright, m = mid, d = dark (the body when maxed), g = its glow.
+const NODE_KIND = {
+  root: { c: '#ffd36a', m: '#a07a30', d: '#2e2410', g: '#ffb040' },
+  up: { c: '#62c8ff', m: '#2f6f9e', d: '#0b2234', g: '#2a9dff' },
+  big: { c: '#ffa448', m: '#a55a1e', d: '#331b08', g: '#ff7a1a' },
+  spec: { c: '#ff70d4', m: '#9e3a84', d: '#2e0c26', g: '#ff3ab8' }
+};
+// A value with its unit, for the tooltip. (2 px on the ground = 1 m.)
+const perS = (v) => +v.toFixed(1) + '/S', secs = (v) => +v.toFixed(1) + ' S', metres = (px) => Math.round(px / 2) + ' M';
+const hotS = (t) => (isFinite(t) ? Math.round(t) + ' S' : 'NEVER');
+const pctS = (v) => Math.round(v * 100) + '%';
+// The prices of n levels: base, then each one k times the one before (rounded to 5, or 10 from 100).
+function nodeCosts(base, n, k) {
+  const a = [];
+  let p = base;
+  for (let i = 0; i < n; i++) {
+    a.push(p < 100 ? Math.round(p / 5) * 5 : Math.round(p / 10) * 10);
+    p *= k;
+  }
+  return a;
+}
+
+// ---------- what the new nodes do (numbers at level l; game.js has the older ones)
+Object.assign(UP, {
+  hdmg: (l) => 1 + 0.15 * l,       // HELI DAMAGE: x the heli guns' damage
+  hrate: (l) => 1 + 0.08 * l,      // HELI FIRE RATE: x the heli guns' rounds per second
+  hrange: (l) => 1 + 0.1 * l,      // HELI RANGE: x how far the heli guns reach
+  bonus: (l) => 10 * l,            // BONUS SCRAP: scrap added at the end of a run
+  bonusP: (l) => 0.05 * l,         // BIG BONUS: share of the run's scrap added at its end
+  boom: (l) => 0.03 * l,           // EXPLOSIVE ZOMBIES: chance a zombie blows up when it dies
+  boomR: (l) => 18 + 4 * l,        // BLAST RADIUS: how far that blast reaches (px)
+  silver: (l) => 0.02 * l,         // SILVER ZOMBIES: chance a zombie is silver (worth more)
+  ramTime: (l) => 0.5 * l,         // RAM TIME: seconds added to the Turbo Ram
+  ramCharge: (l) => 20 * l         // RAM CHARGE: fewer kills to fill the Ram again
+});
 
 // ---------- the nodes
-// The 4 branches: their colour and the faint name drawn by them.
-const BRANCH = {
-  root: { col: U.ink, name: '' },
-  heli: { col: U.blue, name: 'HELI' },
-  train: { col: U.gold, name: 'TRAIN' },
-  station: { col: U.teal, name: 'STATION' },
-  explore: { col: U.green, name: 'EXPLORE' }
-};
-// A value with its unit, for the info box. (2 px on the ground = 1 m.)
-const perS = (v) => v + '/S', secs = (v) => +v.toFixed(1) + ' S', metres = (px) => Math.round(px / 2) + ' M';
-const hotS = (t) => (isFinite(t) ? Math.round(t) + ' S' : 'NEVER');
-// Each node: id, name, br = branch, c, r = its cell on the map (32 px each; r < 0 is up), needs =
-// [the node it grows from, the level that node must have], cost = the price of each level (as many
-// levels as prices), cur = 'surv' when it costs survivors (else scrap), star = a big unlock (*),
-// desc = one short sentence, stat (and stat2) = [label, value at level l] for the NOW > NEXT line.
-// given = not for sale (holding Farm Stop gives it). soon = shown with its price, not for sale yet.
-// later = a node from later in the game: a '?' for now.
+// Each node: id, name, k = kind ('up', 'big', 'spec'), p = the node it grows from, x, y = its place
+// (in cells of 36 px, LAST TRAIN at 0, 0; -y is up), need = the level p must have (1 if not said),
+// cost = the price of each level (as many levels as prices), cur = 'surv' when it nodeCosts survivors
+// (else scrap), desc = one short sentence, stat (and stat2) = [label, value at level l] for the
+// NOW > NEXT line. given = not for sale (holding Farm Stop gives it). soon = shown with its price,
+// not for sale yet. later = from later in the game: a padlock for now.
 const NODES = [
-  { id: 'root', name: 'LAST TRAIN', br: 'root', c: 0, r: 0, cost: [0], desc: 'THE START OF YOUR WHOLE TREE.',
-    stat: ['BRANCHES OPEN', (l) => l * 4] },
-  // TRAIN
-  { id: 'cow', name: 'COW CATCHER', br: 'train', c: 2, r: 0, needs: ['root', 1], cost: [80],
+  { id: 'root', name: 'LAST TRAIN', k: 'root', x: 0, y: 0, cost: [0], desc: 'THE START OF YOUR WHOLE TREE.',
+    stat: ['BRANCHES OPEN', (l) => (l ? 6 : 0)] },
+  // HELIS (west)
+  { id: 'hdmg', name: 'HELI DAMAGE', k: 'up', p: 'root', x: -1.7, y: 0, cost: nodeCosts(15, 10, 1.4),
+    desc: 'EVERY HELI ROUND HITS HARDER.', stat: ['HELI DAMAGE', (l) => pctS(UP.hdmg(l))] },
+  { id: 'hrate', name: 'HELI FIRE RATE', k: 'up', p: 'hdmg', x: -3.0, y: -0.85, cost: nodeCosts(20, 10, 1.4),
+    desc: 'HELI GUNS FIRE FASTER.', stat: ['FIRE RATE', (l) => pctS(UP.hrate(l))] },
+  { id: 'cool', name: 'COOLING', k: 'up', p: 'hrate', x: -4.25, y: -1.55, cost: [25, 50, 100],
+    desc: 'HELI GUNS GET HOT MORE SLOWLY.', stat: ['OVERHEAT AFTER', (l) => hotS(UP.hot(l))] },
+  { id: 'feed', name: 'FAST FEED', k: 'up', p: 'cool', x: -5.55, y: -1.95, cost: [40, 80, 160, 320, 640],
+    desc: '+1 ROUND A SECOND, NO MORE HEAT.', stat: ['EACH HELI GUN', (l) => perS(UP.rate(l))] },
+  { id: 'heavy', name: 'HEAVY ROUNDS', k: 'up', p: 'feed', x: -6.85, y: -2.45, cost: [120, 300, 700],
+    desc: 'BIG ROUNDS: +1 DAMAGE EACH.', stat: ['DAMAGE A ROUND', (l) => UP.dmg(l)],
+    stat2: ['HITS TO KILL A BRUTE', (l) => Math.ceil(CFG.types[2].hp / UP.dmg(l))] },
+  { id: 'hrange', name: 'HELI RANGE', k: 'up', p: 'hdmg', x: -2.65, y: 1.55, cost: nodeCosts(25, 5, 1.5),
+    desc: 'HELI GUNS REACH FURTHER.', stat: ['GUN RANGE', (l) => metres(HC.range * UP.hrange(l))] },
+  { id: 'radio', name: 'FAST ROTORS', k: 'up', p: 'hrange', x: -3.45, y: 2.75, cost: nodeCosts(20, 5, 1.6),
+    desc: 'YOUR HELIS FLY FASTER.', stat: ['HELI SPEED', (l) => UP.fly(l) + ' PX/S'] },
+  { id: 'wingman', name: 'WINGMAN', k: 'big', p: 'hdmg', x: -3.35, y: 0.4, cost: [80], star: true,
+    desc: 'A SECOND HELI FLIES WITH YOU!', stat: ['HELIS', (l) => 1 + l] },
+  { id: 'chain', name: 'CHAIN SHOT', k: 'spec', p: 'wingman', x: -4.6, y: -0.3, cost: [40, 100, 250],
+    desc: 'A KILL SPARKS ON TO MORE ZOMBIES.', stat: ['CHAIN JUMPS', (l) => UP.chain(l)],
+    stat2: ['A JUMP REACHES', () => metres(SK.chain.reach)] },
+  { id: 'he', name: '105MM CANNON', k: 'big', p: 'wingman', x: -4.75, y: 1.1, cost: [5], cur: 'surv', star: true,
+    desc: 'A BIG SHELL FOR BIG CROWDS.', stat: ['105MM', (l) => (l ? 'RELOAD ' + secs(UP.reload(0)) : 'NONE')],
+    stat2: ['FIRE WITH', () => 'SPACE, AT THE MOUSE'] },
+  { id: 'reload', name: 'FAST RELOAD', k: 'up', p: 'he', x: -6.05, y: 0.55, cost: [60, 120, 240],
+    desc: 'THE 105MM LOADS FASTER.', stat: ['105MM RELOAD', (l) => secs(UP.reload(l))] },
+  { id: 'extra', name: 'EXTRA HELI', k: 'big', p: 'he', x: -5.95, y: 1.95, cost: [5], cur: 'surv', star: true,
+    desc: 'A THIRD HELI JOINS YOUR FLIGHT!', stat: ['HELIS', (l) => 2 + l] },
+  // TRAIN (east)
+  { id: 'armor', name: 'ARMOR', k: 'up', p: 'root', x: 1.7, y: 0, cost: nodeCosts(15, 10, 1.38),
+    desc: 'STEEL PLATES: MORE TRAIN HEALTH.', stat: ['TRAIN HP', (l) => UP.hp(l)] },
+  { id: 'cow', name: 'COW CATCHER', k: 'spec', p: 'armor', x: 3.1, y: 0.75, cost: [60],
     desc: 'A STEEL PLOW THROWS ZOMBIES ASIDE.', stat: ['WALKERS SLOW THE TRAIN', (l) => (l ? 'NO' : 'YES')],
     stat2: ['BRUTES', () => 'STILL STOP THE TRAIN'] },
-  { id: 'armor', name: 'ARMOR', br: 'train', c: 2, r: -2, needs: ['cow', 1], cost: [40, 80, 160, 320, 640],
-    desc: 'STEEL PLATES: MORE TRAIN HEALTH.', stat: ['TRAIN HP', (l) => UP.hp(l)] },
-  { id: 'gun', name: 'RAIL CANNON', star: true, br: 'train', c: 4, r: 0, needs: ['cow', 1], cost: [300],
+  { id: 'gun', name: 'RAIL CANNON', k: 'big', p: 'cow', x: 4.5, y: 0.2, cost: [250], star: true,
     desc: 'ONE SHOT KILLS A WHOLE LINE OF DEAD.', stat: ['RELOAD', (l) => (l ? secs(UP.gun(0)) : 'NONE')],
     stat2: ['RANGE', () => 'THE WHOLE SCREEN'] },
-  { id: 'gunspd', name: 'GUN SPEED', br: 'train', c: 6, r: 0, needs: ['gun', 1], cost: [150, 300, 600],
+  { id: 'gunspd', name: 'GUN SPEED', k: 'up', p: 'gun', x: 5.5, y: -0.95, cost: [80, 160, 320],
     desc: 'THE RAIL CANNON RELOADS FASTER.', stat: ['RELOAD', (l) => secs(UP.gun(l))] },
-  { id: 'ram', name: 'TURBO RAM', star: true, br: 'train', c: 4, r: -2, needs: ['gun', 1], cost: [500],
+  { id: 'power', name: 'POWER SHOT', k: 'spec', p: 'gun', x: 5.95, y: 0.6, cost: [150],
+    desc: 'EVERY 3RD CANNON SHOT IS HUGE.', stat: ['3RD SHOT', (l) => (l ? '3X WIDER' : 'NORMAL')] },
+  { id: 'ram', name: 'TURBO RAM', k: 'big', p: 'gun', x: 5.0, y: 1.65, cost: [350], star: true,
     desc: 'PRESS E: SMASH THROUGH THE DEAD.',
     stat: ['TURBO RAM', (l) => (l ? CFG.ram.dur + ' S AT ' + Math.round(CFG.ram.speed / CFG.train.cruise) + '× SPEED' : 'NONE')],
     stat2: ['FULL AGAIN AFTER', () => CFG.ram.charge + ' KILLS'] },
-  // HELI (what a node does to the gun works on every heli)
-  { id: 'wingman', name: 'WINGMAN', star: true, br: 'heli', c: -2, r: 0, needs: ['root', 1], cost: [100],
-    desc: 'A SECOND HELI FLIES WITH YOU!', stat: ['HELIS', (l) => 1 + l] },
-  { id: 'chain', name: 'CHAIN SHOT', br: 'heli', c: -4, r: 0, needs: ['wingman', 1], cost: [60, 150, 400],
-    desc: 'A KILL SPARKS ON TO MORE ZOMBIES.', stat: ['CHAIN JUMPS', (l) => UP.chain(l)],
-    stat2: ['A JUMP REACHES', () => metres(SK.chain.reach)] },
-  { id: 'cool', name: 'COOLING', br: 'heli', c: -6, r: 0, needs: ['chain', 1], cost: [40, 80, 160],
-    desc: 'HELI GUNS GET HOT MORE SLOWLY.', stat: ['OVERHEAT AFTER', (l) => hotS(UP.hot(l))] },
-  { id: 'feed', name: 'FAST FEED', br: 'heli', c: -8, r: 0, needs: ['cool', 1], cost: [60, 120, 240, 480, 960],
-    desc: 'HELI GUNS FIRE FASTER, NO MORE HEAT.', stat: ['EACH HELI GUN', (l) => perS(UP.rate(l))] },
-  { id: 'heavy', name: 'HEAVY ROUNDS', br: 'heli', c: -8, r: -2, needs: ['feed', 1], cost: [200, 400, 800],
-    desc: 'EVERY HELI ROUND HITS HARDER.', stat: ['DAMAGE A ROUND', (l) => UP.dmg(l)],
-    stat2: ['HITS TO KILL A BRUTE', (l) => Math.ceil(CFG.types[2].hp / UP.dmg(l))] },
-  { id: 'he', name: '105MM CANNON', star: true, br: 'heli', c: -2, r: -2, needs: ['wingman', 1], cost: [5], cur: 'surv',
-    desc: 'A BIG SHELL FOR BIG CROWDS.', stat: ['105MM', (l) => (l ? 'RELOAD ' + secs(UP.reload(0)) : 'NONE')],
-    stat2: ['FIRE WITH', () => 'SPACE, AT THE MOUSE'] },
-  { id: 'reload', name: 'FAST RELOAD', br: 'heli', c: -4, r: -2, needs: ['he', 1], cost: [150, 300, 600],
-    desc: 'THE 105MM LOADS FASTER.', stat: ['105MM RELOAD', (l) => secs(UP.reload(l))] },
-  { id: 'extra', name: 'EXTRA HELI', star: true, br: 'heli', c: -4, r: -4, needs: ['he', 1], cost: [5], cur: 'surv',
-    desc: 'A THIRD HELI JOINS YOUR FLIGHT!', stat: ['HELIS', (l) => 2 + l] },
-  // EXPLORE
-  { id: 'goldz', name: 'GOLDEN ZOMBIES', br: 'explore', c: 0, r: -2, needs: ['root', 1], cost: [60, 150, 400],
+  { id: 'ramtime', name: 'RAM TIME', k: 'up', p: 'ram', x: 6.35, y: 2.15, cost: nodeCosts(40, 5, 1.6),
+    desc: 'THE TURBO RAM LASTS LONGER.', stat: ['RAM LASTS', (l) => secs(CFG.ram.dur + UP.ramTime(l))] },
+  { id: 'charge', name: 'RAM CHARGE', k: 'up', p: 'ram', x: 4.6, y: 3.0, cost: nodeCosts(40, 5, 1.6),
+    desc: 'FEWER KILLS FILL THE RAM AGAIN.', stat: ['FULL AGAIN AFTER', (l) => CFG.ram.charge - UP.ramCharge(l) + ' KILLS'] },
+  { id: 'autoram', name: 'AUTO RAM', k: 'big', p: 'ramtime', x: 7.65, y: 2.0, cost: [0], later: true, star: true,
+    desc: 'THE TRAIN RAMS BY ITSELF.' },
+  { id: 'horn', name: 'SHOCK HORN', k: 'big', p: 'gunspd', x: 6.8, y: -1.35, cost: [0], later: true, star: true,
+    desc: 'BLAST THE DEAD OFF THE TRAIN.' },
+  // LOOT (north)
+  { id: 'bonus', name: 'BONUS SCRAP', k: 'up', p: 'root', x: 0, y: -1.6, cost: nodeCosts(20, 10, 1.4),
+    desc: 'MORE SCRAP AT THE END OF A RUN.', stat: ['RUN BONUS', (l) => '+' + UP.bonus(l)] },
+  { id: 'goldz', name: 'GOLDEN ZOMBIES', k: 'spec', p: 'bonus', x: 1.15, y: -2.6, cost: [30, 80, 200],
     desc: 'RARE GOLD ZOMBIES. CHASE THEM DOWN!', stat: ['GOLDEN ZOMBIES', (l) => (l ? '1 IN ' + UP.gold(l) : 0)],
     stat2: ['EACH ONE PAYS', () => SK.gold.value + ' SCRAP'] },
-  { id: 'radio', name: 'FAST ROTORS', br: 'explore', c: 0, r: -4, needs: ['goldz', 1], cost: [40, 80, 160, 320, 640],
-    desc: 'YOUR HELIS FLY FASTER.', stat: ['HELI SPEED', (l) => UP.fly(l) + ' PX/S'] },
-  { id: 'magnet', name: 'MAGNET', br: 'explore', c: -2, r: -4, needs: ['radio', 1], cost: [40, 80, 160],
-    desc: 'GRAB LOOT FROM FURTHER AWAY.', stat: ['PICKUP RANGE', (l) => metres(UP.pickup(l))] },
-  { id: 'scav', name: 'SCAVENGER', br: 'explore', c: 2, r: -4, needs: ['radio', 1], cost: [150, 300, 600, 1200, 2400],
+  { id: 'silver', name: 'SILVER ZOMBIES', k: 'spec', p: 'bonus', x: -1.15, y: -2.6, cost: nodeCosts(30, 5, 1.5),
+    desc: 'SOME ZOMBIES ARE SILVER: MORE SCRAP.', stat: ['SILVER ZOMBIES', (l) => pctS(UP.silver(l))] },
+  { id: 'scav', name: 'SCAVENGER', k: 'up', p: 'bonus', x: 0, y: -3.1, cost: nodeCosts(50, 5, 1.8),
     desc: 'MORE SCRAP FROM EVERY KILL.', stat: ['KILL SCRAP', (l) => '+' + Math.round(UP.scav(l) * 100) + '%'] },
-  { id: 'winch', name: 'WINCH', star: true, br: 'explore', c: 0, r: -6, needs: ['radio', 2], cost: [5], cur: 'surv',
+  { id: 'magnet', name: 'MAGNET', k: 'up', p: 'scav', x: 1.15, y: -4.1, cost: [20, 40, 80],
+    desc: 'GRAB LOOT FROM FURTHER AWAY.', stat: ['PICKUP RANGE', (l) => metres(UP.pickup(l))] },
+  { id: 'winch', name: 'WINCH', k: 'big', p: 'scav', x: -1.15, y: -4.1, cost: [5], cur: 'surv', star: true,
     desc: 'LIFT SURVIVORS OUT OF THE FIELD.', stat: ['WINCH', (l) => (l ? 'LIFTS IN ' + secs(CFG.winch.hover) : 'NONE')] },
-  // STATION
-  { id: 'farm', name: 'FARM STOP', br: 'station', c: 0, r: 2, needs: ['root', 1], cost: [0], given: true,
+  { id: 'bonusP', name: 'BIG BONUS', k: 'up', p: 'scav', x: 0, y: -4.75, cost: nodeCosts(80, 5, 1.7),
+    desc: 'A SHARE MORE OF THE RUN\'S SCRAP.', stat: ['END OF RUN', (l) => '+' + pctS(UP.bonusP(l))] },
+  // EXPLOSIVES (north-east)
+  { id: 'boom', name: 'EXPLOSIVE ZOMBIES', k: 'spec', p: 'root', x: 2.35, y: -2.2, cost: nodeCosts(25, 10, 1.4),
+    desc: 'SOME ZOMBIES BLOW UP WHEN THEY DIE.', stat: ['CHANCE', (l) => pctS(UP.boom(l))] },
+  { id: 'boomR', name: 'BLAST RADIUS', k: 'spec', p: 'boom', x: 3.7, y: -2.75, cost: nodeCosts(30, 5, 1.6),
+    desc: 'THEIR BLASTS REACH FURTHER.', stat: ['BLAST', (l) => metres(UP.boomR(l) * 2) + ' WIDE'] },
+  // AIR STRIKE (north-west)
+  { id: 'strafe', name: 'STRAFING RUN', k: 'big', p: 'root', x: -2.35, y: -2.25, cost: [200], star: true,
+    desc: 'PRESS Q: A JET STRAFES A LINE OF DEAD.', stat: ['STRAFING RUNS', (l) => (l ? '1 A RUN' : 'NONE')],
+    stat2: ['FIRE WITH', () => 'Q, THEN CLICK THE MAP'] },
+  { id: 'strafeD', name: 'STRAFE DAMAGE', k: 'up', p: 'strafe', x: -3.65, y: -2.95, cost: nodeCosts(40, 5, 1.6),
+    desc: 'THE JET\'S GUNS HIT HARDER.', stat: ['DAMAGE A HIT', (l) => UP.strafeD(l)] },
+  { id: 'strafeW', name: 'WIDE RUN', k: 'up', p: 'strafeD', x: -4.95, y: -3.35, cost: nodeCosts(40, 5, 1.6),
+    desc: 'THE JET STRAFES A WIDER LINE.', stat: ['LINE WIDTH', (l) => metres(UP.strafeW(l) * 2)] },
+  { id: 'strafeN', name: 'MORE RUNS', k: 'spec', p: 'strafe', x: -2.6, y: -3.75, cost: [150, 300, 600],
+    desc: 'ONE MORE STRAFING RUN EACH RUN.', stat: ['STRAFING RUNS', (l) => 1 + l + ' A RUN'] },
+  { id: 'strafeB', name: 'BOMB RUN', k: 'spec', p: 'strafeN', x: -2.05, y: -5.05, cost: [250],
+    desc: 'THE JET DROPS BOMBS AT THE END.', stat: ['BOMBS', (l) => (l ? 3 : 0)] },
+  { id: 'twin', name: 'TWIN JETS', k: 'big', p: 'strafeN', x: -3.5, y: -4.85, cost: [4], cur: 'surv', star: true,
+    desc: 'TWO JETS FLY EVERY STRAFING RUN!', stat: ['JETS', (l) => 1 + l] },
+  // STATION (south)
+  { id: 'farm', name: 'FARM STOP', k: 'big', p: 'root', x: 0, y: 1.7, cost: [0], given: true,
     desc: 'YOUR FIRST STATION TO BUILD AT.', stat: ['STATION TAB', (l) => (l ? 'OPEN' : 'LOCKED')] },
-  { id: 'nestspd', name: 'NEST SPEED', br: 'station', c: -2, r: 3, needs: ['farm', 1], cost: [150, 300, 600],
+  { id: 'nestspd', name: 'NEST SPEED', k: 'up', p: 'farm', x: -1.0, y: 2.85, cost: [80, 160, 320],
     desc: 'ALL YOUR MG NESTS SHOOT FASTER.', stat: ['MG NEST', (l) => perS(UP.nest(l))] },
-  { id: 'wire', name: 'BARBED WIRE', br: 'station', c: 2, r: 3, needs: ['farm', 1], cost: [100],
+  { id: 'wire', name: 'BARBED WIRE', k: 'spec', p: 'farm', x: 1.0, y: 2.85, cost: [60],
     desc: 'BUILD WIRE THAT SLOWS THE DEAD.',
     stat: ['ZOMBIE SPEED ON WIRE', (l) => (l ? Math.round(CFG.wire.slow * 100) : 100) + '%'] },
-  { id: 'mortar', name: 'MORTAR PIT', star: true, br: 'station', c: 0, r: 4, needs: ['nestspd', 1], cost: [8], cur: 'surv',
-    soon: true, desc: 'A BIG GUN FOR YOUR STATION.' },
-  // later in the game: a '?' for now
-  { id: 'ramtime', name: 'RAM TIME', br: 'train', c: 6, r: -2, needs: ['ram', 1], cost: [0], later: true, desc: 'THE RAM LASTS LONGER.' },
-  { id: 'charge', name: 'QUICK CHARGE', br: 'train', c: 6, r: -4, needs: ['ram', 1], cost: [0], later: true, desc: 'THE RAM FILLS UP FASTER.' },
-  { id: 'autoram', name: 'AUTO RAM', star: true, br: 'train', c: 8, r: -2, needs: ['ramtime', 1], cost: [0], later: true,
-    desc: 'THE TRAIN RAMS BY ITSELF.' },
-  { id: 'horn', name: 'SHOCK HORN', star: true, br: 'train', c: 8, r: 0, needs: ['gunspd', 1], cost: [0], later: true,
-    desc: 'PRESS Q: BLAST THE DEAD OFF.' },
-  { id: 'crates', name: 'MORE CRATES', br: 'explore', c: 2, r: -6, needs: ['scav', 1], cost: [0], later: true,
-    desc: 'MORE SUPPLY CRATES OUT THERE.' },
-  { id: 'platform', name: 'BIG PLATFORM', br: 'station', c: 4, r: 3, needs: ['wire', 1], cost: [0], later: true,
-    desc: 'MORE SURVIVORS AT EACH STATION.' }
+  { id: 'mortar', name: 'MORTAR PIT', k: 'big', p: 'farm', x: 0, y: 3.55, cost: [8], cur: 'surv', star: true, station: true,
+    soon: true, desc: 'A BIG GUN FOR YOUR STATION.' }
 ];
 const NODE = {};
 for (const n of NODES) NODE[n.id] = n;
-// the first ring: one exciting node per branch, right round LAST TRAIN
-const FIRST = ['wingman', 'cow', 'goldz'];
+const T_CELL = 36;
 const maxLv = (n) => n.cost.length;
-const parentOf = (n) => (n.needs ? NODE[n.needs[0]] : null);
-const needsMet = (n) => !n.needs || lv(n.needs[0]) >= n.needs[1];
+const parentOf = (n) => (n.p ? NODE[n.p] : null);
+// the level its parent must have
+const needOf = (n) => n.need || 1;
+const needsMet = (n) => !n.p || lv(n.p) >= needOf(n);
 // the price of the next level, and whether you can pay it
 const priceOf = (n) => n.cost[Math.min(lv(n.id), maxLv(n) - 1)];
 const canPay = (n) => (n.cur === 'surv' ? SAVE.surv : SAVE.scrap) >= priceOf(n);
 // "ARMOR 1", "FAST ROTORS 2": a node at a level, as NEEDS: and the goal line say it
 const nodeLv = (id, l) => NODE[id].name + (maxLv(NODE[id]) > 1 ? ' ' + l : '');
 // What a node is now:
-//  'off'    not on the map yet (until LAST TRAIN is bought only it shows)
-//  'hidden' a '?': what it grows from has no level yet (or it is from later in the game)
+//  'off'    not on the map (what it grows from is not shown, or is still a padlock)
+//  'hidden' a padlock: what it grows from has no level yet (or it is from later in the game)
 //  'locked' FARM STOP before Farm Stop is held
 //  'soon'   shown with its price, not for sale yet
-//  'goal'   a * node whose needs are not met yet
 //  'poor'   for sale, but you cannot pay
 //  'buy'    for sale, and you can pay
 //  'max'    every level bought
 function nodeState(n) {
-  if (n.id !== 'root' && !lv('root')) return 'off';
-  if (n.later) return 'hidden';
   if (lv(n.id) >= maxLv(n)) return 'max';
+  const p = parentOf(n);
+  // (a node with a level always shows: an old save may own one whose parent has none)
+  if (p && !lv(n.id)) {
+    const ps = nodeState(p);
+    if (ps === 'off' || ps === 'hidden') return 'off';
+    if (n.station && !stationOpen()) return 'off';
+    if (n.later || !needsMet(n)) return 'hidden';
+  }
   if (n.given) return 'locked';
-  if (n.star) {
-    if (n.br === 'station' && !stationOpen()) return 'hidden';
-    if (n.soon) return 'soon';
-    if (!needsMet(n)) return 'goal';
-  } else if (!needsMet(n)) return 'hidden';
+  if (n.soon) return 'soon';
   return canPay(n) ? 'buy' : 'poor';
 }
-// 0 = not on the map, 1 = a '?', 2 = shown
+// 0 = not on the map, 1 = a padlock, 2 = shown
 const shownAs = (n) => ({ off: 0, hidden: 1 })[nodeState(n)] ?? 2;
 
+// ---------- into a run
+// The new nodes' numbers for a run (runUp in game.js calls this; L(id) = a node's level, 0 for the
+// demo). HELI DAMAGE and HELI FIRE RATE are folded into the 25mm's dmg and rate (with the heat per
+// round lowered, so a faster gun does not overheat sooner); heliRange is read in helis.js.
+function treeUp(L, up) {
+  const hd = UP.hdmg(L('hdmg')), hr = UP.hrate(L('hrate'));
+  up.dmg *= hd;
+  up.rate *= hr;
+  up.heat /= hr;
+  return Object.assign(up, {
+    heliDmg: hd, heliRate: hr, heliRange: UP.hrange(L('hrange')),
+    bonus: UP.bonus(L('bonus')), bonusP: UP.bonusP(L('bonusP')),
+    boom: UP.boom(L('boom')), boomR: UP.boomR(L('boomR')), silver: UP.silver(L('silver')),
+    ramTime: UP.ramTime(L('ramtime')), ramCharge: UP.ramCharge(L('charge')), power: L('power') > 0,
+    strafe: L('strafe') ? 1 + L('strafeN') : 0, strafeW: UP.strafeW(L('strafeW')), strafeD: UP.strafeD(L('strafeD')),
+    strafeBomb: L('strafeB') > 0, twin: L('twin') > 0
+  });
+}
+// BONUS SCRAP and BIG BONUS: paid when the run ends (endGame calls this before the run is banked).
+function payBonus() {
+  if (!G || G.demo || G.pay.bonus) return;
+  const b = Math.floor((G.up.bonus || 0) + Math.floor(G.cash) * (G.up.bonusP || 0));
+  if (b <= 0) return;
+  G.pay.bonus = b;
+  G.cash += b;
+}
+
 // ---------- buying
-// TREE = the panel's state: born[id] = when its line starts to grow (the node pops in 0.3 s later),
-// pop[id] = when it popped in (a NEW tag shows for 3 s), lit[id] = when its line lit up, flash[id]
-// = its last buy, shake[id] = a click that could not buy, rings and floats after a buy, sel = the
-// last node clicked, hov = the node under the mouse, pan = how far the map is dragged (small windows).
+// TREE = the panel's state: born[id] = when its line starts to grow (the node pops in GROW s later),
+// pop[id] = when it popped in, lit[id] = when its line lit up, flash[id] = its last buy, shake[id] =
+// a click that could not buy, rings, sparks and floats after a buy, hov = the node under the mouse,
+// cam = the view (x, y = the cell in the middle of the panel, z = zoom; zt = the zoom it goes to,
+// anchor = the point that stays under the mouse while it zooms), drag = a drag of the map.
 const TREE = {};
+const ZOOMS = [0.5, 0.75, 1, 1.5, 2];
 function resetTree() {
-  Object.assign(TREE, { born: {}, pop: {}, lit: {}, flash: {}, shake: {}, rings: [], floats: [], sel: null, hov: null,
-    pan: { x: 0, y: 0 }, drag: null, lastBuy: -9 });
+  Object.assign(TREE, { born: {}, pop: {}, lit: {}, flash: {}, shake: {}, rings: [], sparks: [], floats: [], hov: null, sel: null,
+    cam: { x: 0, y: 0, z: 1 }, zt: 1, anchor: null, drag: null, lastBuy: -9, y0: 19, y1: 331 });
 }
 resetTree();
 const GROW = 0.3;
@@ -8189,18 +8293,25 @@ function buyNode(id) {
   saveSave();
   boughtFx(n, p);
   grew(before);
-  SFX.buy(n.star || n.id === 'root');
+  SFX.buy(!!n.star || n.id === 'root');
   return true;
 }
-// The look of a buy: a white flash, a gold ring growing out, the price floating up, the line lit.
+// The look of a buy: a white flash, glowing rings, a burst of sparks, the price floating up, the line lit.
 function boughtFx(n, p) {
+  const K = NODE_KIND[n.k], big = n.star || n.id === 'root';
   TREE.flash[n.id] = realT;
-  TREE.rings.push({ id: n.id, t: realT });
+  TREE.rings.push({ id: n.id, t: realT, c: K.c, big });
+  if (big) TREE.rings.push({ id: n.id, t: realT + 0.12, c: '#ffffff', big });
+  for (let i = 0; i < (big ? 26 : 14); i++) {
+    const a = rnd(TAU), v = rnd(30, big ? 110 : 75);
+    TREE.sparks.push({ x: n.x * T_CELL, y: n.y * T_CELL, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: realT, T: rnd(0.35, 0.7),
+      c: Math.random() < 0.35 ? '#ffffff' : K.c });
+  }
   if (p) TREE.floats.push({ id: n.id, s: '-' + fmt(p), c: n.cur === 'surv' ? U.green : U.gold, t: realT });
   if (lv(n.id) === 1) TREE.lit[n.id] = realT;
 }
-// After a change: nodes that just came onto the map grow their line, one after another outward;
-// a '?' that just showed what it is pops in with a NEW tag.
+// After a change: nodes that just came onto the map grow their line, one ring after another; a
+// padlock that just opened pops.
 function grew(before) {
   NODES.forEach((n, i) => {
     const now = shownAs(n), was = before[i];
@@ -8234,363 +8345,486 @@ function setNode(id, l) {
 }
 
 // ---------- the goal line under the summary
-// The cheapest * node you can work toward ("NEXT GOAL: RAIL CANNON (300 SCRAP)"), with "YOU CAN BUY
-// IT NOW!" when you can, or what it needs first. Once no * node is left, the cheapest next level.
-// [[text, colour], ...]
+// How many upgrades you can buy now, and the next big unlock to save for. [[text, colour], ...]
 function summaryGoal() {
   if (!lv('root')) return [["NEXT: OPEN THE SKILL TREE. IT'S FREE.", U.gold]];
   const unit = (n) => (n.cur === 'surv' ? ' SURVIVORS' : ' SCRAP');
-  const price = (n) => (priceOf(n) ? fmt(priceOf(n)) + unit(n) : 'FREE');
-  // how close you are: "YOU HAVE 120 / 300 SCRAP."
-  const have = (n) => ['YOU HAVE ' + fmt(n.cur === 'surv' ? SAVE.surv : SAVE.scrap) + ' / ' + fmt(priceOf(n)) + unit(n) + '.', U.dim];
+  const can = NODES.filter((n) => nodeState(n) === 'buy').length;
+  const L = [];
+  if (can) L.push(['YOU CAN BUY ' + can + ' UPGRADE' + (can > 1 ? 'S' : '') + ' NOW!', U.green]);
+  // the cheapest big unlock on the map (scrap ones first)
   const order = (a, b) => (a.cur === 'surv') - (b.cur === 'surv') || priceOf(a) - priceOf(b);
-  const pickOf = (list, st) => list.filter((n) => st.includes(nodeState(n))).sort(order)[0];
-  // the first ring (WINGMAN, COW CATCHER, GOLDEN ZOMBIES) until each has a level: one you can
-  // buy now first, else the cheapest
-  const first = FIRST.map((id) => NODE[id]).filter((n) => !lv(n.id));
-  const f1 = pickOf(first, ['buy']) || pickOf(first, ['poor']);
-  if (f1) return [['NEXT GOAL: ' + f1.name + ' (' + price(f1) + ')', U.gold],
-    nodeState(f1) === 'buy' ? ['YOU CAN BUY IT NOW!', U.green] : have(f1)];
-  const stars = NODES.filter((n) => n.star), rest = NODES.filter((n) => !n.star && !n.given);
-  const ready = pickOf(stars, ['buy']), goal = ready || pickOf(stars, ['poor', 'goal']);
+  const goal = NODES.filter((n) => n.star && ['poor', 'buy'].includes(nodeState(n))).sort(order)[0];
   if (goal) {
-    const L = [['NEXT GOAL: ' + goal.name + ' (' + price(goal) + ')', U.gold]];
-    if (ready) L.push(['YOU CAN BUY IT NOW!', U.green]);
-    else if (!needsMet(goal)) L.push(['IT NEEDS ' + nodeLv(goal.needs[0], goal.needs[1]) + ' FIRST.', U.dim]);
-    else L.push(have(goal));
-    return L;
+    L.push(['NEXT BIG UNLOCK: ' + goal.name + ' (' + fmt(priceOf(goal)) + unit(goal) + ')', U.gold]);
+    if (!canPay(goal)) L.push(['YOU HAVE ' + fmt(goal.cur === 'surv' ? SAVE.surv : SAVE.scrap) + ' / ' + fmt(priceOf(goal)) + unit(goal) + '.', U.dim]);
+  } else if (!can) {
+    const next = NODES.filter((n) => nodeState(n) === 'poor').sort(order)[0];
+    if (next) L.push(['NEXT: ' + nodeLv(next.id, lv(next.id) + 1) + ' (' + fmt(priceOf(next)) + unit(next) + ')', U.gold]);
   }
-  const next = pickOf(rest, ['buy']) || pickOf(rest, ['poor']);
-  if (!next) return [];
-  const L = [['NEXT GOAL: ' + nodeLv(next.id, lv(next.id) + 1) + ' (' + price(next) + ')', U.gold]];
-  L.push(nodeState(next) === 'buy' ? ['YOU CAN BUY IT NOW!', U.green] : have(next));
   return L;
 }
 // The Depot's bottom bar on the tree tab: what to do here, or null.
 function treeHint() {
   if (!lv('root')) return ["CLICK THE TRAIN. IT'S FREE.", U.gold];
-  if (NODES.some((n) => nodeState(n) === 'buy')) return ['CLICK A GOLD NODE TO BUY IT.', U.ink];
+  if (NODES.some((n) => nodeState(n) === 'buy')) return ['CLICK A GLOWING NODE TO BUY IT.', U.ink];
   return null;
 }
 
-// ---------- the map
-// The cells: 32 px apart, or closer on a small window so the whole map still fits (down to 26 px
-// across and 24 down; on a window smaller still, the map can be dragged). SPAN = the columns and
-// rows in use. PAD = the room round the outer nodes: half a node at the sides and the top, and the
-// pips, the price and the gold corners under the bottom one.
-const CELL = 32;
-const SPAN = (() => {
-  const cs = NODES.map((n) => n.c), rs = NODES.map((n) => n.r);
-  return { c0: Math.min(...cs), c1: Math.max(...cs), r0: Math.min(...rs), r1: Math.max(...rs) };
-})();
-const PAD = { x: 16, top: 15, bot: 31 };
-// The root's place on screen and the gaps between cells. The map sits round the middle of the panel
-// (half a cell left, as the right side has more nodes); on a window too small for it, it can be
-// dragged (or moved with WASD) and TREE.pan says how far.
-// Returns [x, y, can pan across, can pan up and down, gap across, gap down].
-function treeOrigin() {
-  const y0 = 19, y1 = H - 29, P = TREE.pan;
-  // the panel's room for the map: 8 px in from each side, 4 under the top bar, 2 over the bottom one
-  const cx = clamp(Math.floor((W - 16 - PAD.x * 2) / (SPAN.c1 - SPAN.c0)), 26, CELL);
-  const cy = clamp(Math.floor((y1 - y0 - 6 - PAD.top - PAD.bot) / (SPAN.r1 - SPAN.r0)), 24, CELL);
-  // one axis: the map from a to b (round the root) inside lo..hi. It sits at want when it fits;
-  // else the pan moves it, and the pan is kept so the map's edges stay on screen.
-  const fit = (lo, hi, a, b, want, k) => {
-    const top = hi - b, bot = lo - a;
-    if (bot <= top) {
-      P[k] = 0;
-      return [Math.round(clamp(want, bot, top)), 0];
-    }
-    const o = clamp(want + P[k], top, bot);
-    P[k] = o - want;
-    return [Math.round(o), 1];
-  };
-  const [ox, px] = fit(8, W - 8, SPAN.c0 * cx - PAD.x, SPAN.c1 * cx + PAD.x, W / 2 - cx / 2, 'x');
-  const [oy, py] = fit(y0 + 4, y1 - 2, SPAN.r0 * cy - PAD.top, SPAN.r1 * cy + PAD.bot, (y0 + y1) / 2, 'y');
-  return [ox, oy, px, py, cx, cy];
+// ---------- the view
+// The panel's middle on screen, and a node's place on screen.
+const treeMid = () => [W / 2, Math.round((TREE.y0 + TREE.y1) / 2)];
+function treeXY(tx, ty) {
+  const [mx, my] = treeMid(), C = TREE.cam;
+  return [Math.round(mx + (tx - C.x * T_CELL) * C.z), Math.round(my + (ty - C.y * T_CELL) * C.z)];
 }
 // where node id is on screen (with the tree tab open)
 function nodeXY(id) {
   const n = NODE[id];
   if (!n) return null;
-  const [ox, oy, , , cx, cy] = treeOrigin();
-  return { x: ox + n.c * cx, y: oy + n.r * cy };
+  const [x, y] = treeXY(n.x * T_CELL, n.y * T_CELL);
+  return { x, y };
 }
-// half the size of a node's square: a * node is 26 px, the others 22
-const halfOf = (n) => (n.star ? 13 : 11);
-// How far below its middle a node's pips and price reach (px).
-const below = (n, st) => halfOf(n) + (st === 'hidden' || st === 'max' || st === 'locked' ? 0 : 3 + (maxLv(n) > 1 ? 5 : 0) + 9);
-// When a node shows up on the map (after its line has grown); 0 = it was always there.
-const appearAt = (n) => (TREE.born[n.id] != null ? TREE.born[n.id] + GROW : 0);
+// half the size of a node's square at this zoom: a big node is 26 px at zoom 1, the others 20
+const halfOf = (n) => Math.max(4, Math.round((n.star || n.id === 'root' ? 13 : 10) * TREE.cam.z));
+// Zoom in (+1) or out (-1) one step, keeping the point under (sx, sy) where it is.
+function treeZoom(dir, sx, sy) {
+  const i = clamp(ZOOMS.indexOf(TREE.zt) + dir, 0, ZOOMS.length - 1);
+  if (ZOOMS[i] === TREE.zt) return;
+  const [mx, my] = treeMid(), C = TREE.cam;
+  sx = sx ?? mx;
+  sy = sy ?? my;
+  TREE.zt = ZOOMS[i];
+  TREE.anchor = { sx, sy, x: C.x + (sx - mx) / C.z / T_CELL, y: C.y + (sy - my) / C.z / T_CELL };
+  SFX.ui();
+}
+// The wheel over the tree (main.js sends it here).
+function treeWheel(dy) {
+  treeZoom(dy < 0 ? 1 : -1, M.inside ? M.x : null, M.inside ? M.y : null);
+}
+// Back to LAST TRAIN in the middle, at zoom 1.
+function treeCenter() {
+  TREE.zt = 1;
+  TREE.anchor = null;
+  TREE.goTo = { x: 0, y: 0 };
+}
+// Move the view so node id is on the panel (tests, and the tutorial's tags).
+function treeFocus(id) {
+  const n = NODE[id];
+  if (!n) return;
+  const p = nodeXY(id), h = halfOf(n) + 30;
+  if (p.x > h && p.x < W - h && p.y > TREE.y0 + h && p.y < TREE.y1 - h) return;
+  TREE.cam.x = n.x;
+  TREE.cam.y = n.y;
+  TREE.goTo = null;
+}
+// Keys on the tree tab: C or HOME = centre, + / - = zoom. True when used.
+function treeKey(k) {
+  if (k === 'c' || k === 'Home') treeCenter();
+  else if (k === '+' || k === '=') treeZoom(1);
+  else if (k === '-' || k === '_') treeZoom(-1);
+  else return false;
+  return true;
+}
+// The bounds of the whole map (cells), for keeping the view on it.
+const T_SPAN = (() => {
+  const xs = NODES.map((n) => n.x), ys = NODES.map((n) => n.y);
+  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+})();
+// Each frame: the zoom glides to its step (the anchor stays under the mouse), the view glides to a
+// centre it was sent to, WASD moves it, and it stays near the map.
+function treeView() {
+  const C = TREE.cam, k = 1 - Math.exp(-14 * frameDt);
+  if (Math.abs(C.z - TREE.zt) > 0.002) C.z += (TREE.zt - C.z) * k;
+  else C.z = TREE.zt;
+  const a = TREE.anchor;
+  if (a) {
+    const [mx, my] = treeMid();
+    C.x = a.x - (a.sx - mx) / C.z / T_CELL;
+    C.y = a.y - (a.sy - my) / C.z / T_CELL;
+    if (C.z === TREE.zt) TREE.anchor = null;
+  }
+  const g = TREE.goTo;
+  if (g) {
+    C.x += (g.x - C.x) * k;
+    C.y += (g.y - C.y) * k;
+    if (Math.abs(g.x - C.x) + Math.abs(g.y - C.y) < 0.01) TREE.goTo = null;
+  }
+  const v = 9 * frameDt / C.z;
+  if (KEYS.a) C.x -= v;
+  if (KEYS.d) C.x += v;
+  if (KEYS.w) C.y -= v;
+  if (KEYS.s) C.y += v;
+  C.x = clamp(C.x, T_SPAN.x0 - 1, T_SPAN.x1 + 1);
+  C.y = clamp(C.y, T_SPAN.y0 - 1, T_SPAN.y1 + 1);
+}
 
-// The SKILL TREE tab, between y0 and y1.
-const RECTS = [];
-function drawTreeTab(y0, y1) {
-  const can = treeOrigin();
-  treeInput(y0, y1, can[2] || can[3]);
-  const [ox, oy, canX, canY, cx, cy] = treeOrigin();
-  TREE.y0 = y0;
-  // the panel: darker than the Depot round it, with a faint dot at every cell
-  ctx.fillStyle = 'rgba(6,7,9,0.42)';
+// A soft round glow (a smooth fall-off, like bloom) in colour col, made once per colour; tGlow
+// draws it with radius r at (x, y), strength a (in the 'lighter' blend mode).
+const T_SOFT = new Map();
+function tGlow(x, y, r, col, a) {
+  let c = T_SOFT.get(col);
+  if (!c) {
+    const [cc, g] = mk(64, 64), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32), [R, G0, B] = hexRgb(col);
+    gr.addColorStop(0, 'rgba(' + R + ',' + G0 + ',' + B + ',0.9)');
+    gr.addColorStop(0.25, 'rgba(' + R + ',' + G0 + ',' + B + ',0.45)');
+    gr.addColorStop(0.6, 'rgba(' + R + ',' + G0 + ',' + B + ',0.12)');
+    gr.addColorStop(1, 'rgba(' + R + ',' + G0 + ',' + B + ',0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+    T_SOFT.set(col, (c = cc));
+  }
+  if (r < 1 || a <= 0) return;
+  ctx.globalAlpha = Math.min(1, a);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(c, x - r, y - r, r * 2, r * 2);
+  ctx.imageSmoothingEnabled = false;
+}
+
+// ---------- the backdrop
+// A tile of star dust (faint dots, a few brighter ones with a cross) and a soft glow of colour, made once.
+let T_STARS = null, T_NEB = null;
+function bakeTreeBack() {
+  const rng = mulberry(77);
+  T_STARS = pix(256, 256, (r) => {
+    for (let i = 0; i < 260; i++) {
+      const x = Math.floor(rng() * 256), y = Math.floor(rng() * 256), q = rng();
+      const col = q < 0.12 ? 'rgba(255,120,210,0.28)' : q < 0.3 ? 'rgba(110,190,255,0.32)' : 'rgba(200,215,240,' + (0.08 + rng() * 0.2).toFixed(2) + ')';
+      r(x, y, 1, 1, col);
+      if (rng() < 0.05) {
+        r(x - 1, y, 1, 1, 'rgba(160,200,255,0.12)');
+        r(x + 1, y, 1, 1, 'rgba(160,200,255,0.12)');
+        r(x, y - 1, 1, 1, 'rgba(160,200,255,0.12)');
+        r(x, y + 1, 1, 1, 'rgba(160,200,255,0.12)');
+      }
+    }
+  });
+  // the glow: deep blue round the middle, a touch of violet off to one side (smooth, like a nebula)
+  const [c, g] = mk(128, 128);
+  for (const [x, y, r, col] of [[64, 64, 64, '30,70,150'], [40, 46, 40, '120,40,150'], [92, 84, 34, '20,110,140']]) {
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(' + col + ',0.2)');
+    gr.addColorStop(1, 'rgba(' + col + ',0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 128, 128);
+  }
+  T_NEB = c;
+}
+function drawTreeBack(y0, y1) {
+  if (!T_STARS) bakeTreeBack();
+  ctx.fillStyle = '#04060a';
   ctx.fillRect(0, y0, W, y1 - y0);
-  // nothing on the map draws over the top or bottom bar
+  const C = TREE.cam;
+  // the glow sits round LAST TRAIN (half the parallax), the stars far behind (a quarter)
+  const [rx, ry] = treeXY(0, 0), ns = Math.round(560 * (0.6 + C.z * 0.4));
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(T_NEB, Math.round(rx - ns / 2), Math.round(ry - ns / 2), ns, ns);
+  ctx.imageSmoothingEnabled = false;
+  const ox = mod(-Math.round(C.x * T_CELL * C.z * 0.25), 256), oy = mod(-Math.round(C.y * T_CELL * C.z * 0.25), 256);
+  for (let y = y0 - 256 + mod(oy - y0, 256); y < y1; y += 256) for (let x = ox - 256; x < W; x += 256) ctx.drawImage(T_STARS, x, y);
+}
+
+// ---------- the panel
+// The SKILL TREE tab, between y0 and y1.
+function drawTreeTab(y0, y1) {
+  TREE.y0 = y0;
+  TREE.y1 = y1;
+  treeView();
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, y0, W, y1 - y0);
   ctx.clip();
-  ctx.fillStyle = 'rgba(232,223,200,0.06)';
-  for (let y = mod(oy + cy / 2 - y0, cy) + y0; y < y1; y += cy) for (let x = mod(ox + cx / 2, cx); x < W; x += cx) ctx.fillRect(x, y, 1, 1);
-  const pos = (n) => [ox + n.c * cx, oy + n.r * cy];
-  // which nodes show (vis[id] = its state), and their boxes (the info box must not cover one)
-  let vis = {};
-  const layout = () => {
-    RECTS.length = 0;
-    vis = {};
-    for (const n of NODES) {
-      const st = nodeState(n);
-      if (st === 'off' || realT < appearAt(n)) continue;
-      vis[n.id] = st;
-      // [x, y, w, h, how bad it is to cover it: a '?' least, a node you can buy most]
-      const [x, y] = pos(n), h = halfOf(n);
-      RECTS.push([x - h - 2, y - h - 2, h * 2 + 4, h + below(n, st) + 4, st === 'hidden' ? 1 : st === 'buy' ? 5 : 3]);
+  drawTreeBack(y0, y1);
+  // which nodes show (vis[id] = its state); a node pops in after its line has grown
+  const vis = {};
+  for (const n of NODES) {
+    const st = nodeState(n), b = TREE.born[n.id];
+    if (st === 'off' || (b != null && realT < b + GROW)) continue;
+    vis[n.id] = st;
+  }
+  treeInput(vis, y0, y1);
+  drawTreeLines(vis);
+  // (only the nodes on the panel are drawn)
+  const m = 40 * TREE.cam.z;
+  for (const n of NODES) {
+    if (!vis[n.id]) continue;
+    const p = nodeXY(n.id);
+    if (p.x > -m && p.x < W + m && p.y > y0 - m && p.y < y1 + m) drawTreeNode(n, vis[n.id]);
+  }
+  drawTreeFx();
+  drawTreeHelp(y0, y1);
+  const tip = TREE.hov;
+  if (tip && vis[tip.id]) drawInfo(tip, vis[tip.id], y0, y1);
+  ctx.restore();
+}
+// The node under screen point (x, y), or null.
+function treeNodeAt(vis, x, y) {
+  let best = null;
+  for (const n of NODES) {
+    if (!vis[n.id]) continue;
+    const p = nodeXY(n.id), h = halfOf(n) + 2;
+    if (inR(x, y, p.x - h, p.y - h, h * 2, h * 2)) best = n;
+  }
+  return best;
+}
+// The mouse: a drag moves the map; a click (no drag) on a node buys a level, or says no (a buzz
+// and a shake).
+function treeInput(vis, y0, y1) {
+  const inPanel = (y) => y >= y0 && y < y1;
+  if (M.pressed && M.down && inPanel(M.py) && !treeOnButton(M.px, M.py)) {
+    TREE.drag = { x: M.px, y: M.py, cx: TREE.cam.x, cy: TREE.cam.y, moved: false };
+  }
+  const d = TREE.drag;
+  if (d && M.down) {
+    if (Math.abs(M.x - d.x) + Math.abs(M.y - d.y) > 4) d.moved = true;
+    if (d.moved) {
+      TREE.goTo = TREE.anchor = null;
+      TREE.cam.x = d.cx - (M.x - d.x) / TREE.cam.z / T_CELL;
+      TREE.cam.y = d.cy - (M.y - d.y) / TREE.cam.z / T_CELL;
     }
-  };
-  layout();
-  // the node under the mouse
+  }
   TREE.hov = null;
-  if (!TREE.drag && M.inside && M.y >= y0 && M.y < y1) {
-    for (const n of NODES) {
-      if (!vis[n.id]) continue;
-      const [x, y] = pos(n), h = halfOf(n) + 2;
-      if (inR(M.x, M.y, x - h, y - h, h * 2, h * 2)) TREE.hov = n;
+  if (M.inside && inPanel(M.y) && !(d && d.moved)) TREE.hov = treeNodeAt(vis, M.x, M.y);
+  if (M.released) {
+    const was = TREE.drag;
+    TREE.drag = null;
+    if (was && was.moved) M.used = true;
+    else if (!M.used && inPanel(M.py)) {
+      const n = treeNodeAt(vis, M.px, M.py);
+      if (n && n === treeNodeAt(vis, M.x, M.y)) {
+        M.used = true;
+        treeClick(n);
+      }
     }
   }
   if (TREE.hov) cursor = 'pointer';
-  else if (canX || canY) cursor = TREE.drag && TREE.drag.moved ? 'grabbing' : 'grab';
-  // a click on a node: buy a level, or say no (a buzz and a shake); either way its info stays up
-  const hn = TREE.hov, hh = hn ? halfOf(hn) + 2 : 0, [hx, hy] = hn ? pos(hn) : [0, 0];
-  if (hn && M.released && !M.used && inR(M.px, M.py, hx - hh, hy - hh, hh * 2, hh * 2)) {
-    M.used = true;
-    const n = hn;
-    TREE.sel = n.id;
-    if (realT - TREE.lastBuy < 0.08) { /* the same click seen twice: one buy only */ }
-    else if (buyNode(n.id)) {
-      TREE.lastBuy = realT;
-      layout();
-    } else if (nodeState(n) !== 'max') {
-      TREE.shake[n.id] = realT;
-      SFX.deny();
-    } else SFX.ui();
+  else if (TREE.drag && TREE.drag.moved) cursor = 'grabbing';
+  else if (M.inside && inPanel(M.y)) cursor = 'grab';
+}
+function treeClick(n) {
+  if (realT - TREE.lastBuy < 0.08) return; // the same click seen twice: one buy only
+  if (buyNode(n.id)) TREE.lastBuy = realT;
+  else if (nodeState(n) !== 'max') {
+    TREE.shake[n.id] = realT;
+    SFX.deny();
+  } else SFX.ui();
+}
+// The zoom buttons, top right: [-] [+] CENTER. Returns true when (x, y) is on one.
+const T_BTN = () => [[W - 92, '-', 15], [W - 75, '+', 15], [W - 58, 'CENTER', 52]];
+const treeOnButton = (x, y) => T_BTN().some(([bx, , bw]) => inR(x, y, bx, TREE.y0 + 4, bw, 14));
+function drawTreeHelp(y0) {
+  for (const [bx, s, bw] of T_BTN()) {
+    if (button(bx, y0 + 4, bw, 14, s)) {
+      if (s === '-') treeZoom(-1);
+      else if (s === '+') treeZoom(1);
+      else treeCenter();
+    }
   }
-  // the faint branch names at the far end of each branch
-  ctx.globalAlpha = 0.55;
-  for (const [id, br, dx, dy, al] of [['feed', 'heli', 0, 33, 'center'], ['gunspd', 'train', 0, 33, 'center'],
-    ['winch', 'explore', -19, -3, 'right'], ['mortar', 'station', 19, -3, '']]) {
-    if (!vis[id]) continue;
-    const [x, y] = pos(NODE[id]);
-    text(BRANCH[br].name, x + dx, y + dy, BRANCH[br].col, { align: al, outline: false });
+  text('DRAG: MOVE   WHEEL: ZOOM', 6, y0 + 7, '#3c4658', { outline: false });
+}
+
+// ---------- the lines
+// A line from each shown node back to the one it grows from: a bright core with a glow once the
+// node has a level (a spark runs along it now and then), a dim line in its colour while it is for
+// sale, a faint one to a padlock. A new line grows out over GROW s and lights up over 0.3 s.
+// The lines are drawn into T_LINES and reused while nothing about them changes (the view, the
+// states); while one grows or lights up they are drawn each frame.
+const T_LINES = { c: null, g: null, key: '' };
+function drawTreeLines(vis) {
+  const busy = NODES.some((n) => realT - (TREE.born[n.id] ?? -9) < GROW || realT - (TREE.lit[n.id] ?? -9) < 0.3);
+  if (busy) treeLines(ctx, vis);
+  else {
+    const C = TREE.cam, key = [W, H, TREE.y0, TREE.y1, C.x.toFixed(4), C.y.toFixed(4), C.z.toFixed(4)].join(',') + '|' +
+      NODES.map((n) => (vis[n.id] || '-') + lv(n.id)).join(',');
+    if (!T_LINES.c || T_LINES.c.width !== W || T_LINES.c.height !== H) {
+      [T_LINES.c, T_LINES.g] = mk(W, H);
+      T_LINES.key = '';
+    }
+    if (key !== T_LINES.key) {
+      T_LINES.key = key;
+      T_LINES.g.clearRect(0, 0, W, H);
+      treeLines(T_LINES.g, vis);
+    }
+    ctx.drawImage(T_LINES.c, 0, 0);
   }
-  ctx.globalAlpha = 1;
-  // the lines, under the nodes
+  treeSparks(vis);
+}
+// Each shown line: calls fn(n, a, b, f, st) with n's parent at a, n at b on screen, f = how far it
+// has grown, st = n's state (n itself may not have popped in yet).
+function eachLine(vis, fn) {
   for (const n of NODES) {
-    const p = parentOf(n);
-    if (!p || nodeState(n) === 'off' || !vis[p.id]) continue;
-    const [x0, y0n] = pos(p), [x1, y1n] = pos(n), b = TREE.born[n.id];
-    const f = b != null ? clamp((realT - b) / GROW, 0, 1) : 1;
-    if (f <= 0) continue;
-    const st = nodeState(n), base = st === 'hidden' ? '#2a2d34' : '#3e424c';
-    pl(ctx, x0, y0n, lerp(x0, x1, f), lerp(y0n, y1n, f), base);
-    if (lv(n.id) > 0 && !n.later) {
-      const lt = TREE.lit[n.id], g = lt != null ? clamp((realT - lt) / 0.25, 0, 1) : 1;
-      if (g > 0) pl(ctx, x0, y0n, lerp(x0, x1, g * f), lerp(y0n, y1n, g * f), BRANCH[n.br].col);
-    }
+    const p = parentOf(n), st = vis[n.id] || nodeState(n);
+    if (!p || st === 'off' || !vis[p.id]) continue;
+    const a = nodeXY(p.id), b = nodeXY(n.id);
+    // (a line wholly off the panel is not drawn)
+    if (Math.max(a.x, b.x) < 0 || Math.min(a.x, b.x) > W || Math.max(a.y, b.y) < TREE.y0 || Math.min(a.y, b.y) > TREE.y1) continue;
+    const born = TREE.born[n.id], f = born != null ? clamp((realT - born) / GROW, 0, 1) : 1;
+    if (f > 0) fn(n, a, b, f, st);
   }
-  // the node whose info shows: the one under the mouse, else the last one clicked (before the tree
-  // is open, LAST TRAIN). Gold corners mark it.
-  let show = TREE.hov || NODE[TREE.sel] || (!lv('root') ? NODE.root : null);
-  if (show && !vis[show.id]) show = null;
-  if (show) {
-    const [x, y] = pos(show), h = halfOf(show) + 4, b = below(show, vis[show.id]) + 4;
-    corners(x - h, y - h, h * 2 + 1, h + b + 1, U.gold);
-  }
-  // the very first time, LAST TRAIN glows: it is all there is, and it is free
-  if (!lv('root')) {
-    const [x, y] = pos(NODE.root);
+}
+function treeLines(g, vis) {
+  const z = TREE.cam.z, wide = z >= 1.4 ? 2 : 1;
+  eachLine(vis, (n, a, b, f, st) => {
+    const ex = lerp(a.x, b.x, f), ey = lerp(a.y, b.y, f), K = NODE_KIND[n.k];
+    if (lv(n.id) > 0) {
+      const lt = TREE.lit[n.id], u = lt != null ? clamp((realT - lt) / 0.3, 0, 1) : 1;
+      if (u < 1) tLine(g, a.x, a.y, ex, ey, K.m, wide);
+      if (u <= 0) return;
+      const gx = lerp(a.x, ex, u), gy = lerp(a.y, ey, u);
+      g.globalCompositeOperation = 'lighter';
+      g.globalAlpha = 0.22;
+      g.strokeStyle = K.g;
+      g.lineWidth = Math.min(7, 5 * Math.max(0.7, z));
+      g.beginPath();
+      g.moveTo(a.x + 0.5, a.y + 0.5);
+      g.lineTo(gx + 0.5, gy + 0.5);
+      g.stroke();
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = 'source-over';
+      tLine(g, a.x, a.y, gx, gy, K.c, wide);
+    } else if (st === 'hidden') tLine(g, a.x, a.y, ex, ey, '#1a2232', 1);
+    else tLine(g, a.x, a.y, ex, ey, st === 'buy' ? K.m : '#24324a', wide);
+  });
+}
+// A spark that runs out along each lit line every couple of seconds.
+function treeSparks(vis) {
+  const z = TREE.cam.z, wide = z >= 1.4 ? 2 : 1;
+  eachLine(vis, (n, a, b, f) => {
+    if (f < 1 || !lv(n.id) || realT - (TREE.lit[n.id] ?? -9) < 0.3) return;
+    const u = mod(realT * 0.55 + (n.x * 0.37 + n.y * 0.61), 1.6);
+    if (u >= 1) return;
+    const x = lerp(a.x, b.x, u), y = lerp(a.y, b.y, u);
     ctx.globalCompositeOperation = 'lighter';
-    light(x, y, 36, '#e3b04b', 0.4 + 0.2 * Math.sin(realT * TAU));
-    ctx.globalCompositeOperation = 'source-over';
+    tGlow(x, y, 7 * Math.max(0.8, z), NODE_KIND[n.k].g, 0.8);
     ctx.globalAlpha = 1;
-  }
-  // the nodes
-  for (const n of NODES) if (vis[n.id]) drawNode(n, ...pos(n), vis[n.id]);
-  // rings and prices from buys
-  drawTreeFx(pos);
-  if (show) drawInfo(show, pos(show), y0, y1);
-  // on a window too small for the whole map: how to move it
-  if (canX || canY) {
-    const t = 'DRAG OR WASD: MOVE THE MAP', tw0 = tw(t) + 8;
-    ctx.fillStyle = 'rgba(6,7,9,0.85)';
-    ctx.fillRect(4, y0 + 3, tw0, 11);
-    text(t, 8, y0 + 5, U.dim, { outline: false });
-  }
-  ctx.restore();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(Math.round(x) - (wide >> 1), Math.round(y) - (wide >> 1), wide, wide);
+  });
 }
-// Mouse dragging and WASD move the map on a window too small to show all of it.
-function treeInput(y0, y1, can) {
-  const d = TREE.drag;
-  if (!can) {
-    TREE.drag = null;
-    return;
-  }
-  if (M.pressed && M.down && M.y >= y0 && M.y < y1) TREE.drag = { x: M.x, y: M.y, px: TREE.pan.x, py: TREE.pan.y, moved: false };
-  else if (d && M.down) {
-    if (Math.abs(M.x - d.x) + Math.abs(M.y - d.y) > 4) d.moved = true;
-    if (d.moved) {
-      TREE.pan.x = d.px + M.x - d.x;
-      TREE.pan.y = d.py + M.y - d.y;
-    }
-  } else if (d) {
-    // the press was a drag, not a click
-    if (d.moved) M.used = true;
-    TREE.drag = null;
-  }
-  const v = 220 * frameDt;
-  if (KEYS.a) TREE.pan.x += v;
-  if (KEYS.d) TREE.pan.x -= v;
-  if (KEYS.w) TREE.pan.y += v;
-  if (KEYS.s) TREE.pan.y -= v;
+// A crisp line of pixels on g, w px wide.
+function tLine(g, x0, y0, x1, y1, col, w) {
+  pl(g, Math.round(x0), Math.round(y0), Math.round(x1), Math.round(y1), col);
+  if (w > 1) pl(g, Math.round(x0) + 1, Math.round(y0), Math.round(x1) + 1, Math.round(y1), col);
 }
-// One node at (x, y) in state st: its square and icon, its level pips, its price, a NEW tag.
-function drawNode(n, x, y, st) {
-  const B = BRANCH[n.br], l = lv(n.id), m = maxLv(n), big = !!n.star, h = halfOf(n), s = h * 2;
-  // a click that could not buy shakes it
+
+// ---------- a node
+// The node's glow, square, icon (a padlock while it is locked), its level as 3/10 under it, the
+// flash of a buy and the pop when it opens. Nodes you can buy pulse; a big node has a double frame.
+function drawTreeNode(n, st) {
+  const K = NODE_KIND[n.k], l = lv(n.id), m = maxLv(n), z = TREE.cam.z, p = nodeXY(n.id);
+  let x = p.x, y = p.y, h = halfOf(n);
+  // a click that could not buy shakes it; a node that just opened pops out of nothing
   const sk = realT - (TREE.shake[n.id] ?? -9);
   if (sk < 0.25 && !REDUCED) x += Math.round(Math.sin(sk * 70) * 2 * (1 - sk / 0.25));
-  const nx = x - h, ny = y - h, hov = TREE.hov === n;
-  if (st === 'hidden') {
-    ctx.fillStyle = '#0c0d10';
-    ctx.fillRect(nx + 1, ny + 1, s - 2, s - 2);
-    frame(nx, ny, s, s, hov ? '#3e424c' : '#25282f');
-    if (big) frame(nx + 2, ny + 2, s - 4, s - 4, '#1c1e24');
-    text('?', x + 1, y - 3, hov ? U.faint : '#3a3e48', { align: 'center', outline: false });
-    return;
-  }
-  const buy = st === 'buy', pulse = 0.5 + 0.5 * Math.sin(realT * TAU);
-  // the body: dark, a light fill of the branch colour once every level is bought
-  ctx.fillStyle = '#131419';
-  ctx.fillRect(nx + 1, ny + 1, s - 2, s - 2);
-  if (st === 'max') {
-    ctx.globalAlpha = 0.22;
-    ctx.fillStyle = B.col;
-    ctx.fillRect(nx + 1, ny + 1, s - 2, s - 2);
+  const pp = realT - (TREE.pop[n.id] ?? -9);
+  if (pp >= 0 && pp < 0.25) h = Math.max(2, Math.round(h * (0.4 + 0.6 * ease(pp / 0.25) + Math.sin(pp / 0.25 * Math.PI) * 0.2)));
+  const s = h * 2, nx = x - h, ny = y - h, hov = TREE.hov === n, buy = st === 'buy', big = !!n.star || n.id === 'root';
+  const pulse = 0.5 + 0.5 * Math.sin(realT * 5 + n.x);
+  const lock = st === 'hidden' || st === 'locked';
+  // the glow round it
+  const ga = lock ? 0 : st === 'max' ? 0.5 : buy ? 0.35 + 0.35 * pulse : l > 0 ? 0.4 : st === 'poor' ? 0.12 : 0.18;
+  if (ga > 0 || hov) {
+    ctx.globalCompositeOperation = 'lighter';
+    tGlow(x, y, Math.min(h * (big ? 3 : 2.6), h + 26) + (buy ? pulse * 3 : 0), K.g, ga + (hov ? 0.15 : 0));
     ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
   }
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(nx + 2, ny + 1, s - 4, 1);
-  // the frame: gold and pulsing when you can buy it, the branch colour once it has a level, grey
-  // before; a * node has two
-  const fc = buy ? '#c99a3e' : l > 0 ? B.col : hov ? '#5d616b' : '#3a3e48';
+  // the body
+  ctx.fillStyle = st === 'max' ? K.d : '#070a10';
+  ctx.fillRect(nx + 1, ny + 1, s - 2, s - 2);
+  if (!lock) {
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.fillRect(nx + 2, ny + 1, s - 4, 1);
+  }
+  // the frame: bright once it has a level or you can buy it (it pulses white), mid while you
+  // cannot pay, dark grey while locked
+  const fc = lock ? (hov ? '#3a4458' : '#202838') : buy ? (pulse > 0.75 ? '#ffffff' : K.c) : l > 0 ? K.c : K.m;
   frame(nx, ny, s, s, fc);
-  if (big) {
-    ctx.globalAlpha = 0.6;
+  if (big && s >= 12) {
+    ctx.globalAlpha = lock ? 0.5 : 0.65;
     frame(nx + 2, ny + 2, s - 4, s - 4, fc);
     ctx.globalAlpha = 1;
   }
-  if (buy) {
-    ctx.globalAlpha = 0.25 + 0.65 * pulse;
-    frame(nx - 1, ny - 1, s + 2, s + 2, '#ffd36a');
-    ctx.globalAlpha = 1;
-  } else if (hov) {
-    ctx.globalAlpha = 0.5;
-    frame(nx - 1, ny - 1, s + 2, s + 2, '#e8dfc8');
+  if (hov) {
+    ctx.globalAlpha = 0.6;
+    frame(nx - 1, ny - 1, s + 2, s + 2, '#ffffff');
     ctx.globalAlpha = 1;
   }
-  // the icon: dim while it is only a goal, dimmer when you cannot pay for its first level
-  const ic = st === 'locked' ? ICON.lock : NICON[n.id];
-  ctx.globalAlpha = st === 'goal' || st === 'soon' ? 0.6 : st === 'poor' && !l ? 0.4 : st === 'locked' ? 0.75 : 1;
-  blit(ic, Math.round(x - ic.width / 2), Math.round(y - ic.height / 2));
-  ctx.globalAlpha = 1;
-  if (big) blit(ICON.star, nx + s - 5, ny - 2);
+  // the icon: crisp, 1x up to 2x and 3x as the view zooms in (none when it is very small)
+  const ic = lock ? ICON.lock : NICON[n.id] || ICON.star, k = Math.max(1, Math.floor((s - 6) / 12));
+  if (s >= 13) {
+    const iw = ic.width * k, ih = ic.height * k;
+    ctx.globalAlpha = lock ? 0.45 : st === 'poor' && !l ? 0.55 : 1;
+    blit(ic, Math.round(x - iw / 2), Math.round(y - ih / 2), iw, ih);
+    ctx.globalAlpha = 1;
+  } else if (!lock) {
+    ctx.fillStyle = l > 0 || buy ? K.c : K.m;
+    ctx.fillRect(x - 1, y - 1, 2, 2);
+  }
   // just bought: a white flash; just popped in: a softer one
-  const fl = realT - (TREE.flash[n.id] ?? -9), pp = realT - (TREE.pop[n.id] ?? -9);
-  const wa = Math.max(fl < 0.12 ? 1 - fl / 0.12 : 0, pp >= 0 && pp < 0.2 ? 0.8 * (1 - pp / 0.2) : 0);
+  const fl = realT - (TREE.flash[n.id] ?? -9);
+  const wa = Math.max(fl < 0.15 ? 1 - fl / 0.15 : 0, pp >= 0 && pp < 0.2 ? 0.8 * (1 - pp / 0.2) : 0);
   if (wa > 0) {
     ctx.globalAlpha = wa;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(nx, ny, s, s);
     ctx.globalAlpha = 1;
   }
-  // the level pips under it (2 x 2 each, gold when bought)
-  let ly = y + h + 3;
-  if (m > 1) {
-    const pw = m * 3 - 1, px = Math.round(x - pw / 2);
-    ctx.fillStyle = '#07080a';
-    ctx.fillRect(px - 1, ly - 1, pw + 2, 4);
-    for (let i = 0; i < m; i++) {
-      ctx.fillStyle = i < l ? '#e3b04b' : '#3a3e48';
-      ctx.fillRect(px + i * 3, ly, 2, 2);
-    }
-    ly += 5;
-  }
-  // the price of the next level: gold (or green for survivors) when you can pay, red when you cannot
-  if (st === 'buy' || st === 'poor' || st === 'goal' || st === 'soon') {
-    const p = priceOf(n), surv = n.cur === 'surv';
-    if (!p) text('FREE', x, ly, pulse > 0.5 ? '#ffe39a' : U.gold, { align: 'center' });
-    else {
-      const ok = canPay(n), col = st === 'soon' ? U.faint : !ok ? U.red : st === 'goal' ? U.dim : surv ? U.green : U.gold;
-      const ps = fmt(p), iw = 7, w = iw + tw(ps), px = Math.round(x - w / 2);
-      // a dark backing, so a line running under it does not cut through the numbers
-      ctx.fillStyle = '#07080a';
-      ctx.fillRect(px - 2, ly - 1, w + 4, 9);
-      if (st === 'soon' || st === 'goal') ctx.globalAlpha = 0.8;
-      blit(surv ? ICON.survS : ICON.boltS, px - 1, ly);
-      text(ps, px + iw, ly, col);
-      ctx.globalAlpha = 1;
-    }
-  }
-  // NEW: a gold tag over it for 3 s after it shows up (to its left when the top bar is in the way)
-  const nt = realT - (TREE.pop[n.id] ?? -9);
-  if (nt >= 0 && nt < 3) {
-    ctx.globalAlpha = nt > 2.6 ? (3 - nt) / 0.4 : 1;
-    let tx = x - 10, ty = ny - (big ? 13 : 12);
-    if (ty - 1 < (TREE.y0 ?? 0) + 1) [tx, ty] = [nx - 22, y - 4];
-    ctx.fillStyle = '#07080a';
-    ctx.fillRect(tx - 1, ty - 1, 21, 11);
-    ctx.fillStyle = U.gold;
-    ctx.fillRect(tx, ty, 19, 9);
-    text('NEW', tx + 10, ty + 1, '#1a1206', { align: 'center', outline: false });
-    ctx.globalAlpha = 1;
-  }
+  // the level under it (not on a padlock, and not when the view is far out)
+  if (lock || z < 0.7) return;
+  let lab, lc;
+  if (n.id === 'root') [lab, lc] = l ? ['', ''] : ['FREE', pulse > 0.5 ? '#ffe39a' : U.gold];
+  else if (st === 'soon') [lab, lc] = ['SOON', '#5a6478'];
+  else [lab, lc] = [l + '/' + m, st === 'max' ? K.c : l > 0 ? '#e6f2ff' : buy ? '#c8d4e6' : '#6c7890'];
+  if (lab) text(lab, x, y + h + 2, lc, { align: 'center', outline: '#04060a' });
 }
-// Gold rings growing out of a bought node, and its price floating up.
-function drawTreeFx(pos) {
+// Rings and sparks from buys, and the price floating up.
+function drawTreeFx() {
+  const z = TREE.cam.z;
+  ctx.globalCompositeOperation = 'lighter';
   for (let i = TREE.rings.length - 1; i >= 0; i--) {
-    const r = TREE.rings[i], u = (realT - r.t) / 0.45;
+    const r = TREE.rings[i], u = (realT - r.t) / 0.5;
     if (u >= 1) {
       TREE.rings.splice(i, 1);
       continue;
     }
-    const [x, y] = pos(NODE[r.id]), e = halfOf(NODE[r.id]) + 1 + Math.round(ease(u) * 14);
-    ctx.globalAlpha = 1 - u;
-    frame(x - e, y - e, e * 2 + 1, e * 2 + 1, '#ffd36a');
-    if (u < 0.5) frame(x - e + 1, y - e + 1, e * 2 - 1, e * 2 - 1, '#e3b04b');
-    ctx.globalAlpha = 1;
+    if (u < 0) continue;
+    const n = NODE[r.id], p = nodeXY(r.id), e = halfOf(n) + ease(u) * (r.big ? 30 : 18) * z;
+    ctx.globalAlpha = (1 - u) * 0.9;
+    ctx.strokeStyle = r.c;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p.x + 0.5, p.y + 0.5, e, 0, TAU);
+    ctx.stroke();
   }
+  for (let i = TREE.sparks.length - 1; i >= 0; i--) {
+    const s = TREE.sparks[i], t = realT - s.t;
+    if (t >= s.T) {
+      TREE.sparks.splice(i, 1);
+      continue;
+    }
+    const d = 1 - Math.exp(-4 * t), [x, y] = treeXY(s.x + s.vx * d / 4 * 1.6, s.y + s.vy * d / 4 * 1.6);
+    ctx.globalAlpha = 1 - t / s.T;
+    ctx.fillStyle = s.c;
+    ctx.fillRect(x, y, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
   for (let i = TREE.floats.length - 1; i >= 0; i--) {
     const f = TREE.floats[i], u = (realT - f.t) / 0.9;
     if (u >= 1) {
       TREE.floats.splice(i, 1);
       continue;
     }
-    // it floats up from over the node, or down from under it when the top bar is in the way
-    const [x, y] = pos(NODE[f.id]), h = halfOf(NODE[f.id]), d = Math.round(ease(u) * 12);
+    const p = nodeXY(f.id), h = halfOf(NODE[f.id]), d = Math.round(ease(u) * 14);
     ctx.globalAlpha = u > 0.6 ? (1 - u) / 0.4 : 1;
-    text(f.s, x, y - h - 24 >= (TREE.y0 ?? 0) ? y - h - 12 - d : y + h + 3 + d, f.c, { align: 'center' });
+    text(f.s, p.x, p.y - h - 12 - d, f.c, { align: 'center' });
     ctx.globalAlpha = 1;
   }
 }
 
-// ---------- the info box
+// ---------- the tooltip
 // Split s into lines no wider than w px.
 function wrap(s, w) {
   const out = [];
@@ -8612,76 +8846,55 @@ function statSegs(stat, l, done) {
   if (done || now === String(val(l + 1))) return [[label, U.dim], [now, U.ink]];
   return [[label, U.dim], [now, now === 'NONE' || now === 'LOCKED' ? U.faint : U.ink], ['>', U.faint], [String(val(l + 1)), U.green]];
 }
-// The info box for node n: its icon, name and level, what it does, NOW > NEXT, and the price (or why
-// it cannot be bought yet). [qx, qy] = where the node is. It sits in a corner of the panel where it
-// covers no node.
-const INFO_W = 212;
-// Where the info box (w x h) for node n at (qx, qy) goes: the first corner of the panel where it
-// covers no node (bottom left first). On a small window no corner may be free: then the place where
-// it covers the fewest nodes (by RECTS' weights), the nearest one to the node, and never the node.
-function infoSpot(n, st, qx, qy, w, h, y0, y1) {
-  const hn = halfOf(n), me = [qx - hn - 2, qy - hn - 2, hn * 2 + 4, hn + below(n, st) + 4];
-  const over = (r, x, y) => r[0] < x + w && r[0] + r[2] > x && r[1] < y + h && r[1] + r[3] > y;
-  const cost = (x, y) => (over(me, x, y) ? 1000 : 0) + RECTS.reduce((k, r) => k + (over(r, x, y) ? r[4] : 0), 0);
-  const lo = y0 + 6, hi = y1 - h - 6;
-  const spots = [[8, hi], [W - w - 8, hi], [8, lo], [W - w - 8, lo]];
-  for (const sp of spots) if (!cost(...sp)) return sp;
-  // try right beside the node on each side, and everywhere else in small steps
-  const xs = [me[0] - w - 4, me[0] + me[2] + 4, qx - w / 2], ys = [me[1] - h - 4, me[1] + me[3] + 4, qy - h / 2];
-  for (let x = 4; x <= W - w - 4; x += 8) xs.push(x);
-  for (let y = lo; y <= hi; y += 6) ys.push(y);
-  let best = spots[0], bk = Infinity;
-  for (const x0 of xs) {
-    for (const y0b of ys) {
-      const x = Math.round(clamp(x0, 4, W - w - 4)), y = Math.round(clamp(y0b, lo, hi));
-      const k = cost(x, y) * 1000 + Math.hypot(x + w / 2 - qx, y + h / 2 - qy);
-      if (k < bk) {
-        bk = k;
-        best = [x, y];
-      }
-    }
-  }
-  return best;
-}
-function drawInfo(n, [qx, qy], y0, y1) {
-  const st = nodeState(n), l = lv(n.id), m = maxLv(n), B = BRANCH[n.br], hid = st === 'hidden';
-  const p = parentOf(n), w = INFO_W, inner = w - 14;
-  // a '?' tells only what to buy to see it (a node from later in the game: its name, and SOON)
-  const named = !hid || (n.later && p && lv(p.id) > 0);
-  let tag = '', tagc = U.dim;
-  if (!hid) {
-    if (n.id === 'root' || n.given) [tag, tagc] = l ? ['OWNED', B.col] : [n.given ? 'LOCKED' : '', U.faint];
-    else if (n.star) [tag, tagc] = l ? ['OWNED', B.col] : ['BIG UNLOCK', U.gold];
-    else [tag, tagc] = st === 'max' ? ['MAX', B.col] : ['LV ' + l + '/' + m, U.dim];
-  }
-  const desc = named ? wrap(n.desc, inner) : [p && nodeState(p) !== 'hidden' ? 'BUY ' + p.name + ' TO SEE IT.' : 'GROW THE TREE TO SEE IT.'];
-  const vals = hid ? [] : [n.stat, n.stat2].filter(Boolean).map((s) => statSegs(s, l, l >= m));
-  // the foot: [left text, colour, price icon, right text, colour]
-  let foot = null;
+// The tooltip for node n beside it: NAME and LEVEL x/y, a line in its colour, what it does, NOW >
+// NEXT, then the price (red when you cannot pay) and what a click does.
+const INFO_W = 216;
+function drawInfo(n, st, y0, y1) {
+  const K = NODE_KIND[n.k], l = lv(n.id), m = maxLv(n), lock = st === 'hidden', p = parentOf(n);
+  const named = !lock || !n.later || (p && lv(p.id) > 0);
+  const inner = INFO_W - 14;
+  const desc = wrap(named ? n.desc : '???', inner);
+  const vals = lock || !n.stat ? [] : [n.stat, n.stat2].filter(Boolean).map((s) => statSegs(s, l, l >= m));
+  // the foot: [price text, colour, price icon, right text, colour]
   const surv = n.cur === 'surv', pr = priceOf(n), have = surv ? SAVE.surv : SAVE.scrap, icon = surv ? ICON.survS : ICON.boltS;
   const pcol = !canPay(n) ? U.red : surv ? U.green : U.gold;
-  if (hid) foot = named ? ['', U.faint, null, 'COMING SOON', U.faint] : null;
-  else if (st === 'locked') foot = ['HOLD FARM STOP ONCE TO GET IT.', U.amber, null, '', U.dim];
+  let foot;
+  if (n.later) foot = ['', U.faint, null, 'COMING SOON', U.faint];
+  else if (lock) foot = [fmt(pr), canPay(n) ? U.dim : U.red, icon, 'NEEDS: ' + nodeLv(p.id, needOf(n)), U.amber];
+  else if (st === 'max') foot = ['', U.dim, null, n.id === 'root' || m === 1 ? 'OWNED' : 'MAXED', K.c];
+  else if (st === 'locked') foot = ['', U.dim, null, 'HOLD FARM STOP ONCE TO GET IT.', U.amber];
   else if (st === 'soon') foot = [fmt(pr), U.faint, icon, 'COMING SOON', U.faint];
-  else if (st === 'goal') foot = [fmt(pr), canPay(n) ? U.dim : U.red, icon, 'NEEDS: ' + nodeLv(n.needs[0], n.needs[1]), U.amber];
   else if (st === 'poor') foot = [fmt(pr), U.red, icon, 'NEED ' + fmt(pr - have) + ' MORE', U.red];
-  else if (st === 'buy') foot = pr ? [fmt(pr), pcol, icon, 'CLICK TO BUY', U.gold] : ['FREE', U.gold, null, 'CLICK TO TAKE IT', U.gold];
-  const h = 25 + desc.length * 10 + vals.length * 10 + (foot ? 15 : 0) + 3;
-  const [x, y] = infoSpot(n, st, qx, qy, w, h, y0, y1);
-  panel(x, y, w, h, 'rgba(13,14,18,0.96)');
-  ctx.fillStyle = hid ? '#3a3e48' : B.col;
-  ctx.fillRect(x + 2, y + 1, w - 4, 1);
-  // head: the icon, the name and its branch; the level on the right
-  if (hid) {
-    frame(x + 6, y + 5, 14, 14, '#3a3e48');
-    text('?', x + 14, y + 9, U.faint, { align: 'center', outline: false });
-  } else blit(st === 'locked' ? ICON.lock : NICON[n.id], x + 6 + (st === 'locked' ? 2 : 0), y + 5 + (st === 'locked' ? 2 : 0));
-  text(named ? n.name : '???', x + 25, y + 5, hid ? U.dim : n.id === 'root' ? U.gold : B.col);
-  text(n.id === 'root' ? 'THE ROOT' : B.name, x + 25, y + 14, U.faint, { outline: false });
-  if (tag) text(tag, x + w - 7, y + 5, tagc, { align: 'right' });
-  let ty = y + 24;
+  else foot = pr ? [fmt(pr), pcol, icon, 'CLICK TO BUY', U.gold] : ['FREE', U.gold, null, 'CLICK TO TAKE IT', U.gold];
+  const kindName = n.id === 'root' ? 'THE ROOT' : n.star ? 'BIG UNLOCK' : n.k === 'spec' ? 'SPECIAL' : 'UPGRADE';
+  const w = INFO_W, h = 31 + desc.length * 10 + vals.length * 10 + 17;
+  // beside the node (right, else left), kept on the panel
+  const q = nodeXY(n.id), hn = halfOf(n);
+  let x = q.x + hn + 10;
+  if (x + w > W - 4) x = q.x - hn - 10 - w;
+  if (x < 4) x = clamp(q.x - w / 2, 4, W - w - 4);
+  let y = clamp(q.y - Math.round(h / 2), y0 + 22, y1 - h - 4);
+  if (x === clamp(q.x - w / 2, 4, W - w - 4)) y = q.y + hn + 12 + h < y1 ? q.y + hn + 12 : q.y - hn - 12 - h;
+  x = Math.round(x);
+  y = Math.round(y);
+  // the box: near black, a frame and a line under the head in the node's colour
+  ctx.fillStyle = 'rgba(5,8,13,0.97)';
+  ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+  frame(x, y, w, h, lock ? '#2a3448' : K.m);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = K.g;
+  ctx.fillRect(x + 1, y + 1, w - 2, 1);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  text(named ? n.name : '???', x + 7, y + 5, lock ? U.dim : '#ffffff');
+  text(lock && !n.later ? 'LOCKED' : n.id === 'root' ? (l ? 'OWNED' : '0/1') : l + '/' + m, x + w - 7, y + 5, lock ? U.faint : st === 'max' ? K.c : U.ink, { align: 'right' });
+  text(kindName, x + 7, y + 14, lock ? '#3c4658' : K.m, { outline: false });
+  ctx.fillStyle = lock ? '#1c2434' : K.m;
+  ctx.fillRect(x + 6, y + 23, w - 12, 1);
+  let ty = y + 27;
   for (const d of desc) {
-    text(d, x + 7, ty, U.ink);
+    text(d, x + 7, ty, lock ? U.faint : U.ink);
     ty += 10;
   }
   for (const segs of vals) {
@@ -8689,8 +8902,7 @@ function drawInfo(n, [qx, qy], y0, y1) {
     for (const [s, c] of segs) tx += text(s, tx, ty, c) + 5;
     ty += 10;
   }
-  if (!foot) return;
-  ctx.fillStyle = '#24272e';
+  ctx.fillStyle = '#161c28';
   ctx.fillRect(x + 6, ty + 1, w - 12, 1);
   ty += 5;
   const [lt, lc, li, rt, rc] = foot;
@@ -8704,6 +8916,543 @@ function drawInfo(n, [qx, qy], y0, y1) {
     const blink = rc === U.gold && Math.sin(realT * TAU) < -0.3;
     text(rt, x + w - 7, ty, blink ? '#ffe39a' : rc, { align: 'right' });
   }
+}
+
+// The world is not drawn (nor run) while the skill tree covers it.
+const treeCovers = () => mode === 'depot' && depotTab === 'tree';
+
+// ---------- the new nodes' icons (12 x 12; sprites.js turns them into NICON at startup)
+Object.assign(NODE_ART, {
+  // HELI DAMAGE: a round and a red plus
+  hdmg: ['...l........', '..lsl.......', '..lsl.......', '.yGGg.......', '.yGgg...RR..', '.yGgg...RR..',
+    '.yGgg.RRRRRR', '.yGgg.RRRRRR', '.yGgg...RR..', '.yGgg...RR..', '.yyyy.......', '............'],
+  // HELI FIRE RATE: rounds flying, with speed lines
+  hrate: ['............', '............', '..d...yGGGl.', '.d...yGGGGsl', '..d...yGGGl.', '............',
+    '............', '.d..yGGGl...', 'd..yGGGGsl..', '.d..yGGGl...', '............', '............'],
+  // HELI RANGE: a radar ring round a red dot
+  hrange: ['....BBBB....', '..BB....BB..', '.B........B.', '.B...ll...B.', 'B...l..l...B', 'B..l.RR.l..B',
+    'B..l.RR.l..B', 'B...l..l...B', '.B...ll...B.', '.B........B.', '..BB....BB..', '....BBBB....'],
+  // BONUS SCRAP: a stack of gold and a green plus
+  bonus: ['.........E..', '........EEE.', '.........E..', '...yGGGy....', '..ygggggy...', '..yGGGGGy...',
+    '..ygggggy...', '..yGGGGGy...', '..ygggggy...', '..yGGGGGy...', '..yyyyyyy...', '............'],
+  // BIG BONUS: a sack of scrap
+  bonusP: ['....n..n....', '.....nn.....', '....nNNn....', '...nNNNNn...', '..nNNGNNNn..', '.nNNGGGNNNn.',
+    '.nNNNGNNNNn.', '.nNNGGGNNNn.', '.nNNNNGNNNn.', '.nNNGGGNNNn.', '..nnnnnnnn..', '............'],
+  // EXPLOSIVE ZOMBIES: a bomb with a lit fuse
+  boom: ['.......Y.O..', '........Y...', '.......dY...', '......d.....', '...dddd.....', '..dmmmmd....',
+    '.dmllmmmd...', '.dmlmmmmd...', '.dmmmmmmd...', '.dmmmmmmd...', '..dmmmmd....', '...dddd.....'],
+  // BLAST RADIUS: a burst of fire
+  boomR: ['.....O......', '..O..Y..O...', '...OYYYO....', '..OYwwwYO...', '.OYwwwwwYO..', 'OOYwwwwwYOO.',
+    '.OYwwwwwYO..', '..OYwwwYO...', '...OYYYO....', '..O..Y..O...', '.....O......', '............'],
+  // RAM TIME: a clock and the Ram's chevrons
+  ramtime: ['...dlllld...', '..l......l..', '.l...w....l.', 'l....w.....l', 'l....w.....l', 'l....wwww..l',
+    'l..........l', '.l........l.', '..l......l..', '...dlllld...', '....YO.YO...', '...YO.YO....'],
+  // RAM CHARGE: a battery with a bolt
+  charge: ['....llll....', '..llllllll..', '..l......l..', '..l...Y..l..', '..l..YY..l..', '..lOOYOOOl..',
+    '..lOYYYYOl..', '..lOOOYYOl..', '..lOOOYOOl..', '..lOOOOOOl..', '..llllllll..', '............'],
+  // POWER SHOT: a huge glowing shell
+  power: ['.....ww.....', '....wYYw....', '...wYOOYw...', '...YOOOOY...', '...lsssss...', '...lslllm...',
+    '...lslllm...', '...lslllm...', '...lslllm...', '...ggggGg...', '...yggggy...', '...yyyyyy...'],
+  // STRAFING RUN: the attack jet from above
+  strafe: ['.....ll.....', '.....ss.....', '.....BB.....', '.....ll.....', 'ssssssssssss', 'mllllllllllm',
+    '.....ll.....', '...dmllmd...', '...dmllmd...', '.....ll.....', '..llllllll..', '..m..mm..m..'],
+  // STRAFE DAMAGE: a row of hits
+  strafeD: ['............', '.........O..', '........OYO.', '.........O..', '......O.....', '.....OYO....',
+    '......O.....', '...O........', '..OYO.......', '...O........', 'l...........', 'sl..........'],
+  // WIDE RUN: arrows apart
+  strafeW: ['............', '............', '..O......O..', '.OO......OO.', 'OOOOOOOOOOOO', '.OO......OO.',
+    '..O......O..', '............', 'llllllllllll', '............', '............', '............'],
+  // MORE RUNS: a jet and a pink plus
+  strafeN: ['...l........', '...s........', '...B........', 'sssssss.....', 'mlllllm.....', '...l........',
+    '..lll...RR..', '........RR..', '......RRRRRR', '......RRRRRR', '........RR..', '........RR..'],
+  // BOMB RUN: a falling bomb
+  strafeB: ['....l..l....', '....lmml....', '.....mm.....', '....mllm....', '....mllm....', '....mlmm....',
+    '....mlmm....', '....mmmm....', '.....mm.....', '..O..O...O..', '.OYO.Y..OYO.', '..O.....O...'],
+  // TWIN JETS: two jets side by side
+  twin: ['..l......l..', '..s......s..', '..B......B..', 'sssss..sssss', 'mlllm..mlllm', '..l......l..',
+    '.lll....lll.', '............', '............', '............', '............', '............']
+});
+// SILVER ZOMBIES: the golden zombie's icon in silver
+NODE_ART.silver = NODE_ART.goldz.map((r) => r.replace(/y/g, 'm').replace(/G/g, 'w').replace(/g/g, 's'));
+
+// planes.js - the STRAFING RUN: an attack jet you call in. Press Q (or click its card), then click
+// the map: the jet comes in low across the screen through that point, along the rails (drag before
+// you let go to aim it any way you like). Its big nose gun rakes a line of ground ahead of it: a row
+// of bright hits and blasts that kills the dead in a band, and with BOMB RUN it drops three bombs at
+// the end. G.up.strafe = runs per run (0 = locked), strafeW = half the band's width (px), strafeD =
+// damage a hit, strafeBomb = bombs, twin = a second jet beside it.
+
+// speed = px/s, alt = height (px) as it comes in, dive = px lower while it fires, len = px of
+// ground it strafes, lead = px ahead of the jet its rounds land, step = px between two hits you see
+// (a puff of fire every 3rd, a big blast every 8th), half / dmg = the band and the damage before upgrades, bombR = px
+// a bomb kills round it
+const JETC = { speed: 320, alt: 46, dive: 12, len: 230, lead: 44, step: 4, half: 13, dmg: 3, bombR: 34, N: 32 };
+Object.assign(UP, {
+  strafeW: (l) => JETC.half + 4 * l,    // WIDE RUN: half the band's width (px)
+  strafeD: (l) => JETC.dmg + l          // STRAFE DAMAGE: damage each hit does
+});
+
+// ---------- the jet
+// A twin-engine attack jet seen from right above, its nose up: straight wings with bombs under
+// them, engines on the back of the body, a wide tail with a fin at each end.
+const JET = { n: [], sh: [], icon: null, bomb: null };
+function jetRaw() {
+  return pix(62, 54, (r) => {
+    const L = '#c3cad0', A = '#a1a9b1', B = '#848d96', D = '#636b74', E = '#454b53', K = '#18191c';
+    // bombs under the wings (their noses show in front of the wing)
+    for (const x of [9, 15, 45, 51]) {
+      r(x - 1, 14, 2, 6, '#58603f');
+      r(x - 1, 14, 1, 6, '#737c58');
+      r(x - 1, 13, 2, 1, '#2d3036');
+    }
+    // the wings: a lit leading edge, darker towards the back, flaps, dark tips, the marks near them
+    r(3, 19, 56, 1, L);
+    r(2, 20, 58, 4, A);
+    r(2, 24, 58, 1, B);
+    r(2, 25, 58, 1, D);
+    r(3, 26, 56, 1, E);
+    for (const x of [8, 40]) r(x, 25, 14, 1, E);
+    r(0, 20, 3, 6, D);
+    r(59, 20, 3, 6, D);
+    r(0, 20, 3, 1, B);
+    r(59, 20, 3, 1, B);
+    for (const x of [7, 52]) {
+      r(x, 21, 3, 3, '#2c3a5a');
+      r(x + 1, 22, 1, 1, '#e8e2cc');
+    }
+    // the tail plane and the two fins at its ends
+    r(16, 44, 30, 1, L);
+    r(16, 45, 30, 2, B);
+    r(16, 47, 30, 1, D);
+    for (const x of [14, 45]) {
+      r(x, 40, 3, 13, D);
+      r(x, 40, 1, 13, A);
+      r(x, 40, 3, 1, L);
+      r(x + 1, 52, 1, 1, '#c8432e');
+    }
+    // the body: lit on its left side, a dark nose with the big gun
+    r(28, 4, 6, 48, B);
+    r(28, 4, 1, 48, L);
+    r(29, 4, 2, 48, A);
+    r(33, 4, 1, 48, D);
+    r(29, 1, 4, 3, D);
+    r(29, 1, 1, 3, B);
+    r(30, 0, 2, 2, K);
+    r(30, 52, 2, 2, E);
+    // the canopy, its frame and a glint
+    r(28, 8, 6, 7, '#22384a');
+    r(29, 9, 1, 3, '#c4ecf8');
+    r(30, 9, 1, 1, '#c4ecf8');
+    r(28, 12, 6, 1, D);
+    // the engines on pylons: round pods, a dark intake in front, the exhaust behind
+    for (const x of [19, 36]) {
+      r(x, 29, 7, 11, B);
+      r(x, 29, 1, 11, L);
+      r(x + 1, 29, 2, 11, A);
+      r(x + 6, 29, 1, 11, E);
+      r(x, 29, 7, 1, K);
+      r(x + 1, 30, 5, 1, E);
+      r(x + 2, 30, 3, 1, '#2a2d33');
+      r(x + 1, 40, 5, 1, '#2a2420');
+    }
+    r(26, 32, 2, 2, D);
+    r(34, 32, 2, 2, D);
+  });
+}
+// Build the jet at JETC.N headings (0 = nose up, clockwise), its shadow and its card icon. At startup.
+function bakeJet() {
+  const raw = jetRaw();
+  JET.n.length = JET.sh.length = 0;
+  for (let i = 0; i < JETC.N; i++) {
+    const r = rotA(raw, i / JETC.N * TAU);
+    JET.n.push(selOut(r));
+    JET.sh.push(tint(r, '#000', 1, 'source-in'));
+  }
+  JET.bomb = outline(pix(3, 6, (r) => {
+    r(0, 0, 3, 5, '#565c46');
+    r(0, 0, 1, 5, '#7a8262');
+    r(0, 5, 3, 1, '#2d3036');
+  }), P.out);
+  for (const c of [...JET.n, ...JET.sh, JET.bomb]) atl(c);
+}
+bakeJet();
+
+// ---------- this run's strafing runs
+// STRAF = g: the run it is for, left: runs still to use, arm: waiting for a click on the map, aim:
+// where the press was (a drag aims), jets, bombs, embers = the holes that still glow, card = its card,
+// msg = a short line over the card.
+const STRAF = { g: null, left: 0, arm: false, aim: null, jets: [], bombs: [], embers: [], card: { x: 0, y: 0, w: 96, h: 26, on: false }, msg: null };
+// A new run: it starts with all its runs, nothing in the air.
+function srSync() {
+  if (STRAF.g === G) return;
+  STRAF.g = G;
+  STRAF.left = G.up.strafe || 0;
+  STRAF.arm = false;
+  STRAF.aim = null;
+  STRAF.jets.length = STRAF.bombs.length = STRAF.embers.length = 0;
+  STRAF.msg = null;
+}
+// Q or a click on the card: get ready to pick a spot (again: put it away). True when it is ready.
+function tryStrafe() {
+  srSync();
+  if (!G.up.strafe || G.result || mode !== 'play') return false;
+  if (STRAF.arm) {
+    strafeCancel();
+    return false;
+  }
+  if (STRAF.left <= 0) {
+    STRAF.msg = { t: realT, s: 'NO STRAFING RUNS LEFT THIS RUN.' };
+    SFX.deny();
+    return false;
+  }
+  STRAF.arm = true;
+  HUI.arm = false;
+  SFX.ui();
+  return true;
+}
+function strafeCancel() {
+  if (!STRAF.arm) return false;
+  STRAF.arm = false;
+  STRAF.aim = null;
+  SFX.ui();
+  return true;
+}
+// Left button down at screen (x, y): the card, or the spot when it is ready. True when used here.
+function strafeDown(x, y) {
+  srSync();
+  const C = STRAF.card;
+  if (C.on && inR(x, y, C.x, C.y, C.w, C.h)) {
+    tryStrafe();
+    return true;
+  }
+  if (STRAF.arm && y >= 19) {
+    STRAF.aim = { x, y };
+    return true;
+  }
+  return false;
+}
+// Left button up: the jet is called in through where the press was, along the drag (or the rails).
+function strafeUp(x, y) {
+  const a = STRAF.aim;
+  if (!a) return false;
+  STRAF.aim = null;
+  STRAF.arm = false;
+  const [ux, uy] = strafeDir(a.x, a.y, x, y);
+  callStrafe(G.camX + a.x, G.camY + a.y, ux, uy);
+  return true;
+}
+// The way the jet flies for a press at (ax, ay) let go at (bx, by): the drag, or the train's way.
+function strafeDir(ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, d = Math.hypot(dx, dy);
+  if (d >= 12) return [dx / d, dy / d];
+  const c = G.tr.cars[0];
+  return [c.dx, c.dy];
+}
+// Send the jet (two with TWIN JETS) through world point (px, py) flying along (ux, uy).
+function callStrafe(px, py, ux, uy) {
+  srSync();
+  if (STRAF.left <= 0 && !G.demo) return false;
+  if (!G.demo) STRAF.left--;
+  // it comes in from just off the screen, and flies on until it is off the other side
+  const half = G.up.strafeW || JETC.half, offs = G.up.twin ? [-(half + 2), half + 2] : [0];
+  const back = Math.max(jetEdge(px, py, -ux, -uy) + 40, JETC.len / 2 + JETC.lead + 20), on = jetEdge(px, py, ux, uy) + 60;
+  offs.forEach((o, i) => STRAF.jets.push({ px, py, ux, uy, o, s: -back - i * 26, end: Math.max(on, JETC.len / 2 + 40),
+    front: -Infinity, half, dmg: G.up.strafeD || JETC.dmg, bomb: !!G.up.strafeBomb, dropped: false, fired: false, step: 0, blast: 0,
+    smoke: 0, alt: JETC.alt }));
+  if (!G.demo) STRAF.msg = { t: realT, s: G.up.twin ? 'TWO JETS INBOUND!' : 'JET INBOUND!' };
+  return true;
+}
+
+// px from world point (x, y) along (ux, uy) to the edge of the view (the jet's sprite is half off it there)
+function jetEdge(x, y, ux, uy) {
+  let t = 2000;
+  const x0 = G.camX - 30, y0 = G.camY - 30, x1 = G.camX + W + 30, y1 = G.camY + H + 30;
+  if (ux > 1e-6) t = Math.min(t, (x1 - x) / ux); else if (ux < -1e-6) t = Math.min(t, (x0 - x) / ux);
+  if (uy > 1e-6) t = Math.min(t, (y1 - y + 60) / uy); else if (uy < -1e-6) t = Math.min(t, (y0 - y - 60) / uy);
+  return Math.max(0, t);
+}
+
+// ---------- each step
+function updatePlanes(dt) {
+  srSync();
+  // the demo behind the title shows it off now and then, through a crowd near the train
+  if (G.demo && mode === 'title') {
+    STRAF.demoT = (STRAF.demoT ?? 6) - dt;
+    if (STRAF.demoT <= 0 && !STRAF.jets.length) {
+      STRAF.demoT = 16;
+      // the thickest crowd on the right of the screen (the title box is on the left)
+      let z = null, best = 0;
+      for (const q of G.zombies) {
+        if (q.dead || offView(q.x, q.y, -40) || q.x - G.camX < W * 0.6) continue;
+        let n = 0;
+        queryEll(q.x, q.y, 40, () => n++);
+        if (n >= best) [z, best] = [q, n];
+      }
+      if (z) {
+        const c = G.tr.cars[0];
+        callStrafe(z.x, z.y, c.dx, c.dy);
+      }
+    }
+  }
+  for (let i = STRAF.jets.length - 1; i >= 0; i--) {
+    const j = STRAF.jets[i];
+    j.s += JETC.speed * dt;
+    // lower while it fires
+    const mid = Math.abs(j.s + JETC.lead - 0) / (JETC.len * 0.75);
+    j.alt = JETC.alt - JETC.dive * Math.max(0, 1 - mid * mid);
+    strafeFire(j);
+    if (j.bomb && !j.dropped && j.s + JETC.lead >= JETC.len / 2) dropBombs(j);
+    // a thin trail from the engines
+    j.smoke -= dt;
+    if (j.smoke <= 0) {
+      j.smoke = 0.05;
+      const [gx, gy] = jetGround(j);
+      for (const sx of [-8, 8]) part({ x: gx - j.ux * 10 - j.uy * sx, y: gy - j.uy * 10 + j.ux * sx, z: j.alt + 2, vx: 0, vy: 0, vz: 0, g: 0,
+        life: 0.5, max: 0.5, s: 1, c: 'rgba(210,214,220,0.35)', grow: 3, drag: 1, smoke: true });
+    }
+    if (j.s > j.end) STRAF.jets.splice(i, 1);
+  }
+  for (let i = STRAF.bombs.length - 1; i >= 0; i--) {
+    const b = STRAF.bombs[i];
+    b.t += dt;
+    if (b.t >= b.T) {
+      bombHit(b.x1, b.y1);
+      STRAF.bombs.splice(i, 1);
+    }
+  }
+  for (const j of STRAF.jets) if (j.last) j.last.t += dt;
+  // the holes cool down (newest last, so the old ones go from the front)
+  for (const e of STRAF.embers) e.t += dt;
+  let n = 0;
+  while (n < STRAF.embers.length && STRAF.embers[n].t > 1.6) n++;
+  if (n) STRAF.embers.splice(0, n);
+}
+// Where jet j is over the ground.
+function jetGround(j) {
+  return [j.px + j.ux * j.s - j.uy * j.o, j.py + j.uy * j.s + j.ux * j.o];
+}
+// The gun: its rounds land JETC.lead px ahead of the jet. Every zombie in the band the hits swept over
+// since the last step takes the hit; a hit flashes every JETC.step px, a blast every JETC.blast px.
+function strafeFire(j) {
+  const L = JETC.len / 2, a = Math.min(j.s + JETC.lead, L), a0 = Math.max(j.front, -L);
+  j.front = Math.max(j.front, j.s + JETC.lead);
+  if (a <= a0 || a < -L) return;
+  if (!j.fired) {
+    j.fired = true;
+    if (!G.demo) addShake(0.3);
+  }
+  // the line's points: c = middle of what was swept, (ux, uy) along, (nx, ny) across
+  const ux = j.ux, uy = j.uy, nx = -uy, ny = ux;
+  const ox = j.px + nx * j.o, oy = j.py + ny * j.o, cm = (a0 + a) / 2;
+  const cx = ox + ux * cm, cy = oy + uy * cm, R = ((a - a0) / 2 + j.half + 4) / FORE;
+  const hit = [];
+  queryEll(cx, cy, R, (z) => {
+    const dx = z.x - ox, dy = z.y - oy, t = dx * ux + dy * uy, u = dx * nx + dy * ny;
+    if (t >= a0 && t < a && Math.abs(u) <= j.half + (z.big ? 2 : 0)) hit.push(z);
+  });
+  for (const z of hit) {
+    const ix = ox + ux * ((z.x - ox) * ux + (z.y - oy) * uy), iy = oy + uy * ((z.x - ox) * ux + (z.y - oy) * uy);
+    if (z.hp <= j.dmg) kill(z, 'he', ix, iy, rnd(8, 20));
+    else {
+      JUICE.from = [ix, iy];
+      hitZombie(z, j.dmg, 'strafe');
+    }
+  }
+  // what you see: hits scattered across the band, puffs of fire and bigger blasts along it
+  for (let s = Math.ceil(a0 / JETC.step) * JETC.step; s < a; s += JETC.step) {
+    const u = rnd(-j.half, j.half), x = ox + ux * s + nx * u, y = oy + uy * s + ny * u;
+    strafeHit(j, x, y);
+    const k = Math.round(s / JETC.step);
+    if (k % 3 === 0) {
+      const v = rnd(-0.7, 0.7) * j.half;
+      const bx = ox + ux * s + nx * v, by = oy + uy * s + ny * v;
+      addBoom(bx, by, rnd(7, 9.5), 4, 0.6, 5);
+      part({ x: bx, y: by, z: 3, vx: rnd(-6, 6), vy: rnd(-5, 3), vz: rnd(6, 14), g: 0, life: rnd(1.4, 2.2), max: 2.2, s: 3,
+        c: pick(['rgba(70,64,58,0.5)', 'rgba(96,88,78,0.45)', 'rgba(52,48,44,0.55)']), grow: 6, drag: 1.4, smoke: true });
+    }
+    if (k % 8 === 0) strafeBlast(ox + ux * s + nx * rnd(-0.4, 0.4) * j.half, oy + uy * s + ny * rnd(-0.4, 0.4) * j.half);
+  }
+}
+// A big blast on the line: a fat fireball, a flash of light, a white ring, a burnt crater.
+function strafeBlast(x, y) {
+  addBoom(x, y - 1, rnd(13, 17), 7, 0.8, 8);
+  lights.push({ x, y, z: 4, r: rnd(44, 56), c: '#ffb060', life: 0.3, max: 0.3, a: 0.7 });
+  rings.push({ x, y, r0: 4, r1: 26, t: 0, T: 0.22, c: '#fff1c2', w: 2 });
+  for (let i = 0; i < 6; i++) {
+    const a = rnd(TAU), v = rnd(40, 90);
+    part({ x, y, z: 3, vx: Math.cos(a) * v, vy: Math.sin(a) * v * FORE, vz: rnd(30, 80), g: 200, life: rnd(0.3, 0.5), max: 0.5, s: 1,
+      c: pick(['#fff6e0', '#ffd27a', '#ff9a3a']), add: true, drag: 1.5 });
+  }
+  stampScorch(x, y, 1);
+  if (!G.demo) {
+    addShake(0.08);
+    if (Math.random() < 0.5) SFX.boom();
+  }
+}
+// One round landing at (x, y): a white-hot flash, sparks, dirt thrown up, a hole that glows for a
+// moment, a tracer from the jet.
+function strafeHit(j, x, y) {
+  j.n = (j.n || 0) + 1;
+  if (j.n & 1) lights.push({ x, y, z: 2, r: rnd(14, 20), c: '#ffd27a', life: 0.14, max: 0.14, a: 0.85 });
+  part({ x, y, z: 2, vx: rnd(-40, 40) + j.ux * 40, vy: rnd(-30, 30) + j.uy * 40, vz: rnd(20, 60), g: 160,
+    life: rnd(0.15, 0.3), max: 0.3, s: 1, c: pick(['#fff6e0', '#ffd27a', '#ff9a3a']), add: true, drag: 2 });
+  if (Math.random() < 0.5) part({ x, y, z: 1, vx: rnd(-10, 10), vy: rnd(-8, 4), vz: rnd(10, 25), g: 0, life: rnd(0.6, 1.1), max: 1.1, s: 2,
+    c: pick(['rgba(150,128,96,0.55)', 'rgba(124,106,80,0.55)', 'rgba(96,82,62,0.6)']), grow: 5, drag: 2.5, smoke: true });
+  part({ x, y, z: 1, vx: rnd(-25, 25), vy: rnd(-20, 20), vz: rnd(30, 70), g: 240, life: 1, max: 1, s: 1,
+    c: pick(['#3a2e22', '#4f3f2d', '#2a221a']), land: 1 });
+  stampScorch(x, y, 0);
+  if (j.n & 1 && STRAF.embers.length < 200) STRAF.embers.push({ x: Math.round(x), y: Math.round(y), t: 0 });
+  j.last = { x, y, t: 0 };
+  if (!G.demo && Math.random() < 0.3) SFX.mg();
+}
+// BOMB RUN: three bombs leave the jet; they fly on ahead and fall.
+function dropBombs(j) {
+  j.dropped = true;
+  const [gx, gy] = jetGround(j);
+  for (let k = 0; k < 3; k++) {
+    const d = 34 + k * 24, sd = (k - 1) * 6;
+    STRAF.bombs.push({ x0: gx, y0: gy, x1: gx + j.ux * d - j.uy * sd, y1: gy + j.uy * d + j.ux * sd, z0: j.alt, t: -k * 0.08, T: 0.55, a: Math.atan2(j.ux, -j.uy) });
+  }
+}
+// A bomb lands: the big blast, and every zombie near it dies (brutes too).
+function bombHit(x, y) {
+  juiceBoom(x, y, false);
+  addBoom(x, y - 2, 24, 8, 0.9, 11);
+  queryEll(x, y, JETC.bombR, (z, d) => kill(z, 'he', x, y, d));
+  if (!G.demo) {
+    addShake(0.45);
+    hitStop(0.04, 0.3);
+    SFX.boom();
+  }
+}
+
+// ---------- drawing (world layer)
+// The shadows on the ground (under everything standing), south-east of each jet by its height.
+function drawPlaneShadows() {
+  if (STRAF.g !== G) return;
+  drawEmbers();
+  ctx.globalAlpha = thermal ? 0.2 : 0.3;
+  for (const j of STRAF.jets) {
+    const [gx, gy] = jetGround(j), i = jetIdx(j), sh = JET.sh[i];
+    blit(sh, Math.round(gx + j.alt * SUNX - sh.width / 2), Math.round(gy + j.alt * SUNY - sh.height / 2));
+  }
+  for (const b of STRAF.bombs) {
+    if (b.t < 0) continue;
+    const u = b.t / b.T, x = lerp(b.x0, b.x1, u), y = lerp(b.y0, b.y1, u);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(Math.round(x - 1), Math.round(y), 3, 2);
+  }
+  ctx.globalAlpha = 1;
+}
+// The holes the rounds dug glow white, then orange, then dull red as they cool.
+function drawEmbers() {
+  if (!STRAF.embers.length) return;
+  ctx.globalCompositeOperation = 'lighter';
+  for (const e of STRAF.embers) {
+    const u = e.t / 1.6;
+    ctx.globalAlpha = (1 - u) * 0.9;
+    ctx.fillStyle = u < 0.12 ? '#fff6e0' : u < 0.35 ? '#ffb347' : u < 0.65 ? '#e2552f' : '#9a3320';
+    ctx.fillRect(e.x, e.y, u < 0.35 ? 2 : 1, u < 0.35 ? 2 : 1);
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+const jetIdx = (j) => mod(Math.round(Math.atan2(j.ux, -j.uy) / TAU * JETC.N), JETC.N);
+// The jets in the air (over the helis), their gun's flash and tracers, and the falling bombs.
+function drawPlanes() {
+  if (STRAF.g !== G) return;
+  if (!STRAF.jets.length && !STRAF.bombs.length) return;
+  for (const b of STRAF.bombs) {
+    if (b.t < 0) continue;
+    const u = b.t / b.T, x = lerp(b.x0, b.x1, u), y = lerp(b.y0, b.y1, u), zz = b.z0 * (1 - u * u);
+    blit(JET.bomb, Math.round(x - 2), Math.round(y - zz - 3));
+  }
+  for (const j of STRAF.jets) {
+    const [gx, gy] = jetGround(j), spr = JET.n[jetIdx(j)];
+    blit(spr, Math.round(gx - spr.width / 2), Math.round(gy - j.alt - spr.height / 2));
+  }
+  // the gun: a big flickering flash at the nose, tracers down to where the rounds land
+  ctx.globalCompositeOperation = 'lighter';
+  for (const j of STRAF.jets) {
+    const firing = j.s + JETC.lead > -JETC.len / 2 && j.s + JETC.lead < JETC.len / 2;
+    if (!firing) continue;
+    const [gx, gy] = jetGround(j), nx = gx + j.ux * 28, ny = gy + j.uy * 28 - j.alt;
+    const f = 0.7 + 0.3 * Math.random();
+    light(nx, ny, 18 * f, '#ffb060', 0.9);
+    light(nx + j.ux * 6, ny + j.uy * 6, 9 * f, '#fff1c2', 1);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(Math.round(nx) - 1, Math.round(ny) - 1, 3, 3);
+    // the flash's cone, pointing ahead
+    ctx.fillStyle = '#ffe2a0';
+    for (let k = 2; k < 9; k++) ctx.fillRect(Math.round(nx + j.ux * k + rnd(-1, 1)), Math.round(ny + j.uy * k + rnd(-1, 1)), 2, 2);
+  }
+  // (one tracer a jet: its newest hit)
+  for (const j of STRAF.jets) {
+    const h = j.last;
+    if (!h || h.t > 0.06) continue;
+    const [gx, gy] = jetGround(j);
+    ctx.globalAlpha = 0.8 * (1 - h.t / 0.06);
+    pl(ctx, Math.round(gx + j.ux * 28), Math.round(gy + j.uy * 28 - j.alt), Math.round(h.x), Math.round(h.y), '#ffd27a');
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// ---------- the UI (screen px)
+// The STRAFE card, after the Ram's (rx, ry = where that one went; y = the cards' row): Q in gold while
+// a run is left, CLICK! while it waits for the map, USED when none are left. The bar = runs left.
+function drawStrafeCard(rx, ry, y) {
+  srSync();
+  const C = STRAF.card;
+  C.on = !!G.up.strafe && !G.demo;
+  if (!C.on) return;
+  let x = RAMCARD.on ? rx + RAMCARD.w + 4 : rx, cy = ry;
+  if (x + C.w > W - 82) [x, cy] = ry === y ? [4, y - 30] : [x, ry];
+  C.x = x;
+  C.y = cy;
+  const n = G.up.strafe, flying = STRAF.jets.length > 0;
+  const tag = STRAF.arm ? 'CLICK!' : flying ? 'GO!' : STRAF.left ? 'Q' + (STRAF.left > 1 ? ' ×' + STRAF.left : '') : 'USED';
+  const tc = STRAF.arm ? (Math.floor(realT * 8) % 2 ? '#ffe39a' : U.amber) : flying ? U.amber : STRAF.left ? U.gold : U.faint;
+  card(x, cy, C.w, C.h, NICON.strafe, 'STRAFE', tag, tc, STRAF.left / n, STRAF.left ? '#ff9a3a' : '#3a3e48', STRAF.left || flying ? U.ink : U.faint);
+  if (STRAF.arm) frame(x - 1, cy - 1, C.w + 2, C.h + 2, Math.floor(realT * 8) % 2 ? '#ffd36a' : '#b8862f');
+  else if (STRAF.left && !flying) frame(x, cy, C.w, C.h, '#b8862f');
+  if (mode === 'play' && !paused && inR(M.x, M.y, x, cy, C.w, C.h)) cursor = 'pointer';
+  const m = STRAF.msg, mt = m ? realT - m.t : 9;
+  if (mt < 2) {
+    ctx.globalAlpha = clamp((2 - mt) / 0.4, 0, 1);
+    text(m.s, clamp(x, 4, W - tw(m.s) - 4), cy - 10, U.amber);
+    ctx.globalAlpha = 1;
+  }
+  if (STRAF.arm && mode === 'play' && !paused) drawStrafeAim();
+}
+// While it waits for the map: the band the jet will strafe through the mouse (or from the press
+// along the drag), an arrow for its way, and what to do.
+function drawStrafeAim() {
+  if (!M.inside || M.y < 19 || inR(M.x, M.y, STRAF.card.x, STRAF.card.y, STRAF.card.w, STRAF.card.h)) return;
+  cursor = 'crosshair';
+  const a = STRAF.aim || { x: M.x, y: M.y }, [ux, uy] = STRAF.aim ? strafeDir(a.x, a.y, M.x, M.y) : strafeDir(a.x, a.y, a.x, a.y);
+  const nx = -uy, ny = ux, L = JETC.len / 2, hw = (G.up.strafeW || JETC.half) * (G.up.twin ? 2 : 1) + (G.up.twin ? 2 : 0);
+  const on = Math.floor(realT * 6) % 2 ? 0.9 : 0.6;
+  ctx.globalAlpha = 0.14;
+  ctx.fillStyle = '#ff9a3a';
+  ctx.beginPath();
+  ctx.moveTo(a.x - ux * L + nx * hw, a.y - uy * L + ny * hw);
+  ctx.lineTo(a.x + ux * L + nx * hw, a.y + uy * L + ny * hw);
+  ctx.lineTo(a.x + ux * L - nx * hw, a.y + uy * L - ny * hw);
+  ctx.lineTo(a.x - ux * L - nx * hw, a.y - uy * L - ny * hw);
+  ctx.fill();
+  // the edges as dashes of pixels, and the arrow
+  ctx.globalAlpha = on;
+  ctx.fillStyle = '#ffb060';
+  for (let s = -L; s <= L; s += 4) for (const sd of [-1, 1]) ctx.fillRect(Math.round(a.x + ux * s + nx * hw * sd), Math.round(a.y + uy * s + ny * hw * sd), 2, 1);
+  for (let k = 0; k < 7; k++) {
+    const s = L + 2 - k, w = k * 0.8;
+    ctx.fillRect(Math.round(a.x + ux * s - nx * w), Math.round(a.y + uy * s - ny * w), Math.max(1, Math.round(w * 2)), 1);
+  }
+  ctx.globalAlpha = 1;
+  const t = STRAF.aim ? 'LET GO: STRAFE' : 'CLICK: STRAFE HERE.  DRAG: AIM IT.', w = tw(t);
+  text(t, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, H - 44)), '#ffb060', { align: 'center' });
 }
 
 // stationtab.js - the STATION tab of the Depot: a station's 14 x 9 grid drawn with the real sprites
@@ -9263,10 +10012,13 @@ cv.addEventListener('pointerdown', (e) => {
   M.inside = true;
   if (e.button === 2) {
     if (mode === 'depot') M.rpressed = true;
+    if (mode === 'play' && !paused && strafeCancel()) return;
     if (mode === 'play' && !paused && p.y >= 19) heliRight(p.x, p.y);
     return;
   }
   if (e.button !== 0) return;
+  // the Strafing Run's card, and its aim on the map (planes.js)
+  if (mode === 'play' && !paused && strafeDown(p.x, p.y)) return;
   // a click on the Turbo Ram's card rams (it does not fire the 25mm)
   if (mode === 'play' && !paused && RAMCARD.on && inR(p.x, p.y, RAMCARD.x, RAMCARD.y, RAMCARD.w, RAMCARD.h)) {
     tryRam();
@@ -9298,6 +10050,7 @@ cv.addEventListener('pointerup', (e) => {
     M.down = false;
     M.released = true;
   }
+  if (mode === 'play' && !paused && strafeUp(p.x, p.y)) return;
   if (mode === 'play' && !paused) heliUp(p.x, p.y);
   else HUI.box = null;
 });
@@ -9309,6 +10062,11 @@ cv.addEventListener('contextmenu', (e) => e.preventDefault());
 // the wheel zooms in and out one step (bigger or smaller pixels)
 cv.addEventListener('wheel', (e) => {
   e.preventDefault();
+  // (over the skill tree it zooms the tree)
+  if (treeCovers()) {
+    treeWheel(e.deltaY);
+    return;
+  }
   const z = clamp(zoomStep + (e.deltaY < 0 ? 1 : -1), -1, 1);
   if (z !== zoomStep) {
     zoomStep = z;
@@ -9341,6 +10099,7 @@ addEventListener('keydown', (e) => {
     if (G.prompt && REDUCED && k !== 'e') G.prompt = null;
     if (k === ' ') tryHE();
     else if (k === 'e') { if (!paused) tryRam(); }
+    else if (k === 'q') { if (!paused) tryStrafe(); }
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
     else if (!paused) heliKey(k);
   } else if (mode === 'title') {
@@ -9429,7 +10188,7 @@ function oneFrame(dt) {
     }
   }
   // fixed steps of STEP seconds, at most 8 a frame
-  if (!(mode === 'play' && paused) && !hold) {
+  if (!(mode === 'play' && paused) && !hold && !treeCovers()) {
     acc += dt * ts;
     let n = 0;
     try {
@@ -10481,7 +11240,7 @@ function tutHint() {
     }
     if (SAVE.seen.h_starAt != null) {
       if (stars > SAVE.seen.h_starAt) see('h_star');
-      else return ['* NODES ARE BIG UNLOCKS.', U.gold];
+      else return ['ORANGE NODES ARE BIG UNLOCKS.', U.gold];
     }
   }
   if (lv('ram') && !seen('h_ram')) {
@@ -10573,6 +11332,7 @@ function drawPause() {
   const L = ['YOUR HELIS FIGHT BY THEMSELVES.', 'CLICK OR DRAG: SELECT.  A: ALL.  1 2 3: ONE.', 'RIGHT CLICK: ATTACK, MOVE OR ESCORT.'];
   if (G.up.he) L.push('SPACE: 105MM AT THE MOUSE.');
   if (G.up.ram) L.push('E: TURBO RAM.');
+  if (G.up.strafe) L.push('Q: STRAFING RUN, THEN CLICK THE MAP.');
   L.push('T: CAMERA.  M: SOUND.  WHEEL: ZOOM.');
   const w = 280, h = 112 + L.length * 10, x = Math.round(W / 2 - w / 2), y = Math.max(22, Math.round((H + 19) / 2 - h / 2)), cx = x + w / 2;
   Object.assign(PAUSE, { x, y, w, h });
@@ -10633,7 +11393,7 @@ function tutSumLines() {
   return TUT.sum;
 }
 function tutSumOpen() {
-  TUT.sum = TUT.heldFirst && see('s_held') ? [['NEW: SURVIVORS. THEY BUY THE BIGGEST * NODES.', U.green],
+  TUT.sum = TUT.heldFirst && see('s_held') ? [['NEW: SURVIVORS. THEY BUY THE BIGGEST UNLOCKS.', U.green],
     [STATIONS[0].name + ' IS YOURS. SEE THE STATION TAB.', U.green]] : [];
 }
 
@@ -10824,7 +11584,8 @@ function cannonReach(x, y, ux, uy) {
 function onLine(z, gx, gy, ux, uy, L) {
   const dx = z.x - gx, dy = z.y - 4 - gy, t = dx * ux + dy * uy;
   if (t < 3 || t > L) return -1;
-  return Math.abs(dx * uy - dy * ux) <= CFG.gun.hw + (z.big ? 3 : 0) ? t : -1;
+  // (POWER SHOT: every 3rd shot's line is 3 times as wide)
+  return Math.abs(dx * uy - dy * ux) <= CFG.gun.hw * (G.gun.wide ? 3 : 1) + (z.big ? 3 : 0) ? t : -1;
 }
 // The best line: through each one of the dead on the train (if any are), else through each one on the
 // screen; the one that kills the most wins (the nearer target when they tie).
@@ -10915,6 +11676,7 @@ function cannonFire(gx, gy, a) {
   g.ang = a;
   g.ready = false;
   g.cd = G.up.gun;
+  const big = g.wide = !!G.up.power && (g.shots + 1) % 3 === 0;
   g.shots++;
   g.recT = 0;
   g.joltT = 0;
@@ -10949,8 +11711,9 @@ function cannonFire(gx, gy, a) {
     stampScorch(z.x, z.y, z.big ? 2 : 1);
   }
   g.last = hit.length;
+  g.wide = !!G.up.power && (g.shots + 1) % 3 === 0;
   // the line: a beam that fades, the ground lit, a row of small blasts and dust, a burnt groove
-  g.beams.push({ x0: mx, y0: my, ux, uy, L, t: 0, seed: rnd(1000) });
+  g.beams.push({ x0: mx, y0: my, ux, uy, L, t: 0, seed: rnd(1000), big });
   for (let s = 18; s < L; s += rnd(16, 26)) {
     const x = gx + ux * s + rnd(-2, 2), y = gy + uy * s + rnd(-2, 2), dl = s / 1800;
     addBoom(x, y, rnd(4, 6.5), 4, 0.35, 3, dl);
@@ -10965,6 +11728,7 @@ function cannonFire(gx, gy, a) {
     if (s % 3 < 1) lights.push({ x, y, z: 2, r: rnd(14, 20), c: '#ffb060', life: 0.3, max: 0.3, a: 0.55 });
   }
   cannonScorch(gx, gy, ux, uy, L);
+  if (big) powerShotFx(gx, gy, mx, my, ux, uy, L, demo);
   // the muzzle: a fireball, side blasts out of the brake, a smoke ring, a shock ring, a flash of light
   addBoom(mx, my + 1, 12, 7, 0.32, 5.5);
   lights.push({ x: mx, y: my, z: CB_H, r: 46, c: '#ffd27a', life: 0.16, max: 0.16, a: 1 });
@@ -10996,6 +11760,16 @@ function cannonFire(gx, gy, a) {
     kick(-ux * 3, -uy * 3);
     SFX.cannon();
     if (hit.length > 2) SFX.boom();
+  }
+}
+// POWER SHOT: a second row of blasts on each side of the line, a white flash, a bigger kick.
+function powerShotFx(gx, gy, mx, my, ux, uy, L, demo) {
+  for (let s = 24; s < L; s += rnd(22, 34)) for (const sd of [-1, 1]) addBoom(gx + ux * s - uy * sd * 10, gy + uy * s + ux * sd * 10, rnd(6, 9), 4, 0.4, 4, s / 1800);
+  rings.push({ x: mx, y: my, r0: 6, r1: 60, t: 0, T: 0.35, c: '#ffd0f0', w: 2 });
+  JUICE.flash = Math.max(JUICE.flash, 0.08);
+  if (!demo) {
+    addShake(0.5);
+    floatText(mx, my - 14, 'POWER SHOT!', '#ff70d4');
   }
 }
 // The groove the shot burns into the ground: a black core, earth thrown up on both sides, and scorch
@@ -11090,7 +11864,7 @@ function drawBeam(b) {
   }
   if (t > 0.3) return;
   // the beam: its start at the muzzle (CB_H up), its end at chest height
-  const v = t / 0.3, w = Math.round(3 * Math.pow(1 - v, 1.5)), sx = x0, sy = y0 - CB_H, fx = ex, fy = ey - 5;
+  const v = t / 0.3, w = Math.round((b.big ? 7 : 3) * Math.pow(1 - v, 1.5)), sx = x0, sy = y0 - CB_H, fx = ex, fy = ey - 5;
   const steep = Math.abs(fy - sy) > Math.abs(fx - sx);
   for (let o = -w - 1; o <= w + 1; o++) {
     const ao = Math.abs(o), col = ao === 0 ? '#fff6e0' : ao <= w - 1 ? '#ffe2a0' : ao <= w ? '#ffb347' : '#e2552f';
@@ -11209,6 +11983,51 @@ Object.assign(window.__sr, {
     return out;
   }
 });
+
+// test_t.js - test calls for the skill tree and the Strafing Run (tree.js, planes.js).
+Object.assign(window.__sr, {
+  // hoverNode(id) / clickNode(id): as in main.js, but the view first moves so the node is on the panel
+  hoverNode: (id) => {
+    treeFocus(id);
+    testHover = NODE[id] ? id : null;
+    const p = nodeXY(id);
+    if (p) {
+      M.x = p.x;
+      M.y = p.y;
+      M.inside = true;
+    }
+    return p;
+  },
+  clickNode: (id) => {
+    treeFocus(id);
+    const p = nodeXY(id);
+    if (p) window.__sr.click(p.x, p.y);
+    return p;
+  },
+  // treeCam(x, y, z): put the view on cell (x, y) at zoom z (at once); treeCam() = the view now
+  treeCam: (x, y, z) => {
+    if (x != null) Object.assign(TREE.cam, { x, y, z: z || TREE.cam.z });
+    if (z) TREE.zt = z;
+    TREE.anchor = TREE.goTo = null;
+    return Object.assign({}, TREE.cam);
+  },
+  treeZoom: (d) => treeZoom(d),
+  // strafe(sx, sy, ux, uy): call the jet through screen pixel (sx, sy) (along the rails without a
+  // way); strafeState() = runs left and what is in the air
+  strafe: (sx, sy, ux, uy) => {
+    srSync();
+    const [a, b] = ux != null ? [ux, uy] : strafeDir(sx, sy, sx, sy), l = Math.hypot(a, b) || 1;
+    return callStrafe(G.camX + sx, G.camY + sy, a / l, b / l);
+  },
+  strafeState: () => (srSync(), { left: STRAF.left, arm: STRAF.arm, jets: STRAF.jets.length, bombs: STRAF.bombs.length, up: G.up.strafe }),
+  treeNodes: () => NODES.map((n) => ({ id: n.id, lv: lv(n.id), max: maxLv(n), st: nodeState(n), cost: n.cost, cur: n.cur || 'scrap' }))
+});
+// fx() = how many effects are alive; fxDrop(name) empties one list (tests: what a frame costs)
+Object.assign(window.__sr, {
+  fx: () => ({ parts: parts.length, lights: lights.length, booms: booms.length, rings: rings.length, embers: STRAF.embers.length, texts: texts.length }),
+  fxDrop: (k) => { ({ parts, lights, booms, rings, embers: STRAF.embers })[k].length = 0; }
+});
+Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assign({}, M), tab: depotTab, mode }) });
 
 })();
 </script>

@@ -55,7 +55,7 @@ const CFG = {
   // multiplied (COOLING), 25mm rounds per second (FAST FEED), 25mm damage (HEAVY ROUNDS), 105mm
   // reload seconds taken off (FAST RELOAD), heli px/s (FAST ROTORS), px of pickup reach
   // (MAGNET), share of kill scrap (SCAVENGER), rounds per second (GUN SPEED, NEST SPEED)
-  up: { armor: 20, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, rotor: 25, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
+  up: { armor: 10, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, rotor: 25, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 1, speed: [11, 16], value: 1, dps: 0.5 },                // walker
@@ -113,7 +113,8 @@ const UP = {
 // how many (1, and WINGMAN and EXTRA HELI add one each).
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
-  return {
+  // (tree.js adds the newer nodes' numbers: treeUp)
+  return treeUp(L, {
     hp: UP.hp(L('armor')), rate: UP.rate(L('feed')), heat: UP.heat(L('cool'), L('feed')), dmg: UP.dmg(L('heavy')),
     he: demo || L('he') > 0, reload: UP.reload(L('reload')), fly: UP.fly(L('radio')), pickup: UP.pickup(L('magnet')),
     helis: demo ? 2 : 1 + L('wingman') + L('extra'),
@@ -122,7 +123,7 @@ function runUp(demo) {
     // the first ring (skills.js): chain jumps, the cow catcher, 1 golden zombie in this many (0 = none),
     // and the armor level (its plates show on the engine)
     chain: UP.chain(L('chain')), cow: L('cow') > 0, gold: UP.gold(L('goldz')), armor: L('armor')
-  };
+  });
 }
 // The train's full health.
 function maxHP() {
@@ -237,6 +238,7 @@ function endGame() {
   // where the run ended (the train may roll on a little after it is lost; that does not count)
   const k = G.maxKm;
   refillHouses();
+  payBonus();
   bankRun();
   G.sum = {
     result: G.result, km: km2(k), ride: km2(G.ride / CFG.line.km), kills: G.kills, pay: Object.assign({}, G.pay),
@@ -917,7 +919,9 @@ function ramState() {
   return r.left > 0 ? 'charge' : 'ready';
 }
 // 0..1: how full the Ram is
-const ramCharge = () => 1 - G.ram.left / CFG.ram.charge;
+const ramCharge = () => 1 - G.ram.left / ramFill();
+// kills to fill the Ram (RAM CHARGE takes some off)
+const ramFill = () => CFG.ram.charge - (G.up.ramCharge || 0);
 // true while the train brakes for a station or stands at one, or the next one is less than d px ahead
 function nearStop(d) {
   const st = G.station;
@@ -956,9 +960,9 @@ function tryRam(bot) {
 }
 function ramStart(taste) {
   const r = G.ram, tr = G.tr, c = tr.cars[0];
-  Object.assign(r, { on: true, t: 0, taste: !!taste, dur: taste ? CFG.ram.tasteDur : CFG.ram.dur, kills: 0, pay: 0, hissed: false, card: true,
+  Object.assign(r, { on: true, t: 0, taste: !!taste, dur: taste ? CFG.ram.tasteDur : CFG.ram.dur + (G.up.ramTime || 0), kills: 0, pay: 0, hissed: false, card: true,
     pop: 0, popT: -9 });
-  r.left = CFG.ram.charge;
+  r.left = ramFill();
   r.uses++;
   G.prompt = null;
   // the dead holding the engine's nose die at once
@@ -1518,6 +1522,7 @@ function step(dt) {
   updateBodies(dt);
   updateFireSpots(dt);
   updateSkills(dt);
+  updatePlanes(dt);
   if (!G.demo) updateLoot(dt);
   updateJuice(dt);
   updateScenery(dt);

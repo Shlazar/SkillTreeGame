@@ -100,6 +100,7 @@ function setTab(t) {
 // back to the title. (On the Station tab, 1-3 pick a tower and ESC first drops it.)
 function depotKey(k) {
   if (depotTab === 'station' && stationKey(k)) return;
+  if (depotTab === 'tree' && treeKey(k)) return;
   if (k === 'Tab') {
     setTab(depotTab === 'tree' ? 'station' : 'tree');
     SFX.ui();

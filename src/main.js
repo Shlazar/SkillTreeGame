@@ -30,10 +30,13 @@ cv.addEventListener('pointerdown', (e) => {
   M.inside = true;
   if (e.button === 2) {
     if (mode === 'depot') M.rpressed = true;
+    if (mode === 'play' && !paused && strafeCancel()) return;
     if (mode === 'play' && !paused && p.y >= 19) heliRight(p.x, p.y);
     return;
   }
   if (e.button !== 0) return;
+  // the Strafing Run's card, and its aim on the map (planes.js)
+  if (mode === 'play' && !paused && strafeDown(p.x, p.y)) return;
   // a click on the Turbo Ram's card rams (it does not fire the 25mm)
   if (mode === 'play' && !paused && RAMCARD.on && inR(p.x, p.y, RAMCARD.x, RAMCARD.y, RAMCARD.w, RAMCARD.h)) {
     tryRam();
@@ -65,6 +68,7 @@ cv.addEventListener('pointerup', (e) => {
     M.down = false;
     M.released = true;
   }
+  if (mode === 'play' && !paused && strafeUp(p.x, p.y)) return;
   if (mode === 'play' && !paused) heliUp(p.x, p.y);
   else HUI.box = null;
 });
@@ -76,6 +80,11 @@ cv.addEventListener('contextmenu', (e) => e.preventDefault());
 // the wheel zooms in and out one step (bigger or smaller pixels)
 cv.addEventListener('wheel', (e) => {
   e.preventDefault();
+  // (over the skill tree it zooms the tree)
+  if (treeCovers()) {
+    treeWheel(e.deltaY);
+    return;
+  }
   const z = clamp(zoomStep + (e.deltaY < 0 ? 1 : -1), -1, 1);
   if (z !== zoomStep) {
     zoomStep = z;
@@ -108,6 +117,7 @@ addEventListener('keydown', (e) => {
     if (G.prompt && REDUCED && k !== 'e') G.prompt = null;
     if (k === ' ') tryHE();
     else if (k === 'e') { if (!paused) tryRam(); }
+    else if (k === 'q') { if (!paused) tryStrafe(); }
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
     else if (!paused) heliKey(k);
   } else if (mode === 'title') {
@@ -196,7 +206,7 @@ function oneFrame(dt) {
     }
   }
   // fixed steps of STEP seconds, at most 8 a frame
-  if (!(mode === 'play' && paused) && !hold) {
+  if (!(mode === 'play' && paused) && !hold && !treeCovers()) {
     acc += dt * ts;
     let n = 0;
     try {
