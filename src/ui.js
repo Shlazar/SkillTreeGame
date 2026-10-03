@@ -260,6 +260,7 @@ function edgeArrow(wx, wy, col, label) {
 // survivor.
 const ON_CAR = [0, 0, 0, 0, 0];
 function drawArrows() {
+  drawLootUI();
   // (at PRESS E! the view shows the engine's nose and the wall ahead: that is enough of the train)
   const tr = G.tr, c = G.prompt ? { cx: tr.cars[0].x0, cy: tr.cars[0].y0 } : tr.cars[2];
   ON_CAR.fill(0);
@@ -307,6 +308,7 @@ function drawRadar() {
   for (const st of G.stops) dot(st.house.x - 1, st.house.y - 1, st.id === 'depot' ? U.gold : '#9fd3f2', 2);
   for (const z of G.zombies) if (!z.dead) dot(z.x, z.y, z.st ? '#ff4a32' : '#7a2a22', 1);
   for (const p of G.people) if (p.st === 'run' || p.st === 'wait' || p.st === 'grab') dot(p.x, p.y, '#8fd18a', 1);
+  lootRadar(dot);
   for (const c of G.tr.cars) dot(c.cx - 1, c.cy - 1, '#e8dfc8', 2);
   // the view
   const vx = Math.round(cx - W / 2 * k), vy = Math.round(cy - H / 2 * k);
