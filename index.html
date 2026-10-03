@@ -1125,6 +1125,15 @@ const NODE_ART = {
   // LAST TRAIN: the engine, side on
   root: ['............', '........dd..', 'dddd....ld..', 'dBBd....ld..', 'dBBdlllllld.', 'dsssssssssdG',
     'dllllllllldd', 'dggggggggggd', 'dmmmmmmmmmmd', '.ls..ls..ls.', '.sl..sl..sl.', '............'],
+  // CHAIN SHOT: a bolt of lightning jumping from zombie to zombie
+  chain: ['.........Gw.', '........GwY.', '.......GwY..', '......GwY...', '.....GwwwwY.', '....GwwwwY..',
+    '......wY....', '.....wY.....', '....wY......', '...wY.......', '..wY........', '.wY.........'],
+  // COW CATCHER: the steel plow on the engine's nose, seen from the front
+  cow: ['............', 'dddddddddddd', 'dmmmmmmmmmmd', '.slslslslsl.', '.slslslslsl.', '..lslslsls..',
+    '..lslslsls..', '...slslsl...', '...slslsl...', '....lsls....', '....mmmm....', '............'],
+  // GOLDEN ZOMBIES: a gold zombie with sparkles
+  goldz: ['.........w..', '...yyyy.wGw.', '..yGGGGy.w..', '..yGkGky....', '..yGGGGy....', '..yGkkGy..w.',
+    '...yGGy..wGw', '..yyggyy..w.', '.yGGggGgy...', 'yGGgggggGy..', 'yGgggggggy..', 'yyyyyyyyyy..'],
   // ARMOR: a steel shield with a gold plus
   armor: ['............', '.mssssssssm.', '.slllGglllm.', '.slllGglllm.', '.slGGGggglm.', '.slgggyyylm.',
     '.slllgylllm.', '..sllgyllm..', '..sllllllm..', '...sllllm...', '....slmm....', '.....mm.....'],
@@ -2141,10 +2150,11 @@ function drone(v, k) {
 // Every game sound, built from tone() and nz().
 const SFX = {
   mg() {
-    // the 25mm: a hard, short thump
+    // the 25mm: a hard, punchy thump with a crack on top
     if (!gap('mg', 55)) return;
-    nz(0.09, 0.075, 'lowpass', 1900, 0.9, 260);
-    tone(118, 0.07, 'square', 0.022, 52);
+    nz(0.12, 0.1, 'lowpass', 2400, 0.9, 220);
+    tone(150, 0.09, 'square', 0.032, 46);
+    nz(0.025, 0.035, 'highpass', 3200);
   },
   pop() {
     // a 25mm round bursts on the ground
@@ -2170,8 +2180,10 @@ const SFX = {
     nz(0.6, 0.05, 'highpass', 2600, 0.7, 900, 0.06);
   },
   splat() {
+    // a kill: a wet smack and a short knock
     if (!gap('splat', 28)) return;
-    nz(0.06, 0.035, 'bandpass', rnd(260, 520), 1.6, 140);
+    nz(0.07, 0.05, 'bandpass', rnd(260, 520), 1.6, 140);
+    tone(rnd(300, 360), 0.05, 'triangle', 0.02, 110);
   },
   hit() {
     if (!gap('hit', 45)) return;
@@ -2204,7 +2216,7 @@ const SFX = {
     tone(392, 0.14, 'triangle', 0.045);
     tone(587, 0.22, 'triangle', 0.045, null, 0.1);
   },
-  streak() {
+  fanfare() {
     tone(523, 0.1, 'triangle', 0.04);
     tone(659, 0.1, 'triangle', 0.04, null, 0.08);
     tone(784, 0.22, 'triangle', 0.045, null, 0.16);
@@ -2413,13 +2425,13 @@ const CFG = {
   // the helicopter: top speed against the train, how fast it gets there, how far from the engine it
   // may fly (its radio range), how near loot must be to pick it up, its height (where its shadow falls)
   heli: { speed: 170, accel: 3.2, range: 300, pickup: 14, alt: 100 },
-  lock: 16,                    // px round the sight that a zombie is locked within
-  // 25mm: rounds per second, flight time, spread without a lock, burst radius, most zombies one
-  // round can hit, heat per round, cooling per second
-  mg: { rate: 12, travel: 0.45, spread: 5, splash: 7, victims: 4, heatPer: 0.025, cool: 0.55 },
+  lock: 12,                    // px round the sight that a zombie is locked within
+  // 25mm: rounds per second, flight time (short: the hit lands at once), spread without a lock,
+  // burst radius, most zombies one round can hit, heat per round, cooling per second
+  mg: { rate: 6, travel: 0.07, spread: 5, splash: 7, victims: 4, heatPer: 0.05, cool: 0.55 },
   // 105mm: reload, flight time, kill radius, hurt radius (a hurt walker dies too, a brute may not),
   // and how close to the train a blast hurts the train too
-  he: { reload: 2.4, travel: 1.1, kill: 34, hurt: 56, close: 28 },
+  he: { reload: 2.4, travel: 0.7, kill: 34, hurt: 56, close: 28 },
   // the horde: the most dead alive at once, and from how many km runners come and brutes stand on
   // the rails (how many come at each km is in HORDE)
   pop: { max: 400, runFrom: 0.4, bruteFrom: 1.1 },
@@ -2453,7 +2465,7 @@ const CFG = {
   // multiplied (COOLING), 25mm rounds per second (FAST FEED), 25mm damage (HEAVY ROUNDS), 105mm
   // reload seconds taken off (FAST RELOAD), px of flying range (RADIO RANGE), px of pickup reach
   // (MAGNET), share of kill scrap (SCAVENGER), rounds per second (GUN SPEED, NEST SPEED)
-  up: { armor: 20, cool: 0.8, feed: 2, heavy: 1, reload: 0.3, radio: 60, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
+  up: { armor: 20, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, radio: 60, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 1, speed: [11, 16], value: 1, dps: 0.5 },                // walker
@@ -2464,8 +2476,6 @@ const CFG = {
 // the cars: length on the ground, the gap between two, half the width, how many (TRAIN in sprites)
 const CAR = { L: 28, gap: 4, half: 8, n: 5 };
 const TRAIN_LEN = CAR.n * (CAR.L + CAR.gap) - CAR.gap;
-// streak bonuses: [kills in a row, scrap]
-const STREAKS = [[10, 2], [25, 5], [50, 10], [100, 20], [200, 40]];
 const CAMS = ['COLOUR', 'WHITE HOT', 'BLACK HOT'];
 
 // G = this run (or the demo behind the title and the Depot). mode = 'title', 'depot', 'play',
@@ -2516,7 +2526,10 @@ function runUp(demo) {
     hp: UP.hp(L('armor')), rate: UP.rate(L('feed')), heat: UP.heat(L('cool'), L('feed')), dmg: UP.dmg(L('heavy')),
     he: demo || L('he') > 0, reload: UP.reload(L('reload')), range: UP.range(L('radio')), pickup: UP.pickup(L('magnet')),
     scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: demo || L('gun') > 0 ? UP.gun(L('gunspd')) : 0, ram: demo || L('ram') > 0,
-    nest: UP.nest(L('nestspd')), wire: L('wire') > 0
+    nest: UP.nest(L('nestspd')), wire: L('wire') > 0,
+    // the first ring (skills.js): chain jumps, the cow catcher, 1 golden zombie in this many (0 = none),
+    // and the armor level (its plates show on the engine)
+    chain: UP.chain(L('chain')), cow: L('cow') > 0, gold: UP.gold(L('goldz')), armor: L('armor')
   };
 }
 // The train's full health.
@@ -2551,13 +2564,12 @@ function newGame(demo, from) {
     // train goes to next (or stands at), and the Dead Walls ahead
     stops: [], stations: [], station: null, walls: [],
     camX: 0, camY: 0, aimSX: W / 2, aimSY: H / 2,
-    lock: null, box: null,
+    lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
-    streak: { n: 0, t: -9, best: 0 },
     spawnCd: 0, railCd: rnd(5, 7), onTrain: 0, blocked: false, decalT: 0, sum: null,
     // this run's scrap by where it came from (the summary lists them), the survivors aboard, the px
     // the train has ridden, the furthest km, and what is already in the save
-    pay: { kills: 0, streaks: 0, dist: 0, stop: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0 },
+    pay: { kills: 0, dist: 0, stop: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0 },
     newBest: false, oldBest: 0, bot: false, botT: 0, botZ: null, hurt: { crush: 0, claw: 0, shell: 0 },
     // the flatcar gun: cd = time to the next round, ang = where its barrel points (0 = north,
     // clockwise), tgt = what it shoots at, look = time to look for a better target, flash = muzzle
@@ -2831,7 +2843,7 @@ function pickType(rail) {
 function pack(n, hx, hy) {
   for (let k = 0; k < n; k++) {
     const r = Math.sqrt(Math.random()) * (8 + n * 1.5), b = rnd(TAU);
-    G.zombies.push(makeZombie(hx + Math.cos(b) * r, hy + Math.sin(b) * r * FORE, pickType(false)));
+    G.zombies.push(goldRoll(makeZombie(hx + Math.cos(b) * r, hy + Math.sin(b) * r * FORE, pickType(false))));
   }
 }
 // true when (x, y) is out of the camera's view by more than m px
@@ -3027,6 +3039,10 @@ function crush(z) {
     ramKill(z);
     return;
   }
+  if (G.up.cow && !z.big) {
+    plow(z);
+    return;
+  }
   const tr = G.tr, c = tr.cars[0], dmg = z.big ? CFG.train.crushBig : CFG.train.crush;
   tr.v *= z.big ? 0.35 : 0.85;
   kill(z, 'train', 0, 0, 0);
@@ -3091,8 +3107,9 @@ function updateZombies(dt) {
     // where to walk: after a survivor, down the rails, onto the rails ahead, to the train's side,
     // or after the train
     let tx, ty;
-    const prey = z.st === 0 ? preyNear(z, 70) : null;
-    if (prey) {
+    const prey = z.st === 0 && !z.gold ? preyNear(z, 70) : null;
+    if (z.gold) [tx, ty] = goldFlee(z);
+    else if (prey) {
       tx = prey.x;
       ty = prey.y;
       if (Math.hypot(prey.x - z.x, (prey.y - z.y) / FORE) < 4) grabPerson(prey, z);
@@ -3115,7 +3132,7 @@ function updateZombies(dt) {
     z.k = z.y;
     if (Math.abs(ux) > 0.3) z.left = ux < 0;
     z.anim += dt * (z.still ? 0.3 : 0.6 + sp / 3.2);
-    if (z.st === 0 && ds < -6 && Math.abs(TL.u - z.rx) < 2.5) z.st = 1;
+    if (z.st === 0 && !z.gold && ds < -6 && Math.abs(TL.u - z.rx) < 2.5) z.st = 1;
     // the engine runs it down, or (too slow to crush it) it climbs onto the nose; beside the train
     // it climbs on. Not once the train is safe.
     if (!safe) {
@@ -3309,26 +3326,36 @@ function viewChunks() {
 }
 
 // ---------- lock-on
-// The zombie nearest the sight on screen. Ones the rounds in the air will already kill are passed
-// over for any other near the sight (a little wider than the lock), so a burst held over a crowd
-// spreads one round per zombie; a lone target that is done for still gets the rest.
-function findLock() {
+// The zombie nearest the sight on screen (a little wider than the lock, so after a kill it jumps
+// to the next one). A locked zombie that the rounds in the air will kill stays locked until it
+// falls, and no other doomed one is picked: no round is wasted. G.lockWait = the gun waits for a
+// doomed one to fall (a few hundredths of a second). quiet = no lock beep.
+function findLock(quiet) {
   const keep = G.lock && !G.lock.dead ? G.lock : null, r1 = CFG.lock * CFG.lock, r2 = r1 * 5;
-  let fresh = null, fd = r2, done = null, dd = r1;
+  if (keep && keep.pending >= keep.hp) {
+    const dx = keep.x - G.camX - G.aimSX, dy = keep.y - G.camY - keep.S.h * 0.5 - G.aimSY;
+    if (dx * dx + dy * dy <= r2) {
+      G.lockWait = true;
+      return;
+    }
+  }
+  let fresh = null, fd = r2, doomed = false;
   for (const z of G.zombies) {
     if (z.dead) continue;
     const dx = z.x - G.camX - G.aimSX, dy = z.y - G.camY - z.S.h * 0.5 - G.aimSY;
     let d2 = dx * dx + dy * dy;
     if (d2 > r2) continue;
+    if (z.pending >= z.hp) {
+      if (d2 <= r1) doomed = true;
+      continue;
+    }
     if (z === keep) d2 *= 0.45;
-    if (z.pending < z.hp) {
-      const w = d2 > r1 ? d2 * 1.5 : d2;
-      if (w < fd) { fd = w; fresh = z; }
-    } else if (d2 < dd) { dd = d2; done = z; }
+    const w = d2 > r1 ? d2 * 1.5 : d2;
+    if (w < fd) { fd = w; fresh = z; }
   }
-  const nl = fresh || done;
-  if (nl && !G.lock && mode === 'play') SFX.lock();
-  G.lock = nl;
+  if (fresh && !G.lock && mode === 'play' && !quiet) SFX.lock();
+  G.lock = fresh;
+  G.lockWait = !fresh && doomed;
 }
 
 // ---------- the guns
@@ -3663,21 +3690,6 @@ function blood(x, y, n, zh) {
   for (let k = 0; k < n; k++) part({ x: x + rnd(-1, 1), y, z: rnd(3, zh), vx: rnd(-35, 35), vy: rnd(-45, 12), vz: rnd(15, 70),
     g: 240, life: 1.4, max: 1.4, s: 1, c: pick([P.bl0, P.bl1, P.bl2, P.bl2]), land: 1 });
 }
-function streak(n) {
-  const s = G.streak;
-  if (G.t - s.t > 1.6) s.n = 0;
-  const before = s.n;
-  s.n += n;
-  s.t = G.t;
-  s.best = Math.max(s.best, s.n);
-  for (const [m, bonus] of STREAKS) if (before < m && s.n >= m) {
-    G.cash += bonus;
-    G.pay.streaks += bonus;
-    // (while the Ram runs, its own banner and count stay up: the streak shows only top left)
-    if (!G.ram.on) banner('STREAK ×' + m, '+' + bonus + ' SCRAP', U.gold, 1);
-    SFX.streak();
-  }
-}
 // cause = 'mg' (a 25mm round), 'gun' (the flatcar gun), 'he' (the 105 at (cx, cy), dist away),
 // 'train' (run down) or 'ram' (the Turbo Ram). free = not the player's kill (no score).
 function kill(z, cause, cx, cy, dist, free) {
@@ -3685,7 +3697,11 @@ function kill(z, cause, cx, cy, dist, free) {
   z.dead = true;
   z.hp = 0;
   z.paid = 0;
-  if (G.lock === z) G.lock = null;
+  // the lock jumps at once to the next zombie near the sight
+  if (G.lock === z) {
+    G.lock = null;
+    if (mode === 'play') findLock(true);
+  }
   const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160, ram = cause === 'ram';
   // every kill but the Ram's own fills the Ram again
   if (!ram && !free) chargeRam();
@@ -3707,7 +3723,6 @@ function kill(z, cause, cx, cy, dist, free) {
     G.cash += pay;
     G.pay.kills += pay;
     G.killBump = 1;
-    streak(1);
   }
   if (cause === 'he') {
     // thrown away from the blast, turning over
@@ -3734,7 +3749,7 @@ function kill(z, cause, cx, cy, dist, free) {
       if (ram) {
         G.ram.pop += pay;
         if (G.t - G.ram.popT >= RAM_POP) popRam();
-      } else addTotal(z.x, z.y - S.h, pay, U.gold, false);
+      } else addTotal(z.x, z.y - S.h, pay, U.gold, !!z.gold);
     }
   } else {
     // a 25mm round: knocked over backwards, away from the gun, or off the side of the train; a
@@ -3752,10 +3767,11 @@ function kill(z, cause, cx, cy, dist, free) {
     blood(z.x, z.y, z.big ? 14 : 8, S.h * 0.6);
     part({ x: z.x, y: z.y, z: S.h * 0.5, vx: rnd(-4, 4), vy: rnd(-6, 0), vz: rnd(4, 10), g: 0, life: 0.45, max: 0.45, s: 3,
       c: 'rgba(110,24,20,0.55)', grow: 7, drag: 3, smoke: true });
-    if (sc) addTotal(z.x, z.y - S.h, pay, U.gold, false);
+    if (sc) addTotal(z.x, z.y - S.h, pay, U.gold, !!z.gold);
     if (!G.demo) SFX.splat();
   }
   z.paid = pay;
+  if (z.gold) goldKill(z, sc);
   if (sc && (Math.random() < 0.3 || z.big) && coins.length < 45) coins.push({ x0: z.x - G.camX, y0: z.y - G.camY - 8, t: 0, T: rnd(0.55, 0.8) });
   if (z.big && !G.demo) {
     addShake(0.15);
@@ -3769,21 +3785,24 @@ function hitZombie(z, dmg, cause) {
   z.flash = 0.1;
   if (z.hp <= 0) {
     kill(z, cause || 'mg', 0, 0, 0);
-    return;
+    return true;
   }
   // a brute takes the hit: blood and a step back (not when it holds on to the train)
   blood(z.x, z.y, 4, z.S.h * 0.6);
   if (z.st !== 2) z.kby -= 12;
   if (!G.demo) SFX.hit();
+  return false;
 }
-// A 25mm round lands: its locked target first, then the nearest round the burst.
-const NEAR = [];
+// A 25mm round lands: its locked target first, then the nearest round the burst. KILLED = the
+// ones it killed (for CHAIN SHOT and the hit-stop).
+const NEAR = [], KILLED = [];
 function mgImpact(r) {
   const x = r.bx, y = r.by, T = r.tgt;
   let hits = 0;
+  KILLED.length = 0;
   if (T) T.pending = Math.max(0, T.pending - G.up.dmg);
   if (T && !T.dead && Math.hypot(T.x - x, (T.y - y) / FORE) < 6) {
-    hitZombie(T);
+    if (hitZombie(T)) KILLED.push(T);
     hits++;
   }
   NEAR.length = 0;
@@ -3796,7 +3815,7 @@ function mgImpact(r) {
   for (const z of NEAR) {
     if (hits >= CFG.mg.victims) break;
     if (!z.dead) {
-      hitZombie(z);
+      if (hitZombie(z)) KILLED.push(z);
       hits++;
     }
   }
@@ -3804,6 +3823,7 @@ function mgImpact(r) {
     G.hits++;
     G.hitT = 0.12;
   }
+  if (r.player) roundKills(KILLED);
   // the round bursts: a small fire puff, a flash, sparks, earth and dust, a dark mark
   addBoom(x, y, 6, 3, 0.3, 3);
   lights.push({ x, y, z: 3, r: 14, c: '#ffb060', life: 0.1, max: 0.1, a: 0.8 });
@@ -3978,7 +3998,7 @@ function attract(dt) {
   if (b.z && G.t % 1.8 < 1.1) {
     while (G.mgCd <= 0) {
       fireMG(false, b.z.x + b.z.vx * CFG.mg.travel + rnd(-2, 2), b.z.y + b.z.vy * CFG.mg.travel + rnd(-2, 2));
-      G.mgCd += 1 / 10;
+      G.mgCd += 1 / CFG.mg.rate;
     }
   } else G.mgCd = Math.max(0, G.mgCd);
   G.heReload -= dt;
@@ -4013,7 +4033,7 @@ function ride(d) {
   if (!G.newBest && G.oldBest > 0 && km2(G.maxKm) > G.oldBest) {
     G.newBest = true;
     banner('NEW BEST', 'PAST ' + G.oldBest.toFixed(2) + ' KM. KEEP GOING!', U.gold, 1);
-    SFX.streak();
+    SFX.fanfare();
   }
 }
 
@@ -4086,9 +4106,14 @@ function step(dt) {
     if (G.trigger && !G.overheat) {
       G.mgCd -= dt;
       while (G.mgCd <= 0 && !G.overheat) {
+        // (only a zombie already done for under the sight: wait, the round would be wasted)
+        if (G.lockWait) {
+          G.mgCd = 0;
+          break;
+        }
         fireMG(true, G.camX + G.aimSX, G.camY + G.aimSY);
         G.mgCd += 1 / G.up.rate;
-        findLock();
+        findLock(true);
         if (G.heat >= 1) {
           G.overheat = true;
           SFX.overheat();
@@ -4126,6 +4151,7 @@ function step(dt) {
   updateRounds(dt);
   updateBodies(dt);
   updateFireSpots(dt);
+  updateSkills(dt);
   updateFX(dt);
   // every 3 s the marks on the ground fade a little
   G.decalT += dt;
@@ -4312,6 +4338,259 @@ function updateStation(dt) {
   for (const p of G.people) p.k = p.y;
 }
 
+// skills.js - the first ring of the skill tree: things you SEE in a run. CHAIN SHOT (a 25mm kill
+// sparks on to more zombies), the COW CATCHER (a steel plow on the engine that throws walkers and
+// runners aside), GOLDEN ZOMBIES (rare gold ones that run away and pay big) and the ARMOR plates on
+// the engine. Also the 25mm's kill feel: a short hit-stop when one round kills 3 or more.
+
+// CHAIN SHOT: how far a spark jumps (px), its damage, seconds between two jumps.
+// GOLDEN ZOMBIES: 1 in every[l] new zombies is golden at level l, the scrap one pays, its speed
+// (px/s), and how near the heli or the train (px) it starts to run away.
+const SK = {
+  chain: { reach: 40, dmg: 1, gap: 0.04 },
+  gold: { every: [0, 60, 40, 25], value: 25, speed: [26, 31], fear: 190 }
+};
+// What a level of the new nodes gives (the tree's info box shows the same numbers).
+Object.assign(UP, {
+  chain: (l) => l,                          // CHAIN SHOT: zombies a kill sparks on to
+  gold: (l) => SK.gold.every[l] || 0        // GOLDEN ZOMBIES: 1 in this many (0 = none)
+});
+// A tutorial moment for part D's prompts (nothing happens when they are not there).
+function skillEvent(name, data) {
+  if (typeof tutEvent === 'function') tutEvent(name, data || {});
+}
+
+// ---------- one 25mm round's kills
+// After a player round lands: a short hit-stop when it killed 3 or more, and each kill sparks on
+// with CHAIN SHOT.
+function roundKills(list) {
+  if (G.demo || !list.length) return;
+  if (list.length >= 3) hitStop(0.03);
+  if (G.up.chain) for (const z of list) chainFrom(z, G.up.chain, [z]);
+}
+
+// ---------- CHAIN SHOT
+// zaps = the lightning lines in the air: [x0, y0, x1, y1, seed, age]
+const zaps = [];
+// A spark jumps from zombie z0 to the nearest living one within reach (not hit by this chain yet),
+// hurts it, and jumps on while left > 1.
+function chainFrom(z0, left, hit) {
+  let best = null, bd = SK.chain.reach + 1;
+  queryEll(z0.x, z0.y, SK.chain.reach, (z, d) => {
+    if (d < bd && !hit.includes(z)) { bd = d; best = z; }
+  });
+  if (!best) return;
+  hit.push(best);
+  const x0 = z0.x, y0 = z0.y - z0.S.h * 0.5, x1 = best.x, y1 = best.y - best.S.h * 0.5;
+  zaps.push({ x0, y0, x1, y1, seed: (Math.random() * 1e6) | 0, t: 0, T: 0.18 });
+  // a small flash and sparks where it lands
+  lights.push({ x: x1, y: best.y, z: best.S.h * 0.5, r: 12, c: '#ffd24a', life: 0.12, max: 0.12, a: 0.9 });
+  for (let k = 0; k < 4; k++) {
+    const a = rnd(TAU), s = rnd(20, 50);
+    part({ x: x1, y: best.y, z: best.S.h * 0.5, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(10, 40), g: 120,
+      life: rnd(0.15, 0.3), max: 0.3, s: 1, c: pick(['#fff6c0', '#ffd24a']), add: true, drag: 2 });
+  }
+  SFX.zap();
+  if (hitZombie(best, SK.chain.dmg, 'chain') && !G.chainSeen) {
+    G.chainSeen = true;
+    skillEvent('chain_first');
+  }
+  if (left > 1) later(SK.chain.gap, () => chainFrom(best, left - 1, hit));
+}
+// The lightning: a jagged 1 px line that flickers (its kinks move every 0.04 s), white in the
+// middle of a yellow glow, gone in 0.18 s.
+function drawZaps() {
+  ctx.globalCompositeOperation = 'source-over';
+  drawPlow();
+  for (const z of zaps) {
+    const u = z.t / z.T, f = (z.t / 0.04) | 0, dx = z.x1 - z.x0, dy = z.y1 - z.y0, l = Math.hypot(dx, dy) || 1;
+    const n = Math.max(2, Math.round(l / 6)), px = -dy / l, py = dx / l;
+    let ax = z.x0, ay = z.y0;
+    ctx.globalAlpha = 1 - u * 0.7;
+    for (let i = 1; i <= n; i++) {
+      const o = i === n ? 0 : (hrnd(z.seed, i, f) - 0.5) * 7;
+      const bx = z.x0 + dx * i / n + px * o, by = z.y0 + dy * i / n + py * o;
+      pl(ctx, ax, ay, bx, by, u < 0.4 ? '#ffffff' : '#ffe27a');
+      ax = bx;
+      ay = by;
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'lighter';
+  for (const z of zaps) light((z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2, 10, '#ffd24a', 0.4 * (1 - z.t / z.T));
+  ctx.globalAlpha = 1;
+}
+
+// ---------- the COW CATCHER and the ARMOR plates
+// The plow throws a walker or runner aside: it dies, and the train loses no health and no speed.
+function plow(z) {
+  kill(z, 'train', 0, 0, 0);
+  for (let k = 0; k < 3; k++) part({ x: z.x, y: z.y, z: 2, vx: rnd(-40, 40), vy: rnd(-20, 10), vz: rnd(15, 45), g: 160,
+    life: rnd(0.15, 0.3), max: 0.3, s: 1, c: pick(['#ffffff', '#ffe2a0']), add: true, drag: 2 });
+  if (!G.demo) {
+    addShake(0.04);
+    SFX.clang();
+  }
+}
+// Drawn on the engine (car c) after its sprite, at its heading: steel plates down both sides with
+// rivets (from ARMOR 1; longer with more levels).
+const KIT = (thermal) => (thermal ? ['#141414', '#3a3a3a', '#5a5a5a', '#3a3a3a'] : ['#16181c', '#5d636e', '#b8bec8', '#c8432e']);
+const kpx = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(x), Math.round(y), 1, 1); };
+function drawEngineKit(c) {
+  const up = G.up, k = kpx, st = KIT(thermal);
+  if (up.armor) {
+    const len = 4 + Math.min(5, up.armor) * 2;
+    for (const s of [-1, 1]) for (let al = -len; al <= len; al++) {
+      const x = c.cx + c.dx * al + c.nx * s * 8.5, y = c.cy + c.dy * al + c.ny * s * 8.5;
+      k(x, y - 2, st[0]);
+      k(x, y - 3, st[1]);
+      k(x, y - 4, al % 5 === 0 ? st[2] : st[1]);
+      k(x, y - 5, st[0]);
+    }
+  }
+}
+
+// The COW CATCHER: a steel plow round the engine's nose, a wedge of bars with its tip 10 px ahead
+// and red on top at the point. (Drawn over the headlights' glow, so it always reads.)
+function drawPlow() {
+  if (!G.up.cow) return;
+  const c = G.tr.cars[0], k = kpx, st = KIT(thermal);
+  for (let u = -9; u <= 9; u += 0.5) {
+    const f = 2 + (9 - Math.abs(u)) * 0.95, x = c.x0 + c.dx * f + c.nx * u, y = c.y0 + c.dy * f + c.ny * u;
+    const bar = (Math.round(u * 2) & 3) < 2;
+    k(x, y, st[0]);
+    k(x, y - 1, bar ? st[2] : st[1]);
+    k(x, y - 2, bar ? st[2] : st[1]);
+    k(x, y - 3, Math.abs(u) < 3 ? st[3] : st[0]);
+  }
+}
+
+// ---------- GOLDEN ZOMBIES
+// A new zombie z is golden 1 time in G.up.gold (never a brute, never in the demo). Returns z.
+function goldRoll(z) {
+  if (G.demo || !G.up.gold || z.big || Math.random() * G.up.gold >= 1) return z;
+  return makeGold(z);
+}
+// Turn zombie z golden. Returns z.
+function makeGold(z) {
+  z.gold = true;
+  z.value = SK.gold.value;
+  z.run = true;
+  z.hp = z.max = 1;
+  z.sp = rnd(SK.gold.speed[0], SK.gold.speed[1]);
+  return z;
+}
+// Where a golden zombie runs: away from the heli (the middle of the view) and from the rails, when
+// either is near; else it strolls out into the field. [x, y] on the ground.
+const GF = [0, 0];
+function goldFlee(z) {
+  const F = SK.gold.fear, hx = G.camX + W / 2, hy = G.camY + H / 2;
+  const ax = z.x - hx, ay = (z.y - hy) / FORE, ad = Math.hypot(ax, ay) || 1, side = z.x < trackX(z.y) ? -1 : 1;
+  const rd = Math.abs(z.x - trackX(z.y));
+  let vx = side * (rd < F ? 1.2 * (1 - rd / F) + 0.2 : 0.15), vy = -0.15;
+  if (ad < F) {
+    const w = 1.6 * (1 - ad / F) + 0.3;
+    vx += ax / ad * w;
+    vy += ay / ad * w;
+  }
+  GF[0] = z.x + vx * 60;
+  GF[1] = z.y + vy * 60 * FORE;
+  return GF;
+}
+// A golden zombie dies: a gold ring, a burst of gold, a shower of coins to the counter and a chime.
+function goldKill(z, sc) {
+  rings.push({ x: z.x, y: z.y, r0: 3, r1: 26, t: 0, T: 0.4, c: '#ffd24a', w: 2 });
+  lights.push({ x: z.x, y: z.y, z: 6, r: 30, c: '#ffd24a', life: 0.3, max: 0.3, a: 0.9 });
+  for (let k = 0; k < 16; k++) {
+    const a = rnd(TAU), s = rnd(25, 80);
+    part({ x: z.x, y: z.y, z: 6, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(30, 90), g: 200, life: rnd(0.4, 0.8),
+      max: 0.8, s: 1, c: pick(['#fff6c0', '#ffd24a', '#e3b04b']), add: true, drag: 1.5 });
+  }
+  if (!sc) return;
+  for (let k = 0; k < 10 && coins.length < 60; k++) coins.push({ x0: z.x - G.camX + rnd(-5, 5), y0: z.y - G.camY - 8 + rnd(-4, 4), t: -k * 0.04, T: rnd(0.55, 0.8) });
+  SFX.gold();
+}
+// A gold statue copy of sprite src: each pixel's brightness picks a shade of gold; the dark
+// outline stays dark.
+const GOLDS = [[42, 26, 6], [122, 84, 24], [184, 134, 42], [232, 184, 74], [255, 224, 138]];
+function goldSpr(src) {
+  const [c, g] = mk(src.width, src.height, true);
+  g.drawImage(src, 0, 0);
+  const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (!d[i + 3]) continue;
+    const L = d[i] * 0.3 + d[i + 1] * 0.55 + d[i + 2] * 0.15, col = GOLDS[L < 34 ? 0 : L < 70 ? 1 : L < 110 ? 2 : L < 160 ? 3 : 4];
+    d[i] = col[0];
+    d[i + 1] = col[1];
+    d[i + 2] = col[2];
+  }
+  g.putImageData(im, 0, 0);
+  return c;
+}
+// The gold look: a golden copy of its frame (made once per clothes), and sparkles round it.
+// Returns false when the plain frame must show (the white hit flash, the thermal camera).
+function drawGold(z) {
+  if (z.flash > 0 || thermal) return false;
+  const S = z.S, f = (z.anim | 0) & 1;
+  if (!S.gold) S.gold = S.walk.map((fr) => [goldSpr(fr.n), goldSpr(fr.nf)]);
+  blit(S.gold[f][z.left ? 1 : 0], Math.round(z.x - S.ax), Math.round(z.y - S.ay));
+  // two sparkles that blink round it
+  for (let i = 0; i < 2; i++) {
+    const p = (realT * 3 + i * 0.5 + (z.wob % 1)) % 1;
+    if (p > 0.45) continue;
+    const sx = Math.round(z.x + (hrnd(i, (realT * 3) | 0, z.sp * 100) - 0.5) * 12), sy = Math.round(z.y - S.h * hrnd(i + 7, (realT * 3) | 0, 3));
+    ctx.fillStyle = '#fff6c0';
+    ctx.fillRect(sx, sy, 1, 1);
+    if (p < 0.25) {
+      ctx.fillRect(sx - 1, sy, 3, 1);
+      ctx.fillRect(sx, sy - 1, 1, 3);
+    }
+  }
+  return true;
+}
+
+// ---------- each step
+function updateSkills(dt) {
+  for (let i = zaps.length - 1; i >= 0; i--) {
+    zaps[i].t += dt;
+    if (zaps[i].t >= zaps[i].T) zaps.splice(i, 1);
+  }
+  if (!G.up.gold) return;
+  for (const z of G.zombies) {
+    if (!z.gold || z.dead || offView(z.x, z.y, 0)) continue;
+    // a soft gold glow
+    lights.push({ x: z.x, y: z.y, z: 6, r: 12, c: '#ffd24a', life: 0.03, max: 0.03, a: 0.35 });
+    if (!G.goldSeen && !offView(z.x, z.y, -24)) {
+      G.goldSeen = true;
+      floatText(z.x, z.y - z.S.h - 4, 'GOLD! ' + SK.gold.value + ' SCRAP', U.gold);
+      SFX.coin();
+      skillEvent('golden_seen');
+    }
+  }
+}
+
+// ---------- sounds
+Object.assign(SFX, {
+  zap() {
+    // a short electric crack
+    if (!gap('zap', 30)) return;
+    tone(rnd(1500, 1900), 0.05, 'sawtooth', 0.012, 500);
+    nz(0.05, 0.03, 'highpass', 3500, 0.8, 1800);
+  },
+  clang() {
+    // the plow hits one: a steel knock
+    if (!gap('clang', 40)) return;
+    tone(rnd(700, 820), 0.08, 'square', 0.012, 380);
+    nz(0.04, 0.03, 'bandpass', 1800, 2);
+  },
+  gold() {
+    // a golden zombie falls: a bright chime up
+    tone(1320, 0.08, 'triangle', 0.035);
+    tone(1760, 0.08, 'triangle', 0.035, null, 0.07);
+    tone(2640, 0.18, 'triangle', 0.03, null, 0.14);
+  }
+});
+
 // render.js - draws one frame of the world: ground and its marks, tufts, the helicopter's shadow and
 // the other shadows, then trees, props, the train, the station, the safe zone, survivors and the
 // dead sorted by depth (the dead behind a tree show through it), fires, particles, explosions,
@@ -4446,6 +4725,7 @@ function zImg(z) {
 }
 function drawZombie(z) {
   const S = z.S;
+  if (z.gold && drawGold(z)) return;
   blit(zImg(z), Math.round(z.x - S.ax), Math.round(z.y - S.ay));
   if (z.big && z.hp < z.max) {
     const w = 14, x = Math.round(z.x - w / 2), y = Math.round(z.y - S.ay - 4);
@@ -4464,6 +4744,7 @@ function drawCar(i) {
   const t = TRAIN[i], c = G.tr.cars[i], a = angIdx(c.ang);
   const img = thermal ? t.h[a] : G.tr.hit[i] > 0 ? carRed(t, a) : t.n[a], x0 = Math.round(c.cx) - img.ox, y0 = Math.round(c.cy) - img.oy;
   blit(img, x0, y0);
+  if (i === 0) drawEngineKit(c);
   if (i === 0 && G.ram.on && !thermal) {
     ctx.globalAlpha = ramK() * (0.3 + 0.08 * Math.sin(realT * 18));
     blit(carGlow(t, a), x0, y0);
@@ -4781,6 +5062,7 @@ function render() {
   drawRings();
   drawParts(true);
   drawRounds();
+  drawZaps();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
   if (!thermal) {
@@ -4973,12 +5255,6 @@ function drawHUD() {
   if (!G.demo) drawRoute(hx + hw + 30, W - 28);
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
   if (Au.muted) text('MUTE', W - 4, 22, U.faint, { align: 'right' });
-  // kill streak: the count and the time left to keep it going
-  const s = G.streak, st = G.t - s.t;
-  if (s.n >= 3 && st < 1.6) {
-    text('STREAK ' + s.n, 5, 24, s.n >= 25 ? '#ffd36a' : U.gold);
-    bar(5, 33, 52, 2, 1 - st / 1.6, '#1a1716', '#e3b04b');
-  }
 }
 // What comes next up the line, for the top bar: [text, color]. A Dead Wall within 150 m comes
 // first; then the next station; past the last one, the safe zone.
@@ -5133,6 +5409,8 @@ function drawRadar() {
   if (G.goalY > hy - 640 && G.goalY < hy + 640) for (let dx = -560; dx <= 560; dx += 18) dot(trackX(G.goalY) + dx, G.goalY, '#8fd18a', 1);
   for (const st of G.stops) dot(st.house.x - 1, st.house.y - 1, st.id === 'depot' ? U.gold : '#9fd3f2', 2);
   for (const z of G.zombies) if (!z.dead) dot(z.x, z.y, z.st ? '#ff4a32' : '#7a2a22', 1);
+  // golden zombies: a blinking gold dot
+  if (realT % 0.5 < 0.32) for (const z of G.zombies) if (z.gold && !z.dead) dot(z.x - 1, z.y - 1, '#ffd24a', 2);
   for (const p of G.people) if (p.st === 'run' || p.st === 'wait' || p.st === 'grab') dot(p.x, p.y, '#8fd18a', 1);
   for (const c of G.tr.cars) dot(c.cx - 1, c.cy - 1, '#e8dfc8', 2);
   // the view
@@ -5395,7 +5673,7 @@ function drawTitle() {
 // The times (s after the summary opens) are worked out once; sounds play as each time passes.
 function sumPlan(s) {
   // [label, scrap, a short note on how it pays]
-  const p = s.pay, rows = [['ZOMBIES ' + fmt(s.kills), p.kills, ''], ['STREAKS', p.streaks, 'KILLS IN A ROW'],
+  const p = s.pay, rows = [['ZOMBIES ' + fmt(s.kills), p.kills, ''],
     ['DISTANCE ' + s.ride.toFixed(2) + ' KM', p.dist, '+1 PER ' + CFG.pay.dist / 2 + ' M']];
   if (p.stop) rows.push(['STATION', p.stop, s.stops.join(' + ')]);
   if (p.loot) rows.push(['LOOT', p.loot, '']);
@@ -5423,7 +5701,7 @@ function drawSummary() {
     if (e === 'tick') SFX.tick();
     else if (e === 'total') SFX.total();
     else if (e === 'saved') SFX.saved();
-    else SFX.streak();
+    else SFX.fanfare();
   }
   const lines = s.wall.slice();
   if (s.near) lines.push([s.near, U.amber]);
@@ -5707,7 +5985,7 @@ function drawDepotTop() {
   const sx = 15 + Math.max(18, tw(sc)) + 10, ew = 9 + Math.max(10, tw(String(sv)));
   blit(ICON.surv, sx, 5 - (cs ? 1 : 0));
   text(sv, sx + 9, 6, cs ? '#d4f5cf' : U.green);
-  tipAt(2, 0, sx - 6, 18, [['SCRAP', U.gold], ['FROM KILLS, STREAKS, THE RIDE AND STATIONS.', U.dim], ['IT BUYS UPGRADES IN THE SKILL TREE.', U.dim]]);
+  tipAt(2, 0, sx - 6, 18, [['SCRAP', U.gold], ['FROM KILLS, THE RIDE AND STATIONS.', U.dim], ['IT BUYS UPGRADES IN THE SKILL TREE.', U.dim]]);
   tipAt(sx - 2, 0, ew + 6, 18, [['SURVIVORS', U.green], ['SAVE THEM AT STATIONS.', U.dim], ['THEY BUY THE BIGGEST UPGRADES.', U.dim]]);
   // the tabs in the middle
   const tw0 = narrow ? 66 : 84, tx = Math.round(W / 2 - tw0 - 2), open = stationOpen();
@@ -5810,9 +6088,12 @@ const NODES = [
   { id: 'root', name: 'LAST TRAIN', br: 'root', c: 0, r: 0, cost: [0], desc: 'THE START OF YOUR WHOLE TREE.',
     stat: ['BRANCHES OPEN', (l) => l * 4] },
   // TRAIN
-  { id: 'armor', name: 'ARMOR', br: 'train', c: 2, r: 0, needs: ['root', 1], cost: [40, 80, 160, 320, 640],
-    desc: 'MORE TRAIN HEALTH.', stat: ['TRAIN HP', (l) => UP.hp(l)] },
-  { id: 'gun', name: 'FLATCAR GUN', star: true, br: 'train', c: 4, r: 0, needs: ['armor', 1], cost: [300],
+  { id: 'cow', name: 'COW CATCHER', br: 'train', c: 2, r: 0, needs: ['root', 1], cost: [80],
+    desc: 'A STEEL PLOW THROWS ZOMBIES ASIDE.', stat: ['WALKERS SLOW THE TRAIN', (l) => (l ? 'NO' : 'YES')],
+    stat2: ['BRUTES', () => 'STILL STOP THE TRAIN'] },
+  { id: 'armor', name: 'ARMOR', br: 'train', c: 2, r: -2, needs: ['cow', 1], cost: [40, 80, 160, 320, 640],
+    desc: 'STEEL PLATES: MORE TRAIN HEALTH.', stat: ['TRAIN HP', (l) => UP.hp(l)] },
+  { id: 'gun', name: 'FLATCAR GUN', star: true, br: 'train', c: 4, r: 0, needs: ['cow', 1], cost: [300],
     desc: 'AN AUTO GUN ON THE TRAIN.', stat: ['TRAIN GUN', (l) => (l ? perS(UP.gun(0)) : 'NONE')],
     stat2: ['IT SHOOTS UP TO', () => metres(CFG.gun.range) + ' AWAY'] },
   { id: 'gunspd', name: 'GUN SPEED', br: 'train', c: 6, r: 0, needs: ['gun', 1], cost: [150, 300, 600],
@@ -5822,26 +6103,32 @@ const NODES = [
     stat: ['TURBO RAM', (l) => (l ? CFG.ram.dur + ' S AT ' + Math.round(CFG.ram.speed / CFG.train.cruise) + '× SPEED' : 'NONE')],
     stat2: ['FULL AGAIN AFTER', () => CFG.ram.charge + ' KILLS'] },
   // HELI
-  { id: 'cool', name: 'COOLING', br: 'heli', c: -2, r: 0, needs: ['root', 1], cost: [40, 80, 160],
+  { id: 'chain', name: 'CHAIN SHOT', br: 'heli', c: -2, r: 0, needs: ['root', 1], cost: [60, 150, 400],
+    desc: 'A KILL SPARKS ON TO MORE ZOMBIES.', stat: ['CHAIN JUMPS', (l) => UP.chain(l)],
+    stat2: ['A JUMP REACHES', () => metres(SK.chain.reach)] },
+  { id: 'cool', name: 'COOLING', br: 'heli', c: -4, r: 0, needs: ['chain', 1], cost: [40, 80, 160],
     desc: 'THE 25MM GETS HOT MORE SLOWLY.', stat: ['OVERHEAT AFTER', (l) => hotS(UP.hot(l))] },
-  { id: 'feed', name: 'FAST FEED', br: 'heli', c: -4, r: 0, needs: ['cool', 1], cost: [60, 120, 240, 480, 960],
+  { id: 'feed', name: 'FAST FEED', br: 'heli', c: -6, r: 0, needs: ['cool', 1], cost: [60, 120, 240, 480, 960],
     desc: 'MORE 25MM ROUNDS, NO EXTRA HEAT.', stat: ['25MM FIRE RATE', (l) => perS(UP.rate(l))] },
-  { id: 'heavy', name: 'HEAVY ROUNDS', br: 'heli', c: -6, r: 0, needs: ['feed', 1], cost: [200, 400, 800],
+  { id: 'heavy', name: 'HEAVY ROUNDS', br: 'heli', c: -6, r: -2, needs: ['feed', 1], cost: [200, 400, 800],
     desc: 'EACH 25MM HIT DOES MORE DAMAGE.', stat: ['25MM DAMAGE', (l) => UP.dmg(l)],
     stat2: ['HITS TO KILL A BRUTE', (l) => Math.ceil(CFG.types[2].hp / UP.dmg(l))] },
-  { id: 'he', name: '105MM CANNON', star: true, br: 'heli', c: -4, r: -2, needs: ['cool', 1], cost: [5], cur: 'surv',
+  { id: 'he', name: '105MM CANNON', star: true, br: 'heli', c: -2, r: -2, needs: ['chain', 1], cost: [5], cur: 'surv',
     desc: 'A BIG SHELL FOR BIG CROWDS.', stat: ['105MM', (l) => (l ? 'RELOAD ' + secs(UP.reload(0)) : 'NONE')],
     stat2: ['FIRE WITH', () => 'RIGHT CLICK / SPACE'] },
-  { id: 'reload', name: 'FAST RELOAD', br: 'heli', c: -6, r: -2, needs: ['he', 1], cost: [150, 300, 600],
+  { id: 'reload', name: 'FAST RELOAD', br: 'heli', c: -4, r: -2, needs: ['he', 1], cost: [150, 300, 600],
     desc: 'THE 105MM LOADS FASTER.', stat: ['105MM RELOAD', (l) => secs(UP.reload(l))] },
   // EXPLORE
-  { id: 'radio', name: 'RADIO RANGE', br: 'explore', c: 0, r: -2, needs: ['root', 1], cost: [40, 80, 160, 320, 640],
+  { id: 'goldz', name: 'GOLDEN ZOMBIES', br: 'explore', c: 0, r: -2, needs: ['root', 1], cost: [60, 150, 400],
+    desc: 'RARE GOLD ZOMBIES. CHASE THEM DOWN!', stat: ['GOLDEN ZOMBIES', (l) => (l ? '1 IN ' + UP.gold(l) : 0)],
+    stat2: ['EACH ONE PAYS', () => SK.gold.value + ' SCRAP'] },
+  { id: 'radio', name: 'RADIO RANGE', br: 'explore', c: 0, r: -4, needs: ['goldz', 1], cost: [40, 80, 160, 320, 640],
     desc: 'FLY FURTHER AWAY FROM THE TRAIN.', stat: ['RADIO RANGE', (l) => metres(UP.range(l))] },
-  { id: 'magnet', name: 'MAGNET', br: 'explore', c: -2, r: -3, needs: ['radio', 1], cost: [40, 80, 160],
+  { id: 'magnet', name: 'MAGNET', br: 'explore', c: -2, r: -4, needs: ['radio', 1], cost: [40, 80, 160],
     desc: 'GRAB LOOT FROM FURTHER AWAY.', stat: ['PICKUP RANGE', (l) => metres(UP.pickup(l))] },
-  { id: 'scav', name: 'SCAVENGER', br: 'explore', c: 2, r: -3, needs: ['radio', 1], cost: [150, 300, 600, 1200, 2400],
+  { id: 'scav', name: 'SCAVENGER', br: 'explore', c: 2, r: -4, needs: ['radio', 1], cost: [150, 300, 600, 1200, 2400],
     desc: 'MORE SCRAP FROM EVERY KILL.', stat: ['KILL SCRAP', (l) => '+' + Math.round(UP.scav(l) * 100) + '%'] },
-  { id: 'winch', name: 'WINCH', star: true, br: 'explore', c: 0, r: -4, needs: ['radio', 2], cost: [5], cur: 'surv',
+  { id: 'winch', name: 'WINCH', star: true, br: 'explore', c: 0, r: -6, needs: ['radio', 2], cost: [5], cur: 'surv',
     desc: 'LIFT SURVIVORS OUT OF THE FIELD.', stat: ['WINCH', (l) => (l ? 'LIFTS IN ' + secs(CFG.winch.hover) : 'NONE')] },
   // STATION
   { id: 'farm', name: 'FARM STOP', br: 'station', c: 0, r: 2, needs: ['root', 1], cost: [0], given: true,
@@ -5860,13 +6147,15 @@ const NODES = [
     desc: 'THE TRAIN RAMS BY ITSELF.' },
   { id: 'horn', name: 'SHOCK HORN', star: true, br: 'train', c: 8, r: 0, needs: ['gunspd', 1], cost: [0], later: true,
     desc: 'PRESS Q: BLAST THE DEAD OFF.' },
-  { id: 'crates', name: 'MORE CRATES', br: 'explore', c: 4, r: -4, needs: ['scav', 1], cost: [0], later: true,
+  { id: 'crates', name: 'MORE CRATES', br: 'explore', c: 2, r: -6, needs: ['scav', 1], cost: [0], later: true,
     desc: 'MORE SUPPLY CRATES OUT THERE.' },
   { id: 'platform', name: 'BIG PLATFORM', br: 'station', c: 4, r: 3, needs: ['wire', 1], cost: [0], later: true,
     desc: 'MORE SURVIVORS AT EACH STATION.' }
 ];
 const NODE = {};
 for (const n of NODES) NODE[n.id] = n;
+// the first ring: one exciting node per branch, right round LAST TRAIN
+const FIRST = ['chain', 'cow', 'goldz'];
 const maxLv = (n) => n.cost.length;
 const parentOf = (n) => (n.needs ? NODE[n.needs[0]] : null);
 const needsMet = (n) => !n.needs || lv(n.needs[0]) >= n.needs[1];
@@ -5978,6 +6267,12 @@ function summaryGoal() {
   const have = (n) => ['YOU HAVE ' + fmt(n.cur === 'surv' ? SAVE.surv : SAVE.scrap) + ' / ' + fmt(priceOf(n)) + unit(n) + '.', U.dim];
   const order = (a, b) => (a.cur === 'surv') - (b.cur === 'surv') || priceOf(a) - priceOf(b);
   const pickOf = (list, st) => list.filter((n) => st.includes(nodeState(n))).sort(order)[0];
+  // the first ring (CHAIN SHOT, COW CATCHER, GOLDEN ZOMBIES) until each has a level: one you can
+  // buy now first, else the cheapest
+  const first = FIRST.map((id) => NODE[id]).filter((n) => !lv(n.id));
+  const f1 = pickOf(first, ['buy']) || pickOf(first, ['poor']);
+  if (f1) return [['NEXT GOAL: ' + f1.name + ' (' + price(f1) + ')', U.gold],
+    nodeState(f1) === 'buy' ? ['YOU CAN BUY IT NOW!', U.green] : have(f1)];
   const stars = NODES.filter((n) => n.star), rest = NODES.filter((n) => !n.star && !n.given);
   const ready = pickOf(stars, ['buy']), goal = ready || pickOf(stars, ['poor', 'goal']);
   if (goal) {
@@ -6111,8 +6406,8 @@ function drawTreeTab(y0, y1) {
   }
   // the faint branch names at the far end of each branch
   ctx.globalAlpha = 0.55;
-  for (const [id, br, dx, dy, al] of [['heavy', 'heli', 0, 33, 'center'], ['gunspd', 'train', 0, 33, 'center'],
-    ['winch', 'explore', 19, -3, ''], ['mortar', 'station', 19, -3, '']]) {
+  for (const [id, br, dx, dy, al] of [['feed', 'heli', 0, 33, 'center'], ['gunspd', 'train', 0, 33, 'center'],
+    ['winch', 'explore', -19, -3, 'right'], ['mortar', 'station', 19, -3, '']]) {
     if (!vis[id]) continue;
     const [x, y] = pos(NODE[id]);
     text(BRANCH[br].name, x + dx, y + dy, BRANCH[br].col, { align: al, outline: false });
@@ -6898,6 +7193,19 @@ function boot() {
   });
 }
 boot();
+
+// test_a.js - test calls for part A (skills.js), added to window.__sr once the game has booted.
+// skills() = what the first ring does in this run; gold(sx, sy) = a golden zombie at screen pixel (sx, sy).
+Object.assign(window.__sr, {
+  skills: () => ({ chain: G.up.chain, cow: G.up.cow, gold: G.up.gold, armor: G.up.armor, zaps: zaps.length,
+    golden: G.zombies.filter((z) => z.gold && !z.dead).length, goldSeen: !!G.goldSeen, chainSeen: !!G.chainSeen,
+    lockWait: G.lockWait, kills: G.kills, cash: G.cash, hp: G.tr.hp, v: +G.tr.v.toFixed(1) }),
+  gold: (sx, sy) => {
+    const z = makeGold(makeZombie(G.camX + sx, G.camY + sy, 0));
+    G.zombies.push(z);
+    return z;
+  }
+});
 
 })();
 </script>

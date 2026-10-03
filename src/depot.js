@@ -186,7 +186,7 @@ function drawDepotTop() {
   const sx = 15 + Math.max(18, tw(sc)) + 10, ew = 9 + Math.max(10, tw(String(sv)));
   blit(ICON.surv, sx, 5 - (cs ? 1 : 0));
   text(sv, sx + 9, 6, cs ? '#d4f5cf' : U.green);
-  tipAt(2, 0, sx - 6, 18, [['SCRAP', U.gold], ['FROM KILLS, STREAKS, THE RIDE AND STATIONS.', U.dim], ['IT BUYS UPGRADES IN THE SKILL TREE.', U.dim]]);
+  tipAt(2, 0, sx - 6, 18, [['SCRAP', U.gold], ['FROM KILLS, THE RIDE AND STATIONS.', U.dim], ['IT BUYS UPGRADES IN THE SKILL TREE.', U.dim]]);
   tipAt(sx - 2, 0, ew + 6, 18, [['SURVIVORS', U.green], ['SAVE THEM AT STATIONS.', U.dim], ['THEY BUY THE BIGGEST UPGRADES.', U.dim]]);
   // the tabs in the middle
   const tw0 = narrow ? 66 : 84, tx = Math.round(W / 2 - tw0 - 2), open = stationOpen();
