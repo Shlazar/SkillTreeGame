@@ -1,6 +1,6 @@
 // depot.js - the save, and the Depot: the screen between runs. SAVE is everything kept from run to
 // run, one object in this browser's storage. The Depot screen has a top bar (your scrap and
-// survivors, the SKILL TREE and STATION tabs, your best km), the open tab's panel, and a bottom bar
+// survivors, the SKILL TREE tab, your best km), the tree panel, and a bottom bar
 // (where the next run starts, and START RUN). The title demo keeps running behind it, dimmed.
 
 // ---------- the save
@@ -62,7 +62,7 @@ function newSave() {
 const hasProgress = () => SAVE.runs > 0 || SAVE.scrap > 0 || SAVE.surv > 0 || Object.keys(SAVE.nodes).length > 0;
 // the level of skill tree node id (0 = not bought)
 const lv = (id) => SAVE.nodes[id] | 0;
-// the STATION tab opens once Farm Stop has been held
+// Farm Stop's tree branch opens once the station has been held.
 const stationOpen = () => SAVE.held.includes(STATIONS[0].id);
 // The starts on offer: the Depot, then every station reached, up the line.
 function startsOpen() {
@@ -77,7 +77,7 @@ function pickStart(dir) {
 }
 
 // ---------- the Depot screen
-// depotTab = the open tab: 'tree' or 'station'
+// depotTab = the open tab: only 'tree' for now.
 let depotTab = 'tree';
 // Go to the Depot (from the title the demo behind it goes on; after a run a new one starts).
 function toDepot(tab) {
@@ -85,26 +85,19 @@ function toDepot(tab) {
   mode = 'depot';
   paused = false;
   SHOWN.scrap = SHOWN.surv = -1;
-  if (tab) setTab(tab);
+  setTab(tab);
   // FARM STOP comes into the skill tree once Farm Stop has been held
   syncGiven();
 }
-function setTab(t) {
-  depotTab = t;
-  if (t === 'station' && stationOpen() && !SAVE.seen.stationTab) {
-    SAVE.seen.stationTab = true;
-    saveSave();
-  }
+// Keep the Depot on the tree until another panel is added.
+function setTab() {
+  depotTab = 'tree';
 }
-// Keys on the Depot screen: TAB switches tabs, ENTER starts, left / right pick the start, ESC goes
-// back to the title. (On the Station tab, 1-3 pick a tower and ESC first drops it.)
+// Keys on the Depot screen: ENTER starts, left / right pick the start, ESC goes back to the title.
+// TAB does nothing while there is only one panel.
 function depotKey(k) {
-  if (depotTab === 'station' && stationKey(k)) return;
-  if (depotTab === 'tree' && treeKey(k)) return;
-  if (k === 'Tab') {
-    setTab(depotTab === 'tree' ? 'station' : 'tree');
-    SFX.ui();
-  } else if (k === 'Enter') startGame(SAVE.start);
+  if (treeKey(k)) return;
+  if (k === 'Enter') startGame(SAVE.start);
   else if (k === 'ArrowLeft') pickStart(-1);
   else if (k === 'ArrowRight') pickStart(1);
   else if (k === 'Escape') toTitle();
@@ -114,8 +107,7 @@ function drawDepot() {
   ctx.fillStyle = 'rgba(5,6,8,0.62)';
   ctx.fillRect(0, 0, W, H);
   const y0 = 19, y1 = H - 29;
-  if (depotTab === 'station') drawStationTab(y0, y1);
-  else drawTreeTab(y0, y1);
+  drawTreeTab(y0, y1);
   drawDepotTop();
   drawDepotBottom();
   drawTutTags();
@@ -191,14 +183,12 @@ function drawDepotTop() {
   text(sv, sx + 9, 6, cs ? '#d4f5cf' : U.green);
   tipAt(2, 0, sx - 6, 18, [['SCRAP', U.gold], ['FROM KILLS, THE RIDE AND STATIONS.', U.dim], ['IT BUYS UPGRADES IN THE SKILL TREE.', U.dim]]);
   tipAt(sx - 2, 0, ew + 6, 18, [['SURVIVORS', U.green], ['SAVE THEM AT STATIONS.', U.dim], ['THEY BUY THE BIGGEST UPGRADES.', U.dim]]);
-  // the tabs in the middle
-  const tw0 = narrow ? 66 : 84, tx = Math.round(W / 2 - tw0 - 2), open = stationOpen();
+  // the tree tab in the middle
+  const tw0 = narrow ? 66 : 84, tx = Math.round((W - tw0) / 2);
   if (depotTabBtn(tx, tw0, narrow ? 'TREE' : 'SKILL TREE', depotTab === 'tree', false, false)) setTab('tree');
-  if (depotTabBtn(tx + tw0 + 4, tw0, 'STATION', depotTab === 'station', !open, open && !SAVE.seen.stationTab)) setTab('station');
-  if (!open) tipAt(tx + tw0 + 4, 2, tw0, 17, [['STATION', U.teal], ['HOLD FARM STOP ONCE TO BUILD HERE.', U.dim]]);
   // the best run
   const b = SAVE.best.toFixed(2) + ' KM', bw = tw(b);
-  if (W - bw - 6 > tx + tw0 * 2 + 12) {
+  if (W - bw - 6 > tx + tw0 + 8) {
     text(b, W - 6, 6, SAVE.best > 0 ? U.ink : U.faint, { align: 'right' });
     if (!narrow) text('BEST', W - 12 - bw, 6, U.dim, { align: 'right' });
     tipAt(W - bw - 40, 0, bw + 40, 18, [['YOUR BEST RUN', U.ink], ['THE FURTHEST THE TRAIN HAS GOT,', U.dim], ['IN KM FROM THE DEPOT.', U.dim]]);
@@ -208,13 +198,9 @@ function drawDepotTop() {
 function depotHint() {
   const tut = tutHint();
   if (tut) return tut;
-  if (depotTab === 'station' && !stationOpen()) return ['HOLD FARM STOP ONCE TO BUILD HERE.', U.ink];
-  if (depotTab === 'station' && ST.sel) return ['CLICK A TILE TO BUILD.  R-CLICK OR ESC: STOP.', U.dim];
-  const th = depotTab === 'tree' && treeHint();
+  const th = treeHint();
   if (th) return th;
-  const d = stopDef(SAVE.start);
-  if (d && d.id !== 'depot') return startHint(d);
-  return ['TAB: SWITCH PANELS.  ENTER: START RUN.', U.faint];
+  return ['ENTER: START RUN.', U.faint];
 }
 function drawDepotBottom() {
   const y = H - 28;
@@ -247,5 +233,4 @@ function drawDepotBottom() {
   const [hint, hc] = depotHint(), hw = tw(hint);
   if (hw < bx - x - 16) text(hint, Math.round((x + bx) / 2), y + 11, hc, { align: 'center' });
 }
-// (The SKILL TREE tab is drawn by drawTreeTab in tree.js, the STATION tab by drawStationTab in
-// stationtab.js.)
+// The SKILL TREE tab is drawn by drawTreeTab in tree.js.

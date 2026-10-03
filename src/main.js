@@ -284,7 +284,7 @@ function boot() {
     // start(from): a run from 'depot' (the default) or a reached station ('farm', 'mill')
     start: (from) => startGame(from || 'depot'),
     title: toTitle,
-    // depot(tab): the Depot screen with tab 'tree' or 'station' open
+    // depot(tab): the Depot screen with its tree tab open
     depot: (tab) => toDepot(tab || 'tree'),
     // sim(sec): run the game for sec seconds at once, without drawing
     sim: (sec) => {

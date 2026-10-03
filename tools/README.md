@@ -106,7 +106,7 @@ Each call rewrites `index.html` and uses one Chrome profile per repo (`tools/out
 
 A scenario is a plain browser JS file. It is not a module, and it has no `require`.
 
-- It runs **once, right after the game has booted.** `boot()` in `src/main.js` has already run, `__sr.mode` is `'title'`, and every `__sr` call from section 5 exists. (The calls in `src/stationtab.js` are added in a `queueMicrotask`, which also finishes before your scenario runs. BUILD_PLAN T0.2 deletes that file.)
+- It runs **once, right after the game has booted.** `boot()` in `src/main.js` has already run, `__sr.mode` is `'title'`, and every `__sr` call from section 5 exists.
 - **localStorage is cleared before boot**, so every test starts from a fresh save: 0 scrap, nothing bought, no tutorial seen. Use `__sr.give`, `__sr.node`, `__sr.reach` to set up a save.
 - The game code lives inside one closure (`(() => { 'use strict'; ... })()` from `build.py`). **Your scenario cannot see `G`, `mode`, `SAVE`, `CFG` or any other game name directly.** Use `window.__sr` only (for example `__sr.G`, `__sr.mode`, `__sr.SAVE`, `__sr.CFG`). If you need a new hook, add it to a `test_*.js` file (see "Adding a new test call" at the end of section 5).
 - The scenario code runs synchronously. `__sr.sim(sec)` and `__sr.frames(n)` move the game forward right away, so a 30 s `sim` finishes in about a second of real time. Headless Chrome hardly runs `requestAnimationFrame` by itself during a run, so do not wait with `setTimeout` for the game to move. Step it yourself.
@@ -165,7 +165,7 @@ Keep your own scenarios in `tools/scenarios/` (one file per task, named after it
 
 All of these are defined in `src/main.js` (`boot()`, `window.__sr = {...}`) or added with `Object.assign(window.__sr, {...})` in the files named below. "Screen pixel (sx, sy)" means game pixels in the view, from the top-left of the canvas. It is converted to world position with `G.camX/G.camY`. "Game px (x, y)" for the mouse is the same view space.
 
-This list describes the game **before** BUILD_PLAN.md. Tasks remove some calls (for example the station calls in 5.14) and add new ones in `src/test_f.js` (see the "Test helpers you will add" table in BUILD_PLAN.md). Keep this section up to date when you change them.
+This list follows the current build. Tasks remove old calls and add new ones in `src/test_f.js` (see the "Test helpers you will add" table in BUILD_PLAN.md). Keep this section up to date when you change them.
 
 ### 5.1 State (src/main.js)
 
@@ -181,7 +181,7 @@ This list describes the game **before** BUILD_PLAN.md. Tasks remove some calls (
 ### 5.2 Screens and flow (src/main.js, src/tut.js)
 
 - `title()`: go to the title screen (`toTitle`).
-- `depot(tab)`: go to the Depot with tab `'tree'` (default) or `'station'` open (`toDepot`). (`'station'` goes away in BUILD_PLAN T0.2.)
+- `depot(tab)`: go to the Depot with its `'tree'` tab open (`toDepot`).
 - `start(from)`: start a run from `'depot'` (default) or a reached station id (`'farm'`, `'mill'`) (`startGame`).
 - `lose()`: the train breaks now, in play only. The summary follows about 3.4 s later (sim 6 s to be safe).
 - `quit()`: quit the run as the pause menu does (`quitRun`, src/tut.js).
@@ -211,7 +211,6 @@ This list describes the game **before** BUILD_PLAN.md. Tasks remove some calls (
 - `press(k)`: dispatch a keydown and a keyup for k (`'Enter'`, `'Tab'`, `'Escape'`, `'e'`...).
 - `hover(x, y)`: the mouse over game px (x, y). Clears `hoverNode`.
 - `click(x, y)`: a full left click at game px (x, y). It draws one frame so the button there acts at once, and skips the summary animation if in summary.
-- `rclick(x, y)`: a right click at game px (x, y), with one frame drawn. Today it is in src/stationtab.js (line 506); BUILD_PLAN T0.2 moves it to src/test_h.js (then list it in 5.8).
 
 ### 5.6 Zombies and the horde (src/main.js, src/test_a.js, src/test_z.js)
 
@@ -236,6 +235,7 @@ This list describes the game **before** BUILD_PLAN.md. Tasks remove some calls (
 
 ### 5.8 Helicopters (src/test_h.js)
 
+- `rclick(x, y)`: a right click at game px (x, y), with one frame drawn.
 - `helis()`: each heli: `{name, x, y, dx, dy, hd, alt, sel, order, tgt, heat, hot, heR, sx, sy}` (dx/dy from the engine's nose, sx/sy on screen).
 - `lclick(x, y, shift)`: a left click at game px as a player does for heli control (`heliDown`/`heliUp`).
 - `drag(x0, y0, x1, y1)`: a left drag (selection box) from (x0, y0) to (x1, y1).
@@ -302,22 +302,6 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 - `lootTake(i)`: take find i at once (`takeLoot`).
 - `lootSpawn(kind)`: a find of kind `'pile'`, `'crate'`, `'gold'` or `'sos'` right next to heli 0. Returns its index.
 - `lootStats()`: `{loot, cash, surv, pickup, fly, winch}`.
-
-### 5.14 Stations and towers (src/stationtab.js; removed in BUILD_PLAN T0.2)
-
-These calls exist on the baseline build only. BUILD_PLAN T0.2 deletes `stationtab.js` (it moves `rclick` first). Then delete this section.
-
-- `place(id, type, c, r)`: build tower `type` (`'nest'`, `'bag'`, `'wire'`, from `TOWER_TYPES` in towers.js) at tile (c, r) of station id, paid like a click (`stPlace`). False if not allowed.
-- `sell(id, c, r)`: sell what stands on tile (c, r) (`stSell`).
-- `move(id, c, r, c2, r2)`: move a tower from (c, r) to (c2, r2) (`stMove`).
-- `towers(id)`: `["type c,r paid", ...]` for station id.
-- `price(id, type)`: the price of the next tower of that type there.
-- `stTab(id)`: open the Depot Station tab on station id.
-- `stSel(type)`: pick a tower card (or none).
-- `stTile(c, r)`: the screen point of the middle of tile (c, r). The mouse goes there too.
-- `stGuide(n)`: set the guided-step flag `SAVE.flags.stGuide`.
-- `holdState()`: the station hold now: `{id, state, t, T, first, people, saved, lost, wave, perfect, nests, bags, wires, awake}`, or null.
-- `house()`: a copy of `SAVE.house` (survivors waiting per station).
 
 ### 5.15 Tutorial (src/tut.js)
 

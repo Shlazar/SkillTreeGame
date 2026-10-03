@@ -483,8 +483,7 @@ function tutSumLines() {
   return TUT.sum;
 }
 function tutSumOpen() {
-  TUT.sum = TUT.heldFirst && see('s_held') ? [['NEW: SURVIVORS. THEY BUY THE BIGGEST UNLOCKS.', U.green],
-    [STATIONS[0].name + ' IS YOURS. SEE THE STATION TAB.', U.green]] : [];
+  TUT.sum = TUT.heldFirst && see('s_held') ? [['NEW: SURVIVORS. THEY BUY THE BIGGEST UNLOCKS.', U.green]] : [];
 }
 
 // ---------- the fade between screens

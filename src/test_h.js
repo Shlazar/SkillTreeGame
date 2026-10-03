@@ -1,4 +1,4 @@
-// test_h.js - test calls for the helicopters (helis.js), added to window.__sr after start-up.
+// test_h.js - test calls for the helicopters (helis.js) and mouse input, added to window.__sr after start-up.
 Object.assign(window.__sr, {
   // helis(): each heli's place (from the engine's nose), order, target, heat and 105 reload
   helis: () => G.helis.map((h) => ({ name: h.name, x: Math.round(h.x), y: Math.round(h.y), dx: Math.round(h.x - G.tr.fx), dy: Math.round(h.y - G.tr.fy),
@@ -19,6 +19,16 @@ Object.assign(window.__sr, {
     heliUp(x1, y1);
   },
   rclickH: (x, y) => heliRight(x, y),
+  // A right click in game px, with one frame drawn.
+  rclick: (x, y) => {
+    M.x = x;
+    M.y = y;
+    M.inside = true;
+    M.rpressed = true;
+    render();
+    drawUI();
+    M.rpressed = false;
+  },
   // sel(i...): select these helis (none = let them all go); heliKey(k) as a key press
   sel: (...ids) => { for (const h of G.helis) h.sel = ids.includes(h.i); },
   heliKey: (k) => heliKey(k),

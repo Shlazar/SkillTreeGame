@@ -152,19 +152,16 @@ function drawRoute(x0, x1) {
   ctx.fillStyle = stop && Math.floor(realT * 3) % 2 ? U.green : '#e8dfc8';
   ctx.fillRect(tx - 1, y - 2, 3, 5);
 }
-// warnings under the top bar: the dead on the track or on the train, the station hold
+// Warnings under the top bar: the dead on the track, on the train or at the station door.
 function drawWarnings() {
   if (G.result) return;
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', st = G.station, L = [];
   if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (E: RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
   if (st && st.state === 'hold' && st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
-  // the station hold bar comes first (stationtab.js), under the task box when they would touch;
-  // then the lines, beside the task box or under it (tut.js)
-  const b = taskBox();
-  const y = drawHoldBar(b && holdNow() && b[0] > W / 2 - 114 ? b[1] + 4 : 24);
+  // Place the lines beside the task box, or under it when they would touch (tut.js).
   const [wx, wy] = warnAt(L);
-  L.forEach(([t, c], i) => text(t, wx, Math.max(wy, y) + i * 10, c, { align: 'center' }));
+  L.forEach(([t, c], i) => text(t, wx, wy + i * 10, c, { align: 'center' }));
 }
 // An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
 // with a label just inside it.
