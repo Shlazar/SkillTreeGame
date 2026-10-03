@@ -1,8 +1,8 @@
 // loot.js - the finds you fly out from the train for: scrap piles on car wrecks, supply crates in
 // burnt farms (the dead stand guard; they come only once the train has its flatcar gun), the golden
 // crate (once per save) and the stranded survivor on a bus roof (SOS, once per save, after Farm Stop
-// is held) that the Winch lifts. Fly so the heli's ground point (the middle of the view) is over a
-// find: it flies up to the heli and pays. G.loot = this run's finds, rolled in newGame().
+// is held) that the Winch lifts. Any heli that flies over a find (right click it to send one) takes
+// it: it flies up to that heli and pays. G.loot = this run's finds, rolled in newGame().
 
 // pile: one spot every `every` px along the rails (100 m), `fill` of them have a pile (rolled again
 // each run), `near` to `far` px from the rails. crate: its guards, how near the heli wakes them,
@@ -12,14 +12,14 @@
 // up to the heli. Past farKm (Farm Stop) piles and crates pay payFar. clear = no pile within this
 // many px along the rails of a stop (so none lies in a station's grid).
 const LOOT = {
-  pile: { every: 200, fill: 0.6, near: 80, far: 260, pay: 15, payFar: 30 },
+  pile: { every: 200, fill: 0.6, near: 80, far: 250, pay: 15, payFar: 30 },
   crate: { pay: 50, payFar: 100, guards: 8, wake: 120, arrow: 450, place: 500 },
-  gold: { km: 0.32, off: 410, side: -1, pay: 150, arrow: 700 },
+  gold: { km: 0.32, off: 250, side: -1, pay: 150, arrow: 700 },
   sos: { km: 1.2, off: 220, side: 1, reach: 20, arrow: 700 },
   fly: 0.3, farKm: 1, clear: 180
 };
 // the supply crates: [km, px from the rails, side]
-const CRATES = [[0.12, 260, 1], [0.58, 300, -1], [1.30, 320, -1], [1.55, 300, 1], [1.90, 280, -1]];
+const CRATES = [[0.12, 240, 1], [0.58, 250, -1], [1.30, 250, -1], [1.55, 240, 1], [1.90, 250, -1]];
 // the find sprites (drawn once, on the first run)
 const LART = {};
 function lootArt() {
@@ -94,8 +94,6 @@ function rollLoot() {
   lootArt();
   G.loot = [];
   G.lootFly = [];
-  G.lootFar = false;
-  G.goldFar = false;
   const rng = mulberry(hash32(SAVE.runs * 7919 + 101)), k0 = kmAt(G.tr.startS), c = LOOT.pile;
   const gate = (k) => k > k0 - 0.05;
   if (!SAVE.flags.gold && gate(LOOT.gold.km)) addFind('gold', LOOT.gold.km, LOOT.gold.off, LOOT.gold.side, LOOT.gold.pay);
@@ -110,42 +108,41 @@ function rollLoot() {
     addFind('pile', k, px, side, k > LOOT.farKm ? c.payFar : c.pay);
   }
 }
-// The heli's ground point (the middle of the view, less the camera's lead)
+// The middle of the view (less the camera's lead): how far the edge arrows reach is counted from it
 const LG = [0, 0];
 function heliGround() {
   LG[0] = G.camX + W / 2 - G.lead[0];
   LG[1] = G.camY + H / 2 - G.lead[1];
   return LG;
 }
+// The heli nearest find f, and how far its ground point is from it: [heli, px]
+function lootHeli(f) {
+  let best = null, bd = 1e9;
+  for (const h of G.helis) {
+    const d = Math.hypot(f.x - h.x, f.y - h.y);
+    if (d < bd) { bd = d; best = h; }
+  }
+  return [best, bd];
+}
 
 // ---------- each step
 function updateLoot(dt) {
   if (!G.loot) return;
-  const h = G.heli, [gx, gy] = heliGround(), live = mode === 'play' && !G.result, hy = Math.round(H * 0.12);
-  if (live && h.far && !G.lootFar) lootTut('range_limit');
-  G.lootFar = h.far;
+  const live = mode === 'play' && !G.result;
   for (const f of G.loot) {
     if (f.gone && f.kind !== 'sos') continue;
     f.t += dt;
-    const d = Math.hypot(f.x - gx, f.y - gy);
+    const [h, d] = lootHeli(f);
     if (!f.seen && live && (!offView(f.x, f.y, -12) || (f.kind !== 'pile' && d < (LOOT[f.kind].arrow || 0)))) {
       f.seen = true;
-      lootTut(f.kind + '_seen', f.kind === 'sos' ? { winch: !!G.up.winch } : {});
+      lootTut(f.kind + '_seen', f.kind === 'sos' ? { winch: !!G.up.winch } : { x: f.x, y: f.y });
     }
     if (f.kind === 'crate') crateStep(f, d, dt);
     if (f.kind === 'sos') {
-      sosStep(f, d, dt, live);
+      sosStep(f, d, dt, live, h);
       continue;
     }
-    // the golden crate out of reach: the heli is held at the end of its range, near it
-    if (f.kind === 'gold' && live && h.far && !G.goldFar && d < 240) {
-      const rd = Math.hypot(f.x - G.tr.fx, f.y - G.tr.fy - hy);
-      if (rd > G.up.range + G.up.pickup) {
-        G.goldFar = true;
-        lootTut('gold_too_far');
-      }
-    }
-    if (live && d <= G.up.pickup) takeLoot(f);
+    if (live && d <= G.up.pickup) takeLoot(f, h);
   }
   // finds flying up to the heli; they pay when they get there
   for (let i = G.lootFly.length - 1; i >= 0; i--) {
@@ -153,21 +150,21 @@ function updateLoot(dt) {
     q.t += dt;
     if (q.t >= q.T) {
       G.lootFly.splice(i, 1);
-      if (q.f) lootPaid(q.f);
+      if (q.f) lootPaid(q.f, q.h);
     }
   }
 }
-// A find is taken: it flies up to the heli (the pile's heap or the crate leaves the ground).
-function takeLoot(f) {
+// A find is taken by heli h: it flies up to it (the pile's heap or the crate leaves the ground).
+function takeLoot(f, h) {
   f.gone = true;
   const i = G.statics.indexOf(f.top);
   if (i >= 0) G.statics.splice(i, 1);
-  G.lootFly.push({ f, spr: f.top.d, x0: f.x, y0: f.y, t: 0, T: LOOT.fly });
+  G.lootFly.push({ f, h: h || G.helis[0], spr: f.top.d, x0: f.x, y0: f.y, t: 0, T: LOOT.fly });
   SFX.lootUp();
 }
-// It reached the heli: the pay, a chime, coins to the counter.
-function lootPaid(f) {
-  const [gx, gy] = heliGround(), big = f.kind !== 'pile';
+// It reached heli h: the pay, a chime, coins to the counter.
+function lootPaid(f, h) {
+  const gx = h.x, gy = h.y - h.alt + 14, big = f.kind !== 'pile';
   G.cash += f.pay;
   G.pay.loot += f.pay;
   G.cashPulse = 1;
@@ -215,9 +212,9 @@ function crateStep(f, d, dt) {
     }
   }
 }
-// The stranded survivor: a flare every 6 s. With the Winch, hover over them for 1.5 s (leaving
-// starts it again): the rope drops, they grab it and swing up under the heli: +1 survivor.
-function sosStep(f, d, dt, live) {
+// The stranded survivor: a flare every 6 s. With the Winch, a heli hovers over them for 1.5 s
+// (leaving starts it again): the rope drops, they grab it and swing up under that heli: +1 survivor.
+function sosStep(f, d, dt, live, h) {
   if (f.stage === 'done') return;
   if (f.stage === 'wait') {
     if (f.t >= 6) {
@@ -229,6 +226,7 @@ function sosStep(f, d, dt, live) {
       lootTut('sos_near', { winch: !!G.up.winch });
     }
     if (live && G.up.winch && d <= LOOT.sos.reach) {
+      f.h = h;
       f.w += dt;
       if (f.w >= CFG.winch.hover) {
         f.stage = 'rope';
@@ -249,9 +247,9 @@ function sosStep(f, d, dt, live) {
     G.surv++;
     SAVE.flags.sos = true;
     bankRun();
-    const [gx, gy] = heliGround();
-    G.lootFly.push({ surv: true, x0: gx - G.camX, y0: gy - G.camY - CFG.heli.alt + 36, t: 0, T: 0.8 });
-    floatText(gx, gy - 20, '+1 SURVIVOR', U.green);
+    const q = f.h;
+    G.lootFly.push({ surv: true, x0: q.x - G.camX, y0: q.y - q.alt - G.camY + 8, t: 0, T: 0.8 });
+    floatText(q.x, q.y - q.alt, '+1 SURVIVOR', U.green);
     lootTut('sos_lifted');
   }
 }
@@ -293,10 +291,10 @@ function drawLoot() {
       if ((realT * 2 | 0) % 2 === 0) text('GOLD', f.x, f.y - 26, '#ffd36a', { align: 'center' });
     } else if (f.kind === 'sos' && f.stage !== 'done') drawSOS(f, gx, gy);
   }
-  // finds flying up to the heli
+  // finds flying up to the heli that took them
   for (const q of G.lootFly) {
     if (q.surv) continue;
-    const u = q.t / q.T, e = u * u, x = lerp(q.x0, gx, e), y = lerp(q.y0, gy, e) - e * 70;
+    const u = q.t / q.T, e = u * u, x = lerp(q.x0, q.h.x, e), y = lerp(q.y0, q.h.y - q.h.alt + 6, e);
     ctx.globalAlpha = 1 - u * 0.6;
     blit(q.spr.spr, Math.round(x - q.spr.ax), Math.round(y - q.spr.ay));
     ctx.globalAlpha = 1;
@@ -321,8 +319,8 @@ function drawSOS(f, gx, gy) {
     if (t < 0.6 && Math.random() < 0.5) part({ x: f.x + 2, y: f.y, z: 14 + z, vx: rnd(-3, 3), vy: 0, vz: 0, g: 0, life: 0.8, max: 0.8, s: 1,
       c: 'rgba(200,190,180,0.5)', grow: 2, drag: 1, smoke: true });
   }
-  // the Winch circle on the ground round the survivor: it fills while the heli hovers in it
-  const near = Math.hypot(f.x - gx, f.y - gy);
+  // the Winch circle on the ground round the survivor: it fills while a heli hovers in it
+  const [hh, near] = lootHeli(f);
   if (f.stage === 'wait' && G.up.winch && near < 90) {
     const R = LOOT.sos.reach, n = 40, fill = f.w / CFG.winch.hover;
     for (let i = 0; i < n; i++) {
@@ -332,16 +330,13 @@ function drawSOS(f, gx, gy) {
     }
     if (fill > 0) text(Math.round(fill * 100) + '%', f.x, f.y + 12, '#ffffff', { align: 'center' });
   }
-  // the survivor: on the roof, on the rope, or swinging up under the heli
-  // (the view looks down from the heli: the rope hangs from the view's middle, and the survivor
-  // swings in to just under it, growing as they come up to the camera)
+  // the survivor: on the roof, on the rope from the heli's belly, or swinging up under it
   let sx = f.x + 2, sy = f.y - 14, k = 1;
-  const ax = Math.round(gx), ay = Math.round(gy - CFG.heli.alt);
+  const lh = f.h || hh, ax = Math.round(lh.x), ay = Math.round(lh.y - lh.alt + 2);
   if (f.stage === 'lift') {
     const u = ease(f.u / 1.6);
-    sx = lerp(f.x + 2, ax, u) + Math.sin(f.u * 5) * 14 * (1 - u * 0.6);
-    sy = lerp(f.y - 14, ay + 44, u);
-    k = u > 0.5 ? 2 : 1;
+    sx = lerp(f.x + 2, ax, u) + Math.sin(f.u * 5) * 10 * (1 - u);
+    sy = lerp(f.y - 14, ay + 9, u);
   }
   if (f.stage === 'rope' || f.stage === 'lift') {
     const e = f.stage === 'rope' ? Math.min(1, f.u / 0.45) : 1;
@@ -431,17 +426,15 @@ Object.assign(window.__sr, {
   loot: () => (G.loot || []).map((f, i) => ({ i, kind: f.kind, km: f.km, off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, gone: f.gone, seen: f.seen,
     stage: f.stage, w: f.w, placed: f.placed, awake: f.awake, guards: f.zs ? f.zs.filter((z) => !z.dead).length : 0 })),
   lootGo: (i) => {
-    const f = G.loot[i], h = G.heli;
-    h.ox = f.x - G.tr.fx;
-    h.oy = f.y - G.tr.fy;
+    const f = G.loot[i], h = G.helis[0];
+    h.x = f.x;
+    h.y = f.y;
     h.vx = h.vy = 0;
-    h.home = false;
-    G.lead[0] = G.lead[1] = 0;
-    placeCamera();
+    h.order = { kind: 'move', x: f.x, y: f.y };
   },
   lootTake: (i) => takeLoot(G.loot[i]),
   lootSpawn: (kind) => {
-    const [gx, gy] = heliGround(), f = addFind(kind, 0, 0, 1, kind === 'gold' ? LOOT.gold.pay : kind === 'crate' ? LOOT.crate.pay : LOOT.pile.pay);
+    const gx = G.helis[0].x, gy = G.helis[0].y, f = addFind(kind, 0, 0, 1, kind === 'gold' ? LOOT.gold.pay : kind === 'crate' ? LOOT.crate.pay : LOOT.pile.pay);
     const dx = gx + 30 - f.x, dy = gy - f.y;
     for (const o of f.props) { o.x += dx; o.y += dy; o.k = o.y; }
     f.x += dx;
@@ -450,5 +443,5 @@ Object.assign(window.__sr, {
     f.km = DK();
     return G.loot.length - 1;
   },
-  lootStats: () => ({ loot: G.pay.loot, cash: Math.floor(G.cash), surv: G.surv, far: G.heli.far, pickup: G.up.pickup, range: G.up.range, winch: G.up.winch })
+  lootStats: () => ({ loot: G.pay.loot, cash: Math.floor(G.cash), surv: G.surv, pickup: G.up.pickup, fly: G.up.fly, winch: G.up.winch })
 });

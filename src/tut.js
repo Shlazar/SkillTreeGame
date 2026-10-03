@@ -8,12 +8,12 @@
 
 // tasks / taskQ = the task lines shown and waiting; tip / tipQ = the tip shown and waiting; banQ =
 // banners waiting; labels = words over a zombie (BRUTE!); mode = the screen last frame (for the
-// fades and for what a new run resets); fade = the black over the screen (1 = all black); fly = px
-// flown this run; heR = the 105mm's reload last frame; heldFirst = this run held a station for the
+// fades and for what a new run resets); fade = the black over the screen (1 = all black); heR = the
+// 105mm's reload last frame; heldFirst = this run held a station for the
 // first time; cardAt / card = the end-of-build card (when it opens, and its numbers); after = Depot
 // prompts to mark seen when the next run starts
 const TUT = {
-  tasks: [], taskQ: [], tip: null, tipQ: [], banQ: [], labels: [], mode: '', fade: 1, fadeK: 1, fly: 0, hx: 0, hy: 0,
+  tasks: [], taskQ: [], tip: null, tipQ: [], banQ: [], labels: [], mode: '', fade: 1, fadeK: 1,
   heR: 0, heldFirst: false, cardAt: 0, card: null, sum: [], after: new Set()
 };
 const seen = (k) => !!SAVE.seen[k];
@@ -81,18 +81,20 @@ function tutEvent(name, d) {
   if (!G || G.demo || !(mode === 'play' || mode === 'ending')) return;
   const P = (o) => () => (o && o.x != null ? [o.x - G.camX, o.y - G.camY] : null);
   const ev = {
-    pile_seen: () => task('t_piles', 'GRAB 3 SCRAP PILES', 3, 'pile'),
+    pile_seen: () => {
+      task('t_piles', 'GRAB 3 SCRAP PILES', 3, 'pile');
+      tip('p_pile', 'RIGHT CLICK A SCRAP PILE TO SEND A HELI.', P(d));
+    },
     pile_taken: () => tutCount('pile'),
     crate_seen: () => task('t_crate', 'GRAB THE SUPPLY CRATE', 1, 'crate'),
     crate_taken: () => tutCount('crate'),
-    gold_too_far: () => bannerOnce('b_gold', 'GOLDEN CRATE', 'TOO FAR. BUY RADIO RANGE.'),
     sos_seen: () => { if (!d.winch) tip('p_sos', 'A SURVIVOR! YOU NEED THE WINCH.', P(d)); },
-    sos_near: () => tip('p_lift', 'HOVER OVER THEM TO LIFT THEM UP.', P(d)),
+    sos_near: () => tip('p_lift', 'KEEP A HELI OVER THEM TO LIFT THEM UP.', P(d)),
     golden_seen: () => tip('p_golden', 'GOLDEN ZOMBIE! CATCH IT FOR ' + goldenPay(d) + ' SCRAP.', P(d.z || d)),
     chain_first: () => tip('p_chain', 'CHAIN SHOT! A KILL JUMPS TO MORE ZOMBIES.', null),
     // (station.js shows the AHEAD and HOLD banners itself)
     hold_start: () => { if (d.first) tip('p_nest', 'YOUR MG NEST SHOOTS BY ITSELF.', null); },
-    survivor_grabbed: () => tip('p_grab', 'SHOOT THE ZOMBIE TO SAVE THEM.', P(d.x != null ? d : G.people.find((p) => p.st === 'grab'))),
+    survivor_grabbed: () => tip('p_grab', 'RIGHT CLICK THE ZOMBIE TO SAVE THEM.', P(d.x != null ? d : G.people.find((p) => p.st === 'grab'))),
     station_held: () => {
       if (d.first && d.id === STATIONS[0].id) TUT.heldFirst = true;
       if (d.first && d.id === 'mill' && !seen('endcard')) TUT.cardAt = realT + 1.6;
@@ -149,15 +151,10 @@ function tutFrame(dt) {
 function tutNewRun() {
   TUT.tasks.length = TUT.taskQ.length = TUT.tipQ.length = TUT.banQ.length = TUT.labels.length = 0;
   TUT.tip = null;
-  TUT.fly = 0;
   TUT.heldFirst = false;
   TUT.card = null;
   TUT.cardAt = 0;
-  if (G) {
-    TUT.hx = G.heli.ox;
-    TUT.hy = G.heli.oy;
-    TUT.heR = G.heReload;
-  }
+  if (G) TUT.heR = G.heReload;
   for (const k of TUT.after) see(k);
   TUT.after.clear();
 }
@@ -190,22 +187,21 @@ function tutChannels(dt) {
 }
 // What the run shows now that has a prompt (the ones no feature sends an event for).
 function tutLook(dt) {
-  const h = G.heli, k = DK(), runs = SAVE.runs;
-  // flying: px moved by the keys
-  const [ax, ay] = keyAxis();
-  if (ax || ay) tutCount('fly', Math.hypot(h.ox - TUT.hx, h.oy - TUT.hy));
-  TUT.hx = h.ox;
-  TUT.hy = h.oy;
+  const k = DK(), runs = SAVE.runs;
   // a 105mm shell fired
   if (G.heReload > TUT.heR + 0.01) tutCount('he');
   TUT.heR = G.heReload;
   // the first things to learn, right after the first run's Ram taste (or a moment into a run)
+  // (the helis: select, send, select all)
   if (G.taste ? G.ram.crack > 0 && realT - G.ram.crack > 0.6 : G.run > 1.5) {
-    task('t_fly', 'WASD: FLY', 120, 'fly');
-    task('t_shoot', 'HOLD LEFT CLICK: SHOOT', 10, 'shoot');
+    task('t_sel', 'CLICK YOUR HELI', 1, 'select');
+    task('t_attack', 'RIGHT CLICK A ZOMBIE TO ATTACK IT', 1, 'attack');
+    if (G.helis.length > 1) task('t_all', 'DRAG A BOX OR PRESS A TO SELECT ALL HELIS', 1, 'selall');
+    const h = G.helis[0];
+    if (h) tip('p_auto', 'YOUR HELI FIGHTS BY ITSELF. RIGHT CLICK TO SEND IT.', () => [h.x - G.camX, h.y - h.alt - G.camY]);
   }
-  if (G.overheat) tip('p_hot', 'TOO HOT! LET GO FOR A SECOND.', () => [52, cardsTop() + 13]);
-  if (G.up.gun && G.run > 3) tip('p_gun', 'YOUR FLATCAR GUN GUARDS THE TRAIN. GO EXPLORE!', () => {
+  if (G.overheat) tip('p_hot', 'TOO HOT! THE GUN COOLS DOWN BY ITSELF.', () => [40, cardsTop() + 13]);
+  if (G.up.gun && G.run > 3) tip('p_gun', 'YOUR FLATCAR GUN GUARDS THE TRAIN. SEND A HELI FOR LOOT!', () => {
     const [x, y] = gunXY();
     return [x - G.camX, y - G.camY];
   });
@@ -228,7 +224,7 @@ function tutLook(dt) {
   }
   if (rail >= 3) {
     task('t_track', 'SHOOT THE DEAD ON THE TRACK', 5, 'track');
-    if (G.up.he) task('t_he', 'RIGHT CLICK: 105MM', 1, 'he');
+    if (G.up.he) task('t_he', 'SPACE: 105MM AT THE MOUSE', 1, 'he');
   }
   if (climb && runs >= 2) task('t_climb', 'SHOOT THE DEAD OFF THE TRAIN', 1, 'climber');
   if (runner && runs >= 2) bannerOnce('b_run', 'RUNNERS', 'FAST, BUT ONLY ' + CFG.types[1].hp + ' HP', U.amber);
@@ -249,7 +245,7 @@ function taskBox() {
   const w = Math.max(...TUT.tasks.map((t) => tw(taskText(t)))) + 19;
   return [4 + w, 22 + 5 + TUT.tasks.length * 10];
 }
-const taskText = (t) => t.label + (t.need > 1 && t.kind !== 'fly' ? ' (' + Math.floor(t.n) + '/' + t.need + ')' : '');
+const taskText = (t) => t.label + (t.need > 1 ? ' (' + Math.floor(t.n) + '/' + t.need + ')' : '');
 // Where the warnings under the top bar go (L = their lines): in the middle, or moved right of the
 // task box, or under it when there is no room beside it. Returns [x of the middle, y].
 function warnAt(L) {
@@ -357,10 +353,10 @@ function tutTag() {
   const tree = depotTab === 'tree';
   if (!lv('root')) return tree ? ['root', "CLICK THE TRAIN. IT'S FREE."] : null;
   if (!SAVE.runs) return ['start', 'PRESS START RUN.'];
-  const ch = nodeNamed('CHAIN SHOT');
-  if (ch && !seen('g_chain')) {
-    TUT.after.add('g_chain');
-    if (!lv(ch.id)) return tree && shownAs(ch) === 2 ? [ch.id, 'BUY CHAIN SHOT: KILLS JUMP TO MORE ZOMBIES. THEN PRESS START RUN.'] : null;
+  const wm = NODE.wingman;
+  if (wm && !seen('g_wing')) {
+    TUT.after.add('g_wing');
+    if (!lv(wm.id)) return tree && shownAs(wm) === 2 ? [wm.id, 'BUY WINGMAN: A SECOND HELI JOINS YOU! THEN PRESS START RUN.'] : null;
     return ['start', 'PRESS START RUN.'];
   }
   const he = NODE.he;
@@ -423,10 +419,11 @@ function drawPause() {
     drawEndCard();
     return;
   }
-  const L = ['WASD: FLY.  F: BACK OVER THE TRAIN.', G.up.he ? 'LEFT CLICK: 25MM.  RIGHT CLICK: 105MM.' : 'HOLD LEFT CLICK: SHOOT.'];
+  const L = ['YOUR HELIS FIGHT BY THEMSELVES.', 'CLICK OR DRAG: SELECT.  A: ALL.  1 2 3: ONE.', 'RIGHT CLICK: ATTACK, MOVE OR ESCORT.'];
+  if (G.up.he) L.push('SPACE: 105MM AT THE MOUSE.');
   if (G.up.ram) L.push('E: TURBO RAM.');
   L.push('T: CAMERA.  M: SOUND.  WHEEL: ZOOM.');
-  const w = 236, h = 112 + L.length * 10, x = Math.round(W / 2 - w / 2), y = Math.max(22, Math.round((H + 19) / 2 - h / 2)), cx = x + w / 2;
+  const w = 280, h = 112 + L.length * 10, x = Math.round(W / 2 - w / 2), y = Math.max(22, Math.round((H + 19) / 2 - h / 2)), cx = x + w / 2;
   Object.assign(PAUSE, { x, y, w, h });
   panel(x, y, w, h, '#0f1014');
   text('PAUSED', cx, y + 9, U.ink, { align: 'center', scale: 2, drop: true });
@@ -509,6 +506,5 @@ Object.assign(window.__sr, {
     tips: TUT.tipQ.length, radio: RADIO.cur && RADIO.cur.msg, banner: banners[0] && banners[0].a, tag: mode === 'depot' ? tutTag() : null,
     hint: mode === 'depot' ? tutHint() : null, card: !!TUT.card, fade: +TUT.fade.toFixed(2), paused
   }),
-  quit: () => quitRun(),
-  fly: (px) => tutCount('fly', px)
+  quit: () => quitRun()
 });

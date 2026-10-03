@@ -350,28 +350,6 @@ function survivorRaw(shirt, skin, f) {
   });
 }
 
-// ---------- the helicopter's shadow (a gunship seen from below: cabin, stub wings, tail)
-const HELI = [];
-const HELI_N = 32;
-function heliSil() {
-  return pix(20, 34, (r) => {
-    r(8, 1, 4, 2, '#000'); r(7, 3, 6, 3, '#000'); r(6, 6, 8, 12, '#000');
-    r(1, 10, 18, 2, '#000'); r(0, 9, 3, 5, '#000'); r(17, 9, 3, 5, '#000');
-    r(7, 18, 6, 3, '#000'); r(9, 21, 2, 11, '#000');
-    r(5, 29, 10, 2, '#000'); r(11, 31, 3, 3, '#000');
-  });
-}
-function heliSpr(src, ang) {
-  const [c, g] = mk(40, 40, true);
-  g.translate(20, 20);
-  g.rotate(ang);
-  g.drawImage(src, -10, -11);
-  const im = g.getImageData(0, 0, 40, 40), d = im.data;
-  for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
-  g.putImageData(im, 0, 0);
-  return c;
-}
-
 // ---------- the station halfway: a platform beside the rails, a small station house, lamps
 const STATION = {};
 function slabSpr() {
@@ -722,10 +700,8 @@ function initSprites() {
     const [n, h] = one(0);
     SURV.push({ n, h, run: [one(1), one(2)] });
   }
-  // the helicopter's shadow at every heading round the circle
-  HELI.length = 0;
-  const hs = heliSil();
-  for (let i = 0; i < HELI_N; i++) HELI.push(heliSpr(hs, i / HELI_N * TAU));
+  // the helicopters at every heading round the circle (helis.js)
+  bakeHelis();
   // the station
   STATION.slab = prop(slabSpr(), 0);
   STATION.house = prop(houseSpr(), 10);

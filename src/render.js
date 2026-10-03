@@ -1,7 +1,7 @@
-// render.js - draws one frame of the world: ground and its marks, tufts, the helicopter's shadow and
+// render.js - draws one frame of the world: ground and its marks, tufts, the helicopters' shadows and
 // the other shadows, then trees, props, the train, the station, the safe zone, survivors and the
 // dead sorted by depth (the dead behind a tree show through it), fires, particles, explosions,
-// flying bodies, tracers and glows (headlights, lamps, searchlights), the mist and cloud shadows,
+// flying bodies, the helicopters (helis.js), tracers and glows (headlights, lamps, searchlights), the mist and cloud shadows,
 // then the color grade and vignette, or the thermal camera look (grey, hot things white).
 
 let VIG = null, GRADE = null, HAZE = null, SCAN = null, GRAIN = null, MIST = null, BODYSH = null;
@@ -215,30 +215,6 @@ function drawPerson(p) {
     ctx.fillRect(x, y - 13, 1, 1);
   }
 }
-// The helicopter's shadow on the ground, south-east of the view's middle (the sun is in the
-// north-west), lagging a little as it speeds up, with its rotor turning.
-function drawHeliShadow() {
-  const h = G.heli, alt = CFG.heli.alt;
-  // (the heli is at the view's middle, less how far the camera leads the train)
-  const gx = Math.round(G.camX + W / 2 - G.lead[0] + alt * SUNX - h.vx * 0.08), gy = Math.round(G.camY + H / 2 - G.lead[1] + alt * SUNY - h.vy * 0.08);
-  ctx.globalAlpha = thermal ? 0.2 : 0.3;
-  blit(HELI[mod(Math.round(h.hd / TAU * HELI_N), HELI_N)], gx - 20, gy - 20);
-  // the faint disc the blades sweep, then the four blades
-  ctx.globalAlpha = thermal ? 0.04 : 0.06;
-  ctx.fillStyle = '#000';
-  const R = 21, ry = Math.round(R * FORE);
-  for (let dy = -ry; dy <= ry; dy++) {
-    const hw = Math.round(R * Math.sqrt(1 - (dy * dy) / (ry * ry)));
-    ctx.fillRect(gx - hw, gy + dy, hw * 2 + 1, 1);
-  }
-  ctx.globalAlpha = thermal ? 0.2 : 0.3;
-  const a0 = realT * 31;
-  for (let k = 0; k < 4; k++) {
-    const a = a0 + k * Math.PI / 2;
-    pl(ctx, gx, gy, gx + Math.cos(a) * R, gy + Math.sin(a) * R * FORE, '#000');
-  }
-  ctx.globalAlpha = 1;
-}
 // Grass tufts that sway a little.
 function drawTufts(ci0, cj0, ci1, cj1) {
   for (let j = cj0; j <= cj1; j++) for (let i = ci0; i <= ci1; i++) {
@@ -292,6 +268,10 @@ function drawRounds() {
   for (const r of G.rounds) {
     if (r.kind === 'gun') {
       drawGunRound(r);
+      continue;
+    }
+    if (r.h) {
+      drawHeliRound(r);
       continue;
     }
     const u = r.age / r.T, he = r.kind === 'he';
@@ -396,7 +376,7 @@ function render() {
   ctx.globalAlpha = 0.25;
   for (const b of G.bodies) blit(BODYSH, Math.round(b.x - 4), Math.round(b.y - 2));
   ctx.globalAlpha = 1;
-  drawHeliShadow();
+  drawHeliGround();
   // trees, props, the train and the dead, back to front. A tree under the sight fades so you can
   // see past it.
   const ax = G.camX + G.aimSX, ay = G.camY + G.aimSY, aiming = mode === 'play';
@@ -441,6 +421,7 @@ function render() {
   drawParts(false);
   drawBooms();
   drawBodies();
+  drawHelis();
   // glows (added light)
   ctx.globalCompositeOperation = 'lighter';
   drawLights();
@@ -469,6 +450,7 @@ function render() {
   drawRings();
   drawParts(true);
   drawRounds();
+  drawHeliFx();
   drawZaps();
   drawTowerFx();
   ctx.globalCompositeOperation = 'source-over';
@@ -484,6 +466,7 @@ function render() {
     if (Math.abs(hs.y - G.camY - H / 2) < H) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });
   }
   drawLoot();
+  drawHeliTop();
   drawTexts();
   drawRamCount();
   ctx.restore();

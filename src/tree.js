@@ -39,28 +39,32 @@ const NODES = [
     desc: 'PRESS E: SMASH THROUGH THE DEAD.',
     stat: ['TURBO RAM', (l) => (l ? CFG.ram.dur + ' S AT ' + Math.round(CFG.ram.speed / CFG.train.cruise) + '× SPEED' : 'NONE')],
     stat2: ['FULL AGAIN AFTER', () => CFG.ram.charge + ' KILLS'] },
-  // HELI
-  { id: 'chain', name: 'CHAIN SHOT', br: 'heli', c: -2, r: 0, needs: ['root', 1], cost: [60, 150, 400],
+  // HELI (what a node does to the gun works on every heli)
+  { id: 'wingman', name: 'WINGMAN', star: true, br: 'heli', c: -2, r: 0, needs: ['root', 1], cost: [100],
+    desc: 'A SECOND HELI FLIES WITH YOU!', stat: ['HELIS', (l) => 1 + l] },
+  { id: 'chain', name: 'CHAIN SHOT', br: 'heli', c: -4, r: 0, needs: ['wingman', 1], cost: [60, 150, 400],
     desc: 'A KILL SPARKS ON TO MORE ZOMBIES.', stat: ['CHAIN JUMPS', (l) => UP.chain(l)],
     stat2: ['A JUMP REACHES', () => metres(SK.chain.reach)] },
-  { id: 'cool', name: 'COOLING', br: 'heli', c: -4, r: 0, needs: ['chain', 1], cost: [40, 80, 160],
-    desc: 'THE 25MM GETS HOT MORE SLOWLY.', stat: ['OVERHEAT AFTER', (l) => hotS(UP.hot(l))] },
-  { id: 'feed', name: 'FAST FEED', br: 'heli', c: -6, r: 0, needs: ['cool', 1], cost: [60, 120, 240, 480, 960],
-    desc: 'MORE 25MM ROUNDS, NO EXTRA HEAT.', stat: ['25MM FIRE RATE', (l) => perS(UP.rate(l))] },
-  { id: 'heavy', name: 'HEAVY ROUNDS', br: 'heli', c: -6, r: -2, needs: ['feed', 1], cost: [200, 400, 800],
-    desc: 'EACH 25MM HIT DOES MORE DAMAGE.', stat: ['25MM DAMAGE', (l) => UP.dmg(l)],
+  { id: 'cool', name: 'COOLING', br: 'heli', c: -6, r: 0, needs: ['chain', 1], cost: [40, 80, 160],
+    desc: 'HELI GUNS GET HOT MORE SLOWLY.', stat: ['OVERHEAT AFTER', (l) => hotS(UP.hot(l))] },
+  { id: 'feed', name: 'FAST FEED', br: 'heli', c: -8, r: 0, needs: ['cool', 1], cost: [60, 120, 240, 480, 960],
+    desc: 'HELI GUNS FIRE FASTER, NO MORE HEAT.', stat: ['EACH HELI GUN', (l) => perS(UP.rate(l))] },
+  { id: 'heavy', name: 'HEAVY ROUNDS', br: 'heli', c: -8, r: -2, needs: ['feed', 1], cost: [200, 400, 800],
+    desc: 'EVERY HELI ROUND HITS HARDER.', stat: ['DAMAGE A ROUND', (l) => UP.dmg(l)],
     stat2: ['HITS TO KILL A BRUTE', (l) => Math.ceil(CFG.types[2].hp / UP.dmg(l))] },
-  { id: 'he', name: '105MM CANNON', star: true, br: 'heli', c: -2, r: -2, needs: ['chain', 1], cost: [5], cur: 'surv',
+  { id: 'he', name: '105MM CANNON', star: true, br: 'heli', c: -2, r: -2, needs: ['wingman', 1], cost: [5], cur: 'surv',
     desc: 'A BIG SHELL FOR BIG CROWDS.', stat: ['105MM', (l) => (l ? 'RELOAD ' + secs(UP.reload(0)) : 'NONE')],
-    stat2: ['FIRE WITH', () => 'RIGHT CLICK / SPACE'] },
+    stat2: ['FIRE WITH', () => 'SPACE, AT THE MOUSE'] },
   { id: 'reload', name: 'FAST RELOAD', br: 'heli', c: -4, r: -2, needs: ['he', 1], cost: [150, 300, 600],
     desc: 'THE 105MM LOADS FASTER.', stat: ['105MM RELOAD', (l) => secs(UP.reload(l))] },
+  { id: 'extra', name: 'EXTRA HELI', star: true, br: 'heli', c: -4, r: -4, needs: ['he', 1], cost: [5], cur: 'surv',
+    desc: 'A THIRD HELI JOINS YOUR FLIGHT!', stat: ['HELIS', (l) => 2 + l] },
   // EXPLORE
   { id: 'goldz', name: 'GOLDEN ZOMBIES', br: 'explore', c: 0, r: -2, needs: ['root', 1], cost: [60, 150, 400],
     desc: 'RARE GOLD ZOMBIES. CHASE THEM DOWN!', stat: ['GOLDEN ZOMBIES', (l) => (l ? '1 IN ' + UP.gold(l) : 0)],
     stat2: ['EACH ONE PAYS', () => SK.gold.value + ' SCRAP'] },
-  { id: 'radio', name: 'RADIO RANGE', br: 'explore', c: 0, r: -4, needs: ['goldz', 1], cost: [40, 80, 160, 320, 640],
-    desc: 'FLY FURTHER AWAY FROM THE TRAIN.', stat: ['RADIO RANGE', (l) => metres(UP.range(l))] },
+  { id: 'radio', name: 'FAST ROTORS', br: 'explore', c: 0, r: -4, needs: ['goldz', 1], cost: [40, 80, 160, 320, 640],
+    desc: 'YOUR HELIS FLY FASTER.', stat: ['HELI SPEED', (l) => UP.fly(l) + ' PX/S'] },
   { id: 'magnet', name: 'MAGNET', br: 'explore', c: -2, r: -4, needs: ['radio', 1], cost: [40, 80, 160],
     desc: 'GRAB LOOT FROM FURTHER AWAY.', stat: ['PICKUP RANGE', (l) => metres(UP.pickup(l))] },
   { id: 'scav', name: 'SCAVENGER', br: 'explore', c: 2, r: -4, needs: ['radio', 1], cost: [150, 300, 600, 1200, 2400],
@@ -92,14 +96,14 @@ const NODES = [
 const NODE = {};
 for (const n of NODES) NODE[n.id] = n;
 // the first ring: one exciting node per branch, right round LAST TRAIN
-const FIRST = ['chain', 'cow', 'goldz'];
+const FIRST = ['wingman', 'cow', 'goldz'];
 const maxLv = (n) => n.cost.length;
 const parentOf = (n) => (n.needs ? NODE[n.needs[0]] : null);
 const needsMet = (n) => !n.needs || lv(n.needs[0]) >= n.needs[1];
 // the price of the next level, and whether you can pay it
 const priceOf = (n) => n.cost[Math.min(lv(n.id), maxLv(n) - 1)];
 const canPay = (n) => (n.cur === 'surv' ? SAVE.surv : SAVE.scrap) >= priceOf(n);
-// "ARMOR 1", "RADIO RANGE 2": a node at a level, as NEEDS: and the goal line say it
+// "ARMOR 1", "FAST ROTORS 2": a node at a level, as NEEDS: and the goal line say it
 const nodeLv = (id, l) => NODE[id].name + (maxLv(NODE[id]) > 1 ? ' ' + l : '');
 // What a node is now:
 //  'off'    not on the map yet (until LAST TRAIN is bought only it shows)
@@ -204,7 +208,7 @@ function summaryGoal() {
   const have = (n) => ['YOU HAVE ' + fmt(n.cur === 'surv' ? SAVE.surv : SAVE.scrap) + ' / ' + fmt(priceOf(n)) + unit(n) + '.', U.dim];
   const order = (a, b) => (a.cur === 'surv') - (b.cur === 'surv') || priceOf(a) - priceOf(b);
   const pickOf = (list, st) => list.filter((n) => st.includes(nodeState(n))).sort(order)[0];
-  // the first ring (CHAIN SHOT, COW CATCHER, GOLDEN ZOMBIES) until each has a level: one you can
+  // the first ring (WINGMAN, COW CATCHER, GOLDEN ZOMBIES) until each has a level: one you can
   // buy now first, else the cheapest
   const first = FIRST.map((id) => NODE[id]).filter((n) => !lv(n.id));
   const f1 = pickOf(first, ['buy']) || pickOf(first, ['poor']);
