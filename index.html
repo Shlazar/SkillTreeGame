@@ -4925,6 +4925,36 @@ function updateStation(dt) {
   if (st.state === 'ahead' && d < tr.v * tr.v / (2 * CFG.train.brake) + 1 && d <= 0) trainStops(st);
 }
 
+// legs.js - the Farmlands route: one short ride between each pair of stops. This table is the
+// source for the route map, station rewards and timed events. Leg numbers shown to players are 1..12.
+
+// Rail px between stations: about 60 s at the train's 40 px/s cruise. (proposal)
+const LEG_LENGTH = 2400;
+const STOPS = [
+  Object.assign(DEPOT, { kind: 'big', side: 1 }),
+  { id: 'millbrook', name: 'MILLBROOK', kind: 'big' },
+  { id: 'cornfield', name: 'CORNFIELD HALT', kind: 'small' },
+  { id: 'redbarn', name: 'RED BARN', kind: 'big' },
+  { id: 'silo', name: 'SILO JUNCTION', kind: 'small' },
+  { id: 'oldmill', name: 'OLD MILL', kind: 'big' },
+  { id: 'pumpkin', name: 'PUMPKIN HALT', kind: 'small' },
+  { id: 'crossroads', name: 'CROSSROADS', kind: 'big' },
+  { id: 'water', name: 'WATER TOWER', kind: 'small' },
+  { id: 'haybale', name: 'HAYBALE CAMP', kind: 'big' },
+  { id: 'windmill', name: 'WINDMILL HALT', kind: 'small' },
+  { id: 'grain', name: 'GRAIN ELEVATOR', kind: 'big' },
+  { id: 'terminus', name: 'FARMLANDS TERMINUS', kind: 'end' }
+];
+const LEGS = [];
+for (let n = 1; n < STOPS.length; n++) {
+  const from = STOPS[n - 1], to = STOPS[n];
+  to.km = from.km + LEG_LENGTH / CFG.line.km;
+  to.side = n % 2 ? 1 : -1;
+  LEGS.push({ n, from, to, len: LEG_LENGTH, stars: n >= 3,
+    rescue: [4, 8, 10].includes(n) ? 'rescue-' + n : null, finale: n === 12, events: [] });
+}
+const legDef = (n) => LEGS[n - 1] || null;
+
 // skills.js - the COW CATCHER (a steel plow that throws walkers and runners aside), GOLDEN ZOMBIES
 // (rare gold ones that run away and pay big), and the ARMOR plates on the engine.
 // Also the 25mm's kill feel: a short hit-stop when one round kills 3 or more.
@@ -11355,6 +11385,15 @@ Object.assign(window.__sr, {
   fxDrop: (k) => { ({ parts, lights, booms, rings, embers: STRAF.embers })[k].length = 0; }
 });
 Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assign({}, M), tab: depotTab, mode }) });
+
+// test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
+Object.assign(window.__sr, {
+  line: () => ({
+    stops: STOPS.map(({ id, name, kind, km, side }) => ({ id, name, kind, km, side })),
+    legs: LEGS.map((l) => ({ n: l.n, from: l.from.id, to: l.to.id, len: l.len,
+      stars: l.stars, rescue: l.rescue, finale: l.finale, events: l.events.map((e) => ({ ...e })) }))
+  })
+});
 
 })();
 </script>
