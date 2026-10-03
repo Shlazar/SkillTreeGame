@@ -1,4 +1,4 @@
-// ui.js - everything drawn over the world, in screen pixels: the top bar (scrap, survivors, kills, the train's health, the route up the line), warnings, arrows on
+// ui.js - everything drawn over the world, in screen pixels: the top bar (three currencies, kills, the train's health, the route up the line), warnings, arrows on
 // the screen edge to the train and to trouble out of view, the radar, the weapon cards, coins,
 // banners, hints, the red edge when the train is nearly lost, and the screens (title, pause,
 // summary; the Depot is in depot.js). Buttons are drawn in the canvas too (from Ball x Archers).
@@ -62,22 +62,51 @@ function card(x, y, w, h, icon, name, tag, tagc, f, fc, nc) {
   text(tag, x + w - 5, y + 5, tagc, { align: 'right', outline: false });
   bar(x + 17, y + 16, w - 23, 4, f, '#1a1716', fc);
 }
+// Counters share their spacing with flying rewards. Hidden currencies have no target yet.
+function currencyIcon(key) {
+  return key === 'scrap' ? ICON.scrap : key === 'surv' ? ICON.surv : ICON.goldS;
+}
+function currencyLayout(values, left = 4) {
+  if (!values) {
+    if (mode === 'depot') values = Object.fromEntries(['scrap', 'surv', 'gold'].map((key) => [key, SHOWN[key] < 0 ? SAVE[key] : SHOWN[key]]));
+    else if (mode === 'title') values = SAVE;
+    else values = { scrap: G.shownCash, surv: G.surv, gold: G.gold || 0 };
+  }
+  const layout = { scrap: null, surv: null, gold: null, end: left, items: [] };
+  for (const key of ['scrap', 'surv', 'gold']) {
+    if (key === 'surv' && !SAVE.flags.survShown || key === 'gold' && !SAVE.flags.goldShown) continue;
+    const icon = currencyIcon(key), label = fmt(Math.round(values[key] || 0));
+    const x = layout.end, textX = x + icon.width + 3;
+    layout[key] = x + Math.floor(icon.width / 2);
+    layout.items.push({ key, left: x, textX, label, color: key === 'scrap' ? U.blue : key === 'surv' ? U.amber : U.gold });
+    layout.end = textX + Math.max(key === 'scrap' ? 18 : 6, tw(label)) + 8;
+  }
+  return layout;
+}
+function currencyX(key) {
+  return currencyLayout()[key] ?? null;
+}
+function drawCurrencyCounters(layout, y = 0, pulses = {}, outline = true) {
+  for (const item of layout.items) {
+    const icon = currencyIcon(item.key), pulse = !!pulses[item.key];
+    blit(icon, item.left, y + Math.round(8 - icon.height / 2) - (pulse ? 1 : 0));
+    const bright = item.key === 'scrap' ? '#d5efff' : item.key === 'surv' ? '#ffd2a1' : '#ffe39a';
+    text(item.label, item.textX, y + 6, pulse ? bright : item.color, { outline });
+  }
+}
 function drawHUD() {
   ctx.fillStyle = 'rgba(6,7,9,0.88)';
   ctx.fillRect(0, 0, W, 18);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, 18, W, 1);
-  // this run's scrap: the bolt hops and the number flashes when scrap comes in
-  const cp = G.cashPulse;
-  blit(ICON.scrap, 4, 4 - (cp > 0.5 ? 1 : 0));
-  text(fmt(G.shownCash), 14, 6, cp > 0 ? '#ffe39a' : U.gold);
-  // survivors aboard this run, and kills
-  blit(ICON.surv, 58, 5);
-  text(G.surv, 67, 6, G.surv ? U.green : U.faint);
-  blit(ICON.skull, 88, 5);
-  text(fmt(G.kills), 98, 6 - (G.killBump > 0.5 ? 1 : 0), U.ink);
+  // This run's money; survivors and gold appear only after their teaching moment.
+  const counters = currencyLayout();
+  drawCurrencyCounters(counters, 0, { scrap: G.cashPulse > 0 });
+  const kills = fmt(G.kills), kx = counters.end;
+  blit(ICON.skull, kx, 5);
+  text(kills, kx + 10, 6 - (G.killBump > 0.5 ? 1 : 0), U.ink);
   // the train's health: green, then amber, then red; the part just lost shows pale for a moment
-  const tr = G.tr, f = tr.hp / tr.max, hx = 150, hw = clamp(Math.round(W * 0.16), 44, 100);
+  const tr = G.tr, f = tr.hp / tr.max, hx = kx + 10 + tw(kills) + 24, hw = clamp(Math.round(W * 0.16), 44, 100);
   blit(ICON.train, hx - 12, 5);
   bar(hx, 6, hw, 6, tr.hpShown / tr.max, '#1a1716', '#d8cfb8');
   ctx.fillStyle = f < 0.35 ? '#b8402e' : f < 0.65 ? '#c9862f' : '#6f9a4f';
@@ -86,7 +115,7 @@ function drawHUD() {
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 1);
   // and as a number
   text(Math.ceil(tr.hp), hx + hw + 4, 6, f < 0.35 ? U.red : f < 0.65 ? U.amber : U.dim);
-  if (!G.demo) drawRoute(hx + hw + 30, W - 28);
+  if (!G.demo) drawRoute(hx + hw + 10 + tw(String(Math.ceil(tr.hp))), W - 28);
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
   if (Au.muted) text('MUTE', W - 4, 22, U.faint, { align: 'right' });
 }
@@ -399,15 +428,10 @@ function drawTitle() {
     if (button(cx - 75, y + 26, 150, 20, 'NEW GAME')) titleAsk = true;
     y += 52;
     // what you have so far
-    const a = fmt(SAVE.scrap), b = String(SAVE.surv), c = 'BEST ' + SAVE.best.toFixed(2) + ' KM';
-    let x = Math.round(cx - (10 + tw(a) + 12 + 9 + tw(b) + 12 + tw(c)) / 2);
-    blit(ICON.scrap, x, y + 1);
-    text(a, x + 10, y + 3, U.gold, { outline: false });
-    x += 10 + tw(a) + 12;
-    blit(ICON.surv, x, y + 2);
-    text(b, x + 9, y + 3, U.green, { outline: false });
-    x += 9 + tw(b) + 12;
-    text(c, x, y + 3, U.dim, { outline: false });
+    const best = 'BEST ' + SAVE.best.toFixed(2) + ' KM', width = currencyLayout(SAVE, 0).end + tw(best);
+    const counters = currencyLayout(SAVE, Math.round(cx - width / 2));
+    drawCurrencyCounters(counters, y - 3, {}, false);
+    text(best, counters.end, y + 3, U.dim, { outline: false });
     y += 20;
   } else {
     if (button(cx - 75, y, 150, 20, 'PLAY', { primary: true })) titleGo();
@@ -470,7 +494,7 @@ function drawSummary() {
     if (t < pl.t[i]) return;
     text(r[0], x + 18, ry + i * 12, U.dim);
     if (r[2]) text(r[2], x + 26 + tw(r[0]), ry + i * 12, U.faint);
-    text('+' + fmt(Math.round(r[1] * u)), x + w - 18, ry + i * 12, u < 1 ? U.ink : U.gold, { align: 'right' });
+    text('+' + fmt(Math.round(r[1] * u)), x + w - 18, ry + i * 12, u < 1 ? U.ink : U.blue, { align: 'right' });
   });
   ry += pl.rows.length * 12 + 2;
   ctx.fillStyle = '#2e3139';
@@ -481,7 +505,7 @@ function drawSummary() {
     const u = ease(clamp((t - pl.total) / 0.5, 0, 1));
     blit(ICON.scrap, x + 18, ry + 3);
     text('SCRAP', x + 30, ry + 4, U.ink);
-    text('+' + fmt(Math.round(s.scrap * u)), x + w - 18, ry, U.gold, { align: 'right', scale: 2 });
+    text('+' + fmt(Math.round(s.scrap * u)), x + w - 18, ry, U.blue, { align: 'right', scale: 2 });
   }
   ry += 16;
   if (s.surv) {
@@ -490,7 +514,7 @@ function drawSummary() {
       text('SURVIVORS', x + 30, ry + 4, U.ink);
       const n = Math.min(pl.icons, Math.floor((t - pl.surv) / 0.14) + 1);
       for (let i = 0; i < n; i++) blit(ICON.surv, x + 96 + i * 8, ry + 4);
-      text('+' + Math.min(s.surv, Math.round(s.surv * n / pl.icons)), x + w - 18, ry, U.green, { align: 'right', scale: 2 });
+      text('+' + Math.min(s.surv, Math.round(s.surv * n / pl.icons)), x + w - 18, ry, U.amber, { align: 'right', scale: 2 });
     }
     ry += 16;
   }

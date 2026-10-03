@@ -718,7 +718,7 @@ const RAM_POP = 0.2;
 function popRam() {
   const r = G.ram, c = G.tr.cars[0], v = '+' + r.pop;
   if (!r.pop) return;
-  floatText(c.x0 - 6, c.y0 - 6, v, U.gold);
+  floatText(c.x0 - 6, c.y0 - 6, v, U.blue);
   const t = texts[texts.length - 1];
   if (t && t.v === v) {
     t.vx = -rnd(42, 58);
@@ -846,6 +846,7 @@ function kill(z, cause, cx, cy, dist, free) {
       G.scavPaid += e;
       pay += e;
     }
+    if (!SAVE.flags.scrapEarned) { SAVE.flags.scrapEarned = true; saveSave(); }
     G.kills++;
     G.cash += pay;
     G.pay.kills += pay;
@@ -876,7 +877,7 @@ function kill(z, cause, cx, cy, dist, free) {
       if (ram) {
         G.ram.pop += pay;
         if (G.t - G.ram.popT >= RAM_POP) popRam();
-      } else if (pay) addTotal(z.x, z.y - S.h, pay, U.gold, !!z.gold);
+      } else if (pay) addTotal(z.x, z.y - S.h, pay, U.blue, !!z.gold);
     }
   } else if (z.st === 2 && room) {
     // shot off the train: knocked off its side (or off the nose), with the train's speed
@@ -884,14 +885,14 @@ function kill(z, cause, cx, cy, dist, free) {
     bs.push(s ? { S, x: z.x, y: z.y, z: 3, vx: c.nx * s * v + c.dx * tv, vy: c.ny * s * v + c.dy * tv, vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 }
       : { S, x: z.x, y: z.y, z: 3, vx: c.dx * (v + tv), vy: c.dy * (v + tv), vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 });
     blood(z.x, z.y, z.big ? 14 : 8, S.h * 0.6);
-    if (sc && pay) addTotal(z.x, z.y - S.h, pay, U.gold, !!z.gold);
+    if (sc && pay) addTotal(z.x, z.y - S.h, pay, U.blue, !!z.gold);
     if (!G.demo) SFX.splat();
   } else {
     // a gun kill (a heli round, the flatcar gun, a blast of an explosive
     // zombie): the body bursts into a red splat that stays. In a horde only the big ones show
     // their scrap; the rest go to the counter as coins now and then.
     popKill(z, cause);
-    if (sc && pay && (z.big || z.gold || z.silver)) addTotal(z.x, z.y - S.h, pay, z.silver ? '#e6eef8' : U.gold, !!z.gold);
+    if (sc && pay && (z.big || z.gold || z.silver)) addTotal(z.x, z.y - S.h, pay, U.blue, !!z.gold);
     if (!G.demo) SFX.splat();
   }
   z.paid = pay;
@@ -1027,7 +1028,7 @@ function explode(x, y, player) {
   }
   if (player && scoring()) {
     G.bestBlast = Math.max(G.bestBlast, killed);
-    if (killed) addTotal(x, y - 10, value, U.gold, true);
+    if (killed) addTotal(x, y - 10, value, U.blue, true);
     if (killed >= 4) {
       const name = killed >= 25 ? 'MASSACRE' : killed >= 12 ? 'CARNAGE' : 'MULTI KILL';
       banner(name + ' ×' + killed, '+' + value + ' SCRAP', killed >= 12 ? '#ff7a4a' : U.amber, 2);

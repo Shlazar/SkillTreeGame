@@ -1,0 +1,28 @@
+// Shot mode: Depot with all currency counters, after the chest opens on leg 3.
+__sr.hold(false);
+__sr.reset();
+__sr.start();
+__sr.hp(9999);
+__sr.bot(true);
+__sr.win();
+__sr.frames(50);
+__sr.sim(6);
+__sr.depot('tree');
+__sr.give(80, 0, 0);
+if (!__sr.buy('root') || !__sr.buy('hdmg')) throw new Error('Shot currency unlock failed');
+__sr.leg(2, false);
+__sr.hp(9999);
+__sr.bot(true);
+__sr.win();
+__sr.frames(50);
+__sr.sim(6);
+__sr.leg(3, false);
+__sr.hp(9999);
+__sr.bot(true);
+__sr.sim(10);
+__sr.frames(240);
+__sr.payGold('golden:0', 1, 10);
+__sr.frames(30);
+__sr.hold(true);
+__sr.depot('tree');
+__sr.frames(180);

@@ -168,10 +168,10 @@ function lootPaid(f, h) {
   G.cash += f.pay;
   G.pay.loot += f.pay;
   G.cashPulse = 1;
-  addTotal(gx, gy - 14, f.pay, U.gold, big);
+  addTotal(gx, gy - 14, f.pay, U.blue, big);
   coinPop(gx, gy, f.kind === 'gold' ? 16 : big ? 8 : 4);
   const n = f.kind === 'gold' ? 14 : big ? 7 : 4;
-  for (let k = 0; k < n && coins.length < 60; k++) coins.push({ x0: gx - G.camX + rnd(-6, 6), y0: gy - G.camY - 10 + rnd(-4, 4), t: -k * 0.05, T: rnd(0.5, 0.75) });
+  currencyCoins('scrap', gx, gy, n);
   if (f.kind === 'gold') {
     SFX.golden();
     for (let k = 0; k < 26; k++) part({ x: gx, y: gy, z: 12, vx: rnd(-50, 50), vy: rnd(-30, 30), vz: rnd(30, 90), g: 160, life: rnd(0.6, 1.1), max: 1.1, s: 1,

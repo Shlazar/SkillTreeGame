@@ -1248,16 +1248,16 @@ function initSprites() {
   // TURBO RAM: two fiery chevrons pointing up the line
   ICON.ram = outline(strSpr(['...G...', '..GYO..', '.GYOOO.', 'GYO.OOR', '...G...', '..GYO..', '.GYOOO.', 'GYO.OOR'], NPAL), P.out);
   ICON.ramOff = tint(ICON.ram, '#4b4f5a', 0.8);
-  // scrap: a brass bolt (a hex head on a threaded shank)
+  // scrap: a steel-blue bolt (a hex head on a threaded shank)
   ICON.scrap = outline(pix(5, 8, (r) => {
-    r(0, 0, 5, 3, '#d9a33a'); r(0, 0, 5, 1, '#f6dc8e'); r(0, 2, 5, 1, '#a8761f'); r(2, 0, 1, 3, '#b8862f'); r(2, 0, 1, 1, '#f6dc8e');
-    r(1, 3, 3, 5, '#d9a33a'); r(1, 3, 1, 5, '#f6dc8e'); r(1, 4, 3, 1, '#8a6420'); r(1, 6, 3, 1, '#8a6420'); r(3, 3, 1, 5, '#a8761f');
-  }), '#1a1206');
-  // survivors: a person in a green shirt
+    r(0, 0, 5, 3, '#62c8ff'); r(0, 0, 5, 1, U.blue); r(0, 2, 5, 1, '#2f6f9e'); r(2, 0, 1, 3, '#2a9dff'); r(2, 0, 1, 1, U.blue);
+    r(1, 3, 3, 5, '#62c8ff'); r(1, 3, 1, 5, U.blue); r(1, 4, 3, 1, '#2f6f9e'); r(1, 6, 3, 1, '#2f6f9e'); r(3, 3, 1, 5, '#2f6f9e');
+  }), P.out);
+  // survivors: a person in an orange shirt
   ICON.surv = outline(pix(5, 7, (r) => {
     r(1, 0, 3, 2, '#e0b48c'); r(1, 0, 3, 1, '#4a3a2e');
-    r(0, 2, 5, 3, '#5f9a5a'); r(1, 2, 3, 3, '#8fd18a'); r(1, 2, 1, 2, '#c4ecbd');
-    r(1, 5, 1, 2, '#2e4a2e'); r(3, 5, 1, 2, '#2e4a2e');
+    r(0, 2, 5, 3, '#a55a1e'); r(1, 2, 3, 3, U.amber); r(1, 2, 1, 2, '#ffa448');
+    r(1, 5, 1, 2, '#6a3a1e'); r(3, 5, 1, 2, '#6a3a1e');
   }), P.out);
   // a padlock (something still locked)
   ICON.lock = outline(pix(7, 7, (r) => {
@@ -1266,10 +1266,15 @@ function initSprites() {
   }), P.out);
   ICON.lockBig = scaleSpr(ICON.lock, 3);
   ICON.survBig = scaleSpr(ICON.surv, 3);
-  // small price marks for the skill tree (a bolt = scrap, a person = survivors), and the star of a
-  // big unlock
-  ICON.boltS = outline(strSpr(['GGg', 'gyy', '.g.', '.g.', '.y.'], NPAL), P.out);
-  ICON.survS = outline(strSpr(['.w.', 'EEE', 'EEE', 'e.e', 'e.e'], NPAL), P.out);
+  // Small price marks use local palettes so the node art keeps its own material colours.
+  const scrapPal = Object.assign({}, NPAL, { G: U.blue, g: '#62c8ff', y: '#2f6f9e' });
+  const survPal = Object.assign({}, NPAL, { w: '#ffc27a', E: '#ffa448', e: '#a55a1e' });
+  ICON.boltS = outline(strSpr(['GGg', 'gyy', '.g.', '.g.', '.y.'], scrapPal), P.out);
+  ICON.survS = outline(strSpr(['.w.', 'EEE', 'EEE', 'e.e', 'e.e'], survPal), P.out);
+  // The outline is in the rows, keeping this bright-centred coin's final footprint at 5 x 5.
+  const coinPal = Object.assign({}, NPAL, { G: '#ffdf70', g: U.gold, y: '#b77e1e', w: '#fff1be' });
+  ICON.goldS = strSpr(['.kkk.', 'kGGgk', 'kGwgk', 'kggyk', '.kkk.'], coinPal);
+  // the star of a big unlock
   ICON.star = outline(strSpr(['..G..', '..G..', 'GGGgy', '.Ggy.', '.g.y.'], NPAL), P.out);
   // the node icons
   for (const [id, rows] of Object.entries(NODE_ART)) {
@@ -1277,7 +1282,8 @@ function initSprites() {
     NICON[id] = outline(strSpr(rows, NPAL), P.out);
   }
   // into the atlas now, not on the first frame of the tree (each new atlas sprite costs a re-upload)
-  for (const c of [...Object.values(NICON), ICON.boltS, ICON.survS, ICON.star, ICON.lock]) atl(c);
+  for (const c of [...Object.values(NICON), ICON.scrap, ICON.surv, ICON.survBig, ICON.coin,
+    ICON.boltS, ICON.survS, ICON.goldS, ICON.star, ICON.lock]) atl(c);
   // the same for the run's new sprites: the Ram card's icon (the rail cannon's are in cannon.js)
   for (const c of [ICON.ram, ICON.ramOff]) atl(c);
   for (let i = 0; i < ANG_N; i++) atl(carGlow(TRAIN[0], i));
@@ -2204,17 +2210,23 @@ function drawFlame(x, y, big, seed) {
 }
 
 // ---------- drawing (screen layer)
+function currencyCoins(cur, x, y, n) {
+  for (let k = 0; k < n && coins.length < 60; k++) coins.push({ cur,
+    x0: x - G.camX + rnd(-6, 6), y0: y - G.camY - 10 + rnd(-4, 4), t: -k * 0.05, T: rnd(0.5, 0.75) });
+}
 // Coins on a curve from where the zombie fell to the cash counter (top left).
 function drawCoins() {
   for (const c of coins) {
     if (c.t < 0) continue;
+    const cur = c.cur || 'scrap', target = currencyX(cur);
+    if (target == null) continue;
     const u = ease(c.t / c.T);
-    const x = lerp(c.x0, 9, u) + Math.sin(u * Math.PI) * -20, y = lerp(c.y0, 8, u) - Math.sin(u * Math.PI) * 30;
+    const x = lerp(c.x0, target, u) + Math.sin(u * Math.PI) * -20, y = lerp(c.y0, 8, u) - Math.sin(u * Math.PI) * 30;
     // one step in three the coin is drawn thin, so it seems to spin
     const wob = ((realT * 16 + c.x0) | 0) % 3;
-    ctx.fillStyle = '#7a5a1c';
+    ctx.fillStyle = cur === 'gold' ? '#7a5a1c' : cur === 'surv' ? '#944723' : '#285573';
     ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, wob === 1 ? 1 : 3, 3);
-    ctx.fillStyle = '#f6dc8e';
+    ctx.fillStyle = cur === 'gold' ? '#f6dc8e' : cur === 'surv' ? U.amber : U.blue;
     ctx.fillRect(Math.round(x) - (wob === 1 ? 0 : 1), Math.round(y) - 1, 1, 1);
   }
 }
@@ -3373,7 +3385,7 @@ const RAM_POP = 0.2;
 function popRam() {
   const r = G.ram, c = G.tr.cars[0], v = '+' + r.pop;
   if (!r.pop) return;
-  floatText(c.x0 - 6, c.y0 - 6, v, U.gold);
+  floatText(c.x0 - 6, c.y0 - 6, v, U.blue);
   const t = texts[texts.length - 1];
   if (t && t.v === v) {
     t.vx = -rnd(42, 58);
@@ -3501,6 +3513,7 @@ function kill(z, cause, cx, cy, dist, free) {
       G.scavPaid += e;
       pay += e;
     }
+    if (!SAVE.flags.scrapEarned) { SAVE.flags.scrapEarned = true; saveSave(); }
     G.kills++;
     G.cash += pay;
     G.pay.kills += pay;
@@ -3531,7 +3544,7 @@ function kill(z, cause, cx, cy, dist, free) {
       if (ram) {
         G.ram.pop += pay;
         if (G.t - G.ram.popT >= RAM_POP) popRam();
-      } else if (pay) addTotal(z.x, z.y - S.h, pay, U.gold, !!z.gold);
+      } else if (pay) addTotal(z.x, z.y - S.h, pay, U.blue, !!z.gold);
     }
   } else if (z.st === 2 && room) {
     // shot off the train: knocked off its side (or off the nose), with the train's speed
@@ -3539,14 +3552,14 @@ function kill(z, cause, cx, cy, dist, free) {
     bs.push(s ? { S, x: z.x, y: z.y, z: 3, vx: c.nx * s * v + c.dx * tv, vy: c.ny * s * v + c.dy * tv, vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 }
       : { S, x: z.x, y: z.y, z: 3, vx: c.dx * (v + tv), vy: c.dy * (v + tv), vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 });
     blood(z.x, z.y, z.big ? 14 : 8, S.h * 0.6);
-    if (sc && pay) addTotal(z.x, z.y - S.h, pay, U.gold, !!z.gold);
+    if (sc && pay) addTotal(z.x, z.y - S.h, pay, U.blue, !!z.gold);
     if (!G.demo) SFX.splat();
   } else {
     // a gun kill (a heli round, the flatcar gun, a blast of an explosive
     // zombie): the body bursts into a red splat that stays. In a horde only the big ones show
     // their scrap; the rest go to the counter as coins now and then.
     popKill(z, cause);
-    if (sc && pay && (z.big || z.gold || z.silver)) addTotal(z.x, z.y - S.h, pay, z.silver ? '#e6eef8' : U.gold, !!z.gold);
+    if (sc && pay && (z.big || z.gold || z.silver)) addTotal(z.x, z.y - S.h, pay, U.blue, !!z.gold);
     if (!G.demo) SFX.splat();
   }
   z.paid = pay;
@@ -3682,7 +3695,7 @@ function explode(x, y, player) {
   }
   if (player && scoring()) {
     G.bestBlast = Math.max(G.bestBlast, killed);
-    if (killed) addTotal(x, y - 10, value, U.gold, true);
+    if (killed) addTotal(x, y - 10, value, U.blue, true);
     if (killed >= 4) {
       const name = killed >= 25 ? 'MASSACRE' : killed >= 12 ? 'CARNAGE' : 'MULTI KILL';
       banner(name + ' ×' + killed, '+' + value + ' SCRAP', killed >= 12 ? '#ff7a4a' : U.amber, 2);
@@ -4918,6 +4931,7 @@ function stationReward(st) {
     G.stationReward = { kind: 'gold', x, y, t: G.t, amount: 6 };
     floatText(x, y + 34, '+6 GOLD', U.gold);
     coinPop(x, y, 8);
+    currencyCoins('gold', x, y, 6);
     SFX.golden();
     saveSave();
   }
@@ -5003,6 +5017,17 @@ function payGold(itemId, amount, scrapIfNot) {
     Object.defineProperty(record.paid, itemId, { value: true, enumerable: true, writable: true, configurable: true });
     out.gold = amount;
     G.gold += amount;
+    if (G.leg >= 3 && !SAVE.flags.goldShown) {
+      SAVE.flags.goldShown = true;
+      if (SAVE.chest === 1) {
+        SAVE.chest = 2;
+        G.gold += 6;
+        const h = G.helis[0];
+        floatText(h.x, h.y - h.alt - 12, '+6 GOLD: CHEST OPENED', U.gold);
+        currencyCoins('gold', h.x, h.y - h.alt, 8);
+        SFX.golden();
+      }
+    }
   }
   bankRun();
   return out;
@@ -7292,7 +7317,7 @@ function render() {
   }
 }
 
-// ui.js - everything drawn over the world, in screen pixels: the top bar (scrap, survivors, kills, the train's health, the route up the line), warnings, arrows on
+// ui.js - everything drawn over the world, in screen pixels: the top bar (three currencies, kills, the train's health, the route up the line), warnings, arrows on
 // the screen edge to the train and to trouble out of view, the radar, the weapon cards, coins,
 // banners, hints, the red edge when the train is nearly lost, and the screens (title, pause,
 // summary; the Depot is in depot.js). Buttons are drawn in the canvas too (from Ball x Archers).
@@ -7356,22 +7381,51 @@ function card(x, y, w, h, icon, name, tag, tagc, f, fc, nc) {
   text(tag, x + w - 5, y + 5, tagc, { align: 'right', outline: false });
   bar(x + 17, y + 16, w - 23, 4, f, '#1a1716', fc);
 }
+// Counters share their spacing with flying rewards. Hidden currencies have no target yet.
+function currencyIcon(key) {
+  return key === 'scrap' ? ICON.scrap : key === 'surv' ? ICON.surv : ICON.goldS;
+}
+function currencyLayout(values, left = 4) {
+  if (!values) {
+    if (mode === 'depot') values = Object.fromEntries(['scrap', 'surv', 'gold'].map((key) => [key, SHOWN[key] < 0 ? SAVE[key] : SHOWN[key]]));
+    else if (mode === 'title') values = SAVE;
+    else values = { scrap: G.shownCash, surv: G.surv, gold: G.gold || 0 };
+  }
+  const layout = { scrap: null, surv: null, gold: null, end: left, items: [] };
+  for (const key of ['scrap', 'surv', 'gold']) {
+    if (key === 'surv' && !SAVE.flags.survShown || key === 'gold' && !SAVE.flags.goldShown) continue;
+    const icon = currencyIcon(key), label = fmt(Math.round(values[key] || 0));
+    const x = layout.end, textX = x + icon.width + 3;
+    layout[key] = x + Math.floor(icon.width / 2);
+    layout.items.push({ key, left: x, textX, label, color: key === 'scrap' ? U.blue : key === 'surv' ? U.amber : U.gold });
+    layout.end = textX + Math.max(key === 'scrap' ? 18 : 6, tw(label)) + 8;
+  }
+  return layout;
+}
+function currencyX(key) {
+  return currencyLayout()[key] ?? null;
+}
+function drawCurrencyCounters(layout, y = 0, pulses = {}, outline = true) {
+  for (const item of layout.items) {
+    const icon = currencyIcon(item.key), pulse = !!pulses[item.key];
+    blit(icon, item.left, y + Math.round(8 - icon.height / 2) - (pulse ? 1 : 0));
+    const bright = item.key === 'scrap' ? '#d5efff' : item.key === 'surv' ? '#ffd2a1' : '#ffe39a';
+    text(item.label, item.textX, y + 6, pulse ? bright : item.color, { outline });
+  }
+}
 function drawHUD() {
   ctx.fillStyle = 'rgba(6,7,9,0.88)';
   ctx.fillRect(0, 0, W, 18);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, 18, W, 1);
-  // this run's scrap: the bolt hops and the number flashes when scrap comes in
-  const cp = G.cashPulse;
-  blit(ICON.scrap, 4, 4 - (cp > 0.5 ? 1 : 0));
-  text(fmt(G.shownCash), 14, 6, cp > 0 ? '#ffe39a' : U.gold);
-  // survivors aboard this run, and kills
-  blit(ICON.surv, 58, 5);
-  text(G.surv, 67, 6, G.surv ? U.green : U.faint);
-  blit(ICON.skull, 88, 5);
-  text(fmt(G.kills), 98, 6 - (G.killBump > 0.5 ? 1 : 0), U.ink);
+  // This run's money; survivors and gold appear only after their teaching moment.
+  const counters = currencyLayout();
+  drawCurrencyCounters(counters, 0, { scrap: G.cashPulse > 0 });
+  const kills = fmt(G.kills), kx = counters.end;
+  blit(ICON.skull, kx, 5);
+  text(kills, kx + 10, 6 - (G.killBump > 0.5 ? 1 : 0), U.ink);
   // the train's health: green, then amber, then red; the part just lost shows pale for a moment
-  const tr = G.tr, f = tr.hp / tr.max, hx = 150, hw = clamp(Math.round(W * 0.16), 44, 100);
+  const tr = G.tr, f = tr.hp / tr.max, hx = kx + 10 + tw(kills) + 24, hw = clamp(Math.round(W * 0.16), 44, 100);
   blit(ICON.train, hx - 12, 5);
   bar(hx, 6, hw, 6, tr.hpShown / tr.max, '#1a1716', '#d8cfb8');
   ctx.fillStyle = f < 0.35 ? '#b8402e' : f < 0.65 ? '#c9862f' : '#6f9a4f';
@@ -7380,7 +7434,7 @@ function drawHUD() {
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 1);
   // and as a number
   text(Math.ceil(tr.hp), hx + hw + 4, 6, f < 0.35 ? U.red : f < 0.65 ? U.amber : U.dim);
-  if (!G.demo) drawRoute(hx + hw + 30, W - 28);
+  if (!G.demo) drawRoute(hx + hw + 10 + tw(String(Math.ceil(tr.hp))), W - 28);
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
   if (Au.muted) text('MUTE', W - 4, 22, U.faint, { align: 'right' });
 }
@@ -7693,15 +7747,10 @@ function drawTitle() {
     if (button(cx - 75, y + 26, 150, 20, 'NEW GAME')) titleAsk = true;
     y += 52;
     // what you have so far
-    const a = fmt(SAVE.scrap), b = String(SAVE.surv), c = 'BEST ' + SAVE.best.toFixed(2) + ' KM';
-    let x = Math.round(cx - (10 + tw(a) + 12 + 9 + tw(b) + 12 + tw(c)) / 2);
-    blit(ICON.scrap, x, y + 1);
-    text(a, x + 10, y + 3, U.gold, { outline: false });
-    x += 10 + tw(a) + 12;
-    blit(ICON.surv, x, y + 2);
-    text(b, x + 9, y + 3, U.green, { outline: false });
-    x += 9 + tw(b) + 12;
-    text(c, x, y + 3, U.dim, { outline: false });
+    const best = 'BEST ' + SAVE.best.toFixed(2) + ' KM', width = currencyLayout(SAVE, 0).end + tw(best);
+    const counters = currencyLayout(SAVE, Math.round(cx - width / 2));
+    drawCurrencyCounters(counters, y - 3, {}, false);
+    text(best, counters.end, y + 3, U.dim, { outline: false });
     y += 20;
   } else {
     if (button(cx - 75, y, 150, 20, 'PLAY', { primary: true })) titleGo();
@@ -7764,7 +7813,7 @@ function drawSummary() {
     if (t < pl.t[i]) return;
     text(r[0], x + 18, ry + i * 12, U.dim);
     if (r[2]) text(r[2], x + 26 + tw(r[0]), ry + i * 12, U.faint);
-    text('+' + fmt(Math.round(r[1] * u)), x + w - 18, ry + i * 12, u < 1 ? U.ink : U.gold, { align: 'right' });
+    text('+' + fmt(Math.round(r[1] * u)), x + w - 18, ry + i * 12, u < 1 ? U.ink : U.blue, { align: 'right' });
   });
   ry += pl.rows.length * 12 + 2;
   ctx.fillStyle = '#2e3139';
@@ -7775,7 +7824,7 @@ function drawSummary() {
     const u = ease(clamp((t - pl.total) / 0.5, 0, 1));
     blit(ICON.scrap, x + 18, ry + 3);
     text('SCRAP', x + 30, ry + 4, U.ink);
-    text('+' + fmt(Math.round(s.scrap * u)), x + w - 18, ry, U.gold, { align: 'right', scale: 2 });
+    text('+' + fmt(Math.round(s.scrap * u)), x + w - 18, ry, U.blue, { align: 'right', scale: 2 });
   }
   ry += 16;
   if (s.surv) {
@@ -7784,7 +7833,7 @@ function drawSummary() {
       text('SURVIVORS', x + 30, ry + 4, U.ink);
       const n = Math.min(pl.icons, Math.floor((t - pl.surv) / 0.14) + 1);
       for (let i = 0; i < n; i++) blit(ICON.surv, x + 96 + i * 8, ry + 4);
-      text('+' + Math.min(s.surv, Math.round(s.surv * n / pl.icons)), x + w - 18, ry, U.green, { align: 'right', scale: 2 });
+      text('+' + Math.min(s.surv, Math.round(s.surv * n / pl.icons)), x + w - 18, ry, U.amber, { align: 'right', scale: 2 });
     }
     ry += 16;
   }
@@ -7832,7 +7881,7 @@ function drawUI() {
 
 // depot.js - the save, and the Depot: the screen between runs. SAVE is everything kept from run to
 // run, one object in this browser's storage. The Depot screen has a top bar (your scrap and
-// survivors, the SKILL TREE tab, your best km), the tree panel, and a bottom bar
+// survivors and gold as they are revealed, the SKILL TREE tab, your best km), the tree panel, and a bottom bar
 // (where the next run starts, and START RUN). The title demo keeps running behind it, dimmed.
 
 // ---------- the save
@@ -7955,7 +8004,7 @@ function toDepot(tab) {
   if (!G || !G.demo) newGame(true);
   mode = 'depot';
   paused = false;
-  SHOWN.scrap = SHOWN.surv = -1;
+  SHOWN.scrap = SHOWN.surv = SHOWN.gold = -1;
   setTab(tab);
 }
 // Keep the Depot on the tree until another panel is added.
@@ -8028,10 +8077,10 @@ function depotTabBtn(x, w, label, on, locked, isNew) {
   return clicked(x, y, w, h);
 }
 // The money as the top bar shows it: after a buy it counts down to the real number.
-const SHOWN = { scrap: -1, surv: -1 };
+const SHOWN = { scrap: -1, surv: -1, gold: -1 };
 function countMoney() {
   const k = 1 - Math.exp(-9 * frameDt);
-  for (const key of ['scrap', 'surv']) {
+  for (const key of ['scrap', 'surv', 'gold']) {
     const v = SAVE[key];
     SHOWN[key] = SHOWN[key] < 0 || Math.abs(SHOWN[key] - v) < 0.5 ? v : SHOWN[key] + (v - SHOWN[key]) * k;
   }
@@ -8041,19 +8090,19 @@ function drawDepotTop() {
   ctx.fillRect(0, 0, W, 18);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, 18, W, 1);
-  // money: scrap (gold, bolt) and survivors (green, person); a number still counting is lighter
+  // All three money families share the HUD's layout; a number still counting is lighter.
   countMoney();
-  const narrow = W < 500, sc = fmt(Math.round(SHOWN.scrap)), sv = Math.round(SHOWN.surv);
-  const cs = sv !== SAVE.surv, cc = Math.round(SHOWN.scrap) !== SAVE.scrap;
-  blit(ICON.scrap, 5, 4 - (cc ? 1 : 0));
-  text(sc, 15, 6, cc ? '#ffe39a' : U.gold);
-  const sx = 15 + Math.max(18, tw(sc)) + 10, ew = 9 + Math.max(10, tw(String(sv)));
-  blit(ICON.surv, sx, 5 - (cs ? 1 : 0));
-  text(sv, sx + 9, 6, cs ? '#d4f5cf' : U.green);
-  tipAt(2, 0, sx - 6, 18, [['SCRAP', U.gold], ['FROM KILLS AND LOOT.', U.dim], ['IT BUYS UPGRADES IN THE SKILL TREE.', U.dim]]);
-  tipAt(sx - 2, 0, ew + 6, 18, [['SURVIVORS', U.green], ['SAVE THEM AT STATIONS.', U.dim], ['THEY BUY THE BIGGEST UPGRADES.', U.dim]]);
+  const narrow = W < 500, counters = currencyLayout(SHOWN);
+  const pulses = Object.fromEntries(['scrap', 'surv', 'gold'].map((key) => [key, Math.round(SHOWN[key]) !== SAVE[key]]));
+  drawCurrencyCounters(counters, 0, pulses);
+  const tips = {
+    scrap: [['SCRAP', U.blue], ['FROM KILLS AND LOOT.', U.dim], ['IT BUYS UPGRADES IN THE SKILL TREE.', U.dim]],
+    surv: [['SURVIVORS', U.amber], ['SURVIVORS CREW NEW UNITS.', U.dim], ['EACH NEW UNIT COSTS 1.', U.dim]],
+    gold: [['GOLD', U.gold], ['FROM GOLDEN FINDS, STARS AND STATIONS.', U.dim], ['IT BUYS SPECIAL NODES.', U.dim]]
+  };
+  for (const item of counters.items) tipAt(item.left - 2, 0, item.textX + tw(item.label) - item.left + 4, 18, tips[item.key]);
   // the tree tab in the middle
-  const tw0 = narrow ? 66 : 84, tx = Math.round((W - tw0) / 2);
+  const tw0 = narrow ? 66 : 84, tx = Math.max(counters.end + 4, Math.round((W - tw0) / 2));
   if (depotTabBtn(tx, tw0, narrow ? 'TREE' : 'SKILL TREE', depotTab === 'tree', false, false)) setTab('tree');
   // the best run
   const b = SAVE.best.toFixed(2) + ' KM', bw = tw(b);
@@ -8306,6 +8355,7 @@ function buyNode(id) {
   if (n.cur === 'surv') SAVE.surv -= p;
   else SAVE.scrap -= p;
   SAVE.nodes[id] = lv(id) + 1;
+  if (p > 0 && (!n.cur || n.cur === 'scrap')) SAVE.flags.survShown = true;
   saveSave();
   boughtFx(n, p);
   grew(before);
@@ -8323,7 +8373,7 @@ function boughtFx(n, p) {
     TREE.sparks.push({ x: n.x * T_CELL, y: n.y * T_CELL, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: realT, T: rnd(0.35, 0.7),
       c: Math.random() < 0.35 ? '#ffffff' : K.c });
   }
-  if (p) TREE.floats.push({ id: n.id, s: '-' + fmt(p), c: n.cur === 'surv' ? U.green : U.gold, t: realT });
+  if (p) TREE.floats.push({ id: n.id, s: '-' + fmt(p), c: n.cur === 'surv' ? U.amber : n.cur === 'gold' ? U.gold : U.blue, t: realT });
   if (lv(n.id) === 1) TREE.lit[n.id] = realT;
 }
 // After a change: nodes that just came onto the map grow their line, one ring after another; a
@@ -10093,10 +10143,10 @@ function lootPaid(f, h) {
   G.cash += f.pay;
   G.pay.loot += f.pay;
   G.cashPulse = 1;
-  addTotal(gx, gy - 14, f.pay, U.gold, big);
+  addTotal(gx, gy - 14, f.pay, U.blue, big);
   coinPop(gx, gy, f.kind === 'gold' ? 16 : big ? 8 : 4);
   const n = f.kind === 'gold' ? 14 : big ? 7 : 4;
-  for (let k = 0; k < n && coins.length < 60; k++) coins.push({ x0: gx - G.camX + rnd(-6, 6), y0: gy - G.camY - 10 + rnd(-4, 4), t: -k * 0.05, T: rnd(0.5, 0.75) });
+  currencyCoins('scrap', gx, gy, n);
   if (f.kind === 'gold') {
     SFX.golden();
     for (let k = 0; k < 26; k++) part({ x: gx, y: gy, z: 12, vx: rnd(-50, 50), vy: rnd(-30, 30), vz: rnd(30, 90), g: 160, life: rnd(0.6, 1.1), max: 1.1, s: 1,
@@ -10428,6 +10478,21 @@ function tip(key, msg, at) {
   if (!see(key)) return;
   TUT.tipQ.push({ msg, at: at || null, t: 0 });
 }
+// Currency lessons wait until they can actually be shown. A screen change may empty the queue,
+// so their persistent event flags are the source of truth until promotion marks the lesson seen.
+function currencyTips() {
+  if (!['play', 'depot'].includes(mode) || (mode === 'play' && G.demo)) return;
+  const lessons = [
+    ['scrap', SAVE.flags.scrapEarned, 'KILLS GIVE SCRAP. SCRAP BUYS UPGRADES.'],
+    ['surv', SAVE.flags.survShown, 'SURVIVORS CREW NEW UNITS. EACH NEW UNIT COSTS 1.'],
+    ['gold', SAVE.flags.goldShown, 'GOLD BUYS SPECIAL NODES.']
+  ];
+  for (const [cur, due, msg] of lessons) {
+    const key = 'currency_' + cur;
+    if (!due || seen(key) || TUT.tip?.key === key || TUT.tipQ.some((t) => t.key === key)) continue;
+    TUT.tipQ.push({ key, cur, msg, t: 0, at: () => [currencyX(cur), 8] });
+  }
+}
 // A radio line, once per save.
 function radioOnce(key, who, msg) {
   if (see(key)) radio(who, msg);
@@ -10503,6 +10568,7 @@ function tutFrame(dt) {
     }
   }
   if (TUT.card && !paused) TUT.card = null;
+  currencyTips();
   tutChannels(dt);
   if (tutLive() && !paused) tutLook(dt);
 }
@@ -10530,7 +10596,10 @@ function tutChannels(dt) {
     T.tip.t += dt;
     if (T.tip.t >= 4) T.tip = null;
   }
-  if (!T.tip && T.tipQ.length) T.tip = T.tipQ.shift();
+  if (!T.tip && T.tipQ.length) {
+    T.tip = T.tipQ.shift();
+    if (T.tip.key) see(T.tip.key);
+  }
   if (T.banQ.length && !banners.some((b) => b.tut)) {
     const [a, b, c] = T.banQ.shift();
     banner(a, b, c, 2);
@@ -10646,16 +10715,18 @@ function drawTasks() {
 function drawTipLine() {
   const t = TUT.tip;
   if (!t) return;
-  const y = cardsTop() - 22, w = tw(t.msg), p = t.at && t.at();
+  const L = wrap(t.msg, W - 36), w = Math.max(...L.map((l) => tw(l))), p = t.at && t.at();
+  const y = (mode === 'depot' ? H - 48 : cardsTop() - 22) - (L.length - 1) * 10;
+  const col = t.cur === 'scrap' ? U.blue : t.cur === 'surv' ? U.amber : U.gold;
   const aw = p ? 12 : 0, x = Math.round(W / 2 - (w + aw) / 2);
   ctx.globalAlpha = t.t < 0.15 ? t.t / 0.15 : t.t > 3.6 ? (4 - t.t) / 0.4 : 1;
   ctx.fillStyle = 'rgba(5,6,8,0.7)';
-  ctx.fillRect(x - 5, y - 3, w + aw + 10, 13);
-  text(t.msg, x + aw, y, U.gold);
+  ctx.fillRect(x - 5, y - 3, w + aw + 10, L.length * 10 + 3);
+  L.forEach((l, i) => text(l, x + aw, y + i * 10, col));
   // the arrow toward the thing it means, blinking
   if (p && Math.floor(realT * 4) % 2 === 0) {
     const cx = x + 4, cy = y + 3, dx = p[0] - cx, dy = p[1] - cy, l = Math.hypot(dx, dy) || 1;
-    triangle(cx, cy, dx / l, dy / l, U.gold);
+    triangle(cx, cy, dx / l, dy / l, col);
   }
   ctx.globalAlpha = 1;
 }
@@ -10693,6 +10764,7 @@ function tutTag() {
   return null;
 }
 function drawTutTags() {
+  if (TUT.tip?.cur) { drawTipLine(); return; }
   const g = tutTag();
   if (!g) return;
   const [id, msg] = g, L = tw(msg) > 190 ? wrap(msg, 190) : [msg];
@@ -10828,7 +10900,7 @@ Object.assign(window.__sr, {
   // tutState() = what each channel shows now
   tutState: () => ({
     tasks: TUT.tasks.map((t) => taskText(t) + (t.done >= 0 ? ' DONE' : '')), queued: TUT.taskQ.length, tip: TUT.tip && TUT.tip.msg,
-    tips: TUT.tipQ.length, radio: RADIO.cur && RADIO.cur.msg, banner: banners[0] && banners[0].a, tag: mode === 'depot' ? tutTag() : null,
+    tips: TUT.tipQ.length, tipKey: TUT.tip?.key || null, radio: RADIO.cur && RADIO.cur.msg, banner: banners[0] && banners[0].a, tag: mode === 'depot' ? tutTag() : null,
     hint: mode === 'depot' ? tutHint() : null, card: !!TUT.card, fade: +TUT.fade.toFixed(2), paused
   }),
   quit: () => quitRun()
@@ -11523,6 +11595,8 @@ Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assi
 
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  currencyState: () => ({ shown: { scrap: true, surv: !!SAVE.flags.survShown, gold: !!SAVE.flags.goldShown },
+    x: { scrap: currencyX('scrap'), surv: currencyX('surv'), gold: currencyX('gold') }, chest: SAVE.chest, gold: SAVE.gold }),
   line: () => ({
     stops: STOPS.map(({ id, name, kind, km, side }) => ({ id, name, kind, km, side })),
     legs: LEGS.map((l) => ({ n: l.n, from: l.from.id, to: l.to.id, len: l.len,

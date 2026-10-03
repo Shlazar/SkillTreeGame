@@ -54,6 +54,21 @@ function tip(key, msg, at) {
   if (!see(key)) return;
   TUT.tipQ.push({ msg, at: at || null, t: 0 });
 }
+// Currency lessons wait until they can actually be shown. A screen change may empty the queue,
+// so their persistent event flags are the source of truth until promotion marks the lesson seen.
+function currencyTips() {
+  if (!['play', 'depot'].includes(mode) || (mode === 'play' && G.demo)) return;
+  const lessons = [
+    ['scrap', SAVE.flags.scrapEarned, 'KILLS GIVE SCRAP. SCRAP BUYS UPGRADES.'],
+    ['surv', SAVE.flags.survShown, 'SURVIVORS CREW NEW UNITS. EACH NEW UNIT COSTS 1.'],
+    ['gold', SAVE.flags.goldShown, 'GOLD BUYS SPECIAL NODES.']
+  ];
+  for (const [cur, due, msg] of lessons) {
+    const key = 'currency_' + cur;
+    if (!due || seen(key) || TUT.tip?.key === key || TUT.tipQ.some((t) => t.key === key)) continue;
+    TUT.tipQ.push({ key, cur, msg, t: 0, at: () => [currencyX(cur), 8] });
+  }
+}
 // A radio line, once per save.
 function radioOnce(key, who, msg) {
   if (see(key)) radio(who, msg);
@@ -129,6 +144,7 @@ function tutFrame(dt) {
     }
   }
   if (TUT.card && !paused) TUT.card = null;
+  currencyTips();
   tutChannels(dt);
   if (tutLive() && !paused) tutLook(dt);
 }
@@ -156,7 +172,10 @@ function tutChannels(dt) {
     T.tip.t += dt;
     if (T.tip.t >= 4) T.tip = null;
   }
-  if (!T.tip && T.tipQ.length) T.tip = T.tipQ.shift();
+  if (!T.tip && T.tipQ.length) {
+    T.tip = T.tipQ.shift();
+    if (T.tip.key) see(T.tip.key);
+  }
   if (T.banQ.length && !banners.some((b) => b.tut)) {
     const [a, b, c] = T.banQ.shift();
     banner(a, b, c, 2);
@@ -272,16 +291,18 @@ function drawTasks() {
 function drawTipLine() {
   const t = TUT.tip;
   if (!t) return;
-  const y = cardsTop() - 22, w = tw(t.msg), p = t.at && t.at();
+  const L = wrap(t.msg, W - 36), w = Math.max(...L.map((l) => tw(l))), p = t.at && t.at();
+  const y = (mode === 'depot' ? H - 48 : cardsTop() - 22) - (L.length - 1) * 10;
+  const col = t.cur === 'scrap' ? U.blue : t.cur === 'surv' ? U.amber : U.gold;
   const aw = p ? 12 : 0, x = Math.round(W / 2 - (w + aw) / 2);
   ctx.globalAlpha = t.t < 0.15 ? t.t / 0.15 : t.t > 3.6 ? (4 - t.t) / 0.4 : 1;
   ctx.fillStyle = 'rgba(5,6,8,0.7)';
-  ctx.fillRect(x - 5, y - 3, w + aw + 10, 13);
-  text(t.msg, x + aw, y, U.gold);
+  ctx.fillRect(x - 5, y - 3, w + aw + 10, L.length * 10 + 3);
+  L.forEach((l, i) => text(l, x + aw, y + i * 10, col));
   // the arrow toward the thing it means, blinking
   if (p && Math.floor(realT * 4) % 2 === 0) {
     const cx = x + 4, cy = y + 3, dx = p[0] - cx, dy = p[1] - cy, l = Math.hypot(dx, dy) || 1;
-    triangle(cx, cy, dx / l, dy / l, U.gold);
+    triangle(cx, cy, dx / l, dy / l, col);
   }
   ctx.globalAlpha = 1;
 }
@@ -319,6 +340,7 @@ function tutTag() {
   return null;
 }
 function drawTutTags() {
+  if (TUT.tip?.cur) { drawTipLine(); return; }
   const g = tutTag();
   if (!g) return;
   const [id, msg] = g, L = tw(msg) > 190 ? wrap(msg, 190) : [msg];
@@ -454,7 +476,7 @@ Object.assign(window.__sr, {
   // tutState() = what each channel shows now
   tutState: () => ({
     tasks: TUT.tasks.map((t) => taskText(t) + (t.done >= 0 ? ' DONE' : '')), queued: TUT.taskQ.length, tip: TUT.tip && TUT.tip.msg,
-    tips: TUT.tipQ.length, radio: RADIO.cur && RADIO.cur.msg, banner: banners[0] && banners[0].a, tag: mode === 'depot' ? tutTag() : null,
+    tips: TUT.tipQ.length, tipKey: TUT.tip?.key || null, radio: RADIO.cur && RADIO.cur.msg, banner: banners[0] && banners[0].a, tag: mode === 'depot' ? tutTag() : null,
     hint: mode === 'depot' ? tutHint() : null, card: !!TUT.card, fade: +TUT.fade.toFixed(2), paused
   }),
   quit: () => quitRun()

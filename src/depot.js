@@ -1,6 +1,6 @@
 // depot.js - the save, and the Depot: the screen between runs. SAVE is everything kept from run to
 // run, one object in this browser's storage. The Depot screen has a top bar (your scrap and
-// survivors, the SKILL TREE tab, your best km), the tree panel, and a bottom bar
+// survivors and gold as they are revealed, the SKILL TREE tab, your best km), the tree panel, and a bottom bar
 // (where the next run starts, and START RUN). The title demo keeps running behind it, dimmed.
 
 // ---------- the save
@@ -123,7 +123,7 @@ function toDepot(tab) {
   if (!G || !G.demo) newGame(true);
   mode = 'depot';
   paused = false;
-  SHOWN.scrap = SHOWN.surv = -1;
+  SHOWN.scrap = SHOWN.surv = SHOWN.gold = -1;
   setTab(tab);
 }
 // Keep the Depot on the tree until another panel is added.
@@ -196,10 +196,10 @@ function depotTabBtn(x, w, label, on, locked, isNew) {
   return clicked(x, y, w, h);
 }
 // The money as the top bar shows it: after a buy it counts down to the real number.
-const SHOWN = { scrap: -1, surv: -1 };
+const SHOWN = { scrap: -1, surv: -1, gold: -1 };
 function countMoney() {
   const k = 1 - Math.exp(-9 * frameDt);
-  for (const key of ['scrap', 'surv']) {
+  for (const key of ['scrap', 'surv', 'gold']) {
     const v = SAVE[key];
     SHOWN[key] = SHOWN[key] < 0 || Math.abs(SHOWN[key] - v) < 0.5 ? v : SHOWN[key] + (v - SHOWN[key]) * k;
   }
@@ -209,19 +209,19 @@ function drawDepotTop() {
   ctx.fillRect(0, 0, W, 18);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, 18, W, 1);
-  // money: scrap (gold, bolt) and survivors (green, person); a number still counting is lighter
+  // All three money families share the HUD's layout; a number still counting is lighter.
   countMoney();
-  const narrow = W < 500, sc = fmt(Math.round(SHOWN.scrap)), sv = Math.round(SHOWN.surv);
-  const cs = sv !== SAVE.surv, cc = Math.round(SHOWN.scrap) !== SAVE.scrap;
-  blit(ICON.scrap, 5, 4 - (cc ? 1 : 0));
-  text(sc, 15, 6, cc ? '#ffe39a' : U.gold);
-  const sx = 15 + Math.max(18, tw(sc)) + 10, ew = 9 + Math.max(10, tw(String(sv)));
-  blit(ICON.surv, sx, 5 - (cs ? 1 : 0));
-  text(sv, sx + 9, 6, cs ? '#d4f5cf' : U.green);
-  tipAt(2, 0, sx - 6, 18, [['SCRAP', U.gold], ['FROM KILLS AND LOOT.', U.dim], ['IT BUYS UPGRADES IN THE SKILL TREE.', U.dim]]);
-  tipAt(sx - 2, 0, ew + 6, 18, [['SURVIVORS', U.green], ['SAVE THEM AT STATIONS.', U.dim], ['THEY BUY THE BIGGEST UPGRADES.', U.dim]]);
+  const narrow = W < 500, counters = currencyLayout(SHOWN);
+  const pulses = Object.fromEntries(['scrap', 'surv', 'gold'].map((key) => [key, Math.round(SHOWN[key]) !== SAVE[key]]));
+  drawCurrencyCounters(counters, 0, pulses);
+  const tips = {
+    scrap: [['SCRAP', U.blue], ['FROM KILLS AND LOOT.', U.dim], ['IT BUYS UPGRADES IN THE SKILL TREE.', U.dim]],
+    surv: [['SURVIVORS', U.amber], ['SURVIVORS CREW NEW UNITS.', U.dim], ['EACH NEW UNIT COSTS 1.', U.dim]],
+    gold: [['GOLD', U.gold], ['FROM GOLDEN FINDS, STARS AND STATIONS.', U.dim], ['IT BUYS SPECIAL NODES.', U.dim]]
+  };
+  for (const item of counters.items) tipAt(item.left - 2, 0, item.textX + tw(item.label) - item.left + 4, 18, tips[item.key]);
   // the tree tab in the middle
-  const tw0 = narrow ? 66 : 84, tx = Math.round((W - tw0) / 2);
+  const tw0 = narrow ? 66 : 84, tx = Math.max(counters.end + 4, Math.round((W - tw0) / 2));
   if (depotTabBtn(tx, tw0, narrow ? 'TREE' : 'SKILL TREE', depotTab === 'tree', false, false)) setTab('tree');
   // the best run
   const b = SAVE.best.toFixed(2) + ' KM', bw = tw(b);

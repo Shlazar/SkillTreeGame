@@ -347,17 +347,23 @@ function drawFlame(x, y, big, seed) {
 }
 
 // ---------- drawing (screen layer)
+function currencyCoins(cur, x, y, n) {
+  for (let k = 0; k < n && coins.length < 60; k++) coins.push({ cur,
+    x0: x - G.camX + rnd(-6, 6), y0: y - G.camY - 10 + rnd(-4, 4), t: -k * 0.05, T: rnd(0.5, 0.75) });
+}
 // Coins on a curve from where the zombie fell to the cash counter (top left).
 function drawCoins() {
   for (const c of coins) {
     if (c.t < 0) continue;
+    const cur = c.cur || 'scrap', target = currencyX(cur);
+    if (target == null) continue;
     const u = ease(c.t / c.T);
-    const x = lerp(c.x0, 9, u) + Math.sin(u * Math.PI) * -20, y = lerp(c.y0, 8, u) - Math.sin(u * Math.PI) * 30;
+    const x = lerp(c.x0, target, u) + Math.sin(u * Math.PI) * -20, y = lerp(c.y0, 8, u) - Math.sin(u * Math.PI) * 30;
     // one step in three the coin is drawn thin, so it seems to spin
     const wob = ((realT * 16 + c.x0) | 0) % 3;
-    ctx.fillStyle = '#7a5a1c';
+    ctx.fillStyle = cur === 'gold' ? '#7a5a1c' : cur === 'surv' ? '#944723' : '#285573';
     ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, wob === 1 ? 1 : 3, 3);
-    ctx.fillStyle = '#f6dc8e';
+    ctx.fillStyle = cur === 'gold' ? '#f6dc8e' : cur === 'surv' ? U.amber : U.blue;
     ctx.fillRect(Math.round(x) - (wob === 1 ? 0 : 1), Math.round(y) - 1, 1, 1);
   }
 }

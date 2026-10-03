@@ -668,16 +668,16 @@ function initSprites() {
   // TURBO RAM: two fiery chevrons pointing up the line
   ICON.ram = outline(strSpr(['...G...', '..GYO..', '.GYOOO.', 'GYO.OOR', '...G...', '..GYO..', '.GYOOO.', 'GYO.OOR'], NPAL), P.out);
   ICON.ramOff = tint(ICON.ram, '#4b4f5a', 0.8);
-  // scrap: a brass bolt (a hex head on a threaded shank)
+  // scrap: a steel-blue bolt (a hex head on a threaded shank)
   ICON.scrap = outline(pix(5, 8, (r) => {
-    r(0, 0, 5, 3, '#d9a33a'); r(0, 0, 5, 1, '#f6dc8e'); r(0, 2, 5, 1, '#a8761f'); r(2, 0, 1, 3, '#b8862f'); r(2, 0, 1, 1, '#f6dc8e');
-    r(1, 3, 3, 5, '#d9a33a'); r(1, 3, 1, 5, '#f6dc8e'); r(1, 4, 3, 1, '#8a6420'); r(1, 6, 3, 1, '#8a6420'); r(3, 3, 1, 5, '#a8761f');
-  }), '#1a1206');
-  // survivors: a person in a green shirt
+    r(0, 0, 5, 3, '#62c8ff'); r(0, 0, 5, 1, U.blue); r(0, 2, 5, 1, '#2f6f9e'); r(2, 0, 1, 3, '#2a9dff'); r(2, 0, 1, 1, U.blue);
+    r(1, 3, 3, 5, '#62c8ff'); r(1, 3, 1, 5, U.blue); r(1, 4, 3, 1, '#2f6f9e'); r(1, 6, 3, 1, '#2f6f9e'); r(3, 3, 1, 5, '#2f6f9e');
+  }), P.out);
+  // survivors: a person in an orange shirt
   ICON.surv = outline(pix(5, 7, (r) => {
     r(1, 0, 3, 2, '#e0b48c'); r(1, 0, 3, 1, '#4a3a2e');
-    r(0, 2, 5, 3, '#5f9a5a'); r(1, 2, 3, 3, '#8fd18a'); r(1, 2, 1, 2, '#c4ecbd');
-    r(1, 5, 1, 2, '#2e4a2e'); r(3, 5, 1, 2, '#2e4a2e');
+    r(0, 2, 5, 3, '#a55a1e'); r(1, 2, 3, 3, U.amber); r(1, 2, 1, 2, '#ffa448');
+    r(1, 5, 1, 2, '#6a3a1e'); r(3, 5, 1, 2, '#6a3a1e');
   }), P.out);
   // a padlock (something still locked)
   ICON.lock = outline(pix(7, 7, (r) => {
@@ -686,10 +686,15 @@ function initSprites() {
   }), P.out);
   ICON.lockBig = scaleSpr(ICON.lock, 3);
   ICON.survBig = scaleSpr(ICON.surv, 3);
-  // small price marks for the skill tree (a bolt = scrap, a person = survivors), and the star of a
-  // big unlock
-  ICON.boltS = outline(strSpr(['GGg', 'gyy', '.g.', '.g.', '.y.'], NPAL), P.out);
-  ICON.survS = outline(strSpr(['.w.', 'EEE', 'EEE', 'e.e', 'e.e'], NPAL), P.out);
+  // Small price marks use local palettes so the node art keeps its own material colours.
+  const scrapPal = Object.assign({}, NPAL, { G: U.blue, g: '#62c8ff', y: '#2f6f9e' });
+  const survPal = Object.assign({}, NPAL, { w: '#ffc27a', E: '#ffa448', e: '#a55a1e' });
+  ICON.boltS = outline(strSpr(['GGg', 'gyy', '.g.', '.g.', '.y.'], scrapPal), P.out);
+  ICON.survS = outline(strSpr(['.w.', 'EEE', 'EEE', 'e.e', 'e.e'], survPal), P.out);
+  // The outline is in the rows, keeping this bright-centred coin's final footprint at 5 x 5.
+  const coinPal = Object.assign({}, NPAL, { G: '#ffdf70', g: U.gold, y: '#b77e1e', w: '#fff1be' });
+  ICON.goldS = strSpr(['.kkk.', 'kGGgk', 'kGwgk', 'kggyk', '.kkk.'], coinPal);
+  // the star of a big unlock
   ICON.star = outline(strSpr(['..G..', '..G..', 'GGGgy', '.Ggy.', '.g.y.'], NPAL), P.out);
   // the node icons
   for (const [id, rows] of Object.entries(NODE_ART)) {
@@ -697,7 +702,8 @@ function initSprites() {
     NICON[id] = outline(strSpr(rows, NPAL), P.out);
   }
   // into the atlas now, not on the first frame of the tree (each new atlas sprite costs a re-upload)
-  for (const c of [...Object.values(NICON), ICON.boltS, ICON.survS, ICON.star, ICON.lock]) atl(c);
+  for (const c of [...Object.values(NICON), ICON.scrap, ICON.surv, ICON.survBig, ICON.coin,
+    ICON.boltS, ICON.survS, ICON.goldS, ICON.star, ICON.lock]) atl(c);
   // the same for the run's new sprites: the Ram card's icon (the rail cannon's are in cannon.js)
   for (const c of [ICON.ram, ICON.ramOff]) atl(c);
   for (let i = 0; i < ANG_N; i++) atl(carGlow(TRAIN[0], i));

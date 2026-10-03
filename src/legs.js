@@ -54,6 +54,17 @@ function payGold(itemId, amount, scrapIfNot) {
     Object.defineProperty(record.paid, itemId, { value: true, enumerable: true, writable: true, configurable: true });
     out.gold = amount;
     G.gold += amount;
+    if (G.leg >= 3 && !SAVE.flags.goldShown) {
+      SAVE.flags.goldShown = true;
+      if (SAVE.chest === 1) {
+        SAVE.chest = 2;
+        G.gold += 6;
+        const h = G.helis[0];
+        floatText(h.x, h.y - h.alt - 12, '+6 GOLD: CHEST OPENED', U.gold);
+        currencyCoins('gold', h.x, h.y - h.alt, 8);
+        SFX.golden();
+      }
+    }
   }
   bankRun();
   return out;

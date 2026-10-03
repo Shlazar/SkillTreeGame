@@ -133,6 +133,7 @@ function stationReward(st) {
     G.stationReward = { kind: 'gold', x, y, t: G.t, amount: 6 };
     floatText(x, y + 34, '+6 GOLD', U.gold);
     coinPop(x, y, 8);
+    currencyCoins('gold', x, y, 6);
     SFX.golden();
     saveSave();
   }

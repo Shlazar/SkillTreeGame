@@ -200,6 +200,7 @@ function buyNode(id) {
   if (n.cur === 'surv') SAVE.surv -= p;
   else SAVE.scrap -= p;
   SAVE.nodes[id] = lv(id) + 1;
+  if (p > 0 && (!n.cur || n.cur === 'scrap')) SAVE.flags.survShown = true;
   saveSave();
   boughtFx(n, p);
   grew(before);
@@ -217,7 +218,7 @@ function boughtFx(n, p) {
     TREE.sparks.push({ x: n.x * T_CELL, y: n.y * T_CELL, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: realT, T: rnd(0.35, 0.7),
       c: Math.random() < 0.35 ? '#ffffff' : K.c });
   }
-  if (p) TREE.floats.push({ id: n.id, s: '-' + fmt(p), c: n.cur === 'surv' ? U.green : U.gold, t: realT });
+  if (p) TREE.floats.push({ id: n.id, s: '-' + fmt(p), c: n.cur === 'surv' ? U.amber : n.cur === 'gold' ? U.gold : U.blue, t: realT });
   if (lv(n.id) === 1) TREE.lit[n.id] = realT;
 }
 // After a change: nodes that just came onto the map grow their line, one ring after another; a
