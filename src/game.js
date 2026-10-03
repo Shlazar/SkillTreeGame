@@ -172,6 +172,7 @@ function newGame(demo, number, replay) {
   RAMCARD.on = false;
   SFX.ramStop(0.1);
   clearFX();
+  clearBurn();
   clearStreams();
   GRID.clear();
   layoutTrain();
@@ -1206,6 +1207,7 @@ function step(dt) {
   if (!G.demo) updateWalls();
   updateZombies(dt);
   updateRounds(dt);
+  updateBurn(dt);
   updateBodies(dt);
   updateFireSpots(dt);
   updateSkills(dt);

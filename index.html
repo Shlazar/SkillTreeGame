@@ -2904,6 +2904,7 @@ function newGame(demo, number, replay) {
   RAMCARD.on = false;
   SFX.ramStop(0.1);
   clearFX();
+  clearBurn();
   clearStreams();
   GRID.clear();
   layoutTrain();
@@ -3938,6 +3939,7 @@ function step(dt) {
   if (!G.demo) updateWalls();
   updateZombies(dt);
   updateRounds(dt);
+  updateBurn(dt);
   updateBodies(dt);
   updateFireSpots(dt);
   updateSkills(dt);
@@ -6143,8 +6145,8 @@ const HWC = {
   rocketWait: 6,
   // Flight seconds, blast radius/damage, arc height, smoke lifetime and hot streak spacing (proposal)
   rocket: { travel: 0.25, radius: 16, damage: 6, arc: 12, smokeLife: [0.4, 0.6], streakStep: 0.005 },
-  // Ground range, launch/retry seconds, spread/mount px, flash seconds and glow radius (proposal)
-  pod: { range: 180, gap: 0.08, retry: 0.25, spread: 8, mountX: 11, mountY: -9, flash: 0.07, flashRadius: 8 }
+  // Ground range, launch/retry seconds, spread/mount px, flash seconds/glow and burn DPS (proposal)
+  pod: { range: 180, gap: 0.08, retry: 0.25, spread: 8, mountX: 11, mountY: -9, flash: 0.07, flashRadius: 8, burnDps: 2 }
 };
 // Lazy run state also works behind the title: a new G starts fresh counters without touching SAVE.
 // first/last/maxGap are game seconds since departure; shots includes ordinary bullets.
@@ -6183,7 +6185,8 @@ function launchPod(q) {
   const [ox, oy] = turnXY(h.hd, q.side * c.mountX, c.mountY);
   G.rounds.push({ kind: 'rocket', source: 'pods', h, tgt: null,
     sx: h.x + ox, sy: h.y + oy, sz: h.alt + 1, bx: q.x, by: q.y,
-    age: 0, T: q.T, dmg: q.dmg, R: q.R, arc: q.arc, player: true });
+    age: 0, T: q.T, dmg: q.dmg, R: q.R, arc: q.arc,
+    burnTime: q.burnTime, burnDamage: q.burnDamage, player: true });
   h.podFlash[q.side < 0 ? 0 : 1] = c.flash;
   p.shots++;
   if (!G.demo) { G.shots++; SFX.rocket(); }
@@ -6211,7 +6214,8 @@ function updateHeliWeapons(dt) {
     const a = k / n * TAU;
     const q = { h, at: now + k * c.gap, side: k % 2 ? 1 : -1,
       x: target.x + Math.cos(a) * c.spread, y: target.y + Math.sin(a) * c.spread * FORE,
-      dmg: rocket.damage * G.up.podDamage, R: rocket.radius, T: rocket.travel, arc: rocket.arc };
+      dmg: rocket.damage * G.up.podDamage, R: rocket.radius, T: rocket.travel, arc: rocket.arc,
+      burnTime: G.up.napalmDuration || 0, burnDamage: c.burnDps * G.up.podDamage };
     if (k === 0) launchPod(q);
     else p.queue.push(q);
   }
@@ -6315,6 +6319,90 @@ function rocketImpact(r) {
     G.hitT = 0.12;
   }
   rocketBlast(x, y);
+  if (r.source === 'pods' && r.burnTime > 0) addBurn(x, y, r.R, r.burnTime, r.burnDamage, 'napalm');
+}
+
+// fire.js - short-lived burning ground shared by Napalm and later fire weapons.
+// Each patch has its own damage cadence. Overlapping patches stack, and only zombies take hits.
+const BURNC = {
+  step: 0.25,
+  // Patch cap, flame count/spread, final fade seconds and glow radius/opacity/flicker (proposal)
+  cap: 60, flames: 7, spread: 0.6, fade: 0.35, glow: 1.5, alpha: 0.38, flicker: 0.08
+};
+const BURN = [];
+const BURNSTAT = { g: null, kills: 0, ticks: 0, hits: 0, created: 0 };
+function clearBurn() {
+  BURN.length = 0;
+  Object.assign(BURNSTAT, { g: G, kills: 0, ticks: 0, hits: 0, created: 0 });
+}
+// Debug readers and weapon calls can arrive before the first simulation step of a new run.
+function burnState() {
+  if (BURNSTAT.g !== G) clearBurn();
+  return BURNSTAT;
+}
+function addBurn(x, y, R, duration, dps, source = 'napalm') {
+  const stats = burnState();
+  if (!(R > 0 && duration > 0 && dps > 0)) return null;
+  if (BURN.length >= BURNC.cap) BURN.shift();
+  const p = { x, y, R, time: duration, age: 0, duration, dps, tick: 0, source, seed: rnd(TAU) };
+  BURN.push(p);
+  stats.created++;
+  // A persistent mark is stamped once, rather than on every tick or rendered frame.
+  stampScorch(x, y, 1);
+  return p;
+}
+function burnTick(p, seconds) {
+  const stats = burnState();
+  stats.ticks++;
+  if (G.result) return;
+  queryEll(p.x, p.y, p.R, (z) => {
+    if (z.gone || z.gate && z.still) return;
+    stats.hits++;
+    JUICE.from = [p.x, p.y];
+    if (hitZombie(z, p.dps * seconds, 'fire')) stats.kills++;
+    JUICE.from = null;
+  });
+}
+function updateBurn(dt) {
+  burnState();
+  if (!(dt > 0)) return;
+  for (let i = BURN.length - 1; i >= 0; i--) {
+    const p = BURN[i], alive = Math.min(dt, p.time);
+    p.age = Math.min(p.duration, p.age + alive);
+    p.time = Math.max(0, p.duration - p.age);
+    p.tick += alive;
+    while (p.tick >= BURNC.step - 1e-9) {
+      burnTick(p, BURNC.step);
+      p.tick = Math.max(0, p.tick - BURNC.step);
+    }
+    if (p.time <= 1e-9) {
+      // A non-quarter-second lifetime still deals only its actual final fraction of damage.
+      if (p.tick > 1e-9) burnTick(p, p.tick);
+      BURN.splice(i, 1);
+    }
+  }
+}
+function drawBurn() {
+  for (const p of BURN) {
+    if (offView(p.x, p.y, p.R)) continue;
+    ctx.globalAlpha = Math.min(1, p.time / BURNC.fade);
+    for (let k = 0; k < BURNC.flames; k++) {
+      const a = (k - 1) / (BURNC.flames - 1) * TAU + p.seed;
+      const r = k ? p.R * BURNC.spread : 0;
+      drawFlame(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * FORE, false, p.seed + k);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+// Called in the existing additive pass. It uses the scenery-fire glow colour already cached.
+function drawBurnFx() {
+  for (const p of BURN) {
+    if (offView(p.x, p.y, p.R)) continue;
+    const fade = Math.min(1, p.time / BURNC.fade);
+    light(p.x, p.y - 3, p.R * BURNC.glow, '#ff9a4a',
+      (BURNC.alpha + Math.sin(realT * 13 + p.seed) * BURNC.flicker) * fade);
+  }
+  ctx.globalAlpha = 1;
 }
 
 // juice.js - the extra kick of every hit, in the same pixel style as fx.js: blood sprayed away from
@@ -7516,6 +7604,7 @@ function render() {
   // fires, smoke and dirt, explosions, flying bodies
   for (const f of FIRES) drawFlame(f.x, f.y, f.big, f.seed);
   for (const f of flames) drawFlame(f.x, f.y, false, f.seed);
+  drawBurn();
   drawParts(false);
   drawBooms();
   drawBodies();
@@ -7524,6 +7613,7 @@ function render() {
   // glows (added light)
   ctx.globalCompositeOperation = 'lighter';
   drawLights();
+  drawBurnFx();
   for (const f of FIRES) light(f.x, f.y - (f.big ? 6 : 3), f.big ? 22 : 14, '#ff9a4a', 0.45 + Math.sin(realT * 13 + f.seed) * 0.08);
   for (const o of DL) if (o.campFire != null) light(o.x, o.y - 7, 12, '#ff9a4a', 0.25 + Math.sin(G.t * 13) * 0.04);
   // the train's headlights (in daylight their beam on the rails ahead only shows while the Turbo
@@ -8695,6 +8785,7 @@ function treeUp(L, up) {
     heliDmg: hd, heliRate: hr, heliRange: UP.hrange(L('hrange')), rocketChance: UP.rockets(L('rockets')),
     pods: L('rocketPods') > 0, podDamage: UP.podDamage(L('podDamage')),
     podReload: UP.podReload(L('podReload')), podSalvo: UP.podSalvo(L('podSalvo')),
+    napalmDuration: UP.napalm(L('napalm')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
     ramTime: 0, ramCharge: 0, power: false,
@@ -11895,15 +11986,33 @@ Object.assign(window.__sr, {
       heli: { count: G.helis.length, damage: G.up.dmg, rate: G.up.rate, range: hRange(), winch: !!G.up.winch },
       rockets: { chance: G.up.rocketChance || 0, enabled: !!G.up.rocketChance },
       pods: { enabled: !!G.up.pods, range: HWC.pod.range, damage: HWC.rocket.damage * G.up.podDamage,
-        reload: G.up.podReload, salvo: G.up.podSalvo, salvos: p.salvos, shots: p.shots,
+        reload: G.up.podReload, salvo: G.up.podSalvo, napalmDuration: G.up.napalmDuration, salvos: p.salvos, shots: p.shots,
         queued: p.queue.length, inFlight: active.length, cooldown: Math.max(0, p.next - clock),
         ready: !!G.up.pods && clock >= p.next, impacts: p.impacts, kills: p.kills,
         lastTarget: p.lastTarget ? { ...p.lastTarget } : null,
         lastImpact: p.lastImpact ? { ...p.lastImpact } : null,
         active: active.map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz, bx: r.bx, by: r.by,
-          age: r.age, T: r.T, dmg: r.dmg, R: r.R, position: rocketAt(r) })) },
+          age: r.age, T: r.T, dmg: r.dmg, R: r.R, burnTime: r.burnTime, burnDamage: r.burnDamage, position: rocketAt(r) })) },
       hellfire: null, planes: [], cars: [], gadgets: []
     };
+  },
+  // Copy the burning ground and its run counters without exposing mutable patches or G.
+  fires: () => {
+    if (!G) return [];
+    burnState();
+    return BURN.map((f) => ({ x: f.x, y: f.y, R: f.R, time: f.time, age: f.age,
+      duration: f.duration, dps: f.dps, tick: f.tick, source: f.source }));
+  },
+  fireStats: () => {
+    if (!G) return null;
+    const s = burnState();
+    return { kills: s.kills, ticks: s.ticks, hits: s.hits, created: s.created };
+  },
+  // A real bounded-list burn fixture for cap checks; gameplay tests use pod salvos.
+  addBurn: (sx, sy, R = 16, duration = 3, dps = 2) => {
+    if (!G || ![sx, sy, R, duration, dps].every(Number.isFinite) || R <= 0 || duration <= 0 || dps <= 0) return false;
+    addBurn(G.camX + sx, G.camY + sy, R, duration, dps, 'test');
+    return BURN.length;
   },
   // Copy firing diagnostics and projectiles without exposing mutable targets or heli objects.
   rockets: () => {

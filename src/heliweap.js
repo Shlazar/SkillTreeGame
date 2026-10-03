@@ -7,8 +7,8 @@ const HWC = {
   rocketWait: 6,
   // Flight seconds, blast radius/damage, arc height, smoke lifetime and hot streak spacing (proposal)
   rocket: { travel: 0.25, radius: 16, damage: 6, arc: 12, smokeLife: [0.4, 0.6], streakStep: 0.005 },
-  // Ground range, launch/retry seconds, spread/mount px, flash seconds and glow radius (proposal)
-  pod: { range: 180, gap: 0.08, retry: 0.25, spread: 8, mountX: 11, mountY: -9, flash: 0.07, flashRadius: 8 }
+  // Ground range, launch/retry seconds, spread/mount px, flash seconds/glow and burn DPS (proposal)
+  pod: { range: 180, gap: 0.08, retry: 0.25, spread: 8, mountX: 11, mountY: -9, flash: 0.07, flashRadius: 8, burnDps: 2 }
 };
 // Lazy run state also works behind the title: a new G starts fresh counters without touching SAVE.
 // first/last/maxGap are game seconds since departure; shots includes ordinary bullets.
@@ -47,7 +47,8 @@ function launchPod(q) {
   const [ox, oy] = turnXY(h.hd, q.side * c.mountX, c.mountY);
   G.rounds.push({ kind: 'rocket', source: 'pods', h, tgt: null,
     sx: h.x + ox, sy: h.y + oy, sz: h.alt + 1, bx: q.x, by: q.y,
-    age: 0, T: q.T, dmg: q.dmg, R: q.R, arc: q.arc, player: true });
+    age: 0, T: q.T, dmg: q.dmg, R: q.R, arc: q.arc,
+    burnTime: q.burnTime, burnDamage: q.burnDamage, player: true });
   h.podFlash[q.side < 0 ? 0 : 1] = c.flash;
   p.shots++;
   if (!G.demo) { G.shots++; SFX.rocket(); }
@@ -75,7 +76,8 @@ function updateHeliWeapons(dt) {
     const a = k / n * TAU;
     const q = { h, at: now + k * c.gap, side: k % 2 ? 1 : -1,
       x: target.x + Math.cos(a) * c.spread, y: target.y + Math.sin(a) * c.spread * FORE,
-      dmg: rocket.damage * G.up.podDamage, R: rocket.radius, T: rocket.travel, arc: rocket.arc };
+      dmg: rocket.damage * G.up.podDamage, R: rocket.radius, T: rocket.travel, arc: rocket.arc,
+      burnTime: G.up.napalmDuration || 0, burnDamage: c.burnDps * G.up.podDamage };
     if (k === 0) launchPod(q);
     else p.queue.push(q);
   }
@@ -179,4 +181,5 @@ function rocketImpact(r) {
     G.hitT = 0.12;
   }
   rocketBlast(x, y);
+  if (r.source === 'pods' && r.burnTime > 0) addBurn(x, y, r.R, r.burnTime, r.burnDamage, 'napalm');
 }

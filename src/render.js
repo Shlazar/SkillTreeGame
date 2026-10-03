@@ -363,6 +363,7 @@ function render() {
   // fires, smoke and dirt, explosions, flying bodies
   for (const f of FIRES) drawFlame(f.x, f.y, f.big, f.seed);
   for (const f of flames) drawFlame(f.x, f.y, false, f.seed);
+  drawBurn();
   drawParts(false);
   drawBooms();
   drawBodies();
@@ -371,6 +372,7 @@ function render() {
   // glows (added light)
   ctx.globalCompositeOperation = 'lighter';
   drawLights();
+  drawBurnFx();
   for (const f of FIRES) light(f.x, f.y - (f.big ? 6 : 3), f.big ? 22 : 14, '#ff9a4a', 0.45 + Math.sin(realT * 13 + f.seed) * 0.08);
   for (const o of DL) if (o.campFire != null) light(o.x, o.y - 7, 12, '#ff9a4a', 0.25 + Math.sin(G.t * 13) * 0.04);
   // the train's headlights (in daylight their beam on the rails ahead only shows while the Turbo

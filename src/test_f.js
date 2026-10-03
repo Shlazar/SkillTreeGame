@@ -9,15 +9,33 @@ Object.assign(window.__sr, {
       heli: { count: G.helis.length, damage: G.up.dmg, rate: G.up.rate, range: hRange(), winch: !!G.up.winch },
       rockets: { chance: G.up.rocketChance || 0, enabled: !!G.up.rocketChance },
       pods: { enabled: !!G.up.pods, range: HWC.pod.range, damage: HWC.rocket.damage * G.up.podDamage,
-        reload: G.up.podReload, salvo: G.up.podSalvo, salvos: p.salvos, shots: p.shots,
+        reload: G.up.podReload, salvo: G.up.podSalvo, napalmDuration: G.up.napalmDuration, salvos: p.salvos, shots: p.shots,
         queued: p.queue.length, inFlight: active.length, cooldown: Math.max(0, p.next - clock),
         ready: !!G.up.pods && clock >= p.next, impacts: p.impacts, kills: p.kills,
         lastTarget: p.lastTarget ? { ...p.lastTarget } : null,
         lastImpact: p.lastImpact ? { ...p.lastImpact } : null,
         active: active.map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz, bx: r.bx, by: r.by,
-          age: r.age, T: r.T, dmg: r.dmg, R: r.R, position: rocketAt(r) })) },
+          age: r.age, T: r.T, dmg: r.dmg, R: r.R, burnTime: r.burnTime, burnDamage: r.burnDamage, position: rocketAt(r) })) },
       hellfire: null, planes: [], cars: [], gadgets: []
     };
+  },
+  // Copy the burning ground and its run counters without exposing mutable patches or G.
+  fires: () => {
+    if (!G) return [];
+    burnState();
+    return BURN.map((f) => ({ x: f.x, y: f.y, R: f.R, time: f.time, age: f.age,
+      duration: f.duration, dps: f.dps, tick: f.tick, source: f.source }));
+  },
+  fireStats: () => {
+    if (!G) return null;
+    const s = burnState();
+    return { kills: s.kills, ticks: s.ticks, hits: s.hits, created: s.created };
+  },
+  // A real bounded-list burn fixture for cap checks; gameplay tests use pod salvos.
+  addBurn: (sx, sy, R = 16, duration = 3, dps = 2) => {
+    if (!G || ![sx, sy, R, duration, dps].every(Number.isFinite) || R <= 0 || duration <= 0 || dps <= 0) return false;
+    addBurn(G.camX + sx, G.camY + sy, R, duration, dps, 'test');
+    return BURN.length;
   },
   // Copy firing diagnostics and projectiles without exposing mutable targets or heli objects.
   rockets: () => {
