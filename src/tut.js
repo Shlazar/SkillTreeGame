@@ -97,13 +97,13 @@ function tutEvent(name, d) {
   const ev = {
     pile_seen: () => {
       task('t_piles', 'GRAB 3 SCRAP PILES', 3, 'pile');
-      tip('p_pile', 'RIGHT CLICK A SCRAP PILE TO SEND A HELI.', P(d));
+      tip('p_pile', 'RIGHT CLICK A SCRAP PILE TO SEND YOUR VIPER.', P(d));
     },
     pile_taken: () => tutCount('pile'),
     crate_seen: () => task('t_crate', 'GRAB THE SUPPLY CRATE', 1, 'crate'),
     crate_taken: () => tutCount('crate'),
-    sos_seen: () => { if (!d.winch) tip('p_sos', 'A SURVIVOR! YOU NEED THE WINCH.', P(d)); },
-    sos_near: () => tip('p_lift', 'KEEP A HELI OVER THEM TO LIFT THEM UP.', P(d)),
+    sos_seen: () => tip('p_sos', 'A SURVIVOR! FLY OVER THEM TO WINCH THEM UP.', P(d)),
+    sos_near: () => tip('p_lift', 'HOLD YOUR VIPER OVER THEM FOR 2 SECONDS.', P(d)),
     golden_seen: () => tip('p_golden', 'GOLDEN ZOMBIE! CATCH IT FOR ' + goldenPay(d) + ' SCRAP.', P(d.z || d))
   }[name];
   if (ev) ev();
@@ -190,14 +190,12 @@ function tutChannels(dt) {
 // What the run shows now that has a prompt (the ones no feature sends an event for).
 function tutLook(dt) {
   const runs = SAVE.runs;
-  // the first things to learn, a moment into a run: select and send the heli
+  // The Viper fires by itself; right click gives it a target or a place to fly.
   if (G.run > 1.5) {
-    task('t_sel', 'CLICK YOUR HELI', 1, 'select');
     task('t_attack', 'RIGHT CLICK A ZOMBIE TO ATTACK IT', 1, 'attack');
     const h = G.helis[0];
-    if (h) tip('p_auto', 'YOUR HELI FIGHTS BY ITSELF. RIGHT CLICK TO SEND IT.', () => [h.x - G.camX, h.y - h.alt - G.camY]);
+    if (h) tip('p_auto', 'YOUR VIPER FIGHTS BY ITSELF. RIGHT CLICK TO MOVE IT.', () => [h.x - G.camX, h.y - h.alt - G.camY]);
   }
-  if (G.overheat) tip('p_hot', 'TOO HOT! THE GUN COOLS DOWN BY ITSELF.', () => [40, cardsTop() + 13]);
   // scrap piles: from 11 s into run 2 (once there is loot on the line)
   if (runs >= 2 && G.run > 11 && G.loot) task('t_piles', 'GRAB 3 SCRAP PILES', 3, 'pile');
   // the dead in view: a crowd on the rails, one on the train, a runner, a brute
@@ -373,7 +371,7 @@ function drawPause() {
     drawEndCard();
     return;
   }
-  const L = ['YOUR HELIS FIGHT BY THEMSELVES.', 'CLICK OR DRAG: SELECT.  A: ALL.  1 2 3: ONE.', 'RIGHT CLICK: ATTACK, MOVE OR ESCORT.'];
+  const L = ['YOUR VIPER FIGHTS BY ITSELF.', 'RIGHT CLICK: ATTACK OR MOVE.', 'FLY OVER A SURVIVOR TO WINCH THEM UP.'];
   if (G.up.ram) L.push('E: TURBO RAM.');
   if (G.up.strafe) L.push('Q: STRAFING RUN, THEN CLICK THE MAP.');
   L.push('T: CAMERA.  M: SOUND.  WHEEL: ZOOM.');

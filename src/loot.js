@@ -211,7 +211,7 @@ function crateStep(f, d, dt) {
     }
   }
 }
-// The stranded survivor: a flare every 6 s. With the Winch, a heli hovers over them for 1.5 s
+// The stranded survivor: a flare every 6 s. The built-in winch needs about 2 s of hovering
 // (leaving starts it again): the rope drops, they grab it and swing up under that heli: +1 survivor.
 function sosStep(f, d, dt, live, h) {
   if (f.stage === 'done') return;
@@ -351,8 +351,7 @@ function drawSOS(f, gx, gy) {
   if (f.stage === 'wait') {
     const blink = (realT * 2 | 0) % 2 === 0;
     text('SOS', f.x + 2, f.y - 36, blink ? '#ffffff' : U.red, { align: 'center' });
-    if (!G.up.winch && near < 90) text('NEEDS THE WINCH', f.x + 2, f.y + 8, U.amber, { align: 'center' });
-    else if (G.up.winch && near < 90 && f.w <= 0) text('HOVER HERE', f.x + 2, f.y + 14, '#ffffff', { align: 'center' });
+    if (near < 90 && f.w <= 0) text('HOVER HERE', f.x + 2, f.y + 14, '#ffffff', { align: 'center' });
   }
 }
 

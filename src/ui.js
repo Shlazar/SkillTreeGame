@@ -60,7 +60,7 @@ function card(x, y, w, h, icon, name, tag, tagc, f, fc, nc) {
   ctx.drawImage(icon, x + 5, y + Math.round((h - icon.height) / 2));
   text(name, x + 17, y + 5, nc || U.ink);
   text(tag, x + w - 5, y + 5, tagc, { align: 'right', outline: false });
-  bar(x + 17, y + 16, w - 23, 4, f, '#1a1716', fc);
+  if (f != null) bar(x + 17, y + 16, w - 23, 4, f, '#1a1716', fc);
 }
 // Counters share their spacing with flying rewards. Hidden currencies have no target yet.
 function currencyIcon(key) {
@@ -439,8 +439,8 @@ function drawTitle() {
     if (button(cx - 75, y, 150, 20, 'PLAY', { primary: true })) titleGo();
     y += 30;
   }
-  const L = ['YOUR HELIS FIGHT BY THEMSELVES.  CLICK OR DRAG: SELECT.',
-    'RIGHT CLICK: ATTACK OR MOVE.  A: SELECT HELI.',
+  const L = ['YOUR VIPER FIGHTS BY ITSELF.',
+    'RIGHT CLICK: ATTACK OR MOVE.',
     'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
   L.forEach((l, i) => text(l, cx, y + i * 11, U.faint, { align: 'center', outline: false }));
   text(ask ? 'ESC: GO BACK' : 'ENTER: ' + (prog ? 'CONTINUE' : 'PLAY'), cx, y + 42, U.faint, { align: 'center', outline: false });

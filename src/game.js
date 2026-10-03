@@ -12,9 +12,9 @@ const CFG = {
   train: { cruise: 40, accel: 14, brake: 16, hp: 80, crush: 0.5, crushBig: 6 },
   // a helicopter: its top speed, how fast it gets there, how near loot must be to pick it up
   heli: { speed: 170, accel: 3.2, pickup: 14 },
-  // 25mm: rounds per second, flight time (short: the hit lands at once), spread without a lock,
-  // burst radius, most zombies one round can hit, heat per round, cooling per second
-  mg: { rate: 6, travel: 0.07, spread: 5, splash: 7, victims: 4, heatPer: 0.05, cool: 0.55 },
+  // 25mm: 4 rounds/s, flight seconds, spread px, burst radius px and most victims. (proposal)
+  // The Viper fires continuously without overheating; legacy heat values stay zero.
+  mg: { rate: 4, travel: 0.07, spread: 5, splash: 7, victims: 4, heatPer: 0, cool: 0.55 },
   // 105mm: reload, flight time, kill radius, hurt radius (a hurt walker dies too, a brute may not),
   // and how close to the train a blast hurts the train too
   he: { reload: 2.4, travel: 0.7, kill: 34, hurt: 56, close: 28 },
@@ -40,8 +40,8 @@ const CFG = {
   // (250 and 200 m), px the camera leads, and its kills pay ×pay.
   ram: { speed: 120, dur: 3, rise: 0.4, ease: 1, band: 16, back: 10, front: 8, charge: 250, noStart: 500, cut: 400,
     lead: 40, pay: 2 },
-  // seconds the winch needs over a survivor
-  winch: { hover: 1.5 },
+  // Seconds the built-in winch needs over a survivor: about 2 s. (proposal)
+  winch: { hover: 2 },
   // what one level of a skill tree node adds: train HP (ARMOR), the 25mm's heat per round is
   // multiplied (COOLING), 25mm rounds per second (FAST FEED), 25mm damage (HEAVY ROUNDS), 105mm
   // reload seconds taken off (FAST RELOAD), heli px/s (FAST ROTORS), px of pickup reach
@@ -49,7 +49,7 @@ const CFG = {
   up: { armor: 10, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, rotor: 25, magnet: 10, scav: 0.1, gun: 1 },
   // dps = damage to the train each second while it holds on
   types: [
-    { hp: 1, speed: [15, 20], value: 1, dps: 0.25 },               // walker
+    { hp: 2, speed: [15, 20], value: 1, dps: 0.25 },               // walker: 2 base gun hits (proposal)
     { hp: 1, speed: [42, 52], value: 1, dps: 0.3, run: true },     // runner
     { hp: 6, speed: [10, 13], value: 5, dps: 2, big: true }        // brute
   ]
@@ -85,7 +85,8 @@ const UP = {
 };
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
 // menus uses the plain numbers and shows off the Turbo Ram for now.
-// he, winch, ram = owned; gun = the rail cannon's reload seconds (0 = none). One Viper flies.
+// The winch is built in. he and ram are weapons; gun is the rail cannon's reload (0 = none).
+// One Viper flies, including in the demo.
 // salvage is the extra share of every scrap reward; treeUp reads the crew's level.
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
@@ -94,7 +95,7 @@ function runUp(demo) {
     hp: UP.hp(L('armor')), rate: CFG.mg.rate, heat: CFG.mg.heatPer, dmg: 1,
     he: false, reload: CFG.he.reload, fly: CFG.heli.speed, pickup: UP.pickup(L('magnet')),
     helis: 1,
-    scav: 0, winch: false, gun: 0, ram: demo || L('ram') > 0,
+    scav: 0, winch: true, gun: 0, ram: demo || L('ram') > 0,
     // Full-game plow and legacy gold spawns stay disabled; armor still dresses the engine.
     cow: false, gold: 0, armor: L('armor')
   });
@@ -906,7 +907,7 @@ function kill(z, cause, cx, cy, dist, free) {
     hitStop(0.05, 0.3);
   }
 }
-// A 25mm hit: 1 damage, more with HEAVY ROUNDS (the demo hits for 1). Or a hit of dmg from another
+// A 25mm hit: 1 base damage, more with Gun Damage (the demo hits for 1). Or a hit of dmg from another
 // gun (cause 'gun' = the flatcar gun).
 function hitZombie(z, dmg, cause) {
   z.hp -= dmg != null ? dmg : G.demo ? 1 : heliDmg();
@@ -916,7 +917,7 @@ function hitZombie(z, dmg, cause) {
     kill(z, cause || 'mg', 0, 0, 0);
     return true;
   }
-  // a brute takes the hit: blood and a step back (not when it holds on to the train)
+  // A surviving target takes the hit: blood and a step back (unless it holds on to the train).
   blood(z.x, z.y, 4, z.S.h * 0.6);
   if (z.st !== 2) z.kby -= 12;
   if (!G.demo) SFX.hit();

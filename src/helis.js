@@ -1,9 +1,7 @@
-// helis.js - the gunships: real helicopter units you see over the map, RTS style. Each one flies by
-// itself: it escorts the train in a loose formation and its nose gun shoots the closest threat (the
-// dead on the train first, then the dead on the rails ahead, then the nearest). Select them (click,
-// drag a box, A, the number keys, double click) and right click: on a zombie = attack it until it
-// dies, on the ground = fly there and hold the spot, on the train = escort it again. The 105mm
-// helpers are retained for the full game, but that weapon is disabled in this demo.
+// helis.js - the Viper escorts the train and its nose gun continuously shoots the closest threat
+// (the dead on the train first, then the dead on the rails ahead, then the nearest). It is always
+// selected: right click a zombie to focus it, the ground to fly there, or the train to escort it.
+// Multiple-unit selection and 105mm helpers remain for the full game, disabled in this demo.
 // The model is a pile of top-down slices like the train cars, made at HN headings; the main rotor is
 // a baked blur disc with blade flicks, the tail rotor flickers, the shadow falls south-east.
 
@@ -11,13 +9,13 @@
 // (px on the ground), sep = px two helis keep apart, look = seconds between two looks for a target,
 // turn = how fast it turns (radians per second), mast = px from its middle to the rotor mast,
 // nose = px from its middle to the gun's muzzle
-const HC = { alt: 34, low: 25, range: 150, sep: 40, look: 0.12, turn: 4, mast: 6, nose: 23, names: ['VIPER 1', 'VIPER 2', 'VIPER 3'] };
+const HC = { alt: 34, low: 25, range: 150, sep: 40, look: 0.12, turn: 4, mast: 6, nose: 23, names: ['VIPER', 'VIPER 2', 'VIPER 3'] };
 // the escort slots round the engine: [px ahead of its nose, px right of the rails]
 const SLOTS = [[8, -40], [-58, 44], [-112, -44]];
 // the click and selection state: box = a drag that started at (x0, y0), arm = the 105 waits for a
 // click on the map, marks = the markers of the last orders, cards = the unit cards on screen,
 // lastT / lastH = the last click on a heli (a second one soon after selects them all), msg = a
-// short line over the cards (CLICK A HELI FIRST.)
+// short line over the cards for a weapon's loading state
 const HUI = { box: null, arm: false, marks: [], cards: [], lastT: -9, lastH: null, msg: null, hov: null };
 
 // ---------- the model
@@ -155,6 +153,13 @@ function bakeHelis() {
 const turnXY = (a, dx, dy) => [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];
 // the helis to command now: the selected ones, or all of them when none is
 const selHelis = () => (G.helis.some((h) => h.sel) ? G.helis.filter((h) => h.sel) : G.helis);
+// A sole Viper never needs selection. Input also calls this before its next simulation step.
+function selectSingleHeli() {
+  if (G.helis.length !== 1) return false;
+  G.helis[0].sel = true;
+  HUI.box = null;
+  return true;
+}
 // Where heli i flies when it escorts the train: its slot round the engine, drifting a little.
 function escortAt(i) {
   const c = G.tr.cars[0], s = SLOTS[i % SLOTS.length], t = G.t;
@@ -170,7 +175,7 @@ function makeHelis() {
   for (let i = 0; i < G.up.helis; i++) {
     const [x, y] = escortAt(i);
     G.helis.push({ i, name: HC.names[i] || 'VIPER ' + (i + 1), x, y, vx: 0, vy: 0, hd: G.tr.cars[0].ang, alt: HC.alt, ph: rnd(TAU),
-      heat: 0, hot: false, firing: false, cd: rnd(0.15), tgt: null, look: 0, order: null, sel: false, flash: 0, heR: 0, kick: 0,
+      heat: 0, hot: false, firing: false, cd: rnd(0.15), tgt: null, look: 0, order: null, sel: G.up.helis === 1, flash: 0, heR: 0, kick: 0,
       cmdT: -9, spin: rnd(8), dust: 0, smoke: rnd(0.2), lean: 0 });
   }
 }
@@ -197,8 +202,12 @@ function heliTarget(h) {
 // Each step: every heli flies to its order (or its escort slot), turns, picks a target and shoots.
 function updateHelis(dt) {
   const hs = G.helis, c0 = G.tr.cars[0], tv = G.tr.v, sp = G.up.fly, live = !G.result;
-  let heat = 0, hot = false, rel = 0, readyNow = false;
+  selectSingleHeli();
+  let rel = 0, readyNow = false;
   for (const h of hs) {
+    // Retain safe zero values for the existing debug stats; heat no longer gates the gun.
+    h.heat = 0;
+    h.hot = false;
     let o = h.order;
     if (o && o.kind === 'attack' && (o.z.dead || o.z.gone)) o = h.order = null;
     // where it wants to be: its slot over the train, its spot, or in reach of its target
@@ -254,14 +263,12 @@ function updateHelis(dt) {
     h.hd = mod(h.hd + turn, TAU);
     // it leans into its speed (and into a turn)
     h.lean += (clamp(own / 170, 0, 1) - h.lean) * Math.min(1, dt * 4);
-    // the gun: it heats while it fires and cools when it rests; too hot and it stops for a moment
-    h.heat = Math.max(0, h.heat - CFG.mg.cool * dt * (h.firing && !h.hot ? 0.25 : 1));
-    if (h.hot && h.heat < 0.35) h.hot = false;
+    // The gun fires continuously while its nose points at a target in reach.
     h.firing = false;
-    if (live && inR && !h.hot && Math.abs(da) < 0.55 && z.pending < z.hp && !(z.gate && z.still)) {
+    if (live && inR && Math.abs(da) < 0.55 && z.pending < z.hp && !(z.gate && z.still)) {
       h.firing = true;
       h.cd -= dt;
-      while (h.cd <= 0 && !h.hot && z.pending < z.hp) {
+      while (h.cd <= 0 && z.pending < z.hp) {
         heliShot(h, z);
         h.cd += 1 / heliRate();
       }
@@ -274,14 +281,12 @@ function updateHelis(dt) {
       h.heR = Math.max(0, h.heR - dt);
       if (G.up.he && h.heR <= 0 && !G.demo && mode === 'play') readyNow = true;
     }
-    heat = Math.max(heat, h.heat);
-    hot = hot || h.hot;
     rel = Math.max(rel, h.heR);
     heliDust(h, dt);
   }
-  // (one number for the HUD and the tests: the hottest gun, the slowest 105)
-  G.heat = heat;
-  G.overheat = hot;
+  // Legacy heat stats stay zero; the dormant 105 keeps its reload stat.
+  G.heat = 0;
+  G.overheat = false;
   G.heReload = rel;
   if (!G.up.he) G.heQueue = false;
   if (G.up.he && readyNow) {
@@ -302,7 +307,6 @@ function heliShot(h, z) {
   // (each shot's muzzle flash is a new star)
   h.flash = 0.07;
   h.fs = (Math.random() * 1e6) | 0;
-  h.heat = Math.min(1, h.heat + G.up.heat);
   // a spent case jumps out of its right side and falls to the ground
   const [ox, oy] = turnXY(h.hd, 4, -14), [rx, ry] = turnXY(h.hd, 1, 0);
   part({ x: h.x + ox, y: h.y + oy, z: h.alt - 1, vx: rx * rnd(18, 34) + h.vx * 0.6, vy: ry * rnd(18, 34) + h.vy * 0.6, vz: rnd(4, 18), g: 200,
@@ -310,11 +314,6 @@ function heliShot(h, z) {
   if (G.demo) return;
   G.shots++;
   SFX.mg();
-  if (h.heat >= 1) {
-    h.hot = true;
-    SFX.overheat();
-    floatText(h.x, h.y - h.alt - 8, 'OVERHEAT', U.red);
-  }
 }
 // Dust kicked up by the rotor's downwash when it flies slow or low, and a faint haze from its exhausts.
 function heliDust(h, dt) {
@@ -424,6 +423,10 @@ function selectAll() {
 }
 // a click on a heli (or its card): select it alone; shift adds or takes it away; twice = all
 function clickHeli(h, shift) {
+  if (selectSingleHeli()) {
+    SFX.ui();
+    return;
+  }
   if (realT - HUI.lastT < 0.35 && HUI.lastH === h) {
     HUI.lastT = -9;
     selectAll();
@@ -436,9 +439,10 @@ function clickHeli(h, shift) {
   SFX.ui();
   selDone();
 }
-// Left button down on the field (in play, not paused): the armed 105 fires, a card is clicked, or a
-// drag starts (a click on a heli selects it when the button comes up).
+// Left button down: a card is clicked or the dormant armed 105 fires. A drag selects units only
+// when multiple helis are enabled in the full game.
 function heliDown(x, y, shift) {
+  const single = selectSingleHeli();
   if (!G.up.he) HUI.arm = false;
   for (const c of HUI.cards) {
     if (!inR(x, y, c.x, c.y, c.w, c.ht)) continue;
@@ -453,11 +457,12 @@ function heliDown(x, y, shift) {
     heFire(G.camX + x, G.camY + y);
     return;
   }
-  HUI.box = { x0: x, y0: y, shift };
+  if (!single) HUI.box = { x0: x, y0: y, shift };
 }
-// Left button up: the end of a drag selects the helis in the box; a plain click selects the heli
-// under it, or (on the ground) lets them all go.
+// Left button up keeps the sole Viper selected. With multiple full-game units, a drag selects
+// the helis in the box; a plain click selects one or clears selection on the ground.
 function heliUp(x, y) {
+  if (selectSingleHeli()) return;
   const b = HUI.box;
   if (!b) return;
   HUI.box = null;
@@ -474,20 +479,17 @@ function heliUp(x, y) {
   if (h) clickHeli(h, b.shift);
   else if (!b.shift) for (const q of G.helis) q.sel = false;
 }
-// Right click at screen (x, y) with helis selected: a zombie = attack it, the train = escort it,
+// Right click at screen (x, y): a zombie = attack it, the train = escort it,
 // the ground = fly there and hold (more than one: round the spot, the first right on it).
 function heliRight(x, y) {
+  selectSingleHeli();
   if (!G.up.he) HUI.arm = false;
   if (HUI.arm) {
     HUI.arm = false;
     return;
   }
-  const sel = G.helis.filter((h) => h.sel);
-  if (!sel.length) {
-    HUI.msg = { t: realT, s: 'CLICK A HELI FIRST. (A: ALL HELIS)' };
-    SFX.deny();
-    return;
-  }
+  const sel = selHelis();
+  if (!sel.length) return;
   const wx = G.camX + x, wy = G.camY + y, z = zombieAt(x, y);
   if (z) {
     for (const h of sel) {
@@ -513,8 +515,9 @@ function heliRight(x, y) {
   }
   for (const h of sel) h.cmdT = realT;
 }
-// A key in play: A selects every heli, 1 2 3 one of them. True when it was one of these.
+// Multiple-unit selection keys remain for the full game. The sole Viper needs none of them.
 function heliKey(k) {
+  if (selectSingleHeli()) return false;
   if (k === 'a') {
     selectAll();
     return true;
@@ -715,30 +718,25 @@ function drawHeliFx() {
   drawHits();
   ctx.globalAlpha = 1;
 }
-// Over the helis: the gun heat of each selected one (a small bar over it), the name of the one
-// under the mouse.
+// Over the helis: the name of the one under the mouse.
 function drawHeliTop() {
   for (const h of G.helis) {
     if (h.sx == null) continue;
     const X = h.sx, Y = h.sy - 37;
-    if (h.sel) {
-      bar(X - 7, Y, 14, 1, h.heat, '#2a2d33', h.hot ? '#d0553f' : h.heat > 0.75 ? U.amber : '#8fd18a');
-    }
     if (HUI.hov === h) text(h.name, X, Y - 11, h.sel ? U.green : U.ink, { align: 'center' });
   }
 }
 
 // ---------- the UI (screen px)
-// The unit cards, bottom left: one per heli (its name, its key, its gun heat; green when selected;
-// a click selects it), then the 105MM's card once it is bought (SPACE, or click it and then the map).
+// Unit cards, bottom left: the always-selected Viper, or numbered units in the full game.
+// The dormant 105MM card can follow them when that weapon is enabled.
 // Returns the x after them.
 function drawUnitCards(x, y) {
   HUI.cards.length = 0;
   const w = W >= 560 ? 80 : 72;
   for (const h of G.helis) {
-    const tag = h.hot ? 'HOT' : String(h.i + 1), hov = inR(M.x, M.y, x, y, w, 26);
-    card(x, y, w, 26, HICON, h.name, tag, h.hot ? U.red : h.sel ? U.green : U.faint, h.heat,
-      h.hot ? '#b8402e' : h.heat > 0.75 ? U.amber : '#8b919c', h.sel ? U.green : U.ink);
+    const tag = G.helis.length > 1 ? String(h.i + 1) : '', hov = inR(M.x, M.y, x, y, w, 26);
+    card(x, y, w, 26, HICON, h.name, tag, h.sel ? U.green : U.faint, null, '#8b919c', h.sel ? U.green : U.ink);
     if (h.sel) {
       frame(x, y, w, 26, '#5f9a5a');
       ctx.globalAlpha = 0.12;
