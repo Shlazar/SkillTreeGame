@@ -16,7 +16,7 @@ This is the plan for the first 10 minutes of the demo. It builds on DESIGN.md an
 | 2 | "MG Nest" node: 1 free, +1 per level. | The STATION branch opens when you first hold Farm Stop. Farm Stop already has a **free kit** (1 MG Nest + 6 sandbags). You buy more towers on the grid with scrap. Selling gives back everything you paid. | Building happens on the grid now. |
 | 3 | — | **Each station has its own grid and its own build.** In the first 10 minutes only Farm Stop has one. | Each battlefield is different, so your build should be too. |
 | 4 | No active skills. | **Active skills** are a new kind of ★ node. **TURBO RAM (key E)** comes first. Later: SHOCK HORN (Q), FLARE DROP (R), LAST STAND (G), AUTO RAM. | You asked for it. |
-| 5 | ★ Plow (a passive). | **Removed.** Turbo Ram does this job, and AUTO RAM comes later. | Two nodes doing one job is one too many. |
+| 5 | ★ Plow (a passive). | It comes back as the **COW CATCHER** (80 scrap, first ring): walkers and runners fly aside, Brutes still stop the train. Turbo Ram is still the answer to Brutes and Dead Walls. | The first buys must be things you SEE. |
 | 6 | — | **Dead Wall:** 350 m before each station, a crowd of the dead with Brutes stands on the rails. You need Turbo Ram to get through cleanly. | It makes the Ram feel needed: you meet the problem first, then you buy the fix. |
 | 7 | Runners from 0.5 km, Brutes from 1.5 km. | Runners from **0.4 km**. Brutes come first in the Dead Wall (**0.65 km**), then on the rails from **1.1 km**. | So a new enemy shows up inside the first 10 minutes. |
 | 8 | Danger grows with time. | **Danger grows with distance from the Depot.** | You can start runs from a station, so the danger must belong to the place. |
@@ -25,12 +25,14 @@ This is the plan for the first 10 minutes of the demo. It builds on DESIGN.md an
 | 11 | Prices start at 10 and grow ×1.6. | Prices start at **40–150 and double each level**. ★ nodes: Flatcar Gun 300 scrap, Turbo Ram 500 scrap, 105mm 5 survivors, Winch 5 survivors. | One run pays 270 to 1,450 scrap. |
 | 12 | Start from any station you reached. | Same, plus a new rule: **a run that starts at a station starts with that station's hold** (25 s, 3 survivors). The 3 survivors come back only after a run that rides 0.5 km or more (7.4). | Your build fights at once, and runs never ride the same km over and over. The refill rule stops a "start, hold, quit" survivor farm. |
 | 13 | — | The station crew repairs **+20 HP** when the train stops. A hold with no survivor lost is a **PERFECT HOLD: +1 survivor**. | A weak train should not die in the first second of a hold. The hold also gets a goal. |
-| 14 | Streak bonus 5/15/30/60/120. | Streaks pay **2/5/10/20/40**. New: **distance pay** (+1 scrap per 20 m traveled, so 5 per 100 m) and **station pay** (+50 the first time, +25 after that). | Every run pays something, and streaks are no longer a third of the income. |
+| 14 | Streak bonus 5/15/30/60/120. | **No streaks** (no counter, no banner, no bonus). New: **distance pay** (+1 scrap per 20 m traveled, so 5 per 100 m) and **station pay** (+50 the first time, +25 after that). | Nobody noticed the streak, and there was already too much to watch. |
 | 15 | A random start every run. | **The land is fixed.** The Depot is always at y = 0, so the stations, walls and loot spots never move. Some spots roll their contents again each run. | Players learn the land. |
 | 16 | Pacing: 105mm and Winch at 8–15 min, Station 2 at 15–22 min. | 105mm at **6:14**, Winch at **8:22**, and the train reaches Mill Town (Station 2) at about **10:20**. The new pacing after minute 10 is in 1.1. | Starting from a station makes km 1–2 go fast. So km 2–4 must be slower to fill 45 minutes. |
 | 17 | 110 zombies around the Depot at the start. | **About 40.** | The big start crowd made run 1 deaths random. |
+| 18 | 25mm: 12 rounds/s, 0.45 s flight. | **6 rounds/s, 0.07 s flight**: the kill lands with the shot. No round is wasted on a zombie that is already done for, and the lock jumps to the next one after a kill. | You feel each kill. |
+| 19 | The first nodes are stats (HP, fire rate). | **The first ring is things you see:** CHAIN SHOT, COW CATCHER, GOLDEN ZOMBIES. The stat nodes sit one ring out. | Stats are boring as a first buy. |
 
-**Not in the first 10 minutes:** Bomber, Golden Zombie, Thermal caches, Mortar Pit (shown only as a locked goal), SHOCK HORN, the "Back to Depot" button, the boss.
+**Not in the first 10 minutes:** Bomber, Thermal caches, Mortar Pit (shown only as a locked goal), SHOCK HORN, the "Back to Depot" button, the boss.
 
 ### 1.1 After minute 10 (this replaces the DESIGN.md pacing table)
 
@@ -134,24 +136,29 @@ NOW 100  ->  NEXT 120
 
 ### 2.4 Nodes in the first 10 minutes
 
-All costs are in scrap unless the table says survivors. Each level costs double the last one.
+All costs are in scrap unless the table says survivors. Each level costs about double the last one.
+
+**The first ring is exciting, not stats.** LAST TRAIN opens one node per branch, and each one changes something you SEE in the very next run: CHAIN SHOT (lightning), COW CATCHER (a plow on the engine), GOLDEN ZOMBIES (gold to chase). Every node's first level shows in the run; later levels grow the numbers. The stat nodes (COOLING, ARMOR, RADIO RANGE...) sit one ring out and stay cheap.
 
 | Node | Branch | Pos | Needs | Lv | Cost per level | Effect | Bought at |
 |---|---|---|---|---|---|---|---|
 | LAST TRAIN | root | 0,0 | — | 1 | free | Opens the 4 branches. | 0:06 |
-| ARMOR | TRAIN | 2,0 | LAST TRAIN | 5 | 40 / 80 / 160 / 320 / 640 | Train HP +20 (80 to 180). | lv1 1:05, lv2–3 3:35, lv4 6:20 |
-| FLATCAR GUN * | TRAIN | 4,0 | ARMOR 1 | 1 | **300** | An auto gun on the flatcar (7.7). | 2:12 |
+| COW CATCHER | TRAIN | 2,0 | LAST TRAIN | 1 | 80 | A steel plow on the engine's nose. Walkers and runners fly aside: no HP lost, no slowing. Brutes still stop the train. Info: `WALKERS SLOW THE TRAIN YES > NO`. | 1:05 |
+| ARMOR | TRAIN | 2,−2 | COW CATCHER | 5 | 40 / 80 / 160 / 320 / 640 | Train HP +20 (80 to 180). Steel plates show on the engine from lv1. | lv1–3 6:20 |
+| FLATCAR GUN * | TRAIN | 4,0 | COW CATCHER | 1 | **300** | An auto gun on the flatcar (7.7). | 2:12 |
 | GUN SPEED | TRAIN | 6,0 | FLATCAR GUN | 3 | 150 / 300 / 600 | Flatcar Gun +1 round/s (3 to 6). | lv1 6:20, lv2 8:25 |
 | TURBO RAM * | TRAIN | 4,−2 | FLATCAR GUN | 1 | **500** | Active skill, key E (section 4). Card text: "FIX THE BOILER". | 3:30 |
-| COOLING | HELI | −2,0 | LAST TRAIN | 3 | 40 / 80 / 160 | 25mm heat per round ×0.8 per level. It stacks: ×0.8 / ×0.64 / ×0.51. | lv1 1:05, lv2 6:20 |
-| FAST FEED | HELI | −4,0 | COOLING 1 | 5 | 60 / 120 / 240 / 480 / 960 | 25mm +2 rounds/s. Heat per second stays the same. | lv1 1:05, lv2 6:20 |
-| HEAVY ROUNDS | HELI | −6,0 | FAST FEED 1 | 3 | 200 / 400 / 800 | 25mm +1 damage (a Brute dies in 4 hits at lv1). | lv1 8:25 |
-| 105MM CANNON * | HELI | −4,−2 | COOLING 1 | 1 | **5 survivors** | Unlocks the 105mm (right click or Space). | 6:14 |
-| FAST RELOAD | HELI | −6,−2 | 105MM | 3 | 150 / 300 / 600 | 105mm reload −0.3 s (2.4 to 1.5). | lv1 8:25 |
-| RADIO RANGE | EXPLORE | 0,−2 | LAST TRAIN | 5 | 40 / 80 / 160 / 320 / 640 | Flying range +60 px (300 to 600). | lv1 1:05, lv2 2:12, lv3 8:25 |
-| MAGNET | EXPLORE | −2,−3 | RADIO RANGE 1 | 3 | 40 / 80 / 160 | Pickup radius +10 px (14 to 44). | lv1 6:20, lv2 8:25 |
-| SCAVENGER | EXPLORE | 2,−3 | RADIO RANGE 1 | 5 | 150 / 300 / 600 / 1200 / 2400 | +10% scrap from kills. | lv1 6:20 |
-| WINCH * | EXPLORE | 0,−4 | RADIO RANGE 2 | 1 | **5 survivors** | Lift stranded survivors (hover 1.5 s). | 8:22 |
+| CHAIN SHOT | HELI | −2,0 | LAST TRAIN | 3 | 60 / 150 / 400 | When a 25mm round kills, a yellow spark jumps to 1 / 2 / 3 more zombies within 40 px (20 m), 1 damage each: a jagged lightning line, a flash and a zap. Info: `CHAIN JUMPS 0 > 1`. | lv1 1:05, lv2 6:20 |
+| COOLING | HELI | −4,0 | CHAIN SHOT 1 | 3 | 40 / 80 / 160 | 25mm heat per round ×0.8 per level. It stacks: ×0.8 / ×0.64 / ×0.51. | lv1 6:20 |
+| FAST FEED | HELI | −6,0 | COOLING 1 | 5 | 60 / 120 / 240 / 480 / 960 | 25mm +1 round/s (6 to 11). Heat per second stays the same. | lv1 6:20 |
+| HEAVY ROUNDS | HELI | −6,−2 | FAST FEED 1 | 3 | 200 / 400 / 800 | 25mm +1 damage (a Brute dies in 4 hits at lv1). | lv1 8:25 |
+| 105MM CANNON * | HELI | −2,−2 | CHAIN SHOT 1 | 1 | **5 survivors** | Unlocks the 105mm (right click or Space). | 6:14 |
+| FAST RELOAD | HELI | −4,−2 | 105MM | 3 | 150 / 300 / 600 | 105mm reload −0.3 s (2.4 to 1.5). | lv1 8:25 |
+| GOLDEN ZOMBIES | EXPLORE | 0,−2 | LAST TRAIN | 3 | 60 / 150 / 400 | Rare golden zombies: 1 in 60 / 40 / 25 new zombies. Gold, sparkling, a blinking gold radar dot. Worth 25 scrap (a big gold +25 and a coin burst). They run AWAY from the train and the heli, so you chase them. Info: `GOLDEN ZOMBIES 0 > 1 IN 60`. | lv1 1:05, lv2 8:25 |
+| RADIO RANGE | EXPLORE | 0,−4 | GOLDEN ZOMBIES 1 | 5 | 40 / 80 / 160 / 320 / 640 | Flying range +60 px (300 to 600). | lv1 2:12, lv2 3:30, lv3 8:25 |
+| MAGNET | EXPLORE | −2,−4 | RADIO RANGE 1 | 3 | 40 / 80 / 160 | Pickup radius +10 px (14 to 44). | lv1 6:20, lv2 8:25 |
+| SCAVENGER | EXPLORE | 2,−4 | RADIO RANGE 1 | 5 | 150 / 300 / 600 / 1200 / 2400 | +10% scrap from kills. | lv1 6:20 |
+| WINCH * | EXPLORE | 0,−6 | RADIO RANGE 2 | 1 | **5 survivors** | Lift stranded survivors (hover 1.5 s). | 8:22 |
 | FARM STOP | STATION | 0,2 | hold Farm Stop once | 1 | free (given) | Opens the STATION tab for Farm Stop. | 5:36 |
 | NEST SPEED | STATION | −2,3 | FARM STOP | 3 | 150 / 300 / 600 | All MG Nests +1 round/s (4 to 7). | lv1 6:20 |
 | BARBED WIRE | STATION | 2,3 | FARM STOP | 1 | 100 | Unlocks wire tiles on the grid. | 6:20 |
@@ -344,12 +351,12 @@ Each run lists what is new, what the player sees, what they earn and what they b
 ### Before run 1 · 0:00–0:10
 - **0:00** Title. The demo train runs behind the menu. Click **PLAY**. (With a save, it says CONTINUE and goes to the Depot.)
 - **0:03** The Depot opens on the SKILL TREE tab. Only LAST TRAIN shows, pulsing, with `FREE`. Tag: `CLICK THE TRAIN. IT'S FREE.`
-- **0:06** Click. 4 lines grow out to ARMOR, COOLING, RADIO RANGE and a padlocked STATION node (`HOLD FARM STOP`). The ★ goals appear with their prices: FLATCAR GUN 300, TURBO RAM 500, 105MM 5 survivors, WINCH 5 survivors. (MORTAR PIT stays hidden until the STATION branch opens.)
+- **0:06** Click. 4 lines grow out to CHAIN SHOT, COW CATCHER, GOLDEN ZOMBIES and a padlocked STATION node (`HOLD FARM STOP`). The ★ goals appear with their prices: FLATCAR GUN 300, TURBO RAM 500, 105MM 5 survivors, WINCH 5 survivors. (MORTAR PIT stays hidden until the STATION branch opens.)
 - **0:08** Tag: `PRESS START RUN.` The button pulses.
 - **New:** the skill tree.
 
 ### Run 1 · 0:10–0:52 (42 s) · Depot to 0.48 km
-**Stats:** HP 80, 25mm at 12 rounds/s (it overheats after 6 s of fire), flying range 300 px.
+**Stats:** HP 80, 25mm at 6 rounds/s with instant hits (it overheats after 6 s of fire), flying range 300 px.
 
 Run 1 teaches only 4 things by name: the Ram taste, flying, shooting, and shooting the dead on the track. Everything else just happens, and later runs name it.
 
@@ -365,13 +372,13 @@ Run 1 teaches only 4 things by name: the Ram taste, flying, shooting, and shooti
 - **0:48** HP drops under 35%: red screen edges and `TRAIN IN DANGER` (both exist today).
 - **0:52** The tanker blows, then the engine. The train is lost at **0.48 km**.
 
-- **Earn:** 180 kills = 195 scrap, streaks 37, distance 24, loot 15 = **271 scrap**.
-- **Summary (0:52–1:00):** the rows count up with a tick each: `ZOMBIES 180 +195`, `STREAKS +37`, `DISTANCE 0.48 KM +24`, `LOOT +15`, then `SCRAP +271`. Under them: `YOU KEEP ALL YOUR SCRAP.`, `FARM STOP: 520 M AWAY` and `NEXT GOAL: FLATCAR GUN (300)`. The only button is `TO THE DEPOT` (Enter).
-- **Tree (1:00–1:11):** tag on ARMOR: `BUY ARMOR: +20 TRAIN HP. THEN PRESS START RUN.` The player buys **ARMOR 1 (40), COOLING 1 (40), FAST FEED 1 (60), RADIO RANGE 1 (40)**. Spent 180, **91 left**.
+- **Earn:** 180 kills = 195 scrap, distance 24, loot 15 = **234 scrap**.
+- **Summary (0:52–1:00):** the rows count up with a tick each: `ZOMBIES 180 +195`, `DISTANCE 0.48 KM +24`, `LOOT +15`, then `SCRAP +234`. Under them: `YOU KEEP ALL YOUR SCRAP.`, `FARM STOP: 520 M AWAY` and `NEXT GOAL: CHAIN SHOT (60 SCRAP)` / `YOU CAN BUY IT NOW!`. The only button is `TO THE DEPOT` (Enter).
+- **Tree (1:00–1:11):** tag on CHAIN SHOT: `BUY CHAIN SHOT: A KILL SPARKS TO MORE ZOMBIES.` The player buys **CHAIN SHOT 1 (60), COW CATCHER (80), GOLDEN ZOMBIES 1 (60)**. Spent 200, **34 left**.
 - **New:** the Ram taste, flying and shooting, crushes, climbers, scrap, overheat, runners, "you keep it all", the first buys.
 
 ### Run 2 · 1:11–2:01 (50 s) · Depot to 0.60 km
-**Stats:** HP 100, 25mm at 14/s (overheats after 10 s), range 360 px. The train averages about 24 px/s this run.
+**Stats:** HP 80, chain shot (1 jump), cow catcher (walkers no longer slow or hurt the train), golden zombies 1 in 60, range 300 px. The train averages about 25 px/s this run.
 
 - **1:18** The first climber. Task: `SHOOT THE DEAD OFF THE TRAIN`.
 - **1:22** Task: `GRAB 3 SCRAP PILES (0/3)`. The player takes three piles between 1:22 and 1:50 (+45).
@@ -382,32 +389,34 @@ Run 1 teaches only 4 things by name: the Ram taste, flying, shooting, and shooti
 - **1:57** At 0.55 km, the radio: `FARM STOP: WE SEE YOUR SMOKE! 8 OF US ARE WAITING.` The Farm Stop mark on the route bar glows.
 - **2:01** The train is lost at **0.60 km**. The Dead Wall's Brutes are in sight, 50 m ahead.
 
-- **Earn:** 215 kills = 221, streaks 37, distance 30, loot 45 = **333**. Bank 424.
-- **Summary:** `NEW BEST 0.60 KM`. `FLATCAR GUN: YOU CAN BUY IT NOW!`
-- **Tree (2:09–2:20):** the hint bar says `* NODES ARE BIG UNLOCKS.` The player buys **FLATCAR GUN * (300)** at 2:12, and **RADIO RANGE 2 (80)** for the golden crate. Spent 380, **44 left**.
+- **1:30** The first golden zombie. It runs from the heli; the player chases it 150 px west: **+25** and a coin burst.
+- **Earn:** 215 kills = 221, 2 golden zombies 50, distance 30, loot 45 = **346**. Bank 380.
+- **Summary:** `NEW BEST 0.60 KM`. `NEXT GOAL: FLATCAR GUN (300 SCRAP)` / `YOU CAN BUY IT NOW!`
+- **Tree (2:09–2:20):** the hint bar says `* NODES ARE BIG UNLOCKS.` The player buys **FLATCAR GUN * (300)** at 2:12, and **RADIO RANGE 1 (40)**. Spent 340, **40 left**.
 - **New:** climbers and scrap as tasks, the runner banner, the golden crate as a goal, the Farm Stop radio, the Dead Wall seen, NEW BEST, the first ★.
 
 ### Run 3 · 2:20–3:22 (62 s) · Depot to 0.66 km (stopped at the Dead Wall)
-**Stats:** HP 100, Flatcar Gun 3 rounds/s, range 420 px.
+**Stats:** HP 80, Flatcar Gun 3 rounds/s, range 360 px.
 
 - **2:22** The flatcar turret turns and fires on its own, with short tracers. Tip: `YOUR FLATCAR GUN GUARDS THE TRAIN. GO EXPLORE!` From this run on, supply crates appear (6.3).
 - **2:30** At 0.12 km, a green smoke column rises 260 px east. Task: `GRAB THE SUPPLY CRATE`. 8 slow dead guard it, and they pay scrap too. **+50**.
-- **2:47** At 0.32 km, the golden crate is in range now: a gold beam and a gold coin burst. **+150**.
+- **2:47** At 0.32 km, the golden crate is still 50 px too far. Two golden zombies run west; the player gets both: **+50**.
 - **2:59** At 0.50 km: `DEAD WALL IN 150 M / BRUTES ON THE TRACK`.
 - **3:06** The wall comes into view: 30 dead and **4 Brutes** standing on the rails. Red label `BRUTE!`, and the tip `BRUTES HAVE 8 HP. THE TRAIN CAN'T PUSH THEM.`
 - **3:12** Contact. Each Brute the train hits costs −10 HP and cuts the speed to 35%. The train crawls, and the dead climb onto the nose.
 - **3:22** The train is lost at **0.66 km**.
 
-- **Earn:** 310 kills = 360, streaks 77, distance 33, loot 230 = **700**. Bank 744.
+- **Earn:** 310 kills = 360, 3 golden zombies 75, distance 33, loot 80 = **548**. Bank 588.
 - **Summary:** `THE DEAD WALL STOPPED YOU. TURBO RAM SMASHES THROUGH IT.` and `FARM STOP WAS 340 M AWAY!`
-- **Tree (3:30–3:42):** the player buys **TURBO RAM * (500)** at 3:30, then **ARMOR 2 (80) and ARMOR 3 (160)**. Hint: `E: TURBO RAM. SAVE IT FOR THE DEAD WALL.` Spent 740, **4 left**.
-- **New:** the auto gun, the supply crate with guards, the golden crate pays, the first Brutes, the Dead Wall.
+- **Tree (3:30–3:42):** the player buys **TURBO RAM * (500)** at 3:30, then **RADIO RANGE 2 (80)** for the golden crate. Hint: `E: TURBO RAM. SAVE IT FOR THE DEAD WALL.` Spent 580, **8 left**.
+- **New:** the auto gun, the supply crate with guards, golden zombies to chase, the first Brutes, the Dead Wall.
 
 ### Run 4 · 3:42–5:58 (136 s) · Depot to Farm Stop to 1.30 km. The big one.
-**Stats:** HP 140, Turbo Ram (full), flatcar 3/s, 25mm 14/s.
+**Stats:** HP 80 (the cow catcher takes the walkers), Turbo Ram (full), flatcar 3/s, 25mm 6/s, range 420 px.
 
 - **3:42** The RAM card is gold: `E`.
 - **3:57** The supply crate is back (crates refill every run): +50.
+- **4:10** At 0.32 km, the golden crate is in range now: a gold beam and a gold coin burst. **+150**.
 - **4:24** At 0.50 km: `DEAD WALL IN 150 M / SAVE YOUR TURBO RAM!`
 - **4:30** 150 px before the wall, time slows to 25% and `PRESS E!` shows big.
 - **4:31** E. A double horn, a roar, steam, the engine glows orange, speed lines. 30 dead and 4 Brutes fly. **`UNSTOPPABLE ×34` / `+140 SCRAP`**. The Ram ends at about 0.76 km at 4:36.
@@ -421,7 +430,7 @@ Run 1 teaches only 4 things by name: the Ram taste, flying, shooting, and shooti
 - **5:48** At 1.1 km, a rail crowd with a Brute. The player rams: **`RAMPAGE ×16` / `+58 SCRAP`**. The Ram ends at about 1.28 km at 5:53.
 - **5:58** The train is lost at **1.30 km**.
 
-- **Earn:** 875 kills = 1,109 (including the Ram bonus of 99), streaks 114, distance 65, station 50, loot 110 = **1,448 scrap, +7 survivors**.
+- **Earn:** 875 kills = 1,109 (including the Ram bonus of 99), 4 golden zombies 100, distance 65, station 50, loot 260 = **1,584 scrap, +7 survivors**.
 - **New:** the first real Ram, the first station hold, survivors, a survivor lost, the towers fighting.
 
 ### Depot break · 5:58–6:52
@@ -429,18 +438,18 @@ Run 1 teaches only 4 things by name: the Ram taste, flying, shooting, and shooti
 - **Tree (6:10–6:30):**
   - The padlock on the STATION branch breaks with a crunch and sparks. FARM STOP lights up, with NEST SPEED, BARBED WIRE and the MORTAR PIT * goal under it.
   - Tag on 105MM: `BUY THE 105MM WITH 5 SURVIVORS.` The player buys **105MM * (5 survivors)** at 6:14.
-  - Then the shopping spree (the reward for the first station): **ARMOR 4 (320), COOLING 2 (80), FAST FEED 2 (120), GUN SPEED 1 (150), MAGNET 1 (40), NEST SPEED 1 (150), BARBED WIRE (100), SCAVENGER 1 (150)** = 1,110.
+  - Then the shopping spree (the reward for the first station): **ARMOR 1–3 (280), CHAIN SHOT 2 (150), COOLING 1 (40), FAST FEED 1 (60), GUN SPEED 1 (150), MAGNET 1 (40), NEST SPEED 1 (150), BARBED WIRE (100), SCAVENGER 1 (150)** = 1,120.
 - **Station panel (6:30–6:48), first time, 3 guided steps:**
   1. `THIS IS FARM STOP. YOUR TOWERS WAIT HERE.` The free kit stands where it fought.
   2. `WAVE 2 CAME FROM THE EAST. PUT A NEW MG NEST THERE.` Tile (11,5) glows. The player places **MG NEST #2 (150)** there. It covers both east lanes and the door path. The wire card is open now, so the player paints **4 wire tiles (60)** in the east lanes at (10,1), (11,1), (10,7), (11,7).
   3. `DRAG TO MOVE. RIGHT CLICK: SELL (FULL REFUND).`
-- Spent 1,110 + 210 = 1,320. **132 scrap and 2 survivors left.**
+- Spent 1,120 + 210 = 1,330. **262 scrap and 2 survivors left.**
 - **Start picker (6:48):** `START FROM [<] FARM STOP 1.0 KM [>]`. Hint: `START AT FARM STOP: YOUR TOWERS FIGHT FIRST.` and `3 SURVIVORS WAIT AT FARM STOP.` (Run 4 rode 1.30 km, so the house has refilled.)
 - **New:** survivors as money, the STATION branch, the 105mm, the Station panel, starting from a station.
 
 ### Run 5 · 6:52–8:12 (80 s) · Farm Stop to 1.62 km
 **Stats:**
-- HP 160. 25mm at 16/s (overheats after 18 s).
+- HP 140, steel plates on the engine. 25mm at 7/s (overheats after 10 s), chain shot 2 jumps.
 - Flatcar 4/s, 105mm, Ram.
 - 2 nests at 5/s each, 4 wire tiles.
 - Pickup radius 24, Scavenger +10%.
@@ -452,7 +461,7 @@ Run 1 teaches only 4 things by name: the Ram taste, flying, shooting, and shooti
   - At 7:06, `WAVE 3  < BOTH >` and a Brute.
 - **7:20** No survivor lost: **`PERFECT HOLD! +1 SURVIVOR`**, then `STATION HELD! +25`. You see your own build work, 30 s after you built it.
 - **7:22** The train leaves.
-- **7:24** The first crowd on the rails. Task: `RIGHT CLICK: 105MM`. The shell whistles for 1.1 s, then BOOM: a crater, smoke and flying bodies. `MULTI KILL ×9`.
+- **7:24** The first crowd on the rails. Task: `RIGHT CLICK: 105MM`. The shell whistles for 0.7 s, then BOOM: a crater, smoke and flying bodies. `MULTI KILL ×9`.
   - If the sight comes close to the train, it shows `DANGER CLOSE` (exists today).
   - If a shell hits the train: `CHECK FIRE!` (exists today).
 - **7:32** At 1.1 km, Brutes in the rail crowds. Tip: `BRUTE ON THE TRACK! USE THE 105MM OR THE RAM.` The player drops a shell on the crowd, and the Brute goes up with it.
@@ -464,14 +473,14 @@ Run 1 teaches only 4 things by name: the Ram taste, flying, shooting, and shooti
 - **8:02** The Ram ends at 1.60 km. The wall wakes up 50 m ahead and walks onto the train.
 - **8:12** The train is lost at **1.62 km**, 30 m before Mill Town's wall. The Ram card is only at about 70%.
 
-- **Earn:** 600 kills = 1,008 (including the Ram bonus and Scavenger), streaks 77, distance 32 (0.65 km traveled), station 25, loot 130 = **1,272 scrap, +4 survivors** (3 + PERFECT).
+- **Earn:** 600 kills = 1,008 (including the Ram bonus and Scavenger), 3 golden zombies 75, distance 32 (0.65 km traveled), station 25, loot 130 = **1,270 scrap, +4 survivors** (3 + PERFECT).
 - **New:** your build fighting, PERFECT HOLD, the 105mm, Brutes on the rails, the SOS survivor, Mill Town, and the cost of using the Ram too soon.
 
 ### Depot break · 8:12–8:38
 - **Summary:** `+4 SURVIVORS`, `NEW BEST 1.62 KM`, `MILL TOWN WAS 380 M AWAY!` and `MILL TOWN'S WALL IS AT 1.65 KM. SAVE YOUR RAM FOR IT.`
-- **Tree (8:20–8:30):** tag on WINCH: `WINCH: SAVE SURVIVORS IN THE FIELD.` The player buys **WINCH * (5 survivors)** at 8:22, then **GUN SPEED 2 (300), HEAVY ROUNDS 1 (200), FAST RELOAD 1 (150), RADIO RANGE 3 (160), MAGNET 2 (80)** = 890.
+- **Tree (8:20–8:30):** tag on WINCH: `WINCH: SAVE SURVIVORS IN THE FIELD.` The player buys **WINCH * (5 survivors)** at 8:22, then **GUN SPEED 2 (300), HEAVY ROUNDS 1 (200), FAST RELOAD 1 (150), RADIO RANGE 3 (160), MAGNET 2 (80), GOLDEN ZOMBIES 2 (150)** = 1,040.
 - **Station (8:30–8:36):** **MG NEST #3 (300)** at (5,6). It covers the flatcar and the southwest lane.
-- **214 scrap and 1 survivor left.** Goal line: `NEXT: ARMOR 5 (640)`. START FROM: FARM STOP. (Run 5 rode 0.65 km, so the house has refilled.)
+- **192 scrap and 1 survivor left.** Goal line: `NEXT GOAL: COOLING 2 (80 SCRAP)`; the big save is CHAIN SHOT 3 (400). START FROM: FARM STOP. (Run 5 rode 0.65 km, so the house has refilled.)
 
 ### Run 6 · 8:38 onward · Farm Stop, still going at 10:00
 - **8:41–9:06** The hold with 3 nests: clean and fast. The Brute dies before it reaches the train. PERFECT HOLD again (+3 +1 survivors).
@@ -499,14 +508,15 @@ Run 1 teaches only 4 things by name: the Ram taste, flying, shooting, and shooti
 | 1:00 | First buys | 0:08 |
 | 1:18 | Task: shoot the dead off the train | 0:18 |
 | 1:22 | Task: grab 3 scrap piles | 0:04 |
-| 1:38 | Golden crate, too far | 0:16 |
+| 1:30 | First golden zombie to chase | 0:08 |
+| 1:38 | Golden crate, too far | 0:08 |
 | 1:51 | NEW BEST | 0:13 |
 | 1:53 | Dead Wall warning | 0:02 |
 | 1:57 | Farm Stop radio | 0:04 |
 | 2:12 | Flatcar Gun (first ★) | 0:15 |
 | 2:22 | The train fights alone | 0:10 |
 | 2:30 | Supply crate with guards | 0:08 |
-| 2:47 | Golden crate pays 150 | 0:17 |
+| 2:47 | Two golden zombies at once | 0:17 |
 | 3:06 | First Brutes, the Dead Wall | 0:19 |
 | 3:30 | Turbo Ram bought | 0:24 |
 | 4:31 | **First real Ram** (slow motion) | 1:01 |
@@ -684,9 +694,9 @@ Other rules:
 | Fly speed | 170 px/s, accel 3.2 (as today). No heli HP: the risk is always the train. |
 | Flying range | 300 px, +60 per RADIO RANGE level (max 600) |
 | Pickup radius | 14 px, +10 per MAGNET level (max 44) |
-| 25mm | 12 rounds/s (+2 per FAST FEED level), 1 damage (+1 per HEAVY ROUNDS level). Burst 7 px, up to 4 zombies per round, flight 0.45 s, lock-on 16 px (as today). |
-| 25mm heat | 0.025 per round, cools 0.55/s (×0.25 while firing). It locks until the heat is under 0.35. COOLING multiplies the heat per round by ×0.8 per level, and the levels stack (×0.8 / ×0.64 / ×0.51). **Time to overheat when you hold fire: 6 s, then 10 s / 18 s / 62 s at COOLING 1 / 2 / 3.** FAST FEED lowers the heat per round to match, so the heat per second stays the same. |
-| 105mm * | Reload 2.4 s (−0.3 per FAST RELOAD level), flight 1.1 s. Kills everything within 34 px; 4 damage out to 56 px. Within 28 px of the train it hurts the train for 3–17 HP (as today). |
+| 25mm | **6 rounds/s** (+1 per FAST FEED level, max 11), 1 damage (+1 per HEAVY ROUNDS level). Burst 7 px, up to 4 zombies per round. **Flight 0.07 s**: the kill, blood, white flash, hit marker and sound come with the shot. Lock-on 12 px. A fresh click fires at once; holding fires at 6/s. **No wasted rounds:** it never fires at a zombie the rounds in the air will kill, and after a kill the lock jumps at once to the next zombie near the sight (nothing near: the round lands where you aim). One round killing 3+ gives a 0.03 s hit-stop. |
+| 25mm heat | **0.05 per round** (twice as much, so the overheat time stays the same), cools 0.55/s (×0.25 while firing). It locks until the heat is under 0.35. COOLING multiplies the heat per round by ×0.8 per level, and the levels stack (×0.8 / ×0.64 / ×0.51). **Time to overheat when you hold fire: 6 s, then 10 s / 18 s / 62 s at COOLING 1 / 2 / 3.** FAST FEED lowers the heat per round to match, so the heat per second stays the same. |
+| 105mm * | Reload 2.4 s (−0.3 per FAST RELOAD level), flight 0.7 s. Kills everything within 34 px; 4 damage out to 56 px. Within 28 px of the train it hurts the train for 3–17 HP (as today). |
 
 ### 7.7 The train gun and the towers
 
@@ -709,7 +719,7 @@ Other rules:
 |---|---|
 | Kills | walker 1, runner 2, Brute 10. SCAVENGER +10% per level. |
 | Ram kills | 2× |
-| Streaks (every kill counts, towers too) | ×10: +2, ×25: +5, ×50: +10, ×100: +20, ×200: +40. A full streak pays 77. |
+| Golden zombie | 25 (GOLDEN ZOMBIES: 1 in 60 / 40 / 25 new zombies) |
 | Distance | +1 per 20 m traveled in this run (5 per 100 m), rounded down |
 | Station held | +50 the first time, +25 after that |
 | Survivors | +1 for each one aboard; PERFECT HOLD +1 |
@@ -722,6 +732,9 @@ Other rules:
 
 | Node | Lv 1 | Lv 2 | Lv 3 | Lv 4 | Lv 5 |
 |---|---|---|---|---|---|
+| CHAIN SHOT | 60 | 150 | 400 | | |
+| COW CATCHER | 80 | | | | |
+| GOLDEN ZOMBIES | 60 | 150 | 400 | | |
 | ARMOR | 40 | 80 | 160 | 320 | 640 |
 | FLATCAR GUN * | 300 | | | | |
 | GUN SPEED | 150 | 300 | 600 | | |
@@ -765,6 +778,8 @@ Selling always gives back what you paid.
 
 Runs 2 and 3 plan the same distance as the bot, because both end at the same fixed wall area.
 
+**After the new 25mm (6 rounds/s, 0.07 s flight, no streaks), run-1 setup, careless bot, 12 runs:** on 35% of the time: 0.69 km median, 188 kills, 269 scrap, 53 s (before: 180 kills, 274 scrap with streaks). On 50%: 0.68 km, 237 kills, 335 scrap, 58 s.
+
 **What the test taught me:**
 - Without the Ram, runs end at the wall (about 0.6–0.7 km). The Ram is worth about +0.5 km in run 4.
 - The 105mm is worth about +0.3 km past 1 km. Runs that start at Farm Stop go far: **if testers reach Mill Town in run 5, raise the "past 1 km" numbers in 7.2 first.**
@@ -777,14 +792,14 @@ Runs 2 and 3 plan the same distance as the bot, because both end at the same fix
 
 ## 8. Economy check, run by run
 
-| Run | Clock | Start to end | Length | Kills | Kill scrap | Streaks | Distance | Station | Loot | **Earned** | Bank | Bought | Spent | **Left** | Survivors (got, then after buying) |
+| Run | Clock | Start to end | Length | Kills | Kill scrap | Golden | Distance | Station | Loot | **Earned** | Bank | Bought | Spent | **Left** | Survivors (got, then after buying) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 0:10–0:52 | Depot to 0.48 km | 42 s | 180 | 195 | 37 | 24 | 0 | 15 | **271** | 271 | Armor 1, Cooling 1, Fast Feed 1, Radio 1 | 180 | **91** | 0, 0 |
-| 2 | 1:11–2:01 | Depot to 0.60 km | 50 s | 215 | 221 | 37 | 30 | 0 | 45 | **333** | 424 | Flatcar Gun *, Radio 2 | 380 | **44** | 0, 0 |
-| 3 | 2:20–3:22 | Depot to 0.66 km (wall) | 62 s | 310 | 360 | 77 | 33 | 0 | 230 | **700** | 744 | Turbo Ram *, Armor 2, Armor 3 | 740 | **4** | 0, 0 |
-| 4 | 3:42–5:58 | Depot to Farm Stop to 1.30 km | 136 s | 875 | 1,109 | 114 | 65 | 50 | 110 | **1,448** | 1,452 | 105mm * (5 surv.), Armor 4, Cooling 2, Fast Feed 2, Gun Speed 1, Magnet 1, Nest Speed 1, Barbed Wire, Scavenger 1; grid: Nest #2, 4 wire | 1,320 | **132** | +7, then 2 |
-| 5 | 6:52–8:12 | Farm Stop to 1.62 km | 80 s | 600 | 1,008 | 77 | 32 | 25 | 130 | **1,272** | 1,404 | Winch * (5 surv.), Gun Speed 2, Heavy Rounds 1, Fast Reload 1, Radio 3, Magnet 2; grid: Nest #3 | 1,190 | **214** | +4, then 1 |
-| 6 | 8:38– | Farm Stop, about 1.77 km at 10:00 | — | — | — | — | — | — | +1 survivor | — | 214 | — | — | — | +5, so 6 at 10:00 |
+| 1 | 0:10–0:52 | Depot to 0.48 km | 42 s | 180 | 195 | 0 | 24 | 0 | 15 | **234** | 234 | Chain Shot 1, Cow Catcher, Golden Zombies 1 | 200 | **34** | 0, 0 |
+| 2 | 1:11–2:01 | Depot to 0.60 km | 50 s | 215 | 221 | 50 | 30 | 0 | 45 | **346** | 380 | Flatcar Gun *, Radio 1 | 340 | **40** | 0, 0 |
+| 3 | 2:20–3:22 | Depot to 0.66 km (wall) | 62 s | 310 | 360 | 75 | 33 | 0 | 80 | **548** | 588 | Turbo Ram *, Radio 2 | 580 | **8** | 0, 0 |
+| 4 | 3:42–5:58 | Depot to Farm Stop to 1.30 km | 136 s | 875 | 1,109 | 100 | 65 | 50 | 260 | **1,584** | 1,592 | 105mm * (5 surv.), Armor 1–3, Chain Shot 2, Cooling 1, Fast Feed 1, Gun Speed 1, Magnet 1, Nest Speed 1, Barbed Wire, Scavenger 1; grid: Nest #2, 4 wire | 1,330 | **262** | +7, then 2 |
+| 5 | 6:52–8:12 | Farm Stop to 1.62 km | 80 s | 600 | 1,008 | 75 | 32 | 25 | 130 | **1,270** | 1,532 | Winch * (5 surv.), Gun Speed 2, Heavy Rounds 1, Fast Reload 1, Radio 3, Magnet 2, Golden Zombies 2; grid: Nest #3 | 1,340 | **192** | +4, then 1 |
+| 6 | 8:38– | Farm Stop, about 1.77 km at 10:00 | — | — | — | — | — | — | +1 survivor | — | 192 | — | — | — | +5, so 6 at 10:00 |
 
 **How the kill scrap adds up:**
 - **Run 1:** 180 kills + 3 runners (+1 each) + 12 taste-Ram kills paid double (+12) = 195.
@@ -793,13 +808,13 @@ Runs 2 and 3 plan the same distance as the bot, because both end at the same fix
 - **Run 4:** 788 walkers + 81 runners (162) + 6 Brutes (60) = 1,010. Add the Ram bonus of 99: the wall's 30 walkers and 4 Brutes = 70, and the second Ram's 11 walkers, 4 runners and 1 Brute = 29. Total 1,109.
 - **Run 5:** 435 walkers + 150 runners (300) + 15 Brutes (150) = 885. Add the Ram bonus of 31 (13 walkers, 4 runners and 1 Brute) = 916. Then ×1.1 for Scavenger = 1,008.
 
-**Totals:** earned 4,024 and spent 3,810, so 214 is left. That matches the last row.
+**Totals:** earned 3,982 and spent 3,790, so 192 is left. That matches the last row. (Golden zombies are planned at about 1 in 60 of about 300 new zombies a run.)
 
 **What the table shows:**
 - **Runs 1–4 each pay more than the one before.** Run 5 pays a bit less in total than run 4 (it has no big first hold and no wall smash), but it pays the most per minute: 387, 400, 677, 639 and 954 scrap per minute of play. Run 4 is lower per minute than run 3 because of the 40 s hold, but it is the biggest jackpot.
 - **The first three runs are tight.** Each break buys 2–4 things, and every ★ needs most of a run: the Flatcar Gun needs runs 1 + 2, and the Ram needs all of run 3. "4 left" after run 3 feels like a real choice.
-- **The first station pays for a shopping spree.** That's on purpose: it is the reward. After that, prices climb again (Armor 5 640, Gun Speed 3 600, Mortar Pit 8 survivors).
-- **At 10:00 there is something to save for** (Armor 5) and a survivor goal (Mortar Pit, 8; the player has 6). That's the "one more run" pull.
+- **The first station pays for a shopping spree.** That's on purpose: it is the reward. After that, prices climb again (Chain Shot 3 400, Gun Speed 3 600, Mortar Pit 8 survivors).
+- **At 10:00 there is something to save for** (Chain Shot 3) and a survivor goal (Mortar Pit, 8; the player has 6). That's the "one more run" pull.
 - **Survivors:** 7 + 4 + 5 = 16 earned by 10:00, and 10 spent on two ★ nodes. Each ★ feels earned.
 - **If real players earn 30% less,** each ★ comes about one run later. The order of the unlocks stays the same.
 
@@ -808,7 +823,7 @@ Runs 2 and 3 plan the same distance as the bot, because both end at the same fix
 ## 9. Tutorial prompts, in order
 
 **Where things show:**
-- **Tasks:** a box at the top left (y 24), with up to 3 lines. Each line has a 5×5 box that fills green when the task is done. Done lines fade after 1 s (Shelldiver style). The streak counter moves below the box.
+- **Tasks:** a box at the top left (y 24), with up to 3 lines. Each line has a 5×5 box that fills green when the task is done. Done lines fade after 1 s (Shelldiver style).
 - **Radio:** a small box above the weapon cards, with the speaker's name in gold. It shows for 4 s.
 - **Tip:** one gold line at the bottom center, with a blinking arrow toward the thing it means. It shows for 4 s.
 - **Banner:** the big banner across the screen (as today).
@@ -826,7 +841,7 @@ Each channel (task box, radio, tip, banner, tag) shows one prompt at a time. The
 | 6 | First crowd on the rails in view | task | `SHOOT THE DEAD ON THE TRACK (0/5)` | 5 such kills |
 | 7 | First overheat | tip | `TOO HOT! LET GO FOR A SECOND.` | 4 s |
 | 8 | Summary 1 | summary | `YOU KEEP ALL YOUR SCRAP.` | — |
-| 9 | Tree after run 1 | tag on ARMOR | `BUY ARMOR: +20 TRAIN HP. THEN PRESS START RUN.` | the run starts |
+| 9 | Tree after run 1 | tag on CHAIN SHOT | `BUY CHAIN SHOT: A KILL SPARKS TO MORE ZOMBIES.` | the run starts |
 | 10 | First climber, from run 2 | task | `SHOOT THE DEAD OFF THE TRAIN` | one climber killed |
 | 11 | Run 2, 11 s in | task | `GRAB 3 SCRAP PILES (0/3)` | 3 piles taken |
 | 12 | Golden crate out of reach | banner | `GOLDEN CRATE / TOO FAR. BUY RADIO RANGE.` | — |
@@ -857,5 +872,5 @@ Each channel (task box, radio, tip, banner, tag) shows one prompt at a time. The
 
 The locked STATION tab's hint (`HOLD FARM STOP ONCE TO BUILD HERE.`) is not in this list. It shows every time you hover the locked tab, not once.
 
-These messages already exist and stay as they are: `TRAIN IN DANGER`, `CHECK FIRE!`, `DANGER CLOSE`, `STAY WITH THE TRAIN (F)`, `HELP!`, `SURVIVOR DOWN`, `NEW BEST`, `MULTI KILL ×N`, `STREAK ×N`. These are new, but they are rewards, not lessons: the Ram rank banners, `STATION HELD!`, `PERFECT HOLD! +1 SURVIVOR` and `UNSTOPPABLE ×N`.
+These messages already exist and stay as they are: `TRAIN IN DANGER`, `CHECK FIRE!`, `DANGER CLOSE`, `STAY WITH THE TRAIN (F)`, `HELP!`, `SURVIVOR DOWN`, `NEW BEST`, `MULTI KILL ×N`. (`STREAK ×N` is gone: there are no streaks.) These are new, but they are rewards, not lessons: the Ram rank banners, `STATION HELD!`, `PERFECT HOLD! +1 SURVIVOR` and `UNSTOPPABLE ×N`.
 

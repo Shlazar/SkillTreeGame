@@ -17,13 +17,13 @@ const CFG = {
   // the helicopter: top speed against the train, how fast it gets there, how far from the engine it
   // may fly (its radio range), how near loot must be to pick it up, its height (where its shadow falls)
   heli: { speed: 170, accel: 3.2, range: 300, pickup: 14, alt: 100 },
-  lock: 16,                    // px round the sight that a zombie is locked within
-  // 25mm: rounds per second, flight time, spread without a lock, burst radius, most zombies one
-  // round can hit, heat per round, cooling per second
-  mg: { rate: 12, travel: 0.45, spread: 5, splash: 7, victims: 4, heatPer: 0.025, cool: 0.55 },
+  lock: 12,                    // px round the sight that a zombie is locked within
+  // 25mm: rounds per second, flight time (short: the hit lands at once), spread without a lock,
+  // burst radius, most zombies one round can hit, heat per round, cooling per second
+  mg: { rate: 6, travel: 0.07, spread: 5, splash: 7, victims: 4, heatPer: 0.05, cool: 0.55 },
   // 105mm: reload, flight time, kill radius, hurt radius (a hurt walker dies too, a brute may not),
   // and how close to the train a blast hurts the train too
-  he: { reload: 2.4, travel: 1.1, kill: 34, hurt: 56, close: 28 },
+  he: { reload: 2.4, travel: 0.7, kill: 34, hurt: 56, close: 28 },
   // the horde: the most dead alive at once, and from how many km runners come and brutes stand on
   // the rails (how many come at each km is in HORDE)
   pop: { max: 400, runFrom: 0.4, bruteFrom: 1.1 },
@@ -57,7 +57,7 @@ const CFG = {
   // multiplied (COOLING), 25mm rounds per second (FAST FEED), 25mm damage (HEAVY ROUNDS), 105mm
   // reload seconds taken off (FAST RELOAD), px of flying range (RADIO RANGE), px of pickup reach
   // (MAGNET), share of kill scrap (SCAVENGER), rounds per second (GUN SPEED, NEST SPEED)
-  up: { armor: 20, cool: 0.8, feed: 2, heavy: 1, reload: 0.3, radio: 60, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
+  up: { armor: 20, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, radio: 60, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 1, speed: [11, 16], value: 1, dps: 0.5 },                // walker
@@ -68,8 +68,6 @@ const CFG = {
 // the cars: length on the ground, the gap between two, half the width, how many (TRAIN in sprites)
 const CAR = { L: 28, gap: 4, half: 8, n: 5 };
 const TRAIN_LEN = CAR.n * (CAR.L + CAR.gap) - CAR.gap;
-// streak bonuses: [kills in a row, scrap]
-const STREAKS = [[10, 2], [25, 5], [50, 10], [100, 20], [200, 40]];
 const CAMS = ['COLOUR', 'WHITE HOT', 'BLACK HOT'];
 
 // G = this run (or the demo behind the title and the Depot). mode = 'title', 'depot', 'play',
@@ -120,7 +118,10 @@ function runUp(demo) {
     hp: UP.hp(L('armor')), rate: UP.rate(L('feed')), heat: UP.heat(L('cool'), L('feed')), dmg: UP.dmg(L('heavy')),
     he: demo || L('he') > 0, reload: UP.reload(L('reload')), range: UP.range(L('radio')), pickup: UP.pickup(L('magnet')),
     scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: demo || L('gun') > 0 ? UP.gun(L('gunspd')) : 0, ram: demo || L('ram') > 0,
-    nest: UP.nest(L('nestspd')), wire: L('wire') > 0
+    nest: UP.nest(L('nestspd')), wire: L('wire') > 0,
+    // the first ring (skills.js): chain jumps, the cow catcher, 1 golden zombie in this many (0 = none),
+    // and the armor level (its plates show on the engine)
+    chain: UP.chain(L('chain')), cow: L('cow') > 0, gold: UP.gold(L('goldz')), armor: L('armor')
   };
 }
 // The train's full health.
@@ -155,13 +156,12 @@ function newGame(demo, from) {
     // train goes to next (or stands at), and the Dead Walls ahead
     stops: [], stations: [], station: null, walls: [],
     camX: 0, camY: 0, aimSX: W / 2, aimSY: H / 2,
-    lock: null, box: null,
+    lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
-    streak: { n: 0, t: -9, best: 0 },
     spawnCd: 0, railCd: rnd(5, 7), onTrain: 0, blocked: false, decalT: 0, sum: null,
     // this run's scrap by where it came from (the summary lists them), the survivors aboard, the px
     // the train has ridden, the furthest km, and what is already in the save
-    pay: { kills: 0, streaks: 0, dist: 0, stop: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0 },
+    pay: { kills: 0, dist: 0, stop: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0 },
     newBest: false, oldBest: 0, bot: false, botT: 0, botZ: null,
     // the flatcar gun: cd = time to the next round, ang = where its barrel points (0 = north,
     // clockwise), tgt = what it shoots at, look = time to look for a better target, flash = muzzle
@@ -427,7 +427,7 @@ function pickType(rail) {
 function pack(n, hx, hy) {
   for (let k = 0; k < n; k++) {
     const r = Math.sqrt(Math.random()) * (8 + n * 1.5), b = rnd(TAU);
-    G.zombies.push(makeZombie(hx + Math.cos(b) * r, hy + Math.sin(b) * r * FORE, pickType(false)));
+    G.zombies.push(goldRoll(makeZombie(hx + Math.cos(b) * r, hy + Math.sin(b) * r * FORE, pickType(false))));
   }
 }
 // true when (x, y) is out of the camera's view by more than m px
@@ -620,6 +620,10 @@ function crush(z) {
     ramKill(z);
     return;
   }
+  if (G.up.cow && !z.big) {
+    plow(z);
+    return;
+  }
   const tr = G.tr, c = tr.cars[0], dmg = z.big ? CFG.train.crushBig : CFG.train.crush;
   tr.v *= z.big ? 0.35 : 0.85;
   kill(z, 'train', 0, 0, 0);
@@ -684,8 +688,9 @@ function updateZombies(dt) {
     // where to walk: after a survivor, down the rails, onto the rails ahead, to the train's side,
     // or after the train
     let tx, ty;
-    const prey = z.st === 0 ? preyNear(z, 70) : null;
-    if (prey) {
+    const prey = z.st === 0 && !z.gold ? preyNear(z, 70) : null;
+    if (z.gold) [tx, ty] = goldFlee(z);
+    else if (prey) {
       tx = prey.x;
       ty = prey.y;
       if (Math.hypot(prey.x - z.x, (prey.y - z.y) / FORE) < 4) grabPerson(prey, z);
@@ -708,7 +713,7 @@ function updateZombies(dt) {
     z.k = z.y;
     if (Math.abs(ux) > 0.3) z.left = ux < 0;
     z.anim += dt * (z.still ? 0.3 : 0.6 + sp / 3.2);
-    if (z.st === 0 && ds < -6 && Math.abs(TL.u - z.rx) < 2.5) z.st = 1;
+    if (z.st === 0 && !z.gold && ds < -6 && Math.abs(TL.u - z.rx) < 2.5) z.st = 1;
     // the engine runs it down, or (too slow to crush it) it climbs onto the nose; beside the train
     // it climbs on. Not once the train is safe.
     if (!safe) {
@@ -902,26 +907,36 @@ function viewChunks() {
 }
 
 // ---------- lock-on
-// The zombie nearest the sight on screen. Ones the rounds in the air will already kill are passed
-// over for any other near the sight (a little wider than the lock), so a burst held over a crowd
-// spreads one round per zombie; a lone target that is done for still gets the rest.
-function findLock() {
+// The zombie nearest the sight on screen (a little wider than the lock, so after a kill it jumps
+// to the next one). A locked zombie that the rounds in the air will kill stays locked until it
+// falls, and no other doomed one is picked: no round is wasted. G.lockWait = the gun waits for a
+// doomed one to fall (a few hundredths of a second). quiet = no lock beep.
+function findLock(quiet) {
   const keep = G.lock && !G.lock.dead ? G.lock : null, r1 = CFG.lock * CFG.lock, r2 = r1 * 5;
-  let fresh = null, fd = r2, done = null, dd = r1;
+  if (keep && keep.pending >= keep.hp) {
+    const dx = keep.x - G.camX - G.aimSX, dy = keep.y - G.camY - keep.S.h * 0.5 - G.aimSY;
+    if (dx * dx + dy * dy <= r2) {
+      G.lockWait = true;
+      return;
+    }
+  }
+  let fresh = null, fd = r2, doomed = false;
   for (const z of G.zombies) {
     if (z.dead) continue;
     const dx = z.x - G.camX - G.aimSX, dy = z.y - G.camY - z.S.h * 0.5 - G.aimSY;
     let d2 = dx * dx + dy * dy;
     if (d2 > r2) continue;
+    if (z.pending >= z.hp) {
+      if (d2 <= r1) doomed = true;
+      continue;
+    }
     if (z === keep) d2 *= 0.45;
-    if (z.pending < z.hp) {
-      const w = d2 > r1 ? d2 * 1.5 : d2;
-      if (w < fd) { fd = w; fresh = z; }
-    } else if (d2 < dd) { dd = d2; done = z; }
+    const w = d2 > r1 ? d2 * 1.5 : d2;
+    if (w < fd) { fd = w; fresh = z; }
   }
-  const nl = fresh || done;
-  if (nl && !G.lock && mode === 'play') SFX.lock();
-  G.lock = nl;
+  if (fresh && !G.lock && mode === 'play' && !quiet) SFX.lock();
+  G.lock = fresh;
+  G.lockWait = !fresh && doomed;
 }
 
 // ---------- the guns
@@ -1255,21 +1270,6 @@ function blood(x, y, n, zh) {
   for (let k = 0; k < n; k++) part({ x: x + rnd(-1, 1), y, z: rnd(3, zh), vx: rnd(-35, 35), vy: rnd(-45, 12), vz: rnd(15, 70),
     g: 240, life: 1.4, max: 1.4, s: 1, c: pick([P.bl0, P.bl1, P.bl2, P.bl2]), land: 1 });
 }
-function streak(n) {
-  const s = G.streak;
-  if (G.t - s.t > 1.6) s.n = 0;
-  const before = s.n;
-  s.n += n;
-  s.t = G.t;
-  s.best = Math.max(s.best, s.n);
-  for (const [m, bonus] of STREAKS) if (before < m && s.n >= m) {
-    G.cash += bonus;
-    G.pay.streaks += bonus;
-    // (while the Ram runs, its own banner and count stay up: the streak shows only top left)
-    if (!G.ram.on) banner('STREAK ×' + m, '+' + bonus + ' SCRAP', U.gold, 1);
-    SFX.streak();
-  }
-}
 // cause = 'mg' (a 25mm round), 'gun' (the flatcar gun), 'he' (the 105 at (cx, cy), dist away),
 // 'train' (run down) or 'ram' (the Turbo Ram). free = not the player's kill (no score).
 function kill(z, cause, cx, cy, dist, free) {
@@ -1277,7 +1277,11 @@ function kill(z, cause, cx, cy, dist, free) {
   z.dead = true;
   z.hp = 0;
   z.paid = 0;
-  if (G.lock === z) G.lock = null;
+  // the lock jumps at once to the next zombie near the sight
+  if (G.lock === z) {
+    G.lock = null;
+    if (mode === 'play') findLock(true);
+  }
   const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160, ram = cause === 'ram';
   // every kill but the Ram's own fills the Ram again
   if (!ram && !free) chargeRam();
@@ -1299,7 +1303,6 @@ function kill(z, cause, cx, cy, dist, free) {
     G.cash += pay;
     G.pay.kills += pay;
     G.killBump = 1;
-    streak(1);
   }
   if (cause === 'he') {
     // thrown away from the blast, turning over
@@ -1326,7 +1329,7 @@ function kill(z, cause, cx, cy, dist, free) {
       if (ram) {
         G.ram.pop += pay;
         if (G.t - G.ram.popT >= 0.1 || z.big) popRam();
-      } else addTotal(z.x, z.y - S.h, pay, U.gold, false);
+      } else addTotal(z.x, z.y - S.h, pay, U.gold, !!z.gold);
     }
   } else {
     // a 25mm round: knocked over backwards, away from the gun, or off the side of the train; a
@@ -1344,10 +1347,11 @@ function kill(z, cause, cx, cy, dist, free) {
     blood(z.x, z.y, z.big ? 14 : 8, S.h * 0.6);
     part({ x: z.x, y: z.y, z: S.h * 0.5, vx: rnd(-4, 4), vy: rnd(-6, 0), vz: rnd(4, 10), g: 0, life: 0.45, max: 0.45, s: 3,
       c: 'rgba(110,24,20,0.55)', grow: 7, drag: 3, smoke: true });
-    if (sc) addTotal(z.x, z.y - S.h, pay, U.gold, false);
+    if (sc) addTotal(z.x, z.y - S.h, pay, U.gold, !!z.gold);
     if (!G.demo) SFX.splat();
   }
   z.paid = pay;
+  if (z.gold) goldKill(z, sc);
   if (sc && (Math.random() < 0.3 || z.big) && coins.length < 45) coins.push({ x0: z.x - G.camX, y0: z.y - G.camY - 8, t: 0, T: rnd(0.55, 0.8) });
   if (z.big && !G.demo) {
     addShake(0.15);
@@ -1361,21 +1365,24 @@ function hitZombie(z, dmg, cause) {
   z.flash = 0.1;
   if (z.hp <= 0) {
     kill(z, cause || 'mg', 0, 0, 0);
-    return;
+    return true;
   }
   // a brute takes the hit: blood and a step back (not when it holds on to the train)
   blood(z.x, z.y, 4, z.S.h * 0.6);
   if (z.st !== 2) z.kby -= 12;
   if (!G.demo) SFX.hit();
+  return false;
 }
-// A 25mm round lands: its locked target first, then the nearest round the burst.
-const NEAR = [];
+// A 25mm round lands: its locked target first, then the nearest round the burst. KILLED = the
+// ones it killed (for CHAIN SHOT and the hit-stop).
+const NEAR = [], KILLED = [];
 function mgImpact(r) {
   const x = r.bx, y = r.by, T = r.tgt;
   let hits = 0;
+  KILLED.length = 0;
   if (T) T.pending = Math.max(0, T.pending - G.up.dmg);
   if (T && !T.dead && Math.hypot(T.x - x, (T.y - y) / FORE) < 6) {
-    hitZombie(T);
+    if (hitZombie(T)) KILLED.push(T);
     hits++;
   }
   NEAR.length = 0;
@@ -1388,7 +1395,7 @@ function mgImpact(r) {
   for (const z of NEAR) {
     if (hits >= CFG.mg.victims) break;
     if (!z.dead) {
-      hitZombie(z);
+      if (hitZombie(z)) KILLED.push(z);
       hits++;
     }
   }
@@ -1396,6 +1403,7 @@ function mgImpact(r) {
     G.hits++;
     G.hitT = 0.12;
   }
+  if (r.player) roundKills(KILLED);
   // the round bursts: a small fire puff, a flash, sparks, earth and dust, a dark mark
   addBoom(x, y, 6, 3, 0.3, 3);
   lights.push({ x, y, z: 3, r: 14, c: '#ffb060', life: 0.1, max: 0.1, a: 0.8 });
@@ -1570,7 +1578,7 @@ function attract(dt) {
   if (b.z && G.t % 1.8 < 1.1) {
     while (G.mgCd <= 0) {
       fireMG(false, b.z.x + b.z.vx * CFG.mg.travel + rnd(-2, 2), b.z.y + b.z.vy * CFG.mg.travel + rnd(-2, 2));
-      G.mgCd += 1 / 10;
+      G.mgCd += 1 / CFG.mg.rate;
     }
   } else G.mgCd = Math.max(0, G.mgCd);
   G.heReload -= dt;
@@ -1605,7 +1613,7 @@ function ride(d) {
   if (!G.newBest && G.oldBest > 0 && km2(G.maxKm) > G.oldBest) {
     G.newBest = true;
     banner('NEW BEST', 'PAST ' + G.oldBest.toFixed(2) + ' KM. KEEP GOING!', U.gold, 1);
-    SFX.streak();
+    SFX.fanfare();
   }
 }
 
@@ -1678,9 +1686,14 @@ function step(dt) {
     if (G.trigger && !G.overheat) {
       G.mgCd -= dt;
       while (G.mgCd <= 0 && !G.overheat) {
+        // (only a zombie already done for under the sight: wait, the round would be wasted)
+        if (G.lockWait) {
+          G.mgCd = 0;
+          break;
+        }
         fireMG(true, G.camX + G.aimSX, G.camY + G.aimSY);
         G.mgCd += 1 / G.up.rate;
-        findLock();
+        findLock(true);
         if (G.heat >= 1) {
           G.overheat = true;
           SFX.overheat();
@@ -1718,6 +1731,7 @@ function step(dt) {
   updateRounds(dt);
   updateBodies(dt);
   updateFireSpots(dt);
+  updateSkills(dt);
   updateFX(dt);
   // every 3 s the marks on the ground fade a little
   G.decalT += dt;

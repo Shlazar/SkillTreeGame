@@ -599,6 +599,15 @@ const NODE_ART = {
   // LAST TRAIN: the engine, side on
   root: ['............', '........dd..', 'dddd....ld..', 'dBBd....ld..', 'dBBdlllllld.', 'dsssssssssdG',
     'dllllllllldd', 'dggggggggggd', 'dmmmmmmmmmmd', '.ls..ls..ls.', '.sl..sl..sl.', '............'],
+  // CHAIN SHOT: a bolt of lightning jumping from zombie to zombie
+  chain: ['.........Gw.', '........GwY.', '.......GwY..', '......GwY...', '.....GwwwwY.', '....GwwwwY..',
+    '......wY....', '.....wY.....', '....wY......', '...wY.......', '..wY........', '.wY.........'],
+  // COW CATCHER: the steel plow on the engine's nose, seen from the front
+  cow: ['............', 'dddddddddddd', 'dmmmmmmmmmmd', '.slslslslsl.', '.slslslslsl.', '..lslslsls..',
+    '..lslslsls..', '...slslsl...', '...slslsl...', '....lsls....', '....mmmm....', '............'],
+  // GOLDEN ZOMBIES: a gold zombie with sparkles
+  goldz: ['.........w..', '...yyyy.wGw.', '..yGGGGy.w..', '..yGkGky....', '..yGGGGy....', '..yGkkGy..w.',
+    '...yGGy..wGw', '..yyggyy..w.', '.yGGggGgy...', 'yGGgggggGy..', 'yGgggggggy..', 'yyyyyyyyyy..'],
   // ARMOR: a steel shield with a gold plus
   armor: ['............', '.mssssssssm.', '.slllGglllm.', '.slllGglllm.', '.slGGGggglm.', '.slgggyyylm.',
     '.slllgylllm.', '..sllgyllm..', '..sllllllm..', '...sllllm...', '....slmm....', '.....mm.....'],

@@ -25,9 +25,12 @@ const NODES = [
   { id: 'root', name: 'LAST TRAIN', br: 'root', c: 0, r: 0, cost: [0], desc: 'THE START OF YOUR WHOLE TREE.',
     stat: ['BRANCHES OPEN', (l) => l * 4] },
   // TRAIN
-  { id: 'armor', name: 'ARMOR', br: 'train', c: 2, r: 0, needs: ['root', 1], cost: [40, 80, 160, 320, 640],
-    desc: 'MORE TRAIN HEALTH.', stat: ['TRAIN HP', (l) => UP.hp(l)] },
-  { id: 'gun', name: 'FLATCAR GUN', star: true, br: 'train', c: 4, r: 0, needs: ['armor', 1], cost: [300],
+  { id: 'cow', name: 'COW CATCHER', br: 'train', c: 2, r: 0, needs: ['root', 1], cost: [80],
+    desc: 'A STEEL PLOW THROWS ZOMBIES ASIDE.', stat: ['WALKERS SLOW THE TRAIN', (l) => (l ? 'NO' : 'YES')],
+    stat2: ['BRUTES', () => 'STILL STOP THE TRAIN'] },
+  { id: 'armor', name: 'ARMOR', br: 'train', c: 2, r: -2, needs: ['cow', 1], cost: [40, 80, 160, 320, 640],
+    desc: 'STEEL PLATES: MORE TRAIN HEALTH.', stat: ['TRAIN HP', (l) => UP.hp(l)] },
+  { id: 'gun', name: 'FLATCAR GUN', star: true, br: 'train', c: 4, r: 0, needs: ['cow', 1], cost: [300],
     desc: 'AN AUTO GUN ON THE TRAIN.', stat: ['TRAIN GUN', (l) => (l ? perS(UP.gun(0)) : 'NONE')],
     stat2: ['IT SHOOTS UP TO', () => metres(CFG.gun.range) + ' AWAY'] },
   { id: 'gunspd', name: 'GUN SPEED', br: 'train', c: 6, r: 0, needs: ['gun', 1], cost: [150, 300, 600],
@@ -37,26 +40,32 @@ const NODES = [
     stat: ['TURBO RAM', (l) => (l ? CFG.ram.dur + ' S AT ' + Math.round(CFG.ram.speed / CFG.train.cruise) + '× SPEED' : 'NONE')],
     stat2: ['FULL AGAIN AFTER', () => CFG.ram.charge + ' KILLS'] },
   // HELI
-  { id: 'cool', name: 'COOLING', br: 'heli', c: -2, r: 0, needs: ['root', 1], cost: [40, 80, 160],
+  { id: 'chain', name: 'CHAIN SHOT', br: 'heli', c: -2, r: 0, needs: ['root', 1], cost: [60, 150, 400],
+    desc: 'A KILL SPARKS ON TO MORE ZOMBIES.', stat: ['CHAIN JUMPS', (l) => UP.chain(l)],
+    stat2: ['A JUMP REACHES', () => metres(SK.chain.reach)] },
+  { id: 'cool', name: 'COOLING', br: 'heli', c: -4, r: 0, needs: ['chain', 1], cost: [40, 80, 160],
     desc: 'THE 25MM GETS HOT MORE SLOWLY.', stat: ['OVERHEAT AFTER', (l) => hotS(UP.hot(l))] },
-  { id: 'feed', name: 'FAST FEED', br: 'heli', c: -4, r: 0, needs: ['cool', 1], cost: [60, 120, 240, 480, 960],
+  { id: 'feed', name: 'FAST FEED', br: 'heli', c: -6, r: 0, needs: ['cool', 1], cost: [60, 120, 240, 480, 960],
     desc: 'MORE 25MM ROUNDS, NO EXTRA HEAT.', stat: ['25MM FIRE RATE', (l) => perS(UP.rate(l))] },
-  { id: 'heavy', name: 'HEAVY ROUNDS', br: 'heli', c: -6, r: 0, needs: ['feed', 1], cost: [200, 400, 800],
+  { id: 'heavy', name: 'HEAVY ROUNDS', br: 'heli', c: -6, r: -2, needs: ['feed', 1], cost: [200, 400, 800],
     desc: 'EACH 25MM HIT DOES MORE DAMAGE.', stat: ['25MM DAMAGE', (l) => UP.dmg(l)],
     stat2: ['HITS TO KILL A BRUTE', (l) => Math.ceil(CFG.types[2].hp / UP.dmg(l))] },
-  { id: 'he', name: '105MM CANNON', star: true, br: 'heli', c: -4, r: -2, needs: ['cool', 1], cost: [5], cur: 'surv',
+  { id: 'he', name: '105MM CANNON', star: true, br: 'heli', c: -2, r: -2, needs: ['chain', 1], cost: [5], cur: 'surv',
     desc: 'A BIG SHELL FOR BIG CROWDS.', stat: ['105MM', (l) => (l ? 'RELOAD ' + secs(UP.reload(0)) : 'NONE')],
     stat2: ['FIRE WITH', () => 'RIGHT CLICK / SPACE'] },
-  { id: 'reload', name: 'FAST RELOAD', br: 'heli', c: -6, r: -2, needs: ['he', 1], cost: [150, 300, 600],
+  { id: 'reload', name: 'FAST RELOAD', br: 'heli', c: -4, r: -2, needs: ['he', 1], cost: [150, 300, 600],
     desc: 'THE 105MM LOADS FASTER.', stat: ['105MM RELOAD', (l) => secs(UP.reload(l))] },
   // EXPLORE
-  { id: 'radio', name: 'RADIO RANGE', br: 'explore', c: 0, r: -2, needs: ['root', 1], cost: [40, 80, 160, 320, 640],
+  { id: 'goldz', name: 'GOLDEN ZOMBIES', br: 'explore', c: 0, r: -2, needs: ['root', 1], cost: [60, 150, 400],
+    desc: 'RARE GOLD ZOMBIES. CHASE THEM DOWN!', stat: ['GOLDEN ZOMBIES', (l) => (l ? '1 IN ' + UP.gold(l) : 0)],
+    stat2: ['EACH ONE PAYS', () => SK.gold.value + ' SCRAP'] },
+  { id: 'radio', name: 'RADIO RANGE', br: 'explore', c: 0, r: -4, needs: ['goldz', 1], cost: [40, 80, 160, 320, 640],
     desc: 'FLY FURTHER AWAY FROM THE TRAIN.', stat: ['RADIO RANGE', (l) => metres(UP.range(l))] },
-  { id: 'magnet', name: 'MAGNET', br: 'explore', c: -2, r: -3, needs: ['radio', 1], cost: [40, 80, 160],
+  { id: 'magnet', name: 'MAGNET', br: 'explore', c: -2, r: -4, needs: ['radio', 1], cost: [40, 80, 160],
     desc: 'GRAB LOOT FROM FURTHER AWAY.', stat: ['PICKUP RANGE', (l) => metres(UP.pickup(l))] },
-  { id: 'scav', name: 'SCAVENGER', br: 'explore', c: 2, r: -3, needs: ['radio', 1], cost: [150, 300, 600, 1200, 2400],
+  { id: 'scav', name: 'SCAVENGER', br: 'explore', c: 2, r: -4, needs: ['radio', 1], cost: [150, 300, 600, 1200, 2400],
     desc: 'MORE SCRAP FROM EVERY KILL.', stat: ['KILL SCRAP', (l) => '+' + Math.round(UP.scav(l) * 100) + '%'] },
-  { id: 'winch', name: 'WINCH', star: true, br: 'explore', c: 0, r: -4, needs: ['radio', 2], cost: [5], cur: 'surv',
+  { id: 'winch', name: 'WINCH', star: true, br: 'explore', c: 0, r: -6, needs: ['radio', 2], cost: [5], cur: 'surv',
     desc: 'LIFT SURVIVORS OUT OF THE FIELD.', stat: ['WINCH', (l) => (l ? 'LIFTS IN ' + secs(CFG.winch.hover) : 'NONE')] },
   // STATION
   { id: 'farm', name: 'FARM STOP', br: 'station', c: 0, r: 2, needs: ['root', 1], cost: [0], given: true,
@@ -75,13 +84,15 @@ const NODES = [
     desc: 'THE TRAIN RAMS BY ITSELF.' },
   { id: 'horn', name: 'SHOCK HORN', star: true, br: 'train', c: 8, r: 0, needs: ['gunspd', 1], cost: [0], later: true,
     desc: 'PRESS Q: BLAST THE DEAD OFF.' },
-  { id: 'crates', name: 'MORE CRATES', br: 'explore', c: 4, r: -4, needs: ['scav', 1], cost: [0], later: true,
+  { id: 'crates', name: 'MORE CRATES', br: 'explore', c: 2, r: -6, needs: ['scav', 1], cost: [0], later: true,
     desc: 'MORE SUPPLY CRATES OUT THERE.' },
   { id: 'platform', name: 'BIG PLATFORM', br: 'station', c: 4, r: 3, needs: ['wire', 1], cost: [0], later: true,
     desc: 'MORE SURVIVORS AT EACH STATION.' }
 ];
 const NODE = {};
 for (const n of NODES) NODE[n.id] = n;
+// the first ring: one exciting node per branch, right round LAST TRAIN
+const FIRST = ['chain', 'cow', 'goldz'];
 const maxLv = (n) => n.cost.length;
 const parentOf = (n) => (n.needs ? NODE[n.needs[0]] : null);
 const needsMet = (n) => !n.needs || lv(n.needs[0]) >= n.needs[1];
@@ -193,6 +204,12 @@ function summaryGoal() {
   const have = (n) => ['YOU HAVE ' + fmt(n.cur === 'surv' ? SAVE.surv : SAVE.scrap) + ' / ' + fmt(priceOf(n)) + unit(n) + '.', U.dim];
   const order = (a, b) => (a.cur === 'surv') - (b.cur === 'surv') || priceOf(a) - priceOf(b);
   const pickOf = (list, st) => list.filter((n) => st.includes(nodeState(n))).sort(order)[0];
+  // the first ring (CHAIN SHOT, COW CATCHER, GOLDEN ZOMBIES) until each has a level: one you can
+  // buy now first, else the cheapest
+  const first = FIRST.map((id) => NODE[id]).filter((n) => !lv(n.id));
+  const f1 = pickOf(first, ['buy']) || pickOf(first, ['poor']);
+  if (f1) return [['NEXT GOAL: ' + f1.name + ' (' + price(f1) + ')', U.gold],
+    nodeState(f1) === 'buy' ? ['YOU CAN BUY IT NOW!', U.green] : have(f1)];
   const stars = NODES.filter((n) => n.star), rest = NODES.filter((n) => !n.star && !n.given);
   const ready = pickOf(stars, ['buy']), goal = ready || pickOf(stars, ['poor', 'goal']);
   if (goal) {
@@ -326,8 +343,8 @@ function drawTreeTab(y0, y1) {
   }
   // the faint branch names at the far end of each branch
   ctx.globalAlpha = 0.55;
-  for (const [id, br, dx, dy, al] of [['heavy', 'heli', 0, 33, 'center'], ['gunspd', 'train', 0, 33, 'center'],
-    ['winch', 'explore', 19, -3, ''], ['mortar', 'station', 19, -3, '']]) {
+  for (const [id, br, dx, dy, al] of [['feed', 'heli', 0, 33, 'center'], ['gunspd', 'train', 0, 33, 'center'],
+    ['winch', 'explore', -19, -3, 'right'], ['mortar', 'station', 19, -3, '']]) {
     if (!vis[id]) continue;
     const [x, y] = pos(NODE[id]);
     text(BRANCH[br].name, x + dx, y + dy, BRANCH[br].col, { align: al, outline: false });

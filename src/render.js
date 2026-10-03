@@ -132,6 +132,7 @@ function zImg(z) {
 }
 function drawZombie(z) {
   const S = z.S;
+  if (z.gold && drawGold(z)) return;
   blit(zImg(z), Math.round(z.x - S.ax), Math.round(z.y - S.ay));
   if (z.big && z.hp < z.max) {
     const w = 14, x = Math.round(z.x - w / 2), y = Math.round(z.y - S.ay - 4);
@@ -150,6 +151,7 @@ function drawCar(i) {
   const t = TRAIN[i], c = G.tr.cars[i], a = angIdx(c.ang);
   const img = thermal ? t.h[a] : G.tr.hit[i] > 0 ? carRed(t, a) : t.n[a], x0 = Math.round(c.cx) - img.ox, y0 = Math.round(c.cy) - img.oy;
   blit(img, x0, y0);
+  if (i === 0) drawEngineKit(c);
   if (i === 0 && G.ram.on && !thermal) {
     ctx.globalAlpha = ramK() * (0.3 + 0.08 * Math.sin(realT * 18));
     blit(carGlow(t, a), x0, y0);
@@ -467,6 +469,7 @@ function render() {
   drawRings();
   drawParts(true);
   drawRounds();
+  drawZaps();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
   if (!thermal) {

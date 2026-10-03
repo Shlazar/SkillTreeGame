@@ -151,10 +151,11 @@ function drone(v, k) {
 // Every game sound, built from tone() and nz().
 const SFX = {
   mg() {
-    // the 25mm: a hard, short thump
+    // the 25mm: a hard, punchy thump with a crack on top
     if (!gap('mg', 55)) return;
-    nz(0.09, 0.075, 'lowpass', 1900, 0.9, 260);
-    tone(118, 0.07, 'square', 0.022, 52);
+    nz(0.12, 0.1, 'lowpass', 2400, 0.9, 220);
+    tone(150, 0.09, 'square', 0.032, 46);
+    nz(0.025, 0.035, 'highpass', 3200);
   },
   pop() {
     // a 25mm round bursts on the ground
@@ -180,8 +181,10 @@ const SFX = {
     nz(0.6, 0.05, 'highpass', 2600, 0.7, 900, 0.06);
   },
   splat() {
+    // a kill: a wet smack and a short knock
     if (!gap('splat', 28)) return;
-    nz(0.06, 0.035, 'bandpass', rnd(260, 520), 1.6, 140);
+    nz(0.07, 0.05, 'bandpass', rnd(260, 520), 1.6, 140);
+    tone(rnd(300, 360), 0.05, 'triangle', 0.02, 110);
   },
   hit() {
     if (!gap('hit', 45)) return;
@@ -214,7 +217,7 @@ const SFX = {
     tone(392, 0.14, 'triangle', 0.045);
     tone(587, 0.22, 'triangle', 0.045, null, 0.1);
   },
-  streak() {
+  fanfare() {
     tone(523, 0.1, 'triangle', 0.04);
     tone(659, 0.1, 'triangle', 0.04, null, 0.08);
     tone(784, 0.22, 'triangle', 0.045, null, 0.16);

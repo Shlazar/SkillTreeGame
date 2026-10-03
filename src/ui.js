@@ -146,12 +146,6 @@ function drawHUD() {
   if (!G.demo) drawRoute(hx + hw + 30, W - 28);
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
   if (Au.muted) text('MUTE', W - 4, 22, U.faint, { align: 'right' });
-  // kill streak: the count and the time left to keep it going
-  const s = G.streak, st = G.t - s.t;
-  if (s.n >= 3 && st < 1.6) {
-    text('STREAK ' + s.n, 5, 24, s.n >= 25 ? '#ffd36a' : U.gold);
-    bar(5, 33, 52, 2, 1 - st / 1.6, '#1a1716', '#e3b04b');
-  }
 }
 // What comes next up the line, for the top bar: [text, color]. A Dead Wall within 150 m comes
 // first; then the next station; past the last one, the safe zone.
@@ -306,6 +300,8 @@ function drawRadar() {
   if (G.goalY > hy - 640 && G.goalY < hy + 640) for (let dx = -560; dx <= 560; dx += 18) dot(trackX(G.goalY) + dx, G.goalY, '#8fd18a', 1);
   for (const st of G.stops) dot(st.house.x - 1, st.house.y - 1, st.id === 'depot' ? U.gold : '#9fd3f2', 2);
   for (const z of G.zombies) if (!z.dead) dot(z.x, z.y, z.st ? '#ff4a32' : '#7a2a22', 1);
+  // golden zombies: a blinking gold dot
+  if (realT % 0.5 < 0.32) for (const z of G.zombies) if (z.gold && !z.dead) dot(z.x - 1, z.y - 1, '#ffd24a', 2);
   for (const p of G.people) if (p.st === 'run' || p.st === 'wait' || p.st === 'grab') dot(p.x, p.y, '#8fd18a', 1);
   for (const c of G.tr.cars) dot(c.cx - 1, c.cy - 1, '#e8dfc8', 2);
   // the view
@@ -568,7 +564,7 @@ function drawTitle() {
 // The times (s after the summary opens) are worked out once; sounds play as each time passes.
 function sumPlan(s) {
   // [label, scrap, a short note on how it pays]
-  const p = s.pay, rows = [['ZOMBIES ' + fmt(s.kills), p.kills, ''], ['STREAKS', p.streaks, 'KILLS IN A ROW'],
+  const p = s.pay, rows = [['ZOMBIES ' + fmt(s.kills), p.kills, ''],
     ['DISTANCE ' + s.ride.toFixed(2) + ' KM', p.dist, '+1 PER ' + CFG.pay.dist / 2 + ' M']];
   if (p.stop) rows.push(['STATION', p.stop, s.stops.join(' + ')]);
   if (p.loot) rows.push(['LOOT', p.loot, '']);
@@ -596,7 +592,7 @@ function drawSummary() {
     if (e === 'tick') SFX.tick();
     else if (e === 'total') SFX.total();
     else if (e === 'saved') SFX.saved();
-    else SFX.streak();
+    else SFX.fanfare();
   }
   const lines = s.wall.slice();
   if (s.near) lines.push([s.near, U.amber]);
