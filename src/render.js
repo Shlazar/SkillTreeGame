@@ -144,16 +144,53 @@ function drawZombie(z) {
   }
 }
 // A car of the train, turned to its heading on the rails (red while it takes damage). The
-// survivors ride on the flatcar, standing on its deck.
+// survivors ride on the flatcar, standing on its deck; with the flatcar gun, it stands at the front
+// and two of them stay at the back. While the Turbo Ram runs the engine glows orange.
 function drawCar(i) {
   const t = TRAIN[i], c = G.tr.cars[i], a = angIdx(c.ang);
-  const img = thermal ? t.h[a] : G.tr.hit[i] > 0 ? carRed(t, a) : t.n[a];
-  blit(img, Math.round(c.cx) - img.ox, Math.round(c.cy) - img.oy);
-  if (i === 2) for (let k = 0; k < RIDERS.length; k++) {
-    const [u, al] = RIDERS[k], s = SURV[k], bob = Math.sin(realT * 5 + k * 1.7) > 0.6 ? 1 : 0;
+  const img = thermal ? t.h[a] : G.tr.hit[i] > 0 ? carRed(t, a) : t.n[a], x0 = Math.round(c.cx) - img.ox, y0 = Math.round(c.cy) - img.oy;
+  blit(img, x0, y0);
+  if (i === 0 && G.ram.on && !thermal) {
+    ctx.globalAlpha = ramK() * (0.3 + 0.08 * Math.sin(realT * 18));
+    blit(carGlow(t, a), x0, y0);
+    ctx.globalAlpha = 1;
+  }
+  if (i !== 2) return;
+  const gun = G.up.gun > 0, R = gun ? RIDERS_GUN : RIDERS;
+  if (gun) drawTurret();
+  for (let k = 0; k < R.length; k++) {
+    const [u, al] = R[k], s = SURV[k], bob = Math.sin(realT * 5 + k * 1.7) > 0.6 ? 1 : 0;
     const x = c.cx + c.dx * al + c.nx * u, y = c.cy + c.dy * al + c.ny * u;
     blit(thermal ? s.h : s.n, Math.round(x) - 2, Math.round(y) - 10 - bob);
   }
+}
+// The flatcar gun on its deck, its barrel turned to G.gun.ang; a flash at the muzzle as it fires.
+const DECK = 3;
+function drawTurret() {
+  const g = G.gun, [gx, gy] = gunXY(), i = mod(Math.round(g.ang / TAU * TURRET_N), TURRET_N);
+  const img = (thermal ? TURRET.h : TURRET.n)[i], x = Math.round(gx), y = Math.round(gy) - DECK;
+  blit(img, x - img.ox, y - img.oy);
+  if (g.flash > 0) {
+    const mx = Math.round(gx + Math.sin(g.ang) * (TURRET_BARREL + 1)), my = Math.round(gy - DECK - TURRET_Z - Math.cos(g.ang) * (TURRET_BARREL + 1));
+    ctx.fillStyle = '#ffd27a';
+    ctx.fillRect(mx - 1, my, 3, 1);
+    ctx.fillRect(mx, my - 1, 1, 3);
+    ctx.fillStyle = '#fff6e0';
+    ctx.fillRect(mx, my, 1, 1);
+  }
+}
+// A flatcar gun round: a short tracer from the muzzle (it rides along with the train) to the target.
+function drawGunRound(r) {
+  const [gx, gy] = gunXY(), u = r.age / r.T;
+  const sx = gx + r.mx, sy = gy - DECK - TURRET_Z + r.my, ex = r.bx, ey = r.by - 7;
+  ctx.globalAlpha = 1;
+  const h = clamp(u * 1.15, 0, 1), t0 = Math.max(0, h - 0.4);
+  const hx = lerp(sx, ex, h), hy = lerp(sy, ey, h);
+  pl(ctx, lerp(sx, ex, t0), lerp(sy, ey, t0), hx, hy, '#c9772f');
+  pl(ctx, lerp(sx, ex, (t0 + h) / 2), lerp(sy, ey, (t0 + h) / 2), hx, hy, '#ffd27a');
+  ctx.fillStyle = '#fff6e0';
+  ctx.fillRect(Math.round(hx), Math.round(hy), 1, 1);
+  light(hx, hy, 4, '#ffb347', 0.5);
 }
 // The train's shadow: each car's footprint, moved away from the sun by its height.
 function drawTrainShadow() {
@@ -180,7 +217,8 @@ function drawPerson(p) {
 // north-west), lagging a little as it speeds up, with its rotor turning.
 function drawHeliShadow() {
   const h = G.heli, alt = CFG.heli.alt;
-  const gx = Math.round(G.camX + W / 2 + alt * SUNX - h.vx * 0.08), gy = Math.round(G.camY + H / 2 + alt * SUNY - h.vy * 0.08);
+  // (the heli is at the view's middle, less how far the camera leads the train)
+  const gx = Math.round(G.camX + W / 2 - G.lead[0] + alt * SUNX - h.vx * 0.08), gy = Math.round(G.camY + H / 2 - G.lead[1] + alt * SUNY - h.vy * 0.08);
   ctx.globalAlpha = thermal ? 0.2 : 0.3;
   blit(HELI[mod(Math.round(h.hd / TAU * HELI_N), HELI_N)], gx - 20, gy - 20);
   // the faint disc the blades sweep, then the four blades
@@ -250,6 +288,10 @@ const muzzleY = (side) => G.camY + H + (side > 0 ? 26 : 36);
 const TRC = [['#fff1c2', '#ffd27a', '#ff9a3a', '#c9772f'], ['#fff6e0', '#ffd27a', '#ff9a3a', '#e2552f']];
 function drawRounds() {
   for (const r of G.rounds) {
+    if (r.kind === 'gun') {
+      drawGunRound(r);
+      continue;
+    }
     const u = r.age / r.T, he = r.kind === 'he';
     const mx = muzzleX(r.side) + r.j * 8, my = muzzleY(r.side);
     const g1 = persp(u), g0 = persp(Math.max(0, u - (he ? 0.07 : 0.06)));
@@ -270,10 +312,23 @@ function drawRounds() {
     ctx.fillRect(Math.round(hx - (s >> 1)), Math.round(hy - (s >> 1)), s, s);
     light(hx, hy, he ? 10 : 5, he ? '#ffd27a' : '#ffb347', he ? 0.7 : 0.45);
   }
-  // the gun flashes below the screen edge
+  // the gun flashes below the screen edge; the flatcar gun at its muzzle
   if (G.muzzle[0] > 0) light(muzzleX(1), muzzleY(1) - 10, 46, '#ffc27a', G.muzzle[0] / 0.05 * 0.5);
   if (G.muzzle[1] > 0) light(muzzleX(-1), muzzleY(-1) - 14, 80, '#ffb060', G.muzzle[1] / 0.12 * 0.8);
+  const g = G.gun;
+  if (g.flash > 0 && G.up.gun) {
+    const [gx, gy] = gunXY();
+    light(gx + Math.sin(g.ang) * 9, gy - DECK - TURRET_Z - Math.cos(g.ang) * 9, 10, '#ffd27a', g.flash / 0.06 * 0.8);
+  }
   ctx.globalAlpha = 1;
+}
+// While the Turbo Ram runs: its kills so far beside the engine's nose (white for a moment at each one;
+// amber from 15, red from 30, the counts of its ranks).
+function drawRamCount() {
+  const r = G.ram;
+  if (!r.on || !r.kills || G.demo) return;
+  const c = G.tr.cars[0], n = r.kills, col = realT - r.killT < 0.07 ? '#ffffff' : n >= 30 ? '#ff7a4a' : n >= 15 ? U.amber : U.gold;
+  text('×' + n, c.x0 + 13, c.y0 - 10, col, { scale: 2, drop: true });
 }
 // Two bands of mist that drift over the field (they belong to the ground and move with it).
 function drawMist() {
@@ -389,15 +444,17 @@ function render() {
   drawLights();
   for (const f of FIRES) light(f.x, f.y - (f.big ? 6 : 3), f.big ? 30 : 18, '#ff9a4a', 0.45 + Math.sin(realT * 13 + f.seed) * 0.08);
   for (const f of flames) light(f.x, f.y - 2, 10, '#ff8a3a', 0.35 * Math.min(1, f.life));
-  // the train's headlights, and their beam on the rails ahead (it follows the bends)
+  // the train's headlights, and their beam on the rails ahead (it follows the bends). While the
+  // Turbo Ram runs: bigger lights, a third beam further out, and the engine glows orange.
   if (G.result !== 'lost') {
-    const tr = G.tr, c = tr.cars[0];
-    light(c.x0 - c.nx * 4, c.y0 - c.ny * 4 - 7, 6, '#fff1c2', 0.8);
-    light(c.x0 + c.nx * 3, c.y0 + c.ny * 3 - 7, 6, '#fff1c2', 0.8);
-    for (const [ds, r, a] of [[24, 22, 0.3], [56, 30, 0.16]]) {
+    const tr = G.tr, c = tr.cars[0], k = ramK(), hr = 6 + 4 * k;
+    light(c.x0 - c.nx * 4, c.y0 - c.ny * 4 - 7, hr, '#fff1c2', 0.8);
+    light(c.x0 + c.nx * 3, c.y0 + c.ny * 3 - 7, hr, '#fff1c2', 0.8);
+    for (const [ds, r, a] of k > 0 ? [[24, 22, 0.3], [56, 30, 0.18], [90, 34, 0.16 * k]] : [[24, 22, 0.3], [56, 30, 0.16]]) {
       const y = yAtS(tr.s - ds, tr.fy - ds);
       light(trackX(y), y, r, '#ffe2a0', a);
     }
+    if (k > 0 && !thermal) light(c.cx, c.cy - 6, 24, '#ff8a3a', 0.2 * k + 0.05 * Math.sin(realT * 18));
   }
   // station lamps
   for (const p of G.statics) if (p.lamp && Math.abs(p.y - G.camY - H / 2) < H) light(p.x, p.y - 17, 16, '#ffe2a0', 0.45);
@@ -416,11 +473,14 @@ function render() {
     drawMist();
     drawClouds();
   }
-  // the names of the safe zone (past the gate) and of the station, over everything on the ground
+  // the names of the safe zone (past the gate), the Depot and the stations, over everything on the ground
   if (G.goalY > G.camY - 80 && G.goalY < G.camY + H + 80) text('SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30, '#8fd18a', { align: 'center', scale: 2 });
-  const hs = G.station && G.station.house;
-  if (hs && Math.abs(hs.y - G.camY - H / 2) < H) text('STATION', hs.x, hs.y - 36, '#9fd3f2', { align: 'center' });
+  for (const st of G.stops) {
+    const hs = st.house;
+    if (Math.abs(hs.y - G.camY - H / 2) < H) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });
+  }
   drawTexts();
+  drawRamCount();
   ctx.restore();
   // the camera's look over everything
   if (!thermal) {

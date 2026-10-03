@@ -20,7 +20,7 @@ const P = {
 // UI colours (text and highlights)
 const U = {
   ink: '#e8dfc8', dim: '#9a9ca3', faint: '#5d616b', gold: '#e3b04b', red: '#d0553f', teal: '#56c2a8',
-  blue: '#9fd3f2', amber: '#e8913a'
+  blue: '#9fd3f2', amber: '#e8913a', green: '#8fd18a'
 };
 // zombie colours: skins (dark to light), shirts, trousers, hair
 const ZSKIN = [
@@ -260,15 +260,17 @@ function tankSlices() {
   }
   return out;
 }
-// Draw a pile of slices turned to heading ang. c.ox, c.oy = where the car's middle on the ground is.
-function stackSpr(slices, ang) {
-  const n = slices.length, cy = 18 + n;
-  const [c, g] = mk(36, 36 + n, true);
+// Draw a pile of slices turned to heading ang, on a box px wide canvas (36 for a car). The pile's
+// middle on the ground is at (box / 2, box / 2 + the number of slices).
+function stackSpr(slices, ang, box) {
+  box = box || 36;
+  const n = slices.length, hb = box >> 1, cy = hb + n, sw = slices[0].width / 2, sh = slices[0].height / 2;
+  const [c, g] = mk(box, box + n, true);
   for (let z = 0; z < n; z++) {
     g.setTransform(1, 0, 0, 1, 0, 0);
-    g.translate(18, cy - z);
+    g.translate(hb, cy - z);
     g.rotate(ang);
-    g.drawImage(slices[z], -8, -14);
+    g.drawImage(slices[z], -sw, -sh);
   }
   g.setTransform(1, 0, 0, 1, 0, 0);
   // hard edges: a pixel is either there or not
@@ -301,8 +303,39 @@ function carRed(t, i) {
   }
   return t.red[i];
 }
+// The engine glowing orange (laid over it while the Turbo Ram runs), made when first needed.
+function carGlow(t, i) {
+  if (!t.glow) t.glow = [];
+  if (!t.glow[i]) t.glow[i] = tint(t.n[i], '#ff5a10', 1, 'source-atop');
+  return t.glow[i];
+}
 // The survivors riding the flatcar: [px across (right), px along (to the front)] from its middle.
+// With the flatcar gun on it, the two at the back stay (RIDERS_GUN) and the gun stands at the front.
 const RIDERS = [[-3, 7], [3, 2], [-2, -4], [3, -9]];
+const RIDERS_GUN = [[-3, -5], [3, -9]];
+
+// ---------- the flatcar gun: a small turret, a pile of slices like the cars, at TURRET_N headings
+// all the way round (0 = its barrel to the north). n[i] / h[i] = normal / thermal; ox, oy = where
+// its middle on the deck is. TURRET_BARREL = px from its middle to the muzzle, TURRET_Z = the
+// muzzle's height over the deck.
+const TURRET = { n: [], h: [] }, TURRET_N = 32, TURRET_BARREL = 9, TURRET_Z = 3;
+function turretSlices() {
+  const S = (fn) => pix(18, 18, fn);
+  const disc = (r, R, col) => { for (let y = 0; y < 18; y++) for (let x = 0; x < 18; x++) if (Math.hypot(x - 8.5, y - 8.5) <= R) r(x, y, 1, 1, col); };
+  return [
+    // the mount: a dark ring, then the turning plate with four bolts
+    S((r) => disc(r, 5.4, '#16181d')),
+    S((r) => { disc(r, 5.4, '#2d3038'); for (const [x, y] of [[4, 8], [13, 9], [8, 13], [9, 4]]) r(x, y, 1, 1, '#4b4f5a'); }),
+    // the gun body, the dark underside of the barrel, an olive ammo box on its right
+    S((r) => { r(5, 6, 8, 7, '#3a3e48'); r(8, 0, 2, 7, '#1c1e23'); r(13, 8, 2, 4, '#3a4430'); }),
+    // its top lit at the front, a hatch, the barrel (lit on its left) with a bright muzzle
+    S((r) => {
+      r(5, 6, 8, 6, '#626875'); r(5, 6, 8, 1, '#8b919c'); r(7, 8, 4, 3, '#4b4f5a'); r(7, 8, 4, 1, '#3a3e48');
+      r(8, 0, 2, 7, '#7d838c'); r(8, 0, 1, 7, '#b4b9c1'); r(8, 0, 2, 1, '#d6d9de');
+      r(13, 8, 2, 4, '#5c6b40'); r(13, 8, 2, 1, '#7d8a58');
+    })
+  ];
+}
 // SURV[k] = a survivor: n / h = standing (normal / hot), run = 2 running frames each [n, h].
 const SURV = [];
 // a survivor with a rifle, 4 x 7; f = 0 standing, 1 / 2 = running
@@ -547,6 +580,77 @@ function pillarSpr() {
 
 // ---------- icons
 const ICON = {};
+// A sprite from rows of letters, one letter per pixel: a colour from pal, '.' = clear.
+function strSpr(rows, pal) {
+  return pix(rows[0].length, rows.length, (r) => rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) if (row[x] !== '.') r(x, y, 1, 1, pal[row[x]]);
+  }));
+}
+// The skill tree's node icons, 12 x 12 (an outline is added round each). Letters: metal k d m l s,
+// cream w, gold y g G, red r R, fire O Y, blue B, olive x v V, green e E, wood n N, sandbag u T.
+const NPAL = {
+  k: '#0a0b0e', d: '#2d3038', m: '#626875', l: '#8b919c', s: '#c4c8ce', w: '#e8e2cc',
+  y: '#8a6420', g: '#d9a33a', G: '#f6dc8e', r: '#6a2420', R: '#b8402e', O: '#ff8a3a', Y: '#ffd27a',
+  B: '#9fd3f2', x: '#3c4229', v: '#5a6340', V: '#7d8a58', e: '#4f7a4a', E: '#8fd18a',
+  n: '#4a3420', N: '#7b5735', u: '#7a6444', T: '#b49a6a'
+};
+const NICON = {};
+const NODE_ART = {
+  // LAST TRAIN: the engine, side on
+  root: ['............', '........dd..', 'dddd....ld..', 'dBBd....ld..', 'dBBdlllllld.', 'dsssssssssdG',
+    'dllllllllldd', 'dggggggggggd', 'dmmmmmmmmmmd', '.ls..ls..ls.', '.sl..sl..sl.', '............'],
+  // ARMOR: a steel shield with a gold plus
+  armor: ['............', '.mssssssssm.', '.slllGglllm.', '.slllGglllm.', '.slGGGggglm.', '.slgggyyylm.',
+    '.slllgylllm.', '..sllgyllm..', '..sllllllm..', '...sllllm...', '....slmm....', '.....mm.....'],
+  // FLATCAR GUN: a turret on a flatcar
+  gun: ['..........sl', '.........slm', '........slm.', '.......slm..', '....mmslm...', '...mslllmm..',
+    '...mlllllm..', '..mmmmmmmmm.', 'NNNNNNNNNNNN', 'nnnnnnnnnnnn', '.ls......ls.', '.sl......sl.'],
+  // GUN SPEED: rounds stacked higher and higher
+  gunspd: ['............', '.........s..', '........sll.', '.....s..Ggy.', '....sll.Ggy.', '.s..Ggy.Ggy.',
+    'sll.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'Ggy.Ggy.Ggy.', 'yyy.yyy.yyy.'],
+  // TURBO RAM: two fiery arrows forward
+  ram: ['............', 'YO....YO....', '.YO....YO...', '..YO....YO..', '...YO....YO.', '....YO....YO',
+    '....YO....YO', '...YO....YO.', '..YO....YO..', '.YO....YO...', 'YO....YO....', '............'],
+  // COOLING: a snowflake
+  cool: ['....B.B.....', '.....B......', '.B...B...B..', '..B..B..B...', 'B..B.B.B..B.', '.BBBBwBBBB..',
+    'B..B.B.B..B.', '..B..B..B...', '.B...B...B..', '.....B......', '....B.B.....', '............'],
+  // FAST FEED: an ammo belt
+  feed: ['............', '............', '.s..s..s..s.', 'sl.sl.sl.sl.', 'Gg.Gg.Gg.Gg.', 'mmmmmmmmmmm.',
+    'Gg.Gg.Gg.Gg.', 'Gy.Gy.Gy.Gy.', 'mmmmmmmmmmm.', 'yy.yy.yy.yy.', '............', '............'],
+  // HEAVY ROUNDS: one big round
+  heavy: ['.....ss.....', '....slll....', '...sllllm...', '...sllllm...', '...yyyyyy...', '...GGgggy...',
+    '...Gggggy...', '...Gggggy...', '...Gggggy...', '...Gggggy...', '...yyyyyy...', '..yyyyyyyy..'],
+  // 105MM CANNON: a big olive shell with gold bands
+  he: ['.....ll.....', '....slll....', '....sllm....', '...VVvvvx...', '...VVvvvx...', '...Gggggy...',
+    '...VVvvvx...', '...VVvvvx...', '...VVvvvx...', '...Gggggy...', '...mmmmmd...', '............'],
+  // FAST RELOAD: a shell and an arrow up
+  reload: ['............', '..ll.....G..', '.slll...GGg.', '.sllm..GGGgy', '.VVvx....Gy.', '.VVvx....Gy.',
+    '.Gggy....Gy.', '.VVvx....Gy.', '.VVvx....Gy.', '.Gggy.......', '.mmmd.......', '............'],
+  // RADIO RANGE: a mast sending waves
+  radio: ['............', '.E........E.', 'E..E....E..E', 'E.E..RR..E.E', 'E.E..RR..E.E', 'E..E.ll.E..E',
+    '.E...ll...E.', '.....ll.....', '....l..l....', '....l..l....', '...l....l...', '..mmmmmmmm..'],
+  // MAGNET: a magnet pulling up a bolt
+  magnet: ['...RRRRRR...', '..RRrrrrRR..', '.RRr....rRR.', '.Rr......Rr.', '.Rr......Rr.', '.Rr......Rr.',
+    '.ss......ss.', '.ll......ll.', '............', '.....Gg.....', '.....gy.....', '.....gy.....'],
+  // SCAVENGER: a bolt of scrap and a plus
+  scav: ['............', 'GGGGG.......', 'Ggggy...EE..', 'yyyyy...EE..', '.Ggy..EEEEEE', '.Ggy..eeeeee',
+    '.gyy....EE..', '.Ggy....ee..', '.gyy........', '.Ggy........', '.yyy........', '............'],
+  // WINCH: a drum, a rope and a hook
+  winch: ['.mmmmmmmmmm.', 'dlsssssssssd', '.mmmmmmmmmm.', '.....N......', '.....N......', '.....N......',
+    '....lsl.....', '.....s......', '.l...s......', '.s...s......', '..ssss......', '............'],
+  // FARM STOP: a red barn
+  farm: ['.....dd.....', '....dmmd....', '...dmwwmd...', '..dmmwwmmd..', '.dmmmmmmmmd.', 'dddddddddddd',
+    '..RRRRRRRR..', '..RRwRRwRR..', '..RRRwwRRR..', '..RRRwwRRR..', '..RRwRRwRR..', '..rrrrrrrr..'],
+  // NEST SPEED: an MG nest behind sandbags
+  nestspd: ['............', '............', '............', '....dd......', '...dmmssssss', '...dmmddd...',
+    '...dmmd.....', '.TTTuTTTuTT.', '.uuuuuuuuuu.', 'TTuTTTuTTTuT', 'uuuuuuuuuuuu', '............'],
+  // BARBED WIRE: coils of wire between two posts
+  wire: ['............', '............', 'N..........N', 'N..........N', 'N.ss.ss.ss.N', 'Ns..s..s..sN',
+    'Ns..s..s..sN', 'N.ss.ss.ss.N', 'N..........N', 'N..........N', 'n..........n', '............'],
+  // MORTAR PIT: a mortar tube in a ring of sandbags
+  mortar: ['.........dd.', '........dlsd', '.......dls..', '......dls...', '.....dls....', '....dls.....',
+    '...dls......', '..mdd.ll....', '.TTTuTTTuTT.', '.uuuuuuuuuu.', 'TTuTTTuTTTuT', 'uuuuuuuuuuuu']
+};
 
 // Build every sprite. Called once at startup.
 function initSprites() {
@@ -592,6 +696,16 @@ function initSprites() {
     TRAIN.push(t);
   }
   for (let i = 0; i < ANG_N; i++) FOOT.push(footSpr(angOf(i)));
+  // the flatcar gun at every heading round the circle
+  TURRET.n.length = TURRET.h.length = 0;
+  const ts = turretSlices();
+  for (let i = 0; i < TURRET_N; i++) {
+    const raw = stackSpr(ts, i / TURRET_N * TAU, 26), n = selOut(rimLight(raw, '#e8e2cc', 0.18)), h = outline(hotSpr(raw, 120), '#161616');
+    n.ox = h.ox = 14;
+    n.oy = h.oy = 14 + ts.length;
+    TURRET.n.push(n);
+    TURRET.h.push(h);
+  }
   SURV.length = 0;
   for (const [shirt, skin] of [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#5c6b40', '#b8876a'], ['#7d776b', '#d1a582'],
     ['#9fd3f2', '#c99a72'], ['#e3b04b', '#8a6448']]) {
@@ -632,4 +746,40 @@ function initSprites() {
   ICON.he = outline(pix(5, 9, (r) => {
     r(0, 3, 5, 6, '#626875'); r(0, 3, 1, 6, '#8b919c'); r(1, 1, 3, 2, '#b8862f'); r(2, 0, 1, 1, '#e3b04b'); r(0, 7, 5, 1, '#b8862f');
   }), P.out);
+  // TURBO RAM: two fiery chevrons pointing up the line
+  ICON.ram = outline(strSpr(['...G...', '..GYO..', '.GYOOO.', 'GYO.OOR', '...G...', '..GYO..', '.GYOOO.', 'GYO.OOR'], NPAL), P.out);
+  ICON.ramOff = tint(ICON.ram, '#4b4f5a', 0.8);
+  // scrap: a brass bolt (a hex head on a threaded shank)
+  ICON.scrap = outline(pix(5, 8, (r) => {
+    r(0, 0, 5, 3, '#d9a33a'); r(0, 0, 5, 1, '#f6dc8e'); r(0, 2, 5, 1, '#a8761f'); r(2, 0, 1, 3, '#b8862f'); r(2, 0, 1, 1, '#f6dc8e');
+    r(1, 3, 3, 5, '#d9a33a'); r(1, 3, 1, 5, '#f6dc8e'); r(1, 4, 3, 1, '#8a6420'); r(1, 6, 3, 1, '#8a6420'); r(3, 3, 1, 5, '#a8761f');
+  }), '#1a1206');
+  // survivors: a person in a green shirt
+  ICON.surv = outline(pix(5, 7, (r) => {
+    r(1, 0, 3, 2, '#e0b48c'); r(1, 0, 3, 1, '#4a3a2e');
+    r(0, 2, 5, 3, '#5f9a5a'); r(1, 2, 3, 3, '#8fd18a'); r(1, 2, 1, 2, '#c4ecbd');
+    r(1, 5, 1, 2, '#2e4a2e'); r(3, 5, 1, 2, '#2e4a2e');
+  }), P.out);
+  // a padlock (something still locked)
+  ICON.lock = outline(pix(7, 7, (r) => {
+    r(2, 0, 3, 1, '#8b919c'); r(1, 1, 1, 2, '#8b919c'); r(5, 1, 1, 2, '#626875');
+    r(0, 3, 7, 4, '#a3a8b0'); r(0, 3, 7, 1, '#d6d9de'); r(6, 4, 1, 3, '#626875'); r(3, 4, 1, 2, '#1c1e23');
+  }), P.out);
+  ICON.lockBig = scaleSpr(ICON.lock, 3);
+  ICON.survBig = scaleSpr(ICON.surv, 3);
+  // small price marks for the skill tree (a bolt = scrap, a person = survivors), and the star of a
+  // big unlock
+  ICON.boltS = outline(strSpr(['GGg', 'gyy', '.g.', '.g.', '.y.'], NPAL), P.out);
+  ICON.survS = outline(strSpr(['.w.', 'EEE', 'EEE', 'e.e', 'e.e'], NPAL), P.out);
+  ICON.star = outline(strSpr(['..G..', '..G..', 'GGGgy', '.Ggy.', '.g.y.'], NPAL), P.out);
+  // the node icons
+  for (const [id, rows] of Object.entries(NODE_ART)) {
+    if (rows.length !== 12 || rows.some((r) => r.length !== 12)) console.error('node icon ' + id + ' is not 12 x 12');
+    NICON[id] = outline(strSpr(rows, NPAL), P.out);
+  }
+  // into the atlas now, not on the first frame of the tree (each new atlas sprite costs a re-upload)
+  for (const c of [...Object.values(NICON), ICON.boltS, ICON.survS, ICON.star, ICON.lock]) atl(c);
+  // the same for the run's new sprites: the turret and the Ram card's icon
+  for (const c of [...TURRET.n, ...TURRET.h, ICON.ram, ICON.ramOff]) atl(c);
+  for (let i = 0; i < ANG_N; i++) atl(carGlow(TRAIN[0], i));
 }

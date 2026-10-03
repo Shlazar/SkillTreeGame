@@ -1,18 +1,22 @@
 // game.js - the game: escort the last train. You fly a gunship helicopter (WASD) over a railway that
-// winds north. The train runs along it to a walled safe zone, stopping halfway at a station to take
-// on survivors who run for it. The dead walk in from both sides; the ones ahead of the train step
-// onto the rails. The engine runs them down, but each one slows it, and the dead that reach the
-// train climb on and tear at it. When no key is held the helicopter keeps pace with the train.
-// Behind the title the same game runs as a demo.
+// winds north. The line is fixed: the train leaves the Depot (at y = 0), stops at the stations on the
+// way to take on survivors, and the safe zone wall stands at the far end. The dead walk in from both
+// sides, more of them the further the train gets; the ones ahead of the train step onto the rails,
+// and before each station a Dead Wall of them stands on the track. The engine runs them down, but
+// each one slows it and hurts it, and the dead that reach the train climb on and tear at it. The run
+// ends when the train breaks; every scrap and survivor of the run is kept. When no key is held the
+// helicopter keeps pace with the train. Behind the title and the Depot the same game runs as a demo.
 // Units are world pixels and seconds; y on the ground is squashed by FORE; the train runs to -y.
 
 const CFG = {
-  trip: 2000,                  // px along the rails from the start to the safe zone (the station is halfway)
-  // the train: top speed (px/s), how fast it gets back up to speed, how hard it brakes, its health
-  train: { cruise: 26, accel: 7, brake: 10, hp: 150 },
+  // the line: px along the rails in 1 km (2 px = 1 m), and the km of the safe zone wall at its end
+  line: { km: 2000, end: 4 },
+  // the train: top speed (px/s), how fast it gets back up to speed, how hard it brakes, its health,
+  // and the health it loses for each zombie it runs over (a brute costs more)
+  train: { cruise: 26, accel: 7, brake: 10, hp: 80, crush: 2, crushBig: 10 },
   // the helicopter: top speed against the train, how fast it gets there, how far from the engine it
-  // may fly, its height (where its shadow falls)
-  heli: { speed: 170, accel: 3.2, leash: 470, alt: 100 },
+  // may fly (its radio range), how near loot must be to pick it up, its height (where its shadow falls)
+  heli: { speed: 170, accel: 3.2, range: 300, pickup: 14, alt: 100 },
   lock: 16,                    // px round the sight that a zombie is locked within
   // 25mm: rounds per second, flight time, spread without a lock, burst radius, most zombies one
   // round can hit, heat per round, cooling per second
@@ -20,12 +24,40 @@ const CFG = {
   // 105mm: reload, flight time, kill radius, hurt radius (a hurt walker dies too, a brute may not),
   // and how close to the train a blast hurts the train too
   he: { reload: 2.4, travel: 1.1, kill: 34, hurt: 56, close: 28 },
-  // the horde: zombies at the start, more each second, the most at once
-  pop: { start: 110, perSec: 3.5, max: 400 },
-  // the station: survivors waiting, seconds between two setting off, their speed, the shortest stop,
-  // how long a zombie holds a survivor before it is too late, how near the door the dead keep the
-  // survivors in (and for how long, at most)
-  station: { people: 8, gap: 1.1, run: 24, minStop: 12, grab: 1.4, clear: 34, wait: 8 },
+  // the horde: the most dead alive at once, and from how many km runners come and brutes stand on
+  // the rails (how many come at each km is in HORDE)
+  pop: { max: 400, runFrom: 0.4, bruteFrom: 1.1 },
+  // a station stop: survivors waiting on a later visit (a first visit has the station's own number),
+  // seconds between two setting off, their speed, the shortest stop, how long a zombie holds a
+  // survivor before it is too late, how near the door the dead keep the survivors in (and for how
+  // long, at most)
+  station: { again: 3, gap: 1.1, run: 24, minStop: 12, grab: 1.4, clear: 34, wait: 8 },
+  // scrap for the ride (1 for every dist px, so 1 per 20 m) and for a station stop (the first time
+  // it is held, then each time after)
+  pay: { dist: 40, stop: 50, stopAgain: 25 },
+  // a Dead Wall: px along the rails it fills, px from the rail middle, how near the train comes
+  // before it moves, how far ahead it is placed, how far ahead the warning comes (px)
+  wall: { len: 120, half: 12, wake: 110, place: 600, warn: 300 },
+  // bought in the skill tree. The flatcar gun: rounds per second, how far round the flatcar it
+  // shoots (px), a round's flight time and damage, how fast its barrel turns (radians per second).
+  gun: { rate: 3, range: 112, travel: 0.15, dmg: 1, turn: 10 },
+  // The Turbo Ram: top speed (px/s), seconds at it, seconds to get up to it and to ease back, the
+  // kill zone (px either side of the rail middle, px behind and ahead of the nose), kills to fill it
+  // again, the next stop nearer than noStart px = it can't start, nearer than cut px = it ends
+  // (250 and 200 m), px the camera leads, its kills pay ×pay. taste = the first run's Ram: the walkers
+  // at the Depot gate, and its seconds. prompt = px before a Dead Wall where PRESS E! shows (once).
+  ram: { speed: 80, dur: 4, rise: 0.4, ease: 1, band: 16, back: 10, front: 8, charge: 200, noStart: 500, cut: 400,
+    lead: 40, pay: 2, taste: 12, tasteDur: 3, prompt: 150 },
+  // what else the tree buys: an MG nest's rounds per second, the speed of the dead on barbed wire,
+  // the seconds the winch needs over a survivor
+  nest: { rate: 4 },
+  wire: { slow: 0.4 },
+  winch: { hover: 1.5 },
+  // what one level of a skill tree node adds: train HP (ARMOR), the 25mm's heat per round is
+  // multiplied (COOLING), 25mm rounds per second (FAST FEED), 25mm damage (HEAVY ROUNDS), 105mm
+  // reload seconds taken off (FAST RELOAD), px of flying range (RADIO RANGE), px of pickup reach
+  // (MAGNET), share of kill scrap (SCAVENGER), rounds per second (GUN SPEED, NEST SPEED)
+  up: { armor: 20, cool: 0.8, feed: 2, heavy: 1, reload: 0.3, radio: 60, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 1, speed: [11, 16], value: 1, dps: 0.5 },                // walker
@@ -36,91 +68,206 @@ const CFG = {
 // the cars: length on the ground, the gap between two, half the width, how many (TRAIN in sprites)
 const CAR = { L: 28, gap: 4, half: 8, n: 5 };
 const TRAIN_LEN = CAR.n * (CAR.L + CAR.gap) - CAR.gap;
-// streak bonuses: [kills in a row, cash]
-const STREAKS = [[10, 5], [25, 15], [50, 30], [100, 60], [200, 120]];
+// streak bonuses: [kills in a row, scrap]
+const STREAKS = [[10, 2], [25, 5], [50, 10], [100, 20], [200, 40]];
 const CAMS = ['COLOUR', 'WHITE HOT', 'BLACK HOT'];
 
-// G = this run (or the demo behind the title). mode = 'title', 'play', 'ending' or 'summary'.
-// thermal = camera: 0 colour, 1 white hot, 2 black hot.
+// G = this run (or the demo behind the title and the Depot). mode = 'title', 'depot', 'play',
+// 'ending' or 'summary'. thermal = camera: 0 colour, 1 white hot, 2 black hot.
 let G = null, mode = 'title', paused = false, realT = 0, frameDt = 0, sumStart = 0, thermal = 0;
 
-// best score, kept in this browser
-const BEST_KEY = 'sky-reaper-escort';
-const best = { kills: 0, safe: 0, saved: 0 };
-function loadBest() {
-  try {
-    const o = JSON.parse(localStorage.getItem(BEST_KEY) || '{}');
-    best.kills = Math.max(0, o.kills | 0);
-    best.safe = Math.max(0, o.safe | 0);
-    best.saved = Math.max(0, o.saved | 0);
-  } catch (e) { /* no storage: the best is not kept */ }
+// ---------- the fixed line
+// DEPOT_S = the Depot's place along the rails (it stands at y = 0). The rest of the line is counted
+// in km from there: sAtKm(k) = the place k km up the line, kmAt(s) = how many km s is from the Depot.
+const DEPOT_S = trackS(0);
+const sAtKm = (k) => DEPOT_S - k * CFG.line.km;
+const kmAt = (s) => (DEPOT_S - s) / CFG.line.km;
+// DK() = how far the engine's nose is from the Depot, in km
+const DK = () => kmAt(G.tr.s);
+// km2(k) = k km cut down to the whole 10 m, the way every screen and the save show km (0.659 -> 0.65)
+const km2 = (k) => Math.floor(k * 100 + 1e-6) / 100;
+// The y on the ground where the distance along the rails is s, from any distance away.
+const yOfS = (s) => yAtS(s, yAtS(s, s / 1.0354));
+
+// ---------- what the skill tree changes
+// Each number at level l of its node. The game reads them through G.up (set when a run starts) and
+// the skill tree's info box shows the very same numbers, so the two always agree.
+const UP = {
+  hp: (l) => CFG.train.hp + CFG.up.armor * l,                        // ARMOR: the train's health
+  rate: (l) => CFG.mg.rate + CFG.up.feed * l,                        // FAST FEED: 25mm rounds per second
+  // the 25mm's heat per round: COOLING multiplies it (the levels stack); FAST FEED lowers it so the
+  // heat per second stays the same
+  heat: (cool, feed) => CFG.mg.heatPer * Math.pow(CFG.up.cool, cool) * CFG.mg.rate / UP.rate(feed),
+  // seconds of held fire before the 25mm overheats (it cools a quarter as fast while it fires)
+  hot: (cool) => {
+    const k = UP.rate(0) * UP.heat(cool, 0) - CFG.mg.cool * 0.25;
+    return k > 0 ? 1 / k : Infinity;
+  },
+  dmg: (l) => 1 + CFG.up.heavy * l,                                  // HEAVY ROUNDS: damage per hit
+  reload: (l) => CFG.he.reload - CFG.up.reload * l,                  // FAST RELOAD: 105mm reload (s)
+  range: (l) => CFG.heli.range + CFG.up.radio * l,                   // RADIO RANGE: flying range (px)
+  pickup: (l) => CFG.heli.pickup + CFG.up.magnet * l,                // MAGNET: pickup reach (px)
+  scav: (l) => CFG.up.scav * l,                                      // SCAVENGER: extra kill scrap
+  gun: (l) => CFG.gun.rate + CFG.up.gun * l,                         // GUN SPEED: flatcar gun rounds/s
+  nest: (l) => CFG.nest.rate + CFG.up.nest * l                       // NEST SPEED: MG nest rounds/s
+};
+// This run's numbers from the skill tree (they cannot change during a run). The demo behind the
+// menus uses the plain numbers, but shows off the 105mm, the flatcar gun and the Turbo Ram. he,
+// winch, ram, wire = owned; gun = the flatcar gun's rounds per second (0 = none).
+function runUp(demo) {
+  const L = demo ? () => 0 : lv;
+  return {
+    hp: UP.hp(L('armor')), rate: UP.rate(L('feed')), heat: UP.heat(L('cool'), L('feed')), dmg: UP.dmg(L('heavy')),
+    he: demo || L('he') > 0, reload: UP.reload(L('reload')), range: UP.range(L('radio')), pickup: UP.pickup(L('magnet')),
+    scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: demo || L('gun') > 0 ? UP.gun(L('gunspd')) : 0, ram: demo || L('ram') > 0,
+    nest: UP.nest(L('nestspd')), wire: L('wire') > 0
+  };
 }
-function saveBest() {
-  try { localStorage.setItem(BEST_KEY, JSON.stringify(best)); } catch (e) { /* ignore */ }
+// The train's full health.
+function maxHP() {
+  return UP.hp(lv('armor'));
 }
 
 // ---------- a run
-function newGame(demo) {
-  const y0 = Math.round(rnd(-40000, 40000)), s0 = trackS(y0);
+// demo = the demo behind the menus, on a random stretch of the line. Otherwise from = where the run
+// starts: 'depot', or the id of a station reached before (the train starts 60 px before its stop).
+function newGame(demo, from) {
+  const at = demo ? null : STATIONS.find((d) => d.id === from) || null;
+  const yd = Math.round(rnd(-40000, 40000));
+  const s0 = demo ? trackS(yd) : at ? sAtKm(at.km) - STOP_OFF + 60 : DEPOT_S;
+  const y0 = demo ? yd : yOfS(s0), up = runUp(demo), hp = up.hp;
   const cars = [];
   for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
-    demo: !!demo, t: 0, run: 0, endT: 0, result: '', bonus: 0,
-    kills: 0, cash: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
+    demo: !!demo, t: 0, run: 0, endT: 0, result: '', up,
+    kills: 0, cash: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0, scavAcc: 0, scavPaid: 0,
     trigger: false, mgCd: 0, heat: 0, overheat: false, heReload: 0, heQueue: false, hitT: 0, muzzle: [0, 0],
     // the train: s = distance along the rails of the engine's nose (it falls as the train runs north),
-    // v = speed, hit[k] = car k flashes red, fx / fy = the nose on the ground
-    tr: { s: s0, startS: s0, v: CFG.train.cruise, hp: CFG.train.hp, hpShown: CFG.train.hp, hit: [0, 0, 0, 0, 0],
+    // v = speed, hp / max = its health now and when whole, hit[k] = car k flashes red, fx / fy = the
+    // nose on the ground
+    tr: { s: s0, startS: s0, v: CFG.train.cruise, hp, max: hp, hpShown: hp, hit: [0, 0, 0, 0, 0],
       clack: 0, smokeT: 0, hornT: 0, fx: trackX(y0), fy: y0, cars },
     // the helicopter: ox / oy = where it is from the engine's nose, vx / vy = its speed against the
     // train, hd = its heading, home = flying back over the train
     heli: { ox: 0, oy: Math.round(H * 0.12), vx: 0, vy: 0, hd: 0, home: false, far: false },
-    goalS: demo ? -1e12 : s0 - CFG.trip, goalY: -1e9, station: null,
+    goalS: demo ? -1e12 : sAtKm(CFG.line.end), goalY: -1e9,
+    // the stops on this run (the Depot and the stations ahead), the stations alone, the one the
+    // train goes to next (or stands at), and the Dead Walls ahead
+    stops: [], stations: [], station: null, walls: [],
     camX: 0, camY: 0, aimSX: W / 2, aimSY: H / 2,
     lock: null, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
     streak: { n: 0, t: -9, best: 0 },
     spawnCd: 0, railCd: rnd(5, 7), onTrain: 0, blocked: false, decalT: 0, sum: null,
-    bot: false, botT: 0, botZ: null
+    // this run's scrap by where it came from (the summary lists them), the survivors aboard, the px
+    // the train has ridden, the furthest km, and what is already in the save
+    pay: { kills: 0, streaks: 0, dist: 0, stop: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0 },
+    newBest: false, oldBest: 0, bot: false, botT: 0, botZ: null,
+    // the flatcar gun: cd = time to the next round, ang = where its barrel points (0 = north,
+    // clockwise), tgt = what it shoots at, look = time to look for a better target, flash = muzzle
+    gun: { cd: 0, ang: 0, tgt: null, look: 0, flash: 0, shots: 0, kills: 0 },
+    // the Turbo Ram: on = running, t = seconds since it started, dur = its seconds at top speed,
+    // left = kills still needed to fill it (0 = full; every run starts full), kills / pay = this Ram's,
+    // card = its card shows, taste = the first run's Ram, flash = when it got full, crack = when the
+    // taste broke it, msg = a line over its card, pop = scrap of its kills not yet shown (popT = when
+    // the last +N popped, side = where the next one flies)
+    ram: { on: false, t: 0, dur: 0, left: 0, kills: 0, pay: 0, card: up.ram || !!SAVE.flags.taste, taste: false,
+      hissed: false, flash: -9, crack: -9, killT: -9, msg: null, uses: 0, total: 0, pop: 0, popT: -9, side: 1 },
+    // the first run's Ram taste is still to come; the dead on the rails within 130 m ahead; the PRESS E!
+    // moment ({left: real seconds, w: the Dead Wall}); px the camera is moved by (camLead)
+    taste: !demo && !at && !SAVE.flags.taste && !up.ram, railAhead: 0, prompt: null, lead: [0, 0]
   };
+  RADIO.q.length = 0;
+  RADIO.cur = null;
+  RAMCARD.on = false;
+  SFX.ramStop(0.1);
   clearFX();
   GRID.clear();
   layoutTrain();
   if (!demo) {
-    G.goalY = yAtS(G.goalS, y0 - CFG.trip);
+    G.goalY = yOfS(G.goalS);
+    G.maxKm = DK();
     buildSafeZone();
-    buildStation(s0 - CFG.trip * 0.5);
+    buildLine(at);
   }
   placeCamera();
-  scatter();
+  scatter(at);
 }
-function startGame() {
+// Start a real run from 'depot' or a reached station.
+function startGame(from) {
   audioInit();
-  newGame(false);
+  from = startsOpen().includes(from) ? from : 'depot';
+  SAVE.start = from;
+  SAVE.runs++;
+  saveSave();
+  newGame(false, from);
+  // the best before this run (NEW BEST is measured against it, even after the run is banked)
+  G.oldBest = SAVE.best;
   mode = 'play';
   paused = false;
-  banner('ESCORT THE TRAIN', 'PICK UP SURVIVORS AT THE STATION', U.gold);
+  const st = G.station;
+  banner('ESCORT THE TRAIN', st ? 'NEXT: ' + st.name + '  ' + fmtM(kmAt(st.s) - DK()) : 'GET IT AS FAR AS YOU CAN', U.gold);
   SFX.horn();
+  // the first run of a save: the dead stand at the Depot gate, and the Engineer gives it full steam
+  if (G.taste) {
+    SAVE.flags.taste = true;
+    saveSave();
+    later(0.3, () => radio('ENGINEER', 'DEAD ON THE TRACK! FULL STEAM!'));
+    later(1, () => { if (!G.result) ramStart(true); });
+  }
 }
+// Put what this run has earned so far in the save. You keep it all, whatever happens to the train.
+function bankRun() {
+  if (!G || G.demo) return;
+  const sc = Math.floor(G.cash) - G.banked.scrap, sv = G.surv - G.banked.surv;
+  SAVE.scrap += sc;
+  SAVE.surv += sv;
+  G.banked.scrap += sc;
+  G.banked.surv += sv;
+  SAVE.best = Math.max(SAVE.best, km2(G.maxKm));
+  saveSave();
+}
+// The run is over: bank it and build the summary (drawn by drawSummary).
 function endGame() {
   mode = 'summary';
   sumStart = realT;
   G.trigger = false;
-  const nb = G.kills > best.kills, st = G.station;
+  // a mouse press from the run must not click TO THE DEPOT when it is let go
+  M.px = M.py = -1e4;
+  // where the run ended (the train may roll on a little after it is lost; that does not count)
+  const k = G.maxKm;
+  bankRun();
   G.sum = {
-    result: G.result, kills: G.kills, cash: Math.round(G.cash), streak: G.streak.best, blast: G.bestBlast,
-    hp: Math.round(G.tr.hp / CFG.train.hp * 100), saved: st ? st.saved : 0, people: CFG.station.people,
-    newBest: nb && G.kills > 0
+    result: G.result, km: km2(k), ride: km2(G.ride / CFG.line.km), kills: G.kills, pay: Object.assign({}, G.pay),
+    scrap: Math.floor(G.cash), surv: G.surv, stops: G.stopNames.slice(), best: SAVE.best, newBest: G.oldBest > 0 && SAVE.best > G.oldBest,
+    near: nearMiss(k), wall: wallStop(k), goal: summaryGoal(), sounds: 0
   };
-  if (nb) best.kills = G.kills;
-  if (G.result === 'safe') {
-    best.safe++;
-    best.saved = Math.max(best.saved, G.sum.saved);
-  }
-  saveBest();
+}
+// "Mill Town was 380 m away!": the next station, when the train was lost on the way to it.
+function nearMiss(k) {
+  if (G.result !== 'lost') return '';
+  const st = G.stations.find((s) => s.state === 'ahead' || s.state === 'braking');
+  if (!st) return '';
+  const m = kmAt(st.s) - k;
+  return m < 0.7 ? st.name + ' WAS ' + fmtM(Math.max(0.01, m)) + ' AWAY!' : '';
+}
+// The summary's lines for a run that ended at a Dead Wall: what happened, and what gets you through
+// (without the Turbo Ram: buy it; with it: save it for the wall, press E there, or more armor when
+// it was used there and the train still broke). [] for any other run.
+function wallStop(k) {
+  if (G.result !== 'lost') return [];
+  const w = G.walls.find((w) => k > w.km - 0.04 && k < w.km + CFG.wall.len / CFG.line.km + 0.03);
+  if (!w) return [];
+  const tip = !G.up.ram ? 'TURBO RAM SMASHES THROUGH IT.' : w.rammed ? 'MORE ARMOR WOULD GET YOU THROUGH.'
+    : w.ready ? 'PRESS E AT THE WALL TO RAM IT!' : 'SAVE YOUR TURBO RAM FOR IT.';
+  return [['THE DEAD WALL STOPPED YOU.', U.red], [tip, U.ink]];
+}
+// km as metres for the screen: 340 M (to the nearest 10 m), 1.25 KM from 1 km up
+function fmtM(k) {
+  return k >= 1 ? k.toFixed(2) + ' KM' : Math.round(k * 100) * 10 + ' M';
 }
 function toTitle() {
-  newGame(true);
+  if (!G || !G.demo) newGame(true);
   mode = 'title';
   paused = false;
 }
@@ -172,7 +319,7 @@ function carNear(x, y) {
 }
 function hurtTrain(a, car) {
   if (G.demo || G.result) return;
-  const tr = G.tr, was = tr.hp, low = CFG.train.hp * 0.35;
+  const tr = G.tr, was = tr.hp, low = tr.max * 0.35;
   tr.hp = Math.max(0, tr.hp - a);
   tr.hit[car] = 0.12;
   if (tr.hp <= 0) lose();
@@ -193,43 +340,14 @@ function buildSafeZone() {
     st.push({ d: SAFE.tower, x: gx + s * 50, y: y - 4, k: y - 4, tower: s });
   }
 }
-// The station halfway, on the east side of the rails: a platform, the station house, two lamps.
-// The train stops with its passenger car (car 1) at the house.
-function buildStation(s) {
-  const y = yAtS(s, G.tr.fy - (G.tr.s - s)), tl = trackLocal(trackX(y), y, {}), c = tl.c, fp = trackSlope(y);
-  const nx = c, ny = -fp * c;                               // to the right of the rails
-  const hx = trackX(y) + nx * 74, hy = y + ny * 74;
-  const st = G.station = {
-    s, stopS: s - (CAR.L + CAR.gap) - CAR.L / 2, y, state: 'ahead', t: 0, warned: false,
-    saved: 0, lost: 0, blockedT: 0, house: { x: hx, y: hy }, door: { x: hx, y: hy + 4 }
-  };
-  for (let a = -66; a <= 66; a += 12) {
-    const yy = yAtS(s + a, y + a), fpp = trackSlope(yy), cc = 1 / Math.sqrt(1 + fpp * fpp);
-    const x = Math.round(trackX(yy) + cc * 18), py = Math.round(yy - fpp * cc * 18);
-    G.statics.push({ d: STATION.slab, x, y: py, k: py });
-  }
-  for (const a of [-44, 44]) {
-    const yy = yAtS(s + a, y + a), x = Math.round(trackX(yy) + 26);
-    G.statics.push({ d: STATION.lamp, x, y: Math.round(yy), k: Math.round(yy), lamp: true });
-  }
-  G.statics.push({ d: STATION.house, x: Math.round(hx), y: Math.round(hy), k: Math.round(hy) });
-  for (let i = 0; i < CFG.station.people; i++) {
-    G.people.push({ person: true, x: hx + rnd(-8, 8), y: hy + rnd(3, 7), st: 'wait', go: 0.6 + i * CFG.station.gap,
-      sv: SURV[i % SURV.length], anim: rnd(2), left: Math.random() < 0.5, k: 0, by: null, gt: 0 });
-  }
-  return st;
-}
-// The train gets through the gate: the guards shoot the dead off it, the survivors are safe.
+// The train gets through the safe zone gate: the guards shoot the dead off it.
 function arrive() {
   G.result = 'safe';
   mode = 'ending';
   G.endT = 0;
   G.trigger = false;
   G.lock = null;
-  const st = G.station, saved = st ? st.saved : 0;
-  G.bonus = Math.round(G.tr.hp / CFG.train.hp * 100) * 2 + saved * 20;
-  G.cash += G.bonus;
-  banner('TRAIN SAFE', saved + ' SURVIVORS SAVED.  +$' + G.bonus, U.gold, 9);
+  banner('SAFE ZONE!', 'THE TRAIN MADE IT ALL THE WAY', U.gold, 9);
   SFX.horn();
   for (const z of G.zombies) if (z.st === 2) later(rnd(0.2, 1.4), () => {
     if (z.dead) return;
@@ -244,7 +362,8 @@ function lose() {
   G.endT = 0;
   G.trigger = false;
   G.lock = null;
-  banner('TRAIN LOST', 'THE DEAD HAVE TAKEN IT', U.red, 9);
+  G.prompt = null;
+  banner('TRAIN LOST', 'AT ' + km2(G.maxKm).toFixed(2) + ' KM.  YOU KEEP ALL YOUR SCRAP.', U.red, 9);
   const blast = (k, big) => () => {
     const c = G.tr.cars[k], x = c.cx + rnd(-3, 3), y = c.cy;
     boomFx(x, y, big);
@@ -268,17 +387,47 @@ function makeZombie(x, y, type) {
     st: 0, rx: rnd(-3, 3), side: 0, car: 0, al: 0, ox: 0, bang: 0, dmg: 0
   };
 }
-function pickType() {
+// The horde by distance from the Depot. One row per distance: [km, dead around the train, side pack
+// size (the smallest; the biggest is 4 more), a rail crowd every (s, from, to), rail crowd size (the
+// smallest; the biggest is 3 more), share of runners, share of brutes in rail crowds]. Between two
+// rows the numbers blend; past the last row they stay. Runners and brutes only come from the km in
+// CFG.pop.
+const HORDE = [
+  [0, 110, 3, 7, 10, 3, 0, 0],
+  [0.25, 140, 3, 6.6, 9.6, 3, 0, 0],
+  [0.5, 170, 4, 6.3, 9.3, 4, 0.04, 0],
+  [0.75, 200, 4, 5.9, 8.9, 4, 0.14, 0],
+  [1, 230, 5, 5.5, 8.5, 5, 0.24, 0],
+  [1.25, 297, 5, 5.1, 8.1, 6, 0.25, 0.08],
+  [1.5, 365, 7, 4.8, 7.8, 9, 0.25, 0.11],
+  [2, 400, 10, 4, 7, 13, 0.25, 0.17]
+];
+const HD = { want: 0, side: 0, every0: 0, every1: 0, rail: 0, run: 0, brute: 0 };
+// The horde's numbers at d km (filled into HD).
+function horde(d) {
+  let i = 0;
+  while (i < HORDE.length - 2 && d > HORDE[i + 1][0]) i++;
+  const a = HORDE[i], b = HORDE[i + 1], t = clamp((d - a[0]) / (b[0] - a[0]), 0, 1), m = (k) => lerp(a[k], b[k], t);
+  HD.want = Math.min(CFG.pop.max, Math.round(m(1)));
+  HD.side = Math.floor(m(2));
+  HD.every0 = m(3);
+  HD.every1 = m(4);
+  HD.rail = Math.floor(m(5));
+  HD.run = d < CFG.pop.runFrom ? 0 : m(6);
+  HD.brute = d < CFG.pop.bruteFrom ? 0 : m(7);
+  return HD;
+}
+// 0 walker, 1 runner, 2 brute. rail = for a crowd on the rails (brutes only come there).
+function pickType(rail) {
   const r = Math.random();
   if (G.demo) return r < 0.03 ? 2 : r < 0.1 ? 1 : 0;
-  if (G.run > 15 && r < 0.05) return 2;
-  if (G.run > 5 && r < 0.17) return 1;
-  return 0;
+  const h = horde(DK()), b = rail ? h.brute : 0;
+  return r < b ? 2 : r < b + h.run ? 1 : 0;
 }
 function pack(n, hx, hy) {
   for (let k = 0; k < n; k++) {
     const r = Math.sqrt(Math.random()) * (8 + n * 1.5), b = rnd(TAU);
-    G.zombies.push(makeZombie(hx + Math.cos(b) * r, hy + Math.sin(b) * r * FORE, pickType()));
+    G.zombies.push(makeZombie(hx + Math.cos(b) * r, hy + Math.sin(b) * r * FORE, pickType(false)));
   }
 }
 // true when (x, y) is out of the camera's view by more than m px
@@ -293,14 +442,22 @@ function sidePack(n, ds0, ds1) {
     return;
   }
 }
-// A crowd standing on the rails ahead of the train, out of view.
+// One of the dead standing on the rails at s, u px right of the rail middle.
+function railZombie(s, u, type) {
+  const y = yOfS(s), z = makeZombie(trackX(y) + u, y, type);
+  z.st = 1;
+  z.rx = u;
+  G.zombies.push(z);
+  return z;
+}
+// A crowd standing on the rails ahead of the train, out of view (never in a Dead Wall's last 150 m).
 function railGroup(n) {
   for (let i = 0; i < 4; i++) {
     const s = G.tr.s - rnd(230, 380) - i * 90, y = yAtS(s, G.tr.fy + (s - G.tr.s));
     if (y < G.goalY + 60) return;
-    if (!offView(trackX(y), y, 16)) continue;
+    if (!offView(trackX(y), y, 16) || wallZone(s)) continue;
     for (let k = 0; k < n; k++) {
-      const yy = y - k * rnd(3, 8), z = makeZombie(trackX(yy) + rnd(-3, 3), yy, pickType());
+      const yy = y - k * rnd(3, 8), z = makeZombie(trackX(yy) + rnd(-3, 3), yy, pickType(true));
       z.st = 1;
       z.rx = z.x - trackX(yy);
       G.zombies.push(z);
@@ -308,33 +465,104 @@ function railGroup(n) {
     return;
   }
 }
-// the start: packs on both sides of the railway, most of them ahead, and a crowd on the rails ahead
-function scatter() {
-  for (let k = 0; k < 10; k++) {
+// The start: packs on both sides of the railway, most of them ahead (10 behind the menus, 4 in a
+// run), and at the Depot 5 of the dead on the rails just ahead. at = the station a run starts at.
+// The first run of a save has 12 at the Depot gate instead, standing in a crowd for the Ram taste.
+function scatter(at) {
+  for (let k = 0, n = G.demo ? 10 : 4; k < n; k++) {
     const s = G.tr.s - rnd(-40, 300), y = yAtS(s, G.tr.fy + (s - G.tr.s));
     pack(rndi(5, 12), trackX(y) + (Math.random() < 0.5 ? -1 : 1) * rnd(90, W / 2), y);
   }
-  const s = G.tr.s - 110, y = yAtS(s, G.tr.fy - 110);
-  for (let k = 0; k < 5; k++) {
-    const yy = y - k * 6, z = makeZombie(trackX(yy) + rnd(-3, 3), yy, 0);
-    z.st = 1;
-    z.rx = z.x - trackX(yy);
-    G.zombies.push(z);
+  if (at) return;
+  if (G.taste) {
+    for (let k = 0; k < CFG.ram.taste; k++) {
+      const z = railZombie(G.tr.s - 105 - (k >> 1) * 7 - rnd(0, 3), (k & 1 ? 1 : -1) * rnd(1, 6), 0);
+      z.still = z.gate = true;
+    }
+    // (should the Ram not come, they wake after a while)
+    later(8, () => { for (const z of G.zombies) if (z.gate) z.still = false; });
+    return;
   }
+  for (let k = 0; k < 5; k++) railZombie(G.tr.s - 110 - k * 6, rnd(-3, 3), 0);
 }
+// More of the dead come as the train goes: side packs while there are fewer than the horde wants
+// (none while the train stands at a station), and now and then a crowd on the rails ahead.
 function spawn(dt) {
-  const st = G.station, stopped = st && st.state === 'boarding';
-  const want = G.demo ? 300 : Math.min(CFG.pop.max, CFG.pop.start + CFG.pop.perSec * G.run);
+  const st = G.station, stopped = st && st.state === 'boarding', h = G.demo ? null : horde(DK());
   G.spawnCd -= dt;
-  if (G.spawnCd <= 0 && G.zombies.length < want + (stopped ? 50 : 0)) {
-    if (stopped) sidePack(rndi(4, 8), -240, 300);
-    else sidePack(rndi(3, 7) + Math.min(4, Math.floor(G.run / 25)), -420, 80);
-    G.spawnCd = stopped ? rnd(0.3, 0.45) : rnd(0.3, 0.6);
+  if (G.spawnCd <= 0 && !stopped && G.zombies.length < (h ? h.want : 300)) {
+    sidePack(h ? rndi(h.side, h.side + 4) : rndi(3, 7), -420, 80);
+    G.spawnCd = rnd(0.3, 0.6);
   }
   G.railCd -= dt;
   if (G.railCd <= 0 && !stopped) {
-    railGroup(rndi(3, 6) + Math.min(5, Math.floor(G.run / 20)));
-    G.railCd = Math.max(3.6, rnd(7, 10) - G.run * 0.04);
+    if (!h) {
+      railGroup(rndi(3, 6));
+      G.railCd = rnd(7, 10);
+    } else {
+      if (!wallAhead(CFG.wall.warn)) railGroup(rndi(h.rail, h.rail + 3));
+      G.railCd = rnd(h.every0, h.every1);
+    }
+  }
+}
+
+// ---------- Dead Walls
+// Before each station a crowd of the dead with brutes stands packed on the rails. It is placed when
+// the train is 600 px away, stands still until the train is 110 px away, and comes back every run.
+// km = where its front is; it fills 120 px of rails behind that.
+const WALLS = [
+  { km: 0.65, walkers: 30, brutes: 4 },
+  { km: 1.65, walkers: 40, brutes: 6 }
+];
+// true when s (along the rails) is in a Dead Wall or in the 150 m in front of one
+function wallZone(s) {
+  for (const w of G.walls) if (s <= w.s + CFG.wall.warn && s >= w.s - CFG.wall.len - 30) return true;
+  return false;
+}
+// true when the engine is less than d px before a Dead Wall (or in it)
+function wallAhead(d) {
+  for (const w of G.walls) if (G.tr.s - w.s < d && G.tr.s - w.s > -CFG.wall.len) return true;
+  return false;
+}
+function placeWall(w) {
+  w.placed = true;
+  const c = CFG.wall;
+  for (let i = 0; i < w.walkers + w.brutes; i++) {
+    // anywhere in the wall, within c.half px of the rail middle (the brutes nearer to it)
+    const big = i < w.brutes;
+    const z = railZombie(w.s - rnd(0, c.len), rnd(-c.half, c.half) * (big ? 0.5 : 1), big ? 2 : 0);
+    z.still = true;
+    w.zs.push(z);
+  }
+}
+// Place the walls coming up, warn of them, and wake them when the train is close.
+function updateWalls() {
+  const tr = G.tr, c = CFG.wall;
+  for (const w of G.walls) {
+    const d = tr.s - w.s;
+    if (!w.placed && d < c.place && d > -c.len) placeWall(w);
+    if (!w.warned && d < c.warn && d > 0) {
+      w.warned = true;
+      banner('DEAD WALL IN ' + Math.round(d / 2 / 10) * 10 + ' M', G.up.ram ? 'SAVE YOUR TURBO RAM!' : 'BRUTES ON THE TRACK', U.red, 3);
+      SFX.warn();
+    }
+    // the first time the train comes up to a wall with the Ram full: time slows, PRESS E!
+    if (!SAVE.flags.pressE && mode === 'play' && d > 0 && d < CFG.ram.prompt && ramState() === 'ready') {
+      SAVE.flags.pressE = true;
+      saveSave();
+      G.prompt = { left: 3, w };
+      banners.length = 0;
+      SFX.slow();
+    }
+    if (w.placed && !w.awake && d < c.wake) {
+      w.awake = true;
+      for (const z of w.zs) z.still = false;
+    }
+    // for the summary: the Turbo Ram ran into the wall, or was full near it and not used
+    if (d < c.wake && d > -c.len) {
+      if (G.ram.on && d < 10) w.rammed = true;
+      else if (ramState() === 'ready') w.ready = true;
+    }
   }
 }
 
@@ -385,12 +613,18 @@ function attach(z, side, ds, u) {
     z.left = side > 0;
   }
 }
-// The engine runs one down: it dies, and the train loses speed.
+// The engine runs one down: it dies, and the train loses speed and health (a red -2 over the nose).
+// Not while the Turbo Ram runs: then it costs nothing.
 function crush(z) {
-  const tr = G.tr, c = tr.cars[0];
+  if (G.ram.on) {
+    ramKill(z);
+    return;
+  }
+  const tr = G.tr, c = tr.cars[0], dmg = z.big ? CFG.train.crushBig : CFG.train.crush;
   tr.v *= z.big ? 0.35 : 0.85;
   kill(z, 'train', 0, 0, 0);
-  hurtTrain(z.big ? 5 : 1, 0);
+  if (!G.demo && !G.result) addTotal(c.x0, c.y0 - 12, dmg, U.red, z.big, true);
+  hurtTrain(dmg, 0);
   for (let k = 0; k < 5; k++) {
     const s = k & 1 ? 5 : -5;
     part({ x: c.x0 + c.nx * s, y: c.y0 + c.ny * s + 2, z: 1, vx: rnd(-30, 30), vy: rnd(-10, 25), vz: rnd(10, 40),
@@ -415,8 +649,8 @@ const TL = { u: 0, a: 0, c: 1 };
 function updateZombies(dt) {
   const zs = G.zombies, tr = G.tr, hw = CAR.half, safe = G.result === 'safe';
   if (!G.result) spawn(dt);
-  const kb = Math.exp(-5 * dt), mid = tr.cars[2];
-  let onTrain = 0, ahead = 1e9;
+  const kb = Math.exp(-5 * dt), mid = tr.cars[2], R = CFG.ram, ram = G.ram.on;
+  let onTrain = 0, ahead = 1e9, railN = 0;
   for (const z of zs) {
     if (z.dead) continue;
     if (z.flash > 0) z.flash -= dt;
@@ -463,7 +697,8 @@ function updateZombies(dt) {
     z.wob += dt * (z.run ? 2 : 0.8);
     const w = z.st === 1 ? 0 : Math.sin(z.wob) * (z.run ? 0.25 : 0.4), cw = Math.cos(w), sw = Math.sin(w);
     const ux = (dx * cw - dy * sw) / d, uy = (dx * sw + dy * cw) / d;
-    const sp = z.sp * (z.st === 1 ? 0.7 : 1) * (z.flash > 0 ? 0.3 : 1);
+    // (the dead of a Dead Wall stand still until the train is near)
+    const sp = z.still ? 0 : z.sp * (z.st === 1 ? 0.7 : 1) * (z.flash > 0 ? 0.3 : 1);
     z.vx = ux * sp + z.kbx;
     z.vy = uy * sp * FORE + z.kby;
     z.x += z.vx * dt;
@@ -472,11 +707,16 @@ function updateZombies(dt) {
     z.kby *= kb;
     z.k = z.y;
     if (Math.abs(ux) > 0.3) z.left = ux < 0;
-    z.anim += dt * (0.6 + sp / 3.2);
+    z.anim += dt * (z.still ? 0.3 : 0.6 + sp / 3.2);
     if (z.st === 0 && ds < -6 && Math.abs(TL.u - z.rx) < 2.5) z.st = 1;
     // the engine runs it down, or (too slow to crush it) it climbs onto the nose; beside the train
     // it climbs on. Not once the train is safe.
     if (!safe) {
+      // the Turbo Ram: everything in the strip round the nose dies, brutes too
+      if (ram && Math.abs(TL.u) < R.band && ds > -R.front && ds < R.back) {
+        ramKill(z);
+        continue;
+      }
       if (Math.abs(TL.u) < hw + 2 && ds > -5 && ds < 6) {
         if (tr.v > 7 && !G.result) crush(z);
         else attach(z, 0, ds, TL.u);
@@ -487,11 +727,15 @@ function updateZombies(dt) {
         continue;
       }
     }
-    if (z.st === 1 && ds < 0) ahead = Math.min(ahead, -ds);
+    if (z.st === 1 && ds < 0) {
+      ahead = Math.min(ahead, -ds);
+      if (ds > -260) railN++;
+    }
     // far from the train and out of view: gone
     if (Math.abs(z.x - mid.cx) + Math.abs(z.y - mid.cy) > 900 && offView(z.x, z.y, 40)) z.gone = true;
   }
   G.onTrain = onTrain;
+  G.railAhead = railN;
   // the dead on the track ahead: a warning, and the train sounds its horn
   G.blocked = ahead < 170;
   tr.hornT -= dt;
@@ -531,9 +775,8 @@ function updateZombies(dt) {
         a.y = a.block[k + 1] + dy / d * m * FORE;
       }
     }
-    const hs = G.station && G.station.house;
-    if (hs) {
-      const dx = a.x - hs.x, dy = (a.y - hs.y + 6) / FORE, d = Math.hypot(dx, dy);
+    for (const sp of G.stops) {
+      const hs = sp.house, dx = a.x - hs.x, dy = (a.y - hs.y + 6) / FORE, d = Math.hypot(dx, dy);
       if (d < 16 && d > 1e-4) {
         a.x = hs.x + dx / d * 16;
         a.y = hs.y - 6 + dy / d * 16 * FORE;
@@ -552,95 +795,9 @@ function updateZombies(dt) {
   zs.length = j;
 }
 
-// ---------- the station stop and its survivors
-// A zombie gets hold of a survivor: shoot it in time and the survivor runs on.
-function grabPerson(p, z) {
-  if (p.st !== 'run') return;
-  p.st = 'grab';
-  p.by = z;
-  p.gt = CFG.station.grab;
-  if (!G.demo) {
-    floatText(p.x, p.y - 8, 'HELP!', U.red);
-    SFX.hit();
-  }
-}
-function catchPerson(p) {
-  if (p.st !== 'run' && p.st !== 'grab') return;
-  p.st = 'dead';
-  G.station.lost++;
-  blood(p.x, p.y, 10, 5);
-  stampPix(p.x, p.y, P.bl1, 2);
-  if (!G.demo) {
-    floatText(p.x, p.y - 6, 'SURVIVOR DOWN', U.red);
-    SFX.splat();
-  }
-}
-function updateStation(dt) {
-  const st = G.station;
-  if (!st) return;
-  const tr = G.tr;
-  if (st.state === 'ahead') {
-    if (!st.warned && tr.s - st.stopS < 260) {
-      st.warned = true;
-      banner('STATION AHEAD', 'THE TRAIN STOPS FOR SURVIVORS', U.blue, 3);
-    }
-    // brake to stop with the passenger car at the house
-    if (tr.s - st.stopS < tr.v * tr.v / (2 * CFG.train.brake) + 1) st.state = 'braking';
-  } else if (st.state === 'boarding') {
-    st.t += dt;
-    const c = tr.cars[1], door = { x: c.cx + c.nx * (CAR.half + 2), y: c.cy + c.ny * (CAR.half + 2) };
-    // the next survivor runs once the way out of the door is clear (or, in the end, anyway)
-    let near = false;
-    for (const z of G.zombies) if (!z.dead && Math.hypot(z.x - st.door.x, (z.y - st.door.y) / FORE) < CFG.station.clear) { near = true; break; }
-    let busy = 0, waiting = false;
-    for (const p of G.people) {
-      if (p.st === 'wait') {
-        busy++;
-        if (st.t >= p.go) {
-          waiting = true;
-          if (!near || st.blockedT > CFG.station.wait) {
-            p.st = 'run';
-            st.blockedT = 0;
-          }
-        }
-        continue;
-      }
-      if (p.st === 'grab') {
-        busy++;
-        if (p.by.dead) p.st = 'run';
-        else if ((p.gt -= dt) <= 0) catchPerson(p);
-        continue;
-      }
-      if (p.st !== 'run') continue;
-      busy++;
-      const dx = door.x - p.x, dy = door.y - p.y, d = Math.hypot(dx, dy);
-      if (d < 3) {
-        p.st = 'in';
-        st.saved++;
-        if (!G.demo) {
-          floatText(p.x, p.y - 6, '+1 SAVED', '#8fd18a');
-          SFX.saved();
-        }
-        continue;
-      }
-      p.x += dx / d * CFG.station.run * dt;
-      p.y += dy / d * CFG.station.run * dt;
-      p.left = dx < 0;
-      p.anim += dt * 8;
-    }
-    st.blockedT = waiting && near ? st.blockedT + dt : 0;
-    if (!busy && st.t >= CFG.station.minStop) {
-      st.state = 'leaving';
-      banner('ALL ABOARD', st.saved + ' OF ' + CFG.station.people + ' SURVIVORS SAVED', '#8fd18a', 3);
-      SFX.horn();
-    }
-  }
-  for (const p of G.people) p.k = p.y;
-}
-
 // ---------- the helicopter
 // The keys push it about; with no key held it keeps its place over the train. F flies it back
-// over the engine. It cannot stray more than the leash from the train.
+// over the engine. It cannot fly further from the train than its radio range.
 function updateHeli(dt) {
   const h = G.heli, c = CFG.heli, homeY = Math.round(H * 0.12);
   if (G.demo || mode === 'title') {
@@ -674,11 +831,11 @@ function updateHeli(dt) {
     h.vy += (ty - h.vy) * k;
     h.ox += h.vx * dt;
     h.oy += h.vy * dt;
-    // the leash: pulled back softly past it
-    const d = Math.hypot(h.ox, h.oy - homeY);
-    h.far = d > c.leash * 0.85;
-    if (d > c.leash) {
-      const f = c.leash / d;
+    // the radio range: pulled back softly past it (the warning shows from 95% of it)
+    const d = Math.hypot(h.ox, h.oy - homeY), range = G.up.range;
+    h.far = d > range * 0.95;
+    if (d > range) {
+      const f = range / d;
       h.ox *= f;
       h.oy = homeY + (h.oy - homeY) * f;
       h.vx *= 0.8;
@@ -693,13 +850,51 @@ function updateHeli(dt) {
     h.hd += clamp(a, -2.4 * dt, 2.4 * dt);
   }
 }
-// The view: over the helicopter, swinging a little ahead of where it flies, swaying as it hovers.
+// The view: over the helicopter, swinging a little ahead of where it flies, swaying as it hovers,
+// and moved on by G.lead (camLead).
 function placeCamera() {
+  camBase(CB);
+  G.camX = Math.round(CB[0] + G.lead[0] - W / 2);
+  G.camY = Math.round(CB[1] + G.lead[1] - H / 2);
+}
+// the middle of the view before the lead: over the helicopter, a little ahead of where it flies
+const CB = [0, 0];
+function camBase(o) {
   const h = G.heli, sw = REDUCED ? 0 : 1;
-  const cx = G.tr.fx + h.ox + h.vx * 0.22 + Math.sin(G.t * 0.9) * 1.3 * sw;
-  const cy = G.tr.fy + h.oy + h.vy * 0.22 + Math.sin(G.t * 1.27 + 1) * 0.9 * sw;
-  G.camX = Math.round(cx - W / 2);
-  G.camY = Math.round(cy - H / 2);
+  o[0] = G.tr.fx + h.ox + h.vx * 0.22 + Math.sin(G.t * 0.9) * 1.3 * sw;
+  o[1] = G.tr.fy + h.oy + h.vy * 0.22 + Math.sin(G.t * 1.27 + 1) * 0.9 * sw;
+  return o;
+}
+// G.lead = px the view is moved by (the heli's shadow stays where the heli is): 40 px up the line
+// while the Turbo Ram runs, and at PRESS E! over to the train's nose and the Dead Wall ahead of it.
+// It glides there in real time (dt = the frame's real seconds), so it is quick even while time runs
+// slow; with reduced motion it goes to PRESS E! at once.
+function camLead(dt) {
+  const L = G.lead, c = G.tr.cars[0], w = G.prompt && mode === 'play' ? G.prompt.w : null;
+  let tx = 0, ty = 0, k = 1 - Math.exp(-3 * dt);
+  if (w) {
+    promptLead(w, PL);
+    [tx, ty] = PL;
+    k = REDUCED ? 1 : 1 - Math.exp(-7 * dt);
+  } else if (G.ram.on) {
+    tx = c.dx * CFG.ram.lead;
+    ty = c.dy * CFG.ram.lead;
+  }
+  L[0] += (tx - L[0]) * k;
+  L[1] += (ty - L[1]) * k;
+}
+// At PRESS E!, the lead that shows the train's nose near the bottom and the Dead Wall w above it,
+// all of it if it fits (under the top bar and the warnings); if not, its far end is cut off.
+// o[2] = the screen y half-way from the nose to the front of the wall (PRESS E! goes there).
+const PL = [0, 0, 0];
+function promptLead(w, o) {
+  const tr = G.tr, yf = yOfS(w.s), yb = yOfS(w.s - CFG.wall.len);
+  const lo = tr.fy + 46, hi = yb - 52, cy = lo - hi <= H ? (lo + hi) / 2 : lo - H / 2;
+  camBase(CB);
+  o[0] = (tr.fx + trackX(yb)) / 2 - CB[0];
+  o[1] = cy - CB[1];
+  o[2] = Math.round((tr.fy + yf) / 2 - cy + H / 2);
+  return o;
 }
 // chunks in view: [first column, first row, last column, last row]
 function viewChunks() {
@@ -738,7 +933,7 @@ function fireMG(player, tx, ty) {
     const s = Math.sqrt(Math.random()) * 1.2, a = rnd(TAU);
     bx = tgt.x + tgt.vx * CFG.mg.travel + Math.cos(a) * s;
     by = tgt.y + tgt.vy * CFG.mg.travel + Math.sin(a) * s * FORE;
-    tgt.pending++;                                   // spoken for: the next round goes elsewhere
+    tgt.pending += G.up.dmg;                         // spoken for: the next round goes elsewhere
   } else {
     const s = Math.sqrt(Math.random()) * CFG.mg.spread, a = rnd(TAU);
     bx = tx + Math.cos(a) * s;
@@ -748,7 +943,7 @@ function fireMG(player, tx, ty) {
   G.muzzle[0] = 0.05;
   if (player) {
     G.shots++;
-    G.heat = Math.min(1, G.heat + CFG.mg.heatPer);
+    G.heat = Math.min(1, G.heat + G.up.heat);
     addShake(0.06);
     kick(rnd(-0.3, 0.3), 0.5);
     SFX.mg();
@@ -765,16 +960,17 @@ function fireHE(player, tx, ty) {
   G.rounds.push({ kind: 'he', bx, by, tgt: null, age: 0, T: CFG.he.travel, side: -1, j: 0, player });
   G.muzzle[1] = 0.12;
   if (player) {
-    G.heReload = CFG.he.reload;
+    G.heReload = G.up.reload;
     addShake(0.45);
     kick(rnd(-1, 1), 2.5);
     SFX.cannon();
     SFX.whistle(CFG.he.travel);
   }
 }
-// Right click or Space. Pressed just before the gun is loaded, it fires the moment it is.
+// Right click or Space. Pressed just before the gun is loaded, it fires the moment it is. Nothing
+// happens until the 105MM CANNON is bought in the skill tree.
 function tryHE() {
-  if (mode !== 'play' || paused) return;
+  if (mode !== 'play' || paused || !G.up.he) return;
   if (G.heReload <= 0) fireHE(true, G.camX + G.aimSX, G.camY + G.aimSY);
   else if (G.heReload < 0.5) G.heQueue = true;
 }
@@ -787,7 +983,269 @@ function updateRounds(dt) {
     rs[i] = rs[rs.length - 1];
     rs.pop();
     if (r.kind === 'he') explode(r.bx, r.by, r.player);
+    else if (r.kind === 'gun') gunImpact(r);
     else mgImpact(r);
+  }
+}
+
+// ---------- the flatcar gun
+// A turret on the flatcar (car 2) that shoots by itself: the dead on the train first, then the dead
+// on the rails ahead, then the nearest. Its barrel turns to its target and fires once it points there.
+// gunXY() = the turret's middle on the ground (a little ahead of the flatcar's middle).
+function gunXY() {
+  const c = G.tr.cars[2];
+  return [c.cx + c.dx * 4, c.cy + c.dy * 4];
+}
+// The best target within reach (one that the rounds in the air will not already kill), or null.
+function gunTarget(gx, gy) {
+  let best = null, bk = Infinity;
+  const s0 = G.tr.s;
+  queryEll(gx, gy, CFG.gun.range, (z, d) => {
+    if (z.pending >= z.hp) return;
+    const k = z.st === 2 ? d : z.st === 1 && trackLocal(z.x, z.y, TL).a < s0 ? 1000 + d : 2000 + d;
+    if (k < bk) {
+      bk = k;
+      best = z;
+    }
+  });
+  return best;
+}
+function updateGun(dt) {
+  const g = G.gun, R = CFG.gun, [gx, gy] = gunXY();
+  g.flash = Math.max(0, g.flash - dt);
+  // look again every 0.1 s (and at once when the target is gone)
+  let z = g.tgt;
+  if (z && (z.dead || Math.hypot(z.x - gx, (z.y - gy) / FORE) > R.range + 6)) z = null;
+  g.look -= dt;
+  if (!z || g.look <= 0) {
+    z = gunTarget(gx, gy) || z;
+    g.look = 0.1;
+  }
+  g.tgt = z;
+  // the barrel turns to it (or back to the front of the train)
+  const want = z ? Math.atan2(z.x - gx, -(z.y - gy)) : G.tr.cars[2].ang, da = mod(want - g.ang + Math.PI, TAU) - Math.PI;
+  g.ang = mod(g.ang + clamp(da, -R.turn * dt, R.turn * dt), TAU);
+  g.cd -= dt;
+  if (z && Math.abs(da) < 0.3 && g.cd <= 0 && z.pending < z.hp) {
+    gunFire(z);
+    g.cd += 1 / G.up.gun;
+  }
+  g.cd = Math.max(0, g.cd);
+}
+// One round at zombie z: it lands where z will be 0.15 s from now. (mx, my) = the muzzle from the
+// turret's middle on screen, for the tracer.
+function gunFire(z) {
+  const g = G.gun, T = CFG.gun.travel, [gx, gy] = gunXY();
+  z.pending += CFG.gun.dmg;
+  const mx = Math.sin(g.ang) * TURRET_BARREL, my = -Math.cos(g.ang) * TURRET_BARREL;
+  G.rounds.push({ kind: 'gun', bx: z.x + z.vx * T, by: z.y + z.vy * T, tgt: z, age: 0, T, mx, my, side: 0, j: 0 });
+  g.flash = 0.06;
+  g.shots++;
+  // a spent case jumps out of the right side
+  part({ x: gx + Math.cos(g.ang) * 3, y: gy + Math.sin(g.ang) * 3, z: 6, vx: Math.cos(g.ang) * rnd(15, 30), vy: Math.sin(g.ang) * rnd(15, 30),
+    vz: rnd(20, 35), g: 220, life: 0.5, max: 0.5, s: 1, c: '#e3b04b' });
+  if (!G.demo) SFX.gun();
+}
+// The round gets there: 1 damage to its target if it is still in the spot, and a small spark.
+function gunImpact(r) {
+  const z = r.tgt;
+  z.pending = Math.max(0, z.pending - CFG.gun.dmg);
+  if (!z.dead && Math.hypot(z.x - r.bx, (z.y - r.by) / FORE) < 8) hitZombie(z, CFG.gun.dmg, 'gun');
+  const x = r.bx, y = r.by;
+  lights.push({ x, y, z: 5, r: 8, c: '#ffb060', life: 0.08, max: 0.08, a: 0.7 });
+  for (let k = 0; k < 3; k++) {
+    const a = rnd(TAU), s = rnd(15, 45);
+    part({ x, y, z: 5, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(10, 40), g: 160, life: rnd(0.15, 0.3), max: 0.3,
+      s: 1, c: pick(['#ffe2a0', '#ffb347']), add: true, drag: 1.5 });
+  }
+}
+
+// ---------- the Turbo Ram
+// E (or a click on its card): the train runs at 80 px/s for 4 s and smashes every zombie in its way,
+// brutes too, at no cost. Every run starts with it full; 200 kills (not its own) fill it again.
+// What it can do now: 'none' (no card), 'lock' (the boiler cracked: buy TURBO RAM in the tree),
+// 'on' (running), 'stop' (a station is too near), 'charge' (filling up) or 'ready'.
+function ramState() {
+  const r = G.ram;
+  if (r.on) return 'on';
+  if (!G.up.ram) return r.card ? 'lock' : 'none';
+  if (G.result || nearStop(CFG.ram.noStart)) return 'stop';
+  return r.left > 0 ? 'charge' : 'ready';
+}
+// 0..1: how full the Ram is
+const ramCharge = () => 1 - G.ram.left / CFG.ram.charge;
+// true while the train brakes for a station or stands at one, or the next one is less than d px ahead
+function nearStop(d) {
+  const st = G.station;
+  if (!st || st.state === 'done') return false;
+  return st.state !== 'ahead' || G.tr.s - st.s < d;
+}
+// A kill (not the Ram's) fills the Ram a little, also while it runs; when it gets full: a beep and a
+// gold flash on its card (once the Ram that runs is over).
+function chargeRam() {
+  const r = G.ram;
+  if (r.left <= 0) return;
+  r.left--;
+  if (r.left <= 0 && !r.on) ramFull();
+}
+function ramFull() {
+  if (!G.up.ram || G.demo) return;
+  G.ram.flash = realT;
+  SFX.ramReady();
+}
+// E or a click on the card. bot = the autopilot (it is not told no). True when the Ram starts.
+function tryRam(bot) {
+  if (G.result || !(mode === 'play' || G.demo)) return false;
+  const s = ramState(), r = G.ram;
+  if (s === 'ready') {
+    ramStart(false);
+    return true;
+  }
+  if (bot || G.demo || s === 'on' || s === 'none') return false;
+  // say why not, over the card
+  const st = G.station, m = st ? Math.max(0, Math.round((G.tr.s - st.s) / 20) * 10) : 0;
+  r.msg = { t: realT, s: s === 'lock' ? 'BUY TURBO RAM IN THE SKILL TREE.'
+    : s === 'stop' ? (st && st.state === 'ahead' ? 'STATION IN ' + m + ' M. NO RAM UNDER ' + CFG.ram.noStart / 2 + ' M.' : 'NO RAM AT A STATION.')
+      : 'KILL ' + r.left + ' MORE TO FILL IT.' };
+  SFX.deny();
+  return false;
+}
+function ramStart(taste) {
+  const r = G.ram, tr = G.tr, c = tr.cars[0];
+  Object.assign(r, { on: true, t: 0, taste: !!taste, dur: taste ? CFG.ram.tasteDur : CFG.ram.dur, kills: 0, pay: 0, hissed: false, card: true,
+    pop: 0, popT: -9 });
+  r.left = CFG.ram.charge;
+  r.uses++;
+  G.prompt = null;
+  // the dead holding the engine's nose die at once
+  for (const z of G.zombies) if (!z.dead && z.st === 2 && z.side === 0) ramKill(z);
+  // black smoke and a jet of steam from the stack, a flash of fire at the engine
+  const sx = c.x0 - c.dx * 15, sy = c.y0 - c.dy * 15;
+  for (let k = 0; k < 6; k++) {
+    const s = k & 1 ? 1 : -1;
+    part({ x: sx + rnd(-2, 2), y: sy + rnd(-1, 1), z: 12, vx: c.nx * s * rnd(10, 26) + 6, vy: c.ny * s * rnd(10, 26), vz: rnd(30, 50), g: 0,
+      life: rnd(1.6, 2.4), max: 2.4, s: rnd(3, 5), c: pick(['rgba(22,20,20,0.8)', 'rgba(34,31,30,0.75)']), grow: 5, drag: 1.1, smoke: true });
+  }
+  for (let k = 0; k < 14; k++) part({ x: sx + rnd(-1, 1), y: sy, z: 11, vx: rnd(-8, 8), vy: rnd(-5, 5), vz: rnd(60, 110), g: 0,
+    life: rnd(0.5, 0.9), max: 0.9, s: rnd(2, 3), c: pick(['rgba(240,240,232,0.8)', 'rgba(214,218,214,0.75)']), grow: 7, drag: 2.6, smoke: true });
+  lights.push({ x: c.cx, y: c.cy, z: 6, r: 40, c: '#ff8a3a', life: 0.4, max: 0.4, a: 0.8 });
+  if (G.demo) return;
+  banner('TURBO RAM!', 'THE TRAIN SMASHES THROUGH', U.amber, 3);
+  addShake(0.7);
+  kick(0, -2.5);
+  SFX.ramGo(r.dur + CFG.ram.ease);
+}
+// The scrap of the Ram's kills not shown yet pops off the engine's nose as one gold +N, thrown to the
+// left and the right in turn (bigger from 10 up: a brute).
+function popRam() {
+  const r = G.ram, c = G.tr.cars[0], v = '+' + r.pop;
+  if (!r.pop) return;
+  r.side = -r.side;
+  floatText(c.x0 + r.side * 6, c.y0 - 6, v, U.gold);
+  const t = texts[texts.length - 1];
+  if (t && t.v === v) {
+    t.vx = r.side * rnd(40, 70);
+    t.vz = rnd(26, 40);
+    t.z += r.side > 0 ? 4 : 0;
+    t.life = t.max = 0.6;
+    if (r.pop >= 10) t.s = 2;
+  }
+  r.pop = 0;
+  r.popT = G.t;
+}
+// The Ram kills z: twice the scrap, a crunch that climbs with the count, a small shake.
+function ramKill(z) {
+  const r = G.ram;
+  r.kills++;
+  r.total++;
+  r.killT = realT;
+  kill(z, 'ram', 0, 0, 0);
+  r.pay += z.paid;
+  if (G.demo) return;
+  addShake(z.big ? 0.3 : 0.12);
+  SFX.crunch(r.kills);
+}
+// Each step of the Ram: its time, the station rule, the hiss as it eases off, the end.
+function updateRam(dt) {
+  const r = G.ram;
+  if (!r.on) return;
+  if (G.result) {
+    r.on = false;
+    if (!G.demo) SFX.ramStop(0.4);
+    return;
+  }
+  r.t += dt;
+  // a station ahead: it ends now, so the train can brake in time
+  if (!r.taste && nearStop(CFG.ram.cut)) {
+    ramEnd(true);
+    return;
+  }
+  if (r.t >= r.dur && !r.hissed) {
+    r.hissed = true;
+    if (!G.demo) SFX.hiss();
+  }
+  if (r.t >= r.dur + CFG.ram.ease) {
+    ramEnd(false);
+    return;
+  }
+  ramFx();
+}
+// How strong the Ram's look is now: 0..1 (it fades as the train eases off)
+function ramK() {
+  const r = G.ram;
+  return r.on ? (r.t < r.dur ? 1 : clamp(1 - (r.t - r.dur) / CFG.ram.ease, 0, 1)) : 0;
+}
+// Sparks from every wheel and dust thrown up in front of the nose (the thick smoke from the stack
+// is in step()).
+function ramFx() {
+  const tr = G.tr, k = ramK();
+  for (const c of tr.cars) for (let i = 0; i < 2; i++) {
+    if (Math.random() > k) continue;
+    const s = Math.random() < 0.5 ? -1 : 1, a = rnd(-11, 11);
+    part({ x: c.cx + c.nx * s * 8 + c.dx * a, y: c.cy + c.ny * s * 8 + c.dy * a, z: 1, vx: -c.dx * rnd(20, 70) + c.nx * s * rnd(10, 40),
+      vy: -c.dy * rnd(20, 70) + c.ny * s * rnd(10, 40), vz: rnd(10, 45), g: 180, life: rnd(0.12, 0.3), max: 0.3, s: 1,
+      c: Math.random() < 0.5 ? '#ffe2a0' : '#ff9a3a', add: true, drag: 1 });
+  }
+  const c = tr.cars[0];
+  for (let i = 0; i < 2; i++) {
+    if (Math.random() > k) continue;
+    const s = Math.random() < 0.5 ? -1 : 1;
+    part({ x: c.x0 + c.nx * s * rnd(4, 9) + c.dx * rnd(0, 4), y: c.y0 + c.ny * s * rnd(4, 9) + c.dy * rnd(0, 4), z: 1,
+      vx: c.nx * s * rnd(30, 60) + c.dx * tr.v * 0.9, vy: c.ny * s * rnd(30, 60) + c.dy * tr.v * 0.9, vz: rnd(6, 16), g: 0,
+      life: rnd(0.4, 0.7), max: 0.7, s: rnd(2, 3), c: pick(['rgba(126,108,84,0.5)', 'rgba(104,90,70,0.5)']), grow: 5, drag: 3, smoke: true });
+  }
+}
+// The Ram is over (cut = a station is near: BRAKES!). Its rank and what it paid; after the first
+// run's taste, the boiler cracks.
+function ramEnd(cut) {
+  const r = G.ram, c = G.tr.cars[0], n = r.kills;
+  r.on = false;
+  if (G.demo) return;
+  popRam();
+  SFX.ramStop(cut ? 0.3 : 0.4);
+  if (cut) {
+    floatText(c.x0, c.y0 - 16, 'BRAKES!', U.amber);
+    if (!r.hissed) SFX.hiss();
+  }
+  // the kills made while it ran have filled it up again
+  if (r.left <= 0) ramFull();
+  if (r.taste) {
+    // (its card shows it spent, 0%, until the crack a moment later: then it locks)
+    if (n) banner('RAM ×' + n, '+' + r.pay + ' SCRAP', U.amber, 3);
+    later(0.4, () => {
+      r.crack = realT;
+      SFX.crack();
+      radio('ENGINEER', 'THE BOILER CRACKED! FIX IT IN THE SKILL TREE.');
+      const e = G.tr.cars[0], sx = e.x0 - e.dx * 15, sy = e.y0 - e.dy * 15;
+      for (let k = 0; k < 10; k++) part({ x: sx + rnd(-2, 2), y: sy, z: 10, vx: rnd(-20, 20), vy: rnd(-8, 8), vz: rnd(30, 60), g: 0,
+        life: rnd(0.6, 1), max: 1, s: rnd(2, 3), c: 'rgba(230,230,224,0.75)', grow: 6, drag: 2.2, smoke: true });
+    });
+    return;
+  }
+  if (n >= 5) {
+    const [name, col] = n >= 30 ? ['UNSTOPPABLE', '#ff7a4a'] : n >= 15 ? ['RAMPAGE', U.amber] : ['SMASH', U.gold];
+    banner(name + ' ×' + n, '+' + r.pay + ' SCRAP', col, 3);
+    SFX.rank(n);
   }
 }
 
@@ -806,21 +1264,40 @@ function streak(n) {
   s.best = Math.max(s.best, s.n);
   for (const [m, bonus] of STREAKS) if (before < m && s.n >= m) {
     G.cash += bonus;
-    banner('STREAK ×' + m, '+$' + bonus + ' BONUS', U.gold, 1);
+    G.pay.streaks += bonus;
+    // (while the Ram runs, its own banner and count stay up: the streak shows only top left)
+    if (!G.ram.on) banner('STREAK ×' + m, '+' + bonus + ' SCRAP', U.gold, 1);
     SFX.streak();
   }
 }
-// cause = 'mg' (a 25mm round), 'he' (the 105 at (cx, cy), dist away) or 'train' (run down).
-// free = not the player's kill (no score).
+// cause = 'mg' (a 25mm round), 'gun' (the flatcar gun), 'he' (the 105 at (cx, cy), dist away),
+// 'train' (run down) or 'ram' (the Turbo Ram). free = not the player's kill (no score).
 function kill(z, cause, cx, cy, dist, free) {
   if (z.dead) return;
   z.dead = true;
   z.hp = 0;
+  z.paid = 0;
   if (G.lock === z) G.lock = null;
-  const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160;
+  const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160, ram = cause === 'ram';
+  // every kill but the Ram's own fills the Ram again
+  if (!ram && !free) chargeRam();
+  // what it pays: its value (twice that for the Ram), plus SCAVENGER's share (kept as whole scrap;
+  // the rest waits for the next kill)
+  let pay = 0;
   if (sc) {
+    const base = z.value * (ram ? CFG.ram.pay : 1);
+    pay = base;
+    if (cause === 'gun') G.gun.kills++;
+    if (G.up.scav) {
+      G.scavAcc += base * G.up.scav;
+      const e = Math.floor(G.scavAcc + 1e-9);
+      G.scavAcc -= e;
+      G.scavPaid += e;
+      pay += e;
+    }
     G.kills++;
-    G.cash += z.value;
+    G.cash += pay;
+    G.pay.kills += pay;
     G.killBump = 1;
     streak(1);
   }
@@ -834,40 +1311,56 @@ function kill(z, cause, cx, cy, dist, free) {
     blood(z.x, z.y, z.big ? 10 : 4, S.h * 0.5);
     if (Math.random() < 0.4) part({ x: z.x, y: z.y, z: rnd(4, 9), vx: rnd(-10, 10), vy: rnd(-5, 5), vz: rnd(12, 30), g: -6,
       life: rnd(0.4, 0.8), max: 0.8, s: 1, c: pick(['#ff8a3a', '#ffc27a']), add: true, drag: 1.5 });
-  } else if (cause === 'train') {
-    // run down: flung aside and ahead, a burst of blood
-    const c = G.tr.cars[0], s = trackLocal(z.x, z.y, TL).u < 0 ? -1 : 1, v = rnd(40, 80), f = rnd(15, 35);
-    if (room) bs.push({ S, x: z.x, y: z.y, z: 2, vx: c.nx * s * v + c.dx * f, vy: c.ny * s * v + c.dy * f, vz: rnd(40, 80),
-      spin: rnd(10, 18) * s, rot: 0, fall: false, age: 0 });
+  } else if (cause === 'train' || ram) {
+    // run down: flung aside and ahead, a burst of blood. The Ram throws them twice as hard (and on
+    // ahead of the speeding train), and each one pops its scrap
+    const c = G.tr.cars[0], s = trackLocal(z.x, z.y, TL).u < 0 ? -1 : 1, k = ram ? 2 : 1;
+    const v = rnd(40, 80) * k, f = rnd(15, 35) * k + (ram ? G.tr.v * 0.6 : 0);
+    if (room) bs.push({ S, x: z.x, y: z.y, z: 2, vx: c.nx * s * v + c.dx * f, vy: c.ny * s * v + c.dy * f, vz: rnd(40, 80) * k,
+      spin: rnd(10, 18) * s * k, rot: 0, fall: false, age: 0 });
     else stampCorpse(S, z.x, z.y);
-    blood(z.x, z.y, z.big ? 16 : 10, S.h * 0.6);
-    if (sc) addTotal(z.x, z.y - S.h, z.value, U.gold, false);
+    blood(z.x, z.y, z.big ? 16 : ram ? 14 : 10, S.h * 0.6);
+    if (sc) {
+      // (the Ram's kills pop their +2 in turn, at most one each 0.1 s; the scrap of the kills in
+      // between goes into the next one, so they never pile up)
+      if (ram) {
+        G.ram.pop += pay;
+        if (G.t - G.ram.popT >= 0.1 || z.big) popRam();
+      } else addTotal(z.x, z.y - S.h, pay, U.gold, false);
+    }
   } else {
-    // a 25mm round: knocked over backwards, away from the gun, or off the side of the train
+    // a 25mm round: knocked over backwards, away from the gun, or off the side of the train; a
+    // flatcar gun round knocks them away from the flatcar
     if (room) {
       if (z.st === 2) {
         const c = G.tr.cars[z.car], s = z.side, v = rnd(25, 45), tv = G.tr.v * 0.6;
         bs.push(s ? { S, x: z.x, y: z.y, z: 3, vx: c.nx * s * v + c.dx * tv, vy: c.ny * s * v + c.dy * tv, vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 }
           : { S, x: z.x, y: z.y, z: 3, vx: c.dx * (v + tv), vy: c.dy * (v + tv), vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 });
+      } else if (cause === 'gun') {
+        const [gx, gy] = gunXY(), dx = z.x - gx, dy = z.y - gy, l = Math.hypot(dx, dy) || 1, v = rnd(14, 24);
+        bs.push({ S, x: z.x, y: z.y, z: 0, vx: dx / l * v, vy: dy / l * v, vz: rnd(22, 40), spin: 0, rot: 0, fall: true, age: 0 });
       } else bs.push({ S, x: z.x, y: z.y, z: 0, vx: rnd(-8, 8), vy: -rnd(10, 22), vz: rnd(22, 40), spin: 0, rot: 0, fall: true, age: 0 });
     } else stampCorpse(S, z.x, z.y);
     blood(z.x, z.y, z.big ? 14 : 8, S.h * 0.6);
     part({ x: z.x, y: z.y, z: S.h * 0.5, vx: rnd(-4, 4), vy: rnd(-6, 0), vz: rnd(4, 10), g: 0, life: 0.45, max: 0.45, s: 3,
       c: 'rgba(110,24,20,0.55)', grow: 7, drag: 3, smoke: true });
-    if (sc) addTotal(z.x, z.y - S.h, z.value, U.gold, false);
+    if (sc) addTotal(z.x, z.y - S.h, pay, U.gold, false);
     if (!G.demo) SFX.splat();
   }
+  z.paid = pay;
   if (sc && (Math.random() < 0.3 || z.big) && coins.length < 45) coins.push({ x0: z.x - G.camX, y0: z.y - G.camY - 8, t: 0, T: rnd(0.55, 0.8) });
   if (z.big && !G.demo) {
     addShake(0.15);
     hitStop(0.05, 0.3);
   }
 }
-function hitZombie(z) {
-  z.hp -= 1;
+// A 25mm hit: 1 damage, more with HEAVY ROUNDS (the demo hits for 1). Or a hit of dmg from another
+// gun (cause 'gun' = the flatcar gun).
+function hitZombie(z, dmg, cause) {
+  z.hp -= dmg != null ? dmg : G.demo ? 1 : G.up.dmg;
   z.flash = 0.1;
   if (z.hp <= 0) {
-    kill(z, 'mg', 0, 0, 0);
+    kill(z, cause || 'mg', 0, 0, 0);
     return;
   }
   // a brute takes the hit: blood and a step back (not when it holds on to the train)
@@ -880,7 +1373,7 @@ const NEAR = [];
 function mgImpact(r) {
   const x = r.bx, y = r.by, T = r.tgt;
   let hits = 0;
-  if (T) T.pending = Math.max(0, T.pending - 1);
+  if (T) T.pending = Math.max(0, T.pending - G.up.dmg);
   if (T && !T.dead && Math.hypot(T.x - x, (T.y - y) / FORE) < 6) {
     hitZombie(T);
     hits++;
@@ -966,9 +1459,9 @@ function explode(x, y, player) {
       }
       if (z.hp > 0) return;
     }
-    value += z.value;
     killed++;
     kill(z, 'he', x, y, d);
+    value += z.paid;
   });
   boomFx(x, y, true);
   if (!G.demo) {
@@ -990,7 +1483,7 @@ function explode(x, y, player) {
     if (killed) addTotal(x, y - 10, value, U.gold, true);
     if (killed >= 4) {
       const name = killed >= 25 ? 'MASSACRE' : killed >= 12 ? 'CARNAGE' : 'MULTI KILL';
-      banner(name + ' ×' + killed, '+$' + value, killed >= 12 ? '#ff7a4a' : U.amber, 2);
+      banner(name + ' ×' + killed, '+' + value + ' SCRAP', killed >= 12 ? '#ff7a4a' : U.amber, 2);
     }
   }
 }
@@ -1038,14 +1531,15 @@ function updateFireSpots(dt) {
 // ---------- the autopilot (the title demo, and tests through window.__sr.bot)
 // It shoots the dead on the train first, then the ones near the survivors, then the ones on the
 // rails nearest the engine, then whoever is nearest the train; the 105 goes to a crowd on the rails
-// well ahead of the train.
+// well ahead of the train, and the Turbo Ram to a Dead Wall or a crowd on the rails.
 function autopilot(dt) {
   G.botT -= dt;
   if (G.botT <= 0 || !G.botZ || G.botZ.dead) {
     G.botT = 0.2;
     let bestZ = null, bs = 1e9;
     for (const z of G.zombies) {
-      if (z.dead) continue;
+      // (the dead at the Depot gate in the first run are left for the Ram taste)
+      if (z.dead || z.gate && (!G.ram.uses || G.ram.on)) continue;
       const sx = z.x - G.camX, sy = z.y - G.camY;
       if (sx < 6 || sx > W - 6 || sy < 26 || sy > H - 6) continue;
       let s;
@@ -1064,6 +1558,9 @@ function autopilot(dt) {
     if (q.dead || q.st !== 1 || q.y - G.camY < 24 || q.y - G.camY > H) continue;
     if (G.tr.s - trackLocal(q.x, q.y, TL).a > 110) { he = q; break; }
   }
+  // the Turbo Ram: at a Dead Wall, at PRESS E!, or when 6 or more dead stand on the rails ahead (but
+  // not when a Dead Wall is less than 600 m ahead: it saves the Ram for that)
+  if (ramState() === 'ready' && (G.prompt || wallAhead(130) || G.railAhead >= 6 && !wallAhead(1200))) tryRam(true);
   return { z: G.botZ && !G.botZ.dead ? G.botZ : null, he };
 }
 // the title demo: bursts of 25mm and a 105 now and then
@@ -1091,7 +1588,25 @@ function botPlay(dt) {
     M.inside = true;
   }
   G.trigger = !!b.z;
-  if (b.he && G.heReload <= 0) fireHE(true, b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel);
+  if (b.he && G.up.he && G.heReload <= 0) fireHE(true, b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel);
+}
+
+// ---------- the ride
+// The train has ridden d px further: it pays 1 scrap every CFG.pay.dist px (20 m), and passing the
+// best km of all runs shows NEW BEST.
+function ride(d) {
+  G.ride += d;
+  const due = Math.floor(G.ride / CFG.pay.dist) - G.pay.dist;
+  if (due > 0) {
+    G.cash += due;
+    G.pay.dist += due;
+  }
+  G.maxKm = Math.max(G.maxKm, DK());
+  if (!G.newBest && G.oldBest > 0 && km2(G.maxKm) > G.oldBest) {
+    G.newBest = true;
+    banner('NEW BEST', 'PAST ' + G.oldBest.toFixed(2) + ' KM. KEEP GOING!', U.gold, 1);
+    SFX.streak();
+  }
 }
 
 // ---------- one step of the game (STEP seconds)
@@ -1106,15 +1621,21 @@ function step(dt) {
     tr.v = Math.min(tr.v, Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - st.stopS)) + 1.5);
     if (tr.s - st.stopS < 0.6) {
       tr.v = 0;
-      st.state = 'boarding';
-      st.t = 0;
-      banner('COVER THE SURVIVORS', 'THEY RUN FOR THE TRAIN', '#8fd18a', 3);
-      SFX.radio();
+      trainStops(st);
     }
   } else if (st && st.state === 'boarding') tr.v = 0;
-  else tr.v = Math.min(CFG.train.cruise, tr.v + CFG.train.accel * dt);
+  else {
+    // the Turbo Ram: up to its top speed in 0.4 s, then back down to the cruise over 1 s (also after
+    // a Ram cut short). Otherwise the train gets back up to its cruise.
+    const R = CFG.ram, cr = CFG.train.cruise, up = (R.speed - cr) / R.rise, down = (R.speed - cr) / R.ease;
+    if (G.ram.on && G.ram.t < G.ram.dur) tr.v = Math.min(R.speed, tr.v + up * dt);
+    else if (tr.v > cr) tr.v = Math.max(cr, tr.v - down * dt);
+    else tr.v = Math.min(cr, tr.v + CFG.train.accel * dt);
+  }
+  updateRam(dt);
   tr.s -= tr.v * dt;
   layoutTrain();
+  if (!G.demo && !G.result) ride(tr.v * dt);
   for (let k = 0; k < CAR.n; k++) if (tr.hit[k] > 0) tr.hit[k] -= dt;
   tr.hpShown = Math.max(tr.hp, tr.hpShown - dt * 12);
   // the little fires it runs over go out
@@ -1127,13 +1648,16 @@ function step(dt) {
   }
   tr.smokeT -= dt;
   if (tr.smokeT <= 0 && G.result !== 'lost') {
-    const c = tr.cars[0];
-    tr.smokeT = tr.v > 1 ? 0.16 : 0.4;
-    part({ x: c.x0 - c.dx * 15 + rnd(-1, 1), y: c.y0 - c.dy * 15, z: 10, vx: rnd(-3, 3) + 3, vy: rnd(-2, 2), vz: rnd(14, 22), g: 0,
-      life: rnd(1.6, 2.6), max: 2.6, s: rnd(2, 3), c: pick(['rgba(40,38,36,0.6)', 'rgba(56,52,48,0.55)']), grow: 3, drag: 0.8, smoke: true });
+    // (the Turbo Ram: thick black smoke, fast)
+    const c = tr.cars[0], k = ramK();
+    tr.smokeT = tr.v > 1 ? 0.16 - k * 0.11 : 0.4;
+    part({ x: c.x0 - c.dx * 15 + rnd(-1, 1), y: c.y0 - c.dy * 15, z: 10, vx: rnd(-3, 3) + 3 + k * rnd(8, 16), vy: rnd(-2, 2), vz: rnd(14, 22) + k * 18, g: 0,
+      life: rnd(1.6, 2.6) - k * 0.6, max: 2.6, s: rnd(2, 3) + k, c: k > 0.5 ? pick(['rgba(20,18,18,0.7)', 'rgba(32,30,28,0.65)'])
+        : pick(['rgba(40,38,36,0.6)', 'rgba(56,52,48,0.55)']), grow: 3 + k * 2, drag: 0.8, smoke: true });
   }
   updateHeli(dt);
   placeCamera();
+  if (G.up.gun && !G.result) updateGun(dt);
   for (let i = G.timers.length - 1; i >= 0; i--) {
     const tm = G.timers[i];
     tm.t -= dt;
@@ -1155,7 +1679,7 @@ function step(dt) {
       G.mgCd -= dt;
       while (G.mgCd <= 0 && !G.overheat) {
         fireMG(true, G.camX + G.aimSX, G.camY + G.aimSY);
-        G.mgCd += 1 / CFG.mg.rate;
+        G.mgCd += 1 / G.up.rate;
         findLock();
         if (G.heat >= 1) {
           G.overheat = true;
@@ -1177,7 +1701,7 @@ function step(dt) {
   } else {
     G.aimSX = W / 2;
     G.aimSY = H / 2;
-    if (mode === 'title') attract(dt);
+    if (mode === 'title' || mode === 'depot') attract(dt);
     else if (mode === 'ending') {
       G.endT += dt;
       if (G.endT > 3.4 && (G.result !== 'safe' || tr.v < 0.5) || G.endT > 14) endGame();
@@ -1189,6 +1713,7 @@ function step(dt) {
   G.killBump = Math.max(0, G.killBump - dt * 6);
   G.cashPulse = Math.max(0, G.cashPulse - dt * 3);
   updateStation(dt);
+  if (!G.demo) updateWalls();
   updateZombies(dt);
   updateRounds(dt);
   updateBodies(dt);

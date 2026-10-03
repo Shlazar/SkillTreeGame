@@ -69,12 +69,14 @@ function addBoom(x, y, R, n, T, cap, delay) {
   booms.push({ x, y, r: R, t: -(delay || 0), T, cap: cap || 7, pf });
 }
 
-// A floating "+N" over (x, y). A total close to a recent one of the same color adds up instead.
-function addTotal(x, y, v, c, big) {
+// A floating "+N" over (x, y) ("-N" when neg: damage). A total close to a recent one of the same
+// color adds up instead.
+function addTotal(x, y, v, c, big, neg) {
+  const sign = neg ? '-' : '+';
   for (const t of texts) {
-    if (t.tot && t.c === c && t.life > t.max * 0.35 && Math.abs(t.x - x) < 24 && Math.abs(t.y - y) < 18) {
+    if (t.tot && t.c === c && t.sign === sign && t.life > t.max * 0.35 && Math.abs(t.x - x) < 24 && Math.abs(t.y - y) < 18) {
       t.val += v;
-      t.v = '+' + fmt(t.val);
+      t.v = sign + fmt(t.val);
       t.life = t.max;
       t.hot = 0.05;
       if (t.val >= 20) t.s = 2;
@@ -82,7 +84,7 @@ function addTotal(x, y, v, c, big) {
     }
   }
   if (texts.length >= 40) return;
-  texts.push({ tot: true, x, y, z: 16, vz: big ? 40 : 28, vx: 0, s: big ? 2 : 1, c, val: v, v: '+' + fmt(v),
+  texts.push({ tot: true, sign, x, y, z: 16, vz: big ? 40 : 28, vx: 0, s: big ? 2 : 1, c, val: v, v: sign + fmt(v),
     life: big ? 1 : 0.75, max: big ? 1 : 0.75, hot: 0.06 });
 }
 // A word that floats up from (x, y), like OVERHEAT.

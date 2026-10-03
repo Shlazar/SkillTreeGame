@@ -3,7 +3,7 @@
 // gap limit how often a sound can play, tone and nz make one synth note or one noise burst.
 // SFX holds every game sound; drone() is the helicopter's rotor under everything.
 
-const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null };
+const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null, roar: null };
 
 function audioInit() {
   if (Au.ctx) {
@@ -103,7 +103,8 @@ function nz(d, v, ft, f, q, f2, delay) {
 
 // The helicopter: rotor noise through a low-pass filter, chopped by the blades (an LFO on its
 // loudness), and a faint turbine whine. v = loudness 0..1 (0 = silent); it glides to the new level.
-function drone(v) {
+// k = 0..1: how much higher it all plays (the Turbo Ram).
+function drone(v, k) {
   const a = Au.ctx;
   if (!a || !Au.noise) return;
   if (!Au.hum) {
@@ -134,11 +135,17 @@ function drone(v) {
       lfo.start();
       whine.start();
       Au.hum = out;
+      Au.humP = [f.frequency, lfo.frequency, whine.frequency];
     } catch (e) {
       return;
     }
   }
-  Au.hum.gain.setTargetAtTime(Au.muted ? 0 : v * 0.18, a.currentTime, 0.5);
+  const t = a.currentTime;
+  k = k || 0;
+  Au.hum.gain.setTargetAtTime(Au.muted ? 0 : v * 0.18, t, 0.5);
+  Au.humP[0].setTargetAtTime(340 * (1 + 0.7 * k), t, 0.25);
+  Au.humP[1].setTargetAtTime(6.4 + 3.6 * k, t, 0.25);
+  Au.humP[2].setTargetAtTime(1850 * (1 + 0.3 * k), t, 0.25);
 }
 
 // Every game sound, built from tone() and nz().
@@ -218,29 +225,129 @@ const SFX = {
     tone(196, 0.16, 'square', 0.03, 185);
     tone(196, 0.2, 'square', 0.03, 165, 0.2);
   },
-  horn() {
-    // the train's horn: three sawtooth notes of a chord, a little flat at first, through a low-pass filter
+  horn(k, delay, len) {
+    // the train's horn: three sawtooth notes of a chord, a little flat at first, through a low-pass
+    // filter. k = pitch (1 = normal), delay (s), len = how long it blows (s)
     const a = Au.ctx;
     if (!a || Au.muted) return;
-    const t = a.currentTime, f = a.createBiquadFilter(), g = a.createGain();
+    k = k || 1;
+    len = len || 1.1;
+    const t = a.currentTime + (delay || 0), f = a.createBiquadFilter(), g = a.createGain();
     f.type = 'lowpass';
-    f.frequency.value = 1400;
+    f.frequency.value = 1400 * k;
     f.Q.value = 0.8;
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.05, t + 0.08);
-    g.gain.setValueAtTime(0.05, t + 0.75);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+    g.gain.setValueAtTime(0.05, t + len - 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
     for (const fr of [311, 370, 466]) {
       const o = a.createOscillator();
       o.type = 'sawtooth';
-      o.frequency.setValueAtTime(fr * 0.97, t);
-      o.frequency.linearRampToValueAtTime(fr, t + 0.12);
+      o.frequency.setValueAtTime(fr * k * 0.97, t);
+      o.frequency.linearRampToValueAtTime(fr * k, t + 0.12);
       o.connect(f);
       o.start(t);
-      o.stop(t + 1.15);
+      o.stop(t + len + 0.05);
     }
     f.connect(g);
     g.connect(Au.master);
+  },
+  ramGo(d) {
+    // TURBO RAM: the horn twice (the second higher), a burst, and the roar for d s
+    SFX.horn(1, 0, 0.45);
+    SFX.horn(1.26, 0.42, 0.8);
+    nz(0.7, 0.14, 'lowpass', 2400, 0.7, 160);
+    SFX.roar(d, true);
+  },
+  roar(d, fresh) {
+    // the Ram's roar for d s: it rises from low (fresh), or comes straight back at full pitch (after a
+    // pause), holds, and dies away over its last second. Au.roar keeps it, so ramStop can cut it.
+    SFX.ramStop(0.05);
+    const a = Au.ctx;
+    if (!a || Au.muted || d < 0.1) return;
+    const t = a.currentTime, f = a.createBiquadFilter(), g = a.createGain(), os = [];
+    const rise = fresh ? Math.min(1.4, d * 0.5) : 0.1, fall = Math.min(1, d * 0.5), hold = Math.max(rise, d - fall);
+    f.type = 'lowpass';
+    f.Q.value = 1.4;
+    f.frequency.setValueAtTime(fresh ? 260 : 1300, t);
+    f.frequency.exponentialRampToValueAtTime(1300, t + rise);
+    f.frequency.setValueAtTime(1300, t + hold);
+    f.frequency.exponentialRampToValueAtTime(300, t + d);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.055, t + Math.min(0.25, rise));
+    g.gain.setValueAtTime(0.055, t + hold);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    for (const [fr, type] of [[46, 'sawtooth'], [69.5, 'square'], [92.5, 'sawtooth']]) {
+      const o = a.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(fresh ? fr : fr * 2.2, t);
+      o.frequency.exponentialRampToValueAtTime(fr * 2.2, t + rise);
+      o.frequency.setValueAtTime(fr * 2.2, t + hold);
+      o.frequency.exponentialRampToValueAtTime(fr * 1.2, t + d);
+      o.connect(f);
+      o.start(t);
+      o.stop(t + d + 0.05);
+      os.push(o);
+    }
+    f.connect(g);
+    g.connect(Au.master);
+    Au.roar = { g, os };
+  },
+  ramStop(fade) {
+    // the roar fades out over fade s (the Ram was cut short, the game paused, the train was lost)
+    const a = Au.ctx, R = Au.roar;
+    if (!a || !R) return;
+    Au.roar = null;
+    const t = a.currentTime, p = R.g.gain, e = fade || 0.25;
+    p.cancelScheduledValues(t);
+    p.setValueAtTime(Math.max(0.0001, p.value), t);
+    p.exponentialRampToValueAtTime(0.0001, t + e);
+    for (const o of R.os) {
+      try { o.stop(t + e + 0.05); } catch (err) { /* it has stopped already */ }
+    }
+  },
+  crunch(n) {
+    // the Ram smashes one: a crunch that climbs with the count
+    if (!gap('crunch', 34)) return;
+    const p = Math.min(2.4, 1 + n * 0.045);
+    nz(0.12, 0.1, 'lowpass', 900 * p, 0.8, 150);
+    tone(84 * p, 0.09, 'triangle', 0.06, 44 * p);
+    nz(0.05, 0.05, 'bandpass', 620 * p, 1.6);
+  },
+  hiss() {
+    // a long hiss of steam
+    nz(1.6, 0.075, 'highpass', 4200, 0.7, 1800);
+    nz(1.3, 0.04, 'bandpass', 2600, 0.6, 1400, 0.05);
+  },
+  ramReady() {
+    // the Ram is full again: a rising beep and a chime
+    tone(784, 0.07, 'square', 0.02);
+    tone(1175, 0.1, 'square', 0.02, null, 0.08);
+    tone(2349, 0.16, 'sine', 0.018, null, 0.17);
+  },
+  crack() {
+    // the boiler cracks: a clank of metal, then steam
+    tone(196, 0.3, 'square', 0.04, 82);
+    nz(0.35, 0.09, 'bandpass', 1400, 3, 380);
+    tone(1480, 0.12, 'triangle', 0.02, 1100, 0.04);
+    nz(1.2, 0.05, 'highpass', 3600, 0.7, 1500, 0.15);
+  },
+  slow() {
+    // time slows down (PRESS E!)
+    tone(330, 0.7, 'sine', 0.06, 82);
+    nz(0.6, 0.05, 'lowpass', 900, 0.7, 110);
+  },
+  rank(n) {
+    // the Ram's rank: SMASH, RAMPAGE, UNSTOPPABLE (one more note for each)
+    const notes = n >= 30 ? [523, 659, 784, 1047] : n >= 15 ? [523, 659, 784] : [523, 784];
+    notes.forEach((f, i) => tone(f, 0.12 + (i === notes.length - 1 ? 0.18 : 0), 'triangle', 0.045, null, i * 0.08));
+    tone(98, 0.35, 'sine', 0.07, 55);
+  },
+  gun() {
+    // the flatcar gun: a light, dry knock
+    if (!gap('gun', 60)) return;
+    nz(0.05, 0.035, 'bandpass', 1500, 1.2, 600);
+    tone(230, 0.04, 'square', 0.011, 120);
   },
   clack() {
     // the wheels over a rail joint
@@ -263,5 +370,36 @@ const SFX = {
     // a burst of radio static and a beep
     nz(0.22, 0.03, 'bandpass', 1900, 2.5);
     tone(1000, 0.07, 'square', 0.012, null, 0.03);
+  },
+  tick() {
+    // a row of the summary counts up
+    if (!gap('tick', 40)) return;
+    tone(1500, 0.025, 'square', 0.016);
+    nz(0.015, 0.012, 'highpass', 5000);
+  },
+  total() {
+    // the summary's total: a coin chime on a rising chord
+    tone(659, 0.12, 'triangle', 0.04);
+    tone(988, 0.16, 'triangle', 0.04, null, 0.07);
+    tone(2637, 0.08, 'sine', 0.016, null, 0.14);
+    tone(3520, 0.1, 'sine', 0.01, null, 0.17);
+  },
+  buy(big) {
+    // a skill tree node bought: two rising notes and a coin (a big unlock adds a low thump and a
+    // third note)
+    tone(523, 0.09, 'triangle', 0.04);
+    tone(784, 0.14, 'triangle', 0.045, null, 0.07);
+    if (big) {
+      tone(1047, 0.22, 'triangle', 0.04, null, 0.15);
+      tone(98, 0.3, 'sine', 0.08, 55);
+    }
+    tone(2637, 0.06, 'sine', 0.016, null, 0.15);
+    tone(3520, 0.09, 'sine', 0.011, null, 0.18);
+    nz(0.03, 0.012, 'highpass', 6500, null, null, 0.15);
+  },
+  deny() {
+    // that can't be done yet: a short low buzz
+    if (!gap('deny', 150)) return;
+    tone(150, 0.12, 'square', 0.025, 110);
   }
 };
