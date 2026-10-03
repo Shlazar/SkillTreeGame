@@ -1,284 +1,343 @@
-/* The dead: hand-drawn pixel sprites (13 x 17, facing right, feet at the bottom middle) drawn as
- * billboards that stand on whole art pixels. Falls, tumbles and bodies are made from the standing
- * frame by pixel rotation, so every pose keeps the same pixels. The atlas holds a code per pixel
- * (hair, skin, shirt...) and a normal; each zombie brings its own skin, shirt and trousers, and the
- * shader colours, lights and heats the codes. */
+// sprites.js - every sprite is drawn in code at startup (no image files).
+// Inside: the palettes (P for pixel art, U for the UI), the zombie drawings (dWalker, dRunner,
+// dBrute) with their colour sets, makeZSet() that builds a zombie's frames, the props (trees,
+// bushes, rocks, stumps, wrecks, barrels, crates, ruined walls) and the icons.
+//
+// A zombie drawing takes (r, f, c): r = rectangle painter r(x, y, w, h, color) from pix(),
+// f = walk frame 0 or 1, c = its colours. Inside, o() is like r() but moves up 1 px on frame 1
+// (a body bob). The drawings face right. The rows below are art data: x, y, w, h, color.
 
-const ZTOP = [
-  '.....hHh.....',
-  '....hSSSs....',
-  '....SSSeS....',
-  '....kSSSs....',
-  '.....bWs.....',
-  '.....ks......',
-  '...qcCCCSSSs.',
-  '..qcCsBCCssSS',
-  '..qcCCCBCc...',
-  '..qcBCsCCc...',
-  '...qcCCCc....',
-];
-const ZLEGS = {
-  stand: ['...pPPPPp....', '...pPp.PP....', '...pP..pP....', '...pP..pP....', '...pP..pP....', '...FF..FF....'],
-  a: ['...pPPPPp....', '..pPp..PP....', '..pP....PP...', '.pP.....pP...', '.pP......pP..', '.FF......FF..'],
-  b: ['...pPPPPp....', '....pPPp.....', '....pPP......', '....pPp......', '....pPp......', '....FFF......'],
-  c: ['...pPPPPp....', '..PPp..pP....', '..PP....pP...', '.PP.....pP...', '.Pp......pP..', '.FF......FF..'],
+// ---------- palette
+const P = {
+  out: '#0a0b0e', dk: '#07070a', em: '#ff6a28', em2: '#ffc27a',
+  i0: '#1c1e23', i1: '#2d3038', i2: '#434753', i3: '#626875', i4: '#8b919c', st: '#b4b9c1',
+  c1: '#561b1f', c2: '#7a2a2a', c3: '#a33b2c', rag0: '#3a1614',
+  l0: '#281f19', l1: '#3b2e25', l2: '#56422f', w0: '#3a2718', w1: '#5b3f27', w2: '#7b5735',
+  bone: '#d6cdb6', rim: '#b9c2cc', rim2: '#8d96a3',
+  bl0: '#2a0e0c', bl1: '#4a1512', bl2: '#6a1c18'
 };
-// codes: H h hair, S s k skin, W bone, C c q shirt, P p trousers, B blood, b gore, F boot, e eye; 15 outline
-const ZCHARS = 'HhSskWCcqPpBbFe';
-const EMPTY13 = '.............';
-function zFrame(legs, bob) {
-  const top = bob ? [EMPTY13].concat(ZTOP.slice(0, ZTOP.length - 1)) : ZTOP;
-  return top.concat(legs);
-}
-// rotate a frame about its feet (nearest pixel) into a 23x23 frame whose feet sit at (11, 21)
-function rotFrame(rows, ang) {
-  const w = rows[0].length, h = rows.length, px = (w - 1) / 2, py = h - 1, S = 23, out = [];
-  const c = Math.cos(ang), s = Math.sin(ang);
-  for (let y = 0; y < S; y++) {
-    let row = '';
-    for (let x = 0; x < S; x++) {
-      const dx = x - 11, dy = y - 21;
-      const ix = Math.round(c * dx + s * dy + px), iy = Math.round(-s * dx + c * dy + py);
-      row += ix >= 0 && iy >= 0 && ix < w && iy < h ? rows[iy][ix] : '.';
-    }
-    out.push(row);
+// UI colours (text and highlights)
+const U = {
+  ink: '#e8dfc8', dim: '#9a9ca3', faint: '#5d616b', gold: '#e3b04b', red: '#d0553f', teal: '#56c2a8',
+  blue: '#9fd3f2', amber: '#e8913a'
+};
+// zombie colours: skins (dark to light), shirts, trousers, hair
+const ZSKIN = [
+  ['#3f4a37', '#5f6d50', '#808f69', '#a6b388'],     // grave green
+  ['#45433f', '#67645d', '#8d887d', '#b2ab9b'],     // ash grey
+  ['#4f4632', '#71654a', '#978863', '#b9ab80'],     // sallow
+  ['#3a4548', '#5a686a', '#7f8f8d', '#a4b2ac']      // drowned
+];
+const ZSHIRT = [
+  ['#3a1412', '#6a2420', '#94372c'], ['#1a2238', '#2c3d62', '#45608e'], ['#4e4a42', '#7d776b', '#aaa290'],
+  ['#262f1c', '#3f4c2c', '#5c6b40'], ['#2e2016', '#4f3826', '#6f5034'], ['#4a3a14', '#7a6224', '#a68a3c']
+];
+const ZPANTS = [['#16181d', '#262931', '#3a3e4a'], ['#221a14', '#352920', '#4c3b2c'], ['#1e2420', '#303a33', '#46524a']];
+const ZHAIR = ['#1c1612', '#2e2620', '#4a4238', '#3a1e14'];
+
+// ---------- zombie drawings
+// Walker: shuffles, one arm reaching out, head pushed forward. 9x16 px.
+function dWalker(r, f, c) {
+  const b = f ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
+  const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
+  // legs: a dragging stride on frame 0, together on frame 1
+  if (!f) {
+    r(2, 11, 1, 4, p1); r(5, 11, 1, 4, p0); r(2, 13, 1, 1, s1);
+    r(1, 15, 2, 1, P.dk); r(5, 15, 2, 1, P.dk);
+  } else {
+    r(3, 11, 1, 4, p1); r(5, 11, 1, 4, p0);
+    r(2, 15, 2, 1, P.dk); r(5, 15, 2, 1, P.dk);
   }
-  return out;
+  o(2, 10, 4, 1, p2); o(2, 10, 1, 1, p1);
+  // torso: a torn shirt lit on the left, a wound, a ragged hem
+  o(2, 5, 4, 5, h1); o(2, 5, 1, 5, h2); o(5, 6, 1, 4, h0); o(3, 5, 2, 1, h2);
+  o(3, 7, 1, 1, s1);
+  o(4, 8, 1, 2, P.bl2); o(4, 9, 1, 1, P.bl1);
+  o(2, 9, 1, 1, h0); o(5, 9, 1, 1, P.rag0);
+  // the back arm hangs
+  o(1, 6, 1, 3, s1); o(1, 9, 1, 1, s0);
+  // head pushed forward: lit top and left, a dark socket, one glowing eye, a slack jaw
+  o(3, 1, 4, 4, s2); o(3, 1, 4, 1, s3); o(3, 1, 1, 3, s3); o(6, 2, 1, 3, s1);
+  o(3, 0, 3, 1, c.hr); o(3, 1, 1, 1, c.hr);
+  o(5, 2, 1, 1, P.em); o(4, 2, 1, 1, s0);
+  o(5, 4, 2, 1, s0); o(6, 4, 1, 1, P.bl2);
+  o(4, 5, 1, 1, s1);
+  // the front arm reaches out, hand open
+  o(5, 6, 1, 1, h2); o(6, 6, 2, 1, s2); o(8, 6, 1, 1, s3); o(6, 7, 2, 1, s1); o(8, 7, 1, 1, s2);
 }
-function trim(rows) {
-  let t = 0, b = rows.length - 1, l = rows[0].length, r = -1;
-  while (t < b && !/[^.]/.test(rows[t])) t++;
-  while (b > t && !/[^.]/.test(rows[b])) b--;
-  for (let y = t; y <= b; y++) for (let x = 0; x < rows[y].length; x++) if (rows[y][x] !== '.') { l = Math.min(l, x); r = Math.max(r, x); }
-  return rows.slice(t, b + 1).map((row) => row.slice(l, r + 1));
-}
-// a body lying flat: on its back, then squashed to the 2:1 ground
-function lying(rows) {
-  const flat = trim(rotFrame(rows, -Math.PI / 2)), out = [];
-  for (let y = flat.length - 1; y >= 0; y -= 2) out.unshift(flat[y]);
-  return out;
-}
-// Scale3x, then the centre pixel of every 2x2 block: a sprite 1.5x bigger without blurring
-function scale15(rows) {
-  const w = rows[0].length, h = rows.length, at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? '.' : rows[y][x]);
-  const big = [];
-  for (let y = 0; y < h * 3; y++) big.push(new Array(w * 3).fill('.'));
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const A = at(x - 1, y - 1), B = at(x, y - 1), C = at(x + 1, y - 1), D = at(x - 1, y), Ee = at(x, y), F = at(x + 1, y);
-    const G = at(x - 1, y + 1), Hh = at(x, y + 1), I = at(x + 1, y + 1), e = [Ee, Ee, Ee, Ee, Ee, Ee, Ee, Ee, Ee];
-    if (B !== Hh && D !== F) {
-      e[0] = D === B ? D : Ee;
-      e[1] = (D === B && Ee !== C) || (B === F && Ee !== A) ? B : Ee;
-      e[2] = B === F ? F : Ee;
-      e[3] = (D === B && Ee !== G) || (D === Hh && Ee !== A) ? D : Ee;
-      e[5] = (B === F && Ee !== I) || (Hh === F && Ee !== C) ? F : Ee;
-      e[6] = D === Hh ? D : Ee;
-      e[7] = (D === Hh && Ee !== I) || (Hh === F && Ee !== G) ? Hh : Ee;
-      e[8] = Hh === F ? F : Ee;
-    }
-    for (let k = 0; k < 9; k++) big[y * 3 + ((k / 3) | 0)][x * 3 + (k % 3)] = e[k];
+// Runner: fast, bent low, arms clawing. 10x14 px.
+function dRunner(r, f, c) {
+  const b = f ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
+  const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
+  if (!f) {
+    r(1, 10, 1, 2, p1); r(0, 12, 1, 1, p1); r(0, 13, 2, 1, P.dk);
+    r(6, 10, 1, 2, p0); r(7, 12, 1, 1, p0); r(7, 13, 2, 1, P.dk);
+  } else {
+    r(3, 10, 1, 3, p1); r(5, 10, 1, 3, p0); r(2, 13, 2, 1, P.dk); r(5, 13, 2, 1, P.dk);
   }
-  const out = [];
-  for (let y = 0; y < Math.ceil(h * 1.5); y++) {
-    let row = '';
-    for (let x = 0; x < Math.ceil(w * 1.5); x++) {
-      const p = (i, j) => (big[y * 2 + j] || [])[x * 2 + i] || '.';
-      let c = p(1, 1);
-      if (c !== 'e') for (const [i, j] of [[0, 0], [1, 0], [0, 1]]) if (p(i, j) === 'e') { c = 'e'; break; }
-      row += c;
-    }
-    out.push(row);
+  o(2, 9, 5, 1, p2);
+  // torso leaning forward
+  o(2, 6, 4, 3, h1); o(3, 5, 4, 1, h1); o(4, 4, 3, 1, h2); o(2, 6, 1, 3, h2); o(5, 7, 1, 2, h0);
+  o(3, 7, 1, 1, P.bl2);
+  // arms: the back one swung behind, the front one clawing ahead
+  o(1, 6, 1, 1, s1); o(0, 7, 1, 2, s1);
+  o(6, 5, 2, 1, s2); o(8, 6, 1, 1, s3); o(7, 6, 1, 1, s1);
+  // head low and forward
+  o(6, 1, 3, 3, s2); o(6, 1, 3, 1, s3); o(6, 1, 1, 2, s3); o(9, 2, 1, 2, s1);
+  o(6, 0, 3, 1, c.hr);
+  o(8, 2, 1, 1, P.em); o(7, 2, 1, 1, s0); o(8, 3, 1, 1, s0);
+}
+// Brute: bloated and slow, ribs through the skin, long heavy arms. 15x21 px.
+function dBrute(r, f, c) {
+  const b = f ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
+  const [s0, s1, s2, s3] = c.sk, [h0, h1, h2] = c.sh, [p0, p1, p2] = c.pa;
+  if (!f) {
+    r(3, 15, 3, 5, p1); r(9, 15, 3, 5, p0); r(2, 20, 4, 1, P.dk); r(9, 20, 4, 1, P.dk); r(3, 15, 1, 4, p2);
+  } else {
+    r(4, 15, 3, 5, p1); r(8, 15, 3, 5, p0); r(3, 20, 4, 1, P.dk); r(8, 20, 4, 1, P.dk); r(4, 15, 1, 4, p2);
   }
-  return out;
+  // belly and chest, bare and bloated
+  o(3, 7, 9, 8, s2); o(3, 7, 2, 8, s3); o(10, 8, 2, 7, s1); o(5, 13, 5, 2, s1);
+  for (let k = 0; k < 3; k++) o(6, 8 + k * 2, 3, 1, P.bone);
+  o(5, 8, 1, 5, P.bl1); o(9, 9, 1, 4, P.bl2); o(6, 9, 3, 1, P.bl0);
+  o(3, 14, 9, 1, p2);
+  // shoulders under a torn vest
+  o(2, 6, 11, 2, h1); o(2, 6, 11, 1, h2); o(11, 7, 2, 4, h0); o(2, 7, 2, 5, h1);
+  // a small head sunk between the shoulders
+  o(6, 1, 5, 5, s2); o(6, 1, 5, 1, s3); o(6, 1, 1, 4, s3); o(10, 2, 1, 4, s1);
+  o(6, 0, 4, 1, c.hr);
+  o(9, 3, 1, 1, P.em); o(8, 3, 1, 1, s0); o(8, 5, 3, 1, s0); o(9, 5, 1, 1, P.bone);
+  // arms down to the knees, the front one reaching
+  o(0, 8, 3, 7, s1); o(0, 8, 1, 7, s2); o(0, 15, 3, 2, s0);
+  o(12, 8, 3, 3, s2); o(13, 11, 2, 4, s1); o(12, 15, 3, 2, s2); o(14, 15, 1, 1, s3);
 }
 
-/* ----------------------------------------------------------------- atlas
- * Frames: per set, walk 0-3, stand 4, die 5-7, tumble 8-15, corpse 16-17. Each frame gets a
- * one-pixel outline. Texture rows run from the bottom, so a frame rect is (x, y, w, h) upwards. */
-const ATLAS_W = 512, ATLAS_H = 256;
-const ZF = { walk: 0, stand: 4, die: 5, tumble: 8, corpse: 16, n: 18 };
-const atlasData = new Uint8Array(ATLAS_W * ATLAS_H * 4);
-const frameData = new Float32Array(64 * 2 * 4);
-let frameCount = 0;
-function addFrame(rows, ax, ay, flat) {
-  const code = (ch) => ZCHARS.indexOf(ch);
-  const w = rows[0].length + 2, h = rows.length + 2;
-  if (addFrame.x + w > ATLAS_W) { addFrame.x = 0; addFrame.y += addFrame.rowH; addFrame.rowH = 0; }
-  const X = addFrame.x, Y = addFrame.y;
-  addFrame.x += w + 1; addFrame.rowH = Math.max(addFrame.rowH, h + 1);
-  const on = (r, k) => r >= 0 && r < rows.length && k >= 0 && k < rows[0].length && rows[r][k] !== '.';
-  for (let r = -1; r <= rows.length; r++) {
-    // the row's extent, for a rounded normal across the body
-    let l = 99, rr = -1;
-    for (let k = 0; k < rows[0].length; k++) if (on(r, k)) { l = Math.min(l, k); rr = Math.max(rr, k); }
-    for (let k = -1; k <= rows[0].length; k++) {
-      const tx = X + k + 1, ty = Y + (rows.length - r);       // flip rows: texture y runs up
-      const o = (ty * ATLAS_W + tx) * 4;
-      if (on(r, k)) {
-        const span = Math.max(1, rr - l + 1);
-        let nx = clamp(((k - l + 0.5) / span - 0.5) * 1.5, -0.8, 0.8);
-        let ny = !on(r - 1, k) ? 0.55 : !on(r + 1, k) ? -0.35 : 0.05;
-        if (flat) { nx *= 0.5; ny = ny * 0.3 + 0.6; }
-        atlasData[o] = code(rows[r][k]); atlasData[o + 1] = Math.round((nx * 0.5 + 0.5) * 255); atlasData[o + 2] = Math.round((ny * 0.5 + 0.5) * 255); atlasData[o + 3] = 255;
-      } else if (on(r - 1, k) || on(r + 1, k) || on(r, k - 1) || on(r, k + 1)) {
-        atlasData[o] = 15; atlasData[o + 1] = 128; atlasData[o + 2] = flat ? 200 : 140; atlasData[o + 3] = 255;
+// ---------- zombie frame sets
+// Every frame has n = normal, w = white (hit flash), h = hot (thermal camera), s = shadow, each also
+// mirrored (nf, wf, hf, sf) for a zombie that walks left. Plus the body turned on its side (dead),
+// the 4 turns of a thrown body (spin) and two corpses with a pool of blood.
+function makeZSet(w, h, draw, pal, shw) {
+  const S = { walk: [] };
+  for (let f = 0; f < 2; f++) {
+    const raw = pix(w, h, (r) => draw(r, f, pal));
+    const n = selOut(rimLight(raw, '#e8e2cc', 0.22));
+    const hot = outline(hotSpr(raw), '#161616');
+    const nf = flipH(n), hf = flipH(hot);
+    S.walk.push({
+      n, nf, w: tint(n, '#fff3dc', 0.75), wf: tint(nf, '#fff3dc', 0.75), h: hot, hf,
+      s: unitShadow(n, shw), sf: unitShadow(nf, shw)
+    });
+  }
+  const c0 = S.walk[0].n;
+  S.ax = c0.width >> 1;
+  S.ay = c0.height - 1;
+  S.h = c0.height;
+  S.shp = S.walk[0].s.pad || 0;
+  S.dead = rot90(c0);
+  S.deadH = rot90(S.walk[0].h);
+  // a body thrown by a blast turns over in the air: 4 quarter turns (normal and hot)
+  S.spin = [c0, S.dead, rot90(S.dead), rot90(rot90(S.dead))];
+  S.spinH = [S.walk[0].h, S.deadH, rot90(S.deadH), rot90(rot90(S.deadH))];
+  S.dax = S.dead.width >> 1;
+  S.day = S.dead.height - 1;
+  const raw0 = pix(w, h, (r) => draw(r, 0, pal));
+  S.corpses = [corpseSpr(raw0, false), corpseSpr(raw0, true)];
+  S.cax = S.corpses[0].width >> 1;
+  S.cay = S.corpses[0].height - 2;
+  return S;
+}
+// ZS[type] = the colour variants of each type (0 walker, 1 runner, 2 brute)
+const ZS = [[], [], []];
+
+// ---------- props
+// Pine, h px tall. pal = [dark, mid, light]; the lit side is on the left (from Ball x Archers).
+function pineSpr(h, rng, pal) {
+  const w = (Math.round(h * 0.62) | 1);
+  return pix(w, h, (r) => {
+    const cx = w >> 1;
+    r(cx, h - 4, 1, 4, '#24180f');
+    const tiers = h > 22 ? 4 : 3, bot = h - 3;
+    for (let t = 0; t < tiers; t++) {
+      const y0 = Math.round(bot * t / tiers * 0.78), y1 = Math.min(bot, Math.round(bot * (t + 1) / tiers * 0.78 + bot * 0.24));
+      const maxw = Math.round((w / 2) * (0.45 + 0.55 * (t + 1) / tiers));
+      for (let y = y0; y < y1; y++) {
+        const u = (y - y0) / Math.max(1, y1 - y0 - 1), hw = Math.max(0, Math.round(u * maxw));
+        for (let x = cx - hw; x <= cx + hw; x++) {
+          const side = (x - cx) / (hw + 0.01);
+          let c = side < -0.3 ? pal[2] : side < 0.35 ? pal[1] : pal[0];
+          if (y === y1 - 1 && rng() < 0.5) c = pal[0];
+          if (rng() < 0.06) c = pal[0];
+          r(x, y, 1, 1, c);
+        }
       }
     }
-  }
-  const f = frameCount++;
-  frameData.set([X, Y, w, h], f * 4);
-  frameData.set([ax + 1, ay + 1, flat ? 1 : 0, 0], (64 + f) * 4);
-  return f;
+  });
 }
-addFrame.x = 0; addFrame.y = 0; addFrame.rowH = 0;
-function buildSet(big) {
-  const f = big ? scale15 : (r) => r, k = big ? 1.5 : 1, base = zFrame(ZLEGS.stand, false);
-  const feet = (rows) => [Math.floor(rows[0].length / 2), 0];
-  const first = frameCount;
-  for (const fr of [zFrame(ZLEGS.a, true), zFrame(ZLEGS.b, false), zFrame(ZLEGS.c, true), zFrame(ZLEGS.b, false), base]) { const r = f(fr); addFrame(r, ...feet(r), false); }
-  for (const a of [-0.5, -1.0, -1.38]) { const r = f(rotFrame(base, a)); addFrame(r, Math.round(11 * k), Math.round(1 * k), false); }
-  for (let j = 0; j < 8; j++) { const r = f(trim(rotFrame(base, j * TAU / 8))); addFrame(r, Math.floor(r[0].length / 2), Math.floor(r.length / 2), false); }
-  for (const fr of [lying(base), lying(zFrame(ZLEGS.a, false))]) { const r = big ? scale15(fr) : fr; addFrame(r, Math.floor(r[0].length / 2), Math.floor(r.length / 2), true); }
-  return first;
+// Leafy tree: a lumpy round crown lit from the top left, on a short trunk.
+function oakSpr(h, rng, autumn) {
+  const w = Math.round(h * 0.95) | 1, cr = w / 2 - 0.5, th = Math.round(h * 0.32);
+  const pal = autumn ? ['#2a1a10', '#4a2a16', '#6e3f1e', '#94582a'] : ['#18240f', '#26361a', '#384d25', '#506633'];
+  const lumps = [];
+  for (let k = 0; k < 6; k++) lumps.push([rng() * TAU, 0.18 + rng() * 0.16]);
+  return pix(w, h, (r) => {
+    const cx = (w - 1) / 2, cy = (h - th) / 2;
+    r(Math.round(cx) - 1, h - th - 2, 2, th + 2, '#2a1d13'); r(Math.round(cx) - 1, h - th - 2, 1, th + 2, '#3b2a1c');
+    r(Math.round(cx) + 1, h - 3, 1, 1, '#2a1d13'); r(Math.round(cx) - 2, h - 1, 1, 1, '#2a1d13');
+    for (let y = 0; y < h - th + 1; y++) for (let x = 0; x < w; x++) {
+      const dx = (x - cx) / cr, dy = (y - cy) / (cy + 0.5), a = Math.atan2(dy, dx);
+      let rim = 0.86;
+      for (const [la, lr] of lumps) rim += lr * Math.max(0, Math.cos(a - la)) * 0.45;
+      const d = Math.hypot(dx, dy);
+      if (d > rim) continue;
+      const l = -dx * 0.55 - dy * 0.85 + (rng() - 0.5) * 0.45 + (rim - d) * 0.2;
+      r(x, y, 1, 1, l > 0.62 ? pal[3] : l > 0.12 ? pal[2] : l > -0.45 ? pal[1] : pal[0]);
+    }
+  });
 }
-const ZSET = [buildSet(false), buildSet(true)];
-const atlasTex = new THREE.DataTexture(atlasData, ATLAS_W, ATLAS_H, THREE.RGBAFormat);
-atlasTex.magFilter = THREE.NearestFilter; atlasTex.minFilter = THREE.NearestFilter; atlasTex.needsUpdate = true;
-const frameTex = new THREE.DataTexture(frameData, 64, 2, THREE.RGBAFormat, THREE.FloatType);
-frameTex.magFilter = THREE.NearestFilter; frameTex.minFilter = THREE.NearestFilter; frameTex.needsUpdate = true;
+// Dead tree: a grey trunk and bare branches.
+function deadSpr(h, rng) {
+  const w = Math.round(h * 0.7) | 1;
+  return pix(w, h, (r, g) => {
+    const cx = w >> 1;
+    r(cx, h - Math.round(h * 0.6), 2, Math.round(h * 0.6), '#3d342c'); r(cx, h - Math.round(h * 0.6), 1, Math.round(h * 0.6), '#5a4e42');
+    const branch = (x, y, len, dir, depth) => {
+      const x1 = x + Math.round(Math.cos(dir) * len), y1 = y - Math.round(Math.abs(Math.sin(dir)) * len);
+      pl(g, x, y, x1, y1, depth ? '#4a4038' : '#3d342c');
+      if (depth < 2) for (let k = 0; k < 2; k++) branch(x1, y1, len * 0.6, dir + (k ? 0.6 : -0.6) + (rng() - 0.5) * 0.3, depth + 1);
+    };
+    const top = h - Math.round(h * 0.6);
+    branch(cx, top + 2, h * 0.28, -2.3 + rng() * 0.3, 0);
+    branch(cx + 1, top + 1, h * 0.3, -0.8 + rng() * 0.3, 0);
+    branch(cx, top + Math.round(h * 0.2), h * 0.2, -2.6, 1);
+  });
+}
+// Bush: a low lumpy shrub.
+function bushSpr(w, rng) {
+  const h = Math.round(w * 0.62);
+  return pix(w, h, (r) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const dx = (x + 0.5) / w * 2 - 1, dy = (y + 0.5) / h * 2 - 1;
+      if (dx * dx + dy * dy * 0.9 + (rng() - 0.5) * 0.25 > 1 || (y > h * 0.8 && Math.abs(dx) > 0.7)) continue;
+      const l = -dx * 0.5 - dy * 0.9 + (rng() - 0.5) * 0.5;
+      r(x, y, 1, 1, l > 0.5 ? '#4b5c30' : l > 0 ? '#34452a' : l > -0.5 ? '#26341f' : '#182214');
+    }
+  });
+}
+// Rock (from Ball x Archers).
+function rockSpr(w, h, rng) {
+  return pix(w, h, (r) => {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const dx = (x + 0.5) / w * 2 - 1, dy = (y + 0.5) / h * 2 - 1;
+      if (dx * dx + dy * dy * 1.1 > 1 - rng() * 0.14) continue;
+      const l = -dx * 0.55 - dy * 0.85 + (rng() - 0.5) * 0.25;
+      r(x, y, 1, 1, l > 0.55 ? '#8c8a80' : l > 0.1 ? '#6a6861' : l > -0.45 ? '#4b4a45' : '#302f2c');
+    }
+  });
+}
+function stumpSpr() {
+  return pix(5, 6, (r) => {
+    r(0, 1, 5, 5, '#3b2a1c'); r(0, 1, 2, 5, '#4f3a26'); r(4, 1, 1, 5, '#2a1d13');
+    r(0, 0, 5, 2, '#8a7454'); r(1, 0, 3, 1, '#a38b66'); r(2, 1, 1, 1, '#6b5840');
+  });
+}
+// A wrecked car seen from above and the side; burnt = a black and rust shell.
+function wreckSpr(rng, burnt, paint) {
+  const C = burnt ? ['#141110', '#2a201a', '#4a3424'] : paint;
+  return pix(24, 13, (r) => {
+    r(3, 9, 4, 3, '#101012'); r(17, 9, 4, 3, '#101012'); r(4, 10, 2, 1, '#2a2a2e'); r(18, 10, 2, 1, '#2a2a2e');
+    r(1, 5, 22, 6, C[1]); r(1, 5, 22, 1, C[2]); r(1, 10, 22, 1, C[0]); r(1, 5, 1, 6, C[2]);
+    r(5, 1, 13, 5, C[1]); r(5, 1, 13, 1, C[2]); r(5, 1, 1, 4, C[2]); r(17, 2, 1, 4, C[0]);
+    r(6, 2, 5, 2, burnt ? '#0a0908' : '#26303f'); r(12, 2, 5, 2, burnt ? '#0a0908' : '#324155');
+    r(6, 2, 1, 1, burnt ? '#1a1410' : '#6f8aa6');
+    r(22, 6, 1, 1, burnt ? '#2a201a' : '#d8cfb6'); r(1, 6, 1, 1, burnt ? '#2a201a' : '#8a2a22');
+    r(9, 7, 1, 3, C[0]); r(15, 7, 1, 3, C[0]);
+    for (let k = 0; k < (burnt ? 14 : 5); k++) r(1 + ((rng() * 22) | 0), 2 + ((rng() * 9) | 0), 1 + ((rng() * 2) | 0), 1, rng() < 0.5 ? '#5e3a22' : '#3a2416');
+  });
+}
+function barrelSpr(rng) {
+  const base = rng() < 0.5 ? ['#3a1e14', '#6a3420', '#8a4a2a'] : ['#1e2a2a', '#2f4440', '#46605a'];
+  return pix(6, 8, (r) => {
+    r(0, 1, 6, 7, base[1]); r(0, 1, 2, 7, base[2]); r(5, 1, 1, 7, base[0]);
+    r(0, 0, 6, 2, '#2a2420'); r(1, 0, 4, 1, '#5a5048');
+    r(0, 3, 6, 1, base[0]); r(0, 6, 6, 1, base[0]);
+    r(3, 5, 1, 1, '#a07040');
+  });
+}
+function crateSpr() {
+  return pix(8, 8, (r) => {
+    r(0, 2, 8, 6, '#5b3f27'); r(0, 2, 2, 6, '#7b5735'); r(7, 2, 1, 6, '#3a2718');
+    r(0, 0, 8, 3, '#8a6a44'); r(0, 0, 8, 1, '#a38558'); r(0, 4, 8, 1, '#3a2718'); r(3, 2, 1, 6, '#3a2718');
+  });
+}
+// A broken stretch of field wall, w px long: stones, mortar, a jagged top, moss at the foot.
+function wallSpr(w, rng) {
+  const H = 8;
+  return pix(w, H, (r) => {
+    let top = 2 + ((rng() * 3) | 0);
+    for (let x = 0; x < w; x++) {
+      if (rng() < 0.25) top = clamp(top + (rng() < 0.5 ? -1 : 1), 1, 5);
+      const ends = x < 2 || x > w - 3 ? 2 : 0;
+      for (let y = top + ends; y < H; y++) {
+        const row = (y / 3) | 0, brick = ((x + (row & 1) * 2) / 4) | 0;
+        let c = hrnd(brick, row, 7) < 0.5 ? '#6b675e' : '#5a564e';
+        if (y % 3 === 0 || (x + (row & 1) * 2) % 4 === 0) c = '#3e3b35';
+        if (y === top + ends) c = '#8f897c';
+        if (y >= H - 2 && rng() < 0.4) c = '#39462a';
+        r(x, y, 1, 1, c);
+      }
+    }
+  });
+}
+// A prop: its sprite, its cast shadow and its anchor (the middle of the bottom row).
+function prop(spr, block, extra) {
+  return Object.assign({ spr, sh: castShadow(spr), ax: spr.width >> 1, ay: spr.height - 1, block: block || 0 }, extra || {});
+}
+const PROPS = { pine: [], oak: [], fall: [], dead: [], bush: [], rock: [], big: [], stump: [], wreck: [], burnt: [], barrel: [], crate: [], wall: [] };
 
-// pale, sickly skin and bright clothes, so the dead stand out from the ground
-const SKINS = ['#bfe0a0', '#e2dcb8', '#b7c9b4', '#d6c49e'].map(hexRGB);
-const SHIRTS = ['#4f7fd0', '#d04a3c', '#ece6d2', '#6fae4c', '#e8b83c', '#a46ad0'].map(hexRGB);
-const PANTS = ['#4c5a86', '#7a5a3e', '#6a6e62'].map(hexRGB);
-const glslList = (name, list) => `vec3 ${name}(float i) {` + list.map((c, k) => `${k < list.length - 1 ? `if (i < ${k}.5) ` : ''}return vec3(${c.map((v) => v.toFixed(3)).join(', ')});`).join(' ') + '}';
+// ---------- icons
+const ICON = {};
 
-/* --------------------------------------------------------------- drawing */
-const ZMAXI = 4600;
-const zGeo = new THREE.InstancedBufferGeometry();
-zGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0], 3));
-zGeo.setIndex([0, 1, 2, 0, 2, 3]);
-const ZA = new THREE.InstancedBufferAttribute(new Float32Array(ZMAXI * 4), 4), ZB = new THREE.InstancedBufferAttribute(new Float32Array(ZMAXI * 4), 4), ZC = new THREE.InstancedBufferAttribute(new Float32Array(ZMAXI * 4), 4);
-for (const a of [ZA, ZB, ZC]) { a.setUsage(THREE.DynamicDrawUsage); }
-zGeo.setAttribute('zA', ZA); zGeo.setAttribute('zB', ZB); zGeo.setAttribute('zC', ZC);
-zGeo.instanceCount = 0;
-const zombieMat = new THREE.ShaderMaterial({
-  uniforms: Object.assign({ tAtlas: { value: atlasTex }, tFrames: { value: frameTex } }, U),
-  vertexShader: GLSL_BILL + `
-    attribute vec4 zA;      // feet x, y, z; frame
-    attribute vec4 zB;      // flip, flat, fade, flash
-    attribute vec4 zC;      // skin, shirt, trousers, heat
-    uniform sampler2D tFrames;
-    varying vec2 vUv; varying vec4 vB, vC; varying vec3 vW;
-    void main() {
-      int f = int(zA.w + 0.5);
-      vec4 rect = texelFetch(tFrames, ivec2(f, 0), 0), anc = texelFetch(tFrames, ivec2(f, 1), 0);
-      vec2 corner = position.xy;
-      bool flip = zB.x > 0.5;
-      vec2 anchor = vec2(flip ? rect.z - anc.x : anc.x, anc.y);
-      vec3 P = billboard(zA.xyz, rect.zw, anchor, corner, zB.y);
-      #ifdef XRAY
-        P += uCV * 0.7;          // only something well in front (a tree, a car) counts as hiding it
-      #endif
-      vUv = (rect.xy + vec2(flip ? 1.0 - corner.x : corner.x, corner.y) * rect.zw) / vec2(${ATLAS_W}.0, ${ATLAS_H}.0);
-      vB = zB; vC = zC; vW = P;
-      gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
-      if (uPass == 2 && zB.y > 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);    // bodies on the ground cast no shadow
-    }`,
-  fragmentShader: GLSL_GB + `
-    uniform sampler2D tAtlas;
-    varying vec2 vUv; varying vec4 vB, vC; varying vec3 vW;
-    ${glslList('skinC', SKINS)}
-    ${glslList('shirtC', SHIRTS)}
-    ${glslList('pantsC', PANTS)}
-    void main() {
-      vec4 a = texture2D(tAtlas, vUv);
-      if (a.a < 0.5) discard;
-      if (vB.z < 0.999 && bayer4(gl_FragCoord.xy) > vB.z) discard;
-      float code = floor(a.r * 255.0 + 0.5);
-      vec2 nv = a.gb * 2.0 - 1.0;
-      if (vB.x > 0.5) nv.x = -nv.x;
-      vec3 n = vB.y > 0.5 ? normalize(vec3(0.0, 1.0, 0.0) + uCR * nv.x * 0.6) : normalize(uCR * nv.x + uCU * nv.y + uCV * sqrt(max(0.05, 1.0 - dot(nv, nv))));
-      vec3 skin = skinC(vC.x), shirt = shirtC(vC.y), pants = pantsC(vC.z), col;
-      float cls = vB.y > 0.5 ? 210.0 : 230.0, hk = 1.0;           // the living get the gunship's light
-      if (code < 0.5) { col = P_hair * 1.2; hk = 0.85; }
-      else if (code < 1.5) { col = P_hair; hk = 0.85; }
-      else if (code < 2.5) col = skin;
-      else if (code < 3.5) col = skin * 0.86;
-      else if (code < 4.5) col = skin * 0.62;
-      else if (code < 5.5) { col = P_bone; hk = 0.8; }
-      else if (code < 6.5) { col = shirt; hk = 0.82; }
-      else if (code < 7.5) { col = shirt * 0.8; hk = 0.82; }
-      else if (code < 8.5) { col = shirt * 0.62; hk = 0.8; }
-      else if (code < 9.5) { col = pants; hk = 0.78; }
-      else if (code < 10.5) { col = pants * 0.7; hk = 0.76; }
-      else if (code < 11.5) { col = P_blood; hk = 0.95; }
-      else if (code < 12.5) { col = P_gore; hk = 0.9; }
-      else if (code < 13.5) { col = P_boot; hk = 0.55; }
-      else if (code < 14.5) { col = vB.y > 0.5 ? P_gore : vec3(1.0, 0.48, 0.29); cls = vB.y > 0.5 ? 200.0 : 40.0; }   // the eye glows while it walks
-      else { col = vec3(0.04, 0.05, 0.09); hk = 0.55; }
-      if (vB.w > 0.0) { col = vec3(1.0, 0.97, 0.9); cls = 60.0; hk = 1.25; }                  // hit: a white flash
-      gl_FragColor = gOut(col, cls, n, vW, vC.w * hk);
-    }`,
-});
-const zombieMesh = new THREE.Mesh(zGeo, zombieMat);
-zombieMesh.frustumCulled = false;
-// the parts of the dead hidden behind trees or wrecks, drawn again as a dim glowing silhouette
-const zombieXray = new THREE.Mesh(zGeo, new THREE.ShaderMaterial({
-  uniforms: zombieMat.uniforms, depthFunc: THREE.GreaterDepth, depthWrite: false, defines: { XRAY: 1 },
-  vertexShader: zombieMat.vertexShader,
-  fragmentShader: GLSL_GB + `
-    uniform sampler2D tAtlas;
-    varying vec2 vUv; varying vec4 vB, vC; varying vec3 vW;
-    void main() {
-      vec4 a = texture2D(tAtlas, vUv);
-      if (a.a < 0.5 || vB.y > 0.5) discard;
-      bool rim = floor(a.r * 255.0 + 0.5) > 14.5;                   // the outline, and a light fill
-      if (!rim && bayer4(gl_FragCoord.xy) > 0.25) discard;
-      gl_FragColor = gOut(rim ? vec3(1.0, 0.62, 0.42) : vec3(1.0, 0.85, 0.65), rim ? 18.0 : 10.0, uCV, vW, vC.w * 0.85);
-    }`,
-}));
-zombieXray.frustumCulled = false;
-// drawn after the scenery and before the other zombies, so only scenery (not the crowd) hides anyone
-zombieXray.renderOrder = 8; zombieMesh.renderOrder = 9;
-
-// one sprite: world feet (x, y, z), frame in the set, flip, flat, fade, flash, colours, heat
-let zN = 0;
-function zPut(x, y, z, frame, flip, flat, fade, flash, skin, shirt, pants, heat) {
-  if (zN >= ZMAXI) return;
-  const i = zN * 4, a = ZA.array, b = ZB.array, c = ZC.array;
-  a[i] = x; a[i + 1] = y; a[i + 2] = z; a[i + 3] = frame;
-  b[i] = flip ? 1 : 0; b[i + 1] = flat ? 1 : 0; b[i + 2] = fade; b[i + 3] = flash;
-  c[i] = skin; c[i + 1] = shirt; c[i + 2] = pants; c[i + 3] = heat;
-  zN++;
+// Build every sprite. Called once at startup.
+function initSprites() {
+  const rng = mulberry(2024);
+  // the dead: 8 walkers, 4 runners and 3 brutes, each in its own clothes
+  const pal = (k) => ({ sk: ZSKIN[k % 4], sh: ZSHIRT[(k * 5 + 1) % 6], pa: ZPANTS[(k * 2) % 3], hr: ZHAIR[(k * 3) % 4] });
+  for (let k = 0; k < 8; k++) ZS[0].push(makeZSet(9, 16, dWalker, pal(k), 7));
+  for (let k = 0; k < 4; k++) ZS[1].push(makeZSet(10, 14, dRunner, pal(k + 3), 6));
+  for (let k = 0; k < 3; k++) ZS[2].push(makeZSet(15, 21, dBrute, pal(k + 1), 12));
+  // trees and scenery
+  const PINE = [['#142018', '#1d2b20', '#2f4229'], ['#101a14', '#18241b', '#283a26'], ['#1a261c', '#243323', '#35492d']];
+  for (let k = 0; k < 10; k++) PROPS.pine.push(prop(pineSpr(24 + ((rng() * 16) | 0), rng, PINE[k % 3]), 3, { tree: true }));
+  for (let k = 0; k < 6; k++) PROPS.oak.push(prop(oakSpr(20 + ((rng() * 10) | 0), rng, false), 3, { tree: true }));
+  for (let k = 0; k < 3; k++) PROPS.fall.push(prop(oakSpr(20 + ((rng() * 8) | 0), rng, true), 3, { tree: true }));
+  for (let k = 0; k < 3; k++) PROPS.dead.push(prop(deadSpr(18 + ((rng() * 10) | 0), rng), 2, { tree: true }));
+  for (let k = 0; k < 6; k++) PROPS.bush.push(prop(bushSpr(7 + ((rng() * 7) | 0), rng), 0));
+  for (let k = 0; k < 10; k++) { const w = 3 + ((rng() * 4) | 0); PROPS.rock.push(prop(rockSpr(w, Math.max(2, (w * 0.7) | 0), rng), 0)); }
+  for (let k = 0; k < 4; k++) { const w = 8 + ((rng() * 6) | 0); PROPS.big.push(prop(rockSpr(w, (w * 0.75) | 0, rng), 4)); }
+  PROPS.stump.push(prop(stumpSpr(), 2));
+  const PAINT = [['#1f2a3a', '#33465e', '#4f6a86'], ['#3a1612', '#6a2a22', '#8e3a30'], ['#4a4434', '#7a7056', '#a49a78'], ['#1e2a1e', '#344a34', '#4f6a4c']];
+  for (let k = 0; k < 4; k++) PROPS.wreck.push(prop(wreckSpr(rng, false, PAINT[k]), 9, { wreck: true }));
+  for (let k = 0; k < 2; k++) PROPS.burnt.push(prop(wreckSpr(rng, true), 9, { wreck: true }));
+  for (let k = 0; k < 2; k++) PROPS.barrel.push(prop(barrelSpr(rng), 3));
+  PROPS.crate.push(prop(crateSpr(), 4));
+  for (let k = 0; k < 8; k++) PROPS.wall.push(prop(wallSpr(10 + ((rng() * 12) | 0), rng), 0, { wall: true }));
+  // icons
+  ICON.coin = outline(pix(5, 5, (r) => {
+    r(1, 0, 3, 1, '#e8bd55'); r(0, 1, 5, 3, '#d9a33a'); r(1, 4, 3, 1, '#a8761f'); r(1, 1, 1, 2, '#f6dc8e'); r(3, 2, 1, 2, '#a8761f');
+  }), '#1a1206');
+  ICON.skull = outline(pix(5, 5, (r) => {
+    r(0, 0, 5, 3, P.bone); r(1, 3, 3, 2, P.bone); r(1, 1, 1, 1, P.dk); r(3, 1, 1, 1, P.dk); r(2, 3, 1, 1, '#8a826f');
+  }), P.out);
+  ICON.fuel = outline(pix(5, 6, (r) => {
+    r(0, 1, 5, 5, '#b8402e'); r(0, 1, 1, 5, '#e06a4f'); r(4, 2, 1, 4, '#7a2a22'); r(1, 0, 2, 1, '#8b919c'); r(1, 3, 3, 1, '#e8913a');
+  }), P.out);
+  ICON.zed = outline(pix(5, 5, (r) => {
+    r(0, 0, 5, 5, '#808f69'); r(0, 0, 5, 1, '#a6b388'); r(3, 1, 1, 1, P.em); r(1, 1, 1, 1, '#3f4a37'); r(1, 3, 3, 1, '#3f4a37');
+  }), P.out);
+  ICON.mg = outline(pix(3, 7, (r) => {
+    r(0, 2, 3, 5, '#b8862f'); r(0, 2, 1, 5, '#e3b04b'); r(1, 0, 1, 2, '#b4b9c1'); r(0, 1, 3, 1, '#8b919c');
+  }), P.out);
+  ICON.he = outline(pix(5, 9, (r) => {
+    r(0, 3, 5, 6, '#626875'); r(0, 3, 1, 6, '#8b919c'); r(1, 1, 3, 2, '#b8862f'); r(2, 0, 1, 1, '#e3b04b'); r(0, 7, 5, 1, '#b8862f');
+  }), P.out);
 }
-// which way a sprite faces: right on screen when it moves right
-const facesRight = (vx, vz) => vx * CR.x + vz * CR.z >= 0;
-// the bodies on the ground, newest kept
-const CORPSES = [];
-const CORPSE_MAX = 2400;
-function addCorpse(z, now) {
-  CORPSES.push({ x: z.x, z: z.z, big: z.big, frame: Math.floor(z.seed * 2), flip: z.seed > 0.5, skin: z.skin, shirt: z.shirt, pants: z.pants, heat: z.heat, t: now });
-  if (CORPSES.length > CORPSE_MAX) CORPSES.shift();
-}
-function clearCorpses() { CORPSES.length = 0; }
-// every zombie, falling body, thrown body and corpse, written for this frame
-function writeZombies(live, dying, now) {
-  zN = 0;
-  for (const c of CORPSES) {
-    const cool = smoothstep(0, 80, now - c.t);
-    zPut(c.x, 0.02, c.z, ZSET[c.big ? 1 : 0] + ZF.corpse + c.frame, c.flip, true, 1, 0, c.skin, c.shirt, c.pants, lerp(c.heat, 0.36, cool));
-  }
-  for (const z of live) {
-    const set = ZSET[z.big ? 1 : 0], frame = set + ((z.vis || 1) < 0.25 ? ZF.stand : ZF.walk + (Math.floor(z.phase / (Math.PI / 2)) & 3));
-    zPut(z.x, 0, z.z, frame, !z.right, false, 1, z.flash > 0 ? 1 : 0, z.skin, z.shirt, z.pants, z.heat);
-  }
-  for (const z of dying) {
-    const set = ZSET[z.big ? 1 : 0];
-    if (z.mode === 'fall') zPut(z.x, 0, z.z, set + ZF.die + Math.min(2, Math.floor(z.t / 0.12)), !z.right, false, 1, z.flash > 0 ? 1 : 0, z.skin, z.shirt, z.pants, z.heat);
-    else zPut(z.x, z.y, z.z, set + ZF.tumble + (Math.floor(z.t * 14 + z.seed * 8) & 7), !z.right, false, 1, z.flash > 0 ? 1 : 0, z.skin, z.shirt, z.pants, z.heat);
-  }
-  zGeo.instanceCount = zN;
-  ZA.needsUpdate = true; ZB.needsUpdate = true; ZC.needsUpdate = true;
-}
-function initZombies() { R3.scene.add(zombieMesh, zombieXray); }
