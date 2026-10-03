@@ -402,7 +402,7 @@ function clearStreams() {
 // ---------- each step of the dead
 const ZL = { u: 0, a: 0, c: 1, x: 0 };
 function updateZombies(dt) {
-  const zs = G.zombies, tr = G.tr, hw = CAR.half, safe = G.result === 'safe';
+  const zs = G.zombies, tr = G.tr, hw = CAR.half, safe = G.result === 'won';
   if (!G.result) spawn(dt);
   updateBooms(dt);
   updateHits(dt);

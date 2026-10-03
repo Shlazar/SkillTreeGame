@@ -199,11 +199,11 @@ function dressStop(st) {
 // true when (x, y) is on the Depot's ground (no telegraph poles there; stations have stationZone)
 function depotZone(x, y) {
   trackLocal(x, y, SZ);
-  return Math.abs(SZ.a - DEPOT_S - STOP_OFF) < 130 && Math.abs(SZ.u) < 150;
+  return Math.abs(SZ.a - stopHouseS(DEPOT)) < 130 && Math.abs(SZ.u) < 150;
 }
 // Where each stop's yard is: [s of its house, side] for the Depot and every station.
 function yards() {
-  return [[DEPOT_S + STOP_OFF, 1], [DEPOT_S + STOP_OFF, -1], ...STATIONS.map((d) => [sAtKm(d.km), d.side])];
+  return [[stopHouseS(DEPOT), 1], [stopHouseS(DEPOT), -1], ...STATIONS.map((d) => [stopHouseS(d), d.side])];
 }
 
 // ---------- the wires between the telegraph poles

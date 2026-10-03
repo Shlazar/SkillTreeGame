@@ -27,3 +27,9 @@ for (let n = 1; n < STOPS.length; n++) {
     rescue: [4, 8, 10].includes(n) ? 'rescue-' + n : null, finale: n === 12, events: [] });
 }
 const legDef = (n) => LEGS[n - 1] || null;
+// Scenery uses the same complete line on every retry, so cached ground stays consistent.
+const STATIONS = STOPS.slice(1);
+// A leg record is made only when progress needs to be stored.
+function legSave(n) {
+  return SAVE.legs[n] || (SAVE.legs[n] = { won: false, stars: [false, false, false], paid: {} });
+}

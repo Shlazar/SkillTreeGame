@@ -267,8 +267,8 @@ function boot() {
     HORDE,
     // the sprites, for a test sheet
     art: () => ({ TRAIN, FOOT, HSPR, ROTOR, STATION, SURV, ZS, ICON, TURRET }),
-    // start(from): a run from 'depot' (the default) or a reached station ('farm', 'mill')
-    start: (from) => startGame(from || 'depot'),
+    // start(): ride the next leg; start(n) selects a leg for tests.
+    start: (n) => startGame(n),
     title: toTitle,
     // depot(tab): the Depot screen with its tree tab open
     depot: (tab) => toDepot(tab || 'tree'),
@@ -288,27 +288,24 @@ function boot() {
     trigger: (on) => { G.trigger = !!on && mode === 'play'; },
     he: () => tryHE(),
     thermal: (k) => setThermal(k),
-    // hp(v): set the train's health. jump(px): move the train on to px before where it brakes for
-    // the next station (or, past the last one, before the safe zone); the dead are left behind.
+    // hp(v): set health. jump(px): move to px before this leg's goal; leave the dead behind.
     hp: (v) => { G.tr.hp = G.tr.hpShown = v; },
     jump: (px) => {
-      const st = G.station, to = (st && st.state === 'ahead' ? st.stopS : G.goalS) + px;
+      const to = G.goalS + Math.max(0, Number(px) || 0);
       G.tr.s = Math.min(G.tr.s, to);
       for (const z of G.zombies) z.gone = true;
       layoutTrain();
       placeCamera();
     },
-    // km(x): move the train to x km from the Depot (stations and walls behind it are passed by;
-    // the dead are left behind; the move does not pay)
+    // km(x): move within this leg without paying. Arrival still goes through braking.
     km: (x) => {
       if (G.demo) return;
-      const s = sAtKm(x), tr = G.tr;
+      const s = clamp(sAtKm(x), G.goalS, G.tr.startS), tr = G.tr;
       tr.s = s;
       tr.fy = yOfS(s);
-      for (const st of G.stations) if (st.stopS > s + 1) st.state = 'done';
       for (const w of G.walls) if (w.s > s) w.placed = w.warned = w.awake = true;
       for (const z of G.zombies) z.gone = true;
-      G.maxKm = Math.max(G.maxKm, x);
+      G.maxKm = Math.max(G.maxKm, kmAt(s));
       layoutTrain();
       placeCamera();
     },

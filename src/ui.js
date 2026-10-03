@@ -90,20 +90,14 @@ function drawHUD() {
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
   if (Au.muted) text('MUTE', W - 4, 22, U.faint, { align: 'right' });
 }
-// What comes next up the line, for the top bar: [text, color]. A Dead Wall within 150 m comes
-// first; then the next station; past the last one, the safe zone.
+// The destination for this leg, with metres left to the train's actual stopping point.
 function nextLabel() {
-  const k = DK(), st = G.station;
-  for (const w of G.walls) {
-    const m = w.km - k;
-    if (m < 0.15 && m > -CFG.wall.len / CFG.line.km) return [m > 0.005 ? 'DEAD WALL ' + fmtM(m) : 'DEAD WALL!', U.red];
-  }
-  if (st) return ['NEXT: ' + st.name + ' ' + fmtM(Math.max(0, kmAt(st.s) - k)), U.blue];
-  return ['SAFE ZONE ' + fmtM(Math.max(0, CFG.line.end - k)), U.green];
+  const st = G.station, to = legDef(G.leg).to;
+  if (G.result === 'won') return ['ARRIVED: ' + to.name, U.green];
+  const distance = Math.max(0, G.tr.s - (st ? st.stopS : G.goalS));
+  return ['NEXT: ' + to.name + ' ' + Math.round(distance / 2 / 10) * 10 + ' M', U.blue];
 }
-// The route from the Depot (0 km) to the safe zone wall, between x0 and x1 on the top bar: the
-// stations (blue, green once reached), the Dead Walls (red), your best (a white tick), this run's
-// ride (gold), the train, and what comes next.
+// This leg alone, between x0 and x1: start, destination, any Dead Walls, and the train's progress.
 function drawRoute(x0, x1) {
   let [lab, lc] = nextLabel();
   let lw = tw(lab), w = x1 - x0 - lw - 20;
@@ -114,30 +108,24 @@ function drawRoute(x0, x1) {
   }
   text(lab, x1, 6, lc, { align: 'right' });
   if (w < 40) return;
-  const end = CFG.line.end, X = (k) => x0 + Math.round(w * clamp(k / end, 0, 1)), y = 9;
+  const start = G.tr.startS, end = G.goalS, len = Math.max(1, start - end);
+  const X = (s) => x0 + Math.round(w * clamp((start - s) / len, 0, 1)), y = 9;
   ctx.fillStyle = '#3a3e48';
   ctx.fillRect(x0, y, w, 1);
-  for (let k = 1; k < end; k++) ctx.fillRect(X(k), y - 1, 1, 3);
+  for (let i = 1; i < 4; i++) ctx.fillRect(x0 + Math.round(w * i / 4), y - 1, 1, 3);
   // this run's ride
-  const k0 = kmAt(G.tr.startS), k1 = DK();
   ctx.fillStyle = '#b8862f';
-  ctx.fillRect(X(k0), y, Math.max(0, X(k1) - X(k0)), 1);
-  // the walls, the best, the stations, the safe zone flag
-  for (const wl of WALLS) {
+  ctx.fillRect(x0, y, Math.max(0, X(G.tr.s) - x0), 1);
+  // Only walls inside this leg belong on its route.
+  for (const wl of G.walls) {
+    if (wl.s >= start || wl.s <= end) continue;
     ctx.fillStyle = '#07080a';
-    ctx.fillRect(X(wl.km) - 2, y - 3, 5, 7);
+    ctx.fillRect(X(wl.s) - 2, y - 3, 5, 7);
     ctx.fillStyle = U.red;
-    ctx.fillRect(X(wl.km) - 1, y - 2, 3, 5);
+    ctx.fillRect(X(wl.s) - 1, y - 2, 3, 5);
   }
-  if (SAVE.best > 0) {
-    ctx.fillStyle = '#07080a';
-    ctx.fillRect(X(SAVE.best) - 1, y - 5, 3, 11);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(X(SAVE.best), y - 4, 1, 9);
-  }
-  for (const d of STATIONS) {
-    const sx = X(d.km), live = G.stops.find((s) => s.id === d.id);
-    const got = SAVE.reached.includes(d.id) || (live && live.state !== 'ahead' && live.state !== 'braking');
+  for (const [s, got] of [[start, true], [end, G.result === 'won']]) {
+    const sx = X(s);
     ctx.fillStyle = '#07080a';
     ctx.fillRect(sx - 2, y - 4, 5, 9);
     ctx.fillStyle = got ? U.green : U.blue;
@@ -145,7 +133,7 @@ function drawRoute(x0, x1) {
   }
   blit(ICON.flag, X(end) + 3, 3);
   // The train is a pale block on the route.
-  const tx = X(k1);
+  const tx = X(G.tr.s);
   ctx.fillStyle = '#07080a';
   ctx.fillRect(tx - 2, y - 3, 5, 7);
   ctx.fillStyle = '#e8dfc8';
@@ -236,7 +224,7 @@ function drawRadar() {
     ctx.fillRect(px, py, s, s);
   };
   for (let wy = hy - 640; wy <= hy + 640; wy += 14) dot(trackX(wy), wy, '#3e434c', 1);
-  if (G.goalY > hy - 640 && G.goalY < hy + 640) for (let dx = -560; dx <= 560; dx += 18) dot(trackX(G.goalY) + dx, G.goalY, '#8fd18a', 1);
+  if (G.safeZone && G.goalY > hy - 640 && G.goalY < hy + 640) for (let dx = -560; dx <= 560; dx += 18) dot(trackX(G.goalY) + dx, G.goalY, '#8fd18a', 1);
   for (const st of G.stops) dot(st.house.x - 1, st.house.y - 1, st.id === 'depot' ? U.gold : '#9fd3f2', 2);
   for (const z of G.zombies) if (!z.dead) dot(z.x, z.y, z.st ? '#ff4a32' : '#7a2a22', 1);
   // golden zombies: a blinking gold dot
@@ -432,7 +420,7 @@ function drawTitle() {
   text(ask ? 'ESC: GO BACK' : 'ENTER: ' + (prog ? 'CONTINUE' : 'PLAY'), cx, y + 42, U.faint, { align: 'center', outline: false });
 }
 // After the run: how it ended, then what it paid, row by row. Each row counts up with a tick, then
-// the total, the survivors (an icon each), NEW BEST, a near miss, and the way back to the Depot.
+// the total, the survivors (an icon each), a near miss, and the way back to the Depot.
 // The times (s after the summary opens) are worked out once; sounds play as each time passes.
 function sumPlan(s) {
   // [label, scrap, a short note on how it pays]
@@ -442,11 +430,10 @@ function sumPlan(s) {
   if (p.loot) rows.push(['LOOT', p.loot, '']);
   if (p.bonus) rows.push(['BONUS', p.bonus, 'FROM THE SKILL TREE']);
   const t = rows.map((r, i) => 0.55 + i * 0.32), total = t[t.length - 1] + 0.45, surv = total + 0.7;
-  const icons = Math.min(s.surv, 12), best = surv + (s.surv ? icons * 0.14 + 0.25 : 0) + 0.15;
+  const icons = Math.min(s.surv, 12), ready = surv + (s.surv ? icons * 0.14 + 0.25 : 0) + 0.15;
   const ev = t.map((x) => [x, 'tick']).concat([[total, 'total']]);
   for (let i = 0; i < icons; i++) ev.push([surv + i * 0.14, 'saved']);
-  if (s.newBest) ev.push([best, 'best']);
-  return { rows, t, total, surv, icons, best, lines: best + 0.3, end: best + 0.5, ev };
+  return { rows, t, total, surv, icons, lines: ready + 0.3, end: ready + 0.5, ev };
 }
 // Enter or a click before the count is done shows it all at once.
 function sumSkip() {
@@ -459,7 +446,7 @@ function sumSkip() {
 function drawSummary() {
   ctx.fillStyle = 'rgba(5,6,8,0.66)';
   ctx.fillRect(0, 0, W, H);
-  const s = G.sum, pl = s.plan || (s.plan = sumPlan(s)), t = realT - sumStart, safe = s.result === 'safe';
+  const s = G.sum, pl = s.plan || (s.plan = sumPlan(s)), t = realT - sumStart, won = s.result === 'won';
   while (s.sounds < pl.ev.length && t >= pl.ev[s.sounds][0]) {
     const e = pl.ev[s.sounds++][1];
     if (e === 'tick') SFX.tick();
@@ -476,19 +463,8 @@ function drawSummary() {
   const x = Math.round(W / 2 - w / 2), y = Math.max(20, Math.round(H / 2 - h / 2)), cx = x + w / 2;
   panel(x, y, w, h, '#0f1014');
   const quit = s.result === 'quit';
-  text(safe ? 'SAFE ZONE!' : quit ? 'RUN ENDED' : 'TRAIN LOST', cx, y + 10, safe ? U.gold : quit ? U.ink : U.red, { align: 'center', scale: 2, drop: true });
-  text((safe ? 'ALL THE WAY: ' : 'AT ') + s.km.toFixed(2) + ' KM', cx, y + 30, U.ink, { align: 'center' });
-  // NEW BEST: a gold tag that drops in
-  if (s.newBest && t >= pl.best) {
-    const u = clamp((t - pl.best) / 0.15, 0, 1), bw = tw('NEW BEST!') + 10, bx = Math.round(cx - bw / 2), by = y + 41 - Math.round((1 - u) * 6);
-    ctx.globalAlpha = u;
-    ctx.fillStyle = '#07080a';
-    ctx.fillRect(bx - 1, by - 1, bw + 2, 11);
-    ctx.fillStyle = U.gold;
-    ctx.fillRect(bx, by, bw, 9);
-    text('NEW BEST!', cx, by + 1, '#1a1206', { align: 'center', outline: false });
-    ctx.globalAlpha = 1;
-  }
+  text(won ? 'LEG WON!' : quit ? 'LEG ENDED' : 'TRAIN LOST', cx, y + 10, won ? U.gold : quit ? U.ink : U.red, { align: 'center', scale: 2, drop: true });
+  text('LEG ' + G.leg + ': ' + legDef(G.leg).to.name, cx, y + 30, U.ink, { align: 'center' });
   // the rows: what each kind of thing paid
   let ry = y + 58;
   pl.rows.forEach((r, i) => {

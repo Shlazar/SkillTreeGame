@@ -1,16 +1,12 @@
-// game.js - the game: escort the last train. Your gunship helicopters (helis.js) fly over a railway
-// that winds north, fighting by themselves or where you send them. The line is fixed: the train
-// leaves the Depot (at y = 0), rolls through stations, and the safe zone stands at the far end. The dead walk in from both
-// sides, more of them the further the train gets; the ones ahead of the train step onto the rails,
-// and before each station a Dead Wall of them stands on the track. The engine runs them down, but
-// each one slows it and hurts it, and the dead that reach the train climb on and tear at it. The run
-// ends when the train breaks; every scrap and survivor of the run is kept. The view follows the
-// train and shows the whole battlefield. Behind the title and the Depot the same game runs as a demo.
+// game.js - escort the train for one leg of the fixed Farmlands line. The Viper fights by itself
+// or where you send it. Zombies walk in, block the rails and climb onto the train. A run ends at
+// the next station or when the train breaks; collected rewards are kept. The view follows the
+// train. Behind the title and Depot, a separate demo battle runs without earning rewards.
 // Units are world pixels and seconds; y on the ground is squashed by FORE; the train runs to -y.
 
 const CFG = {
-  // the line: px along the rails in 1 km (2 px = 1 m), and the km of the safe zone wall at its end
-  line: { km: 2000, end: 4 },
+  // the line: px along the rails in 1 km (2 px = 1 m)
+  line: { km: 2000 },
   // the train: top speed (px/s), how fast it gets back up to speed, how hard it brakes, its health,
   // and the health it loses for each zombie it runs over (a brute costs more)
   train: { cruise: 40, accel: 14, brake: 16, hp: 80, crush: 0.5, crushBig: 6 },
@@ -125,17 +121,16 @@ function maxHP() {
 }
 
 // ---------- a run
-// demo = the demo behind the menus, on a random stretch of the line. Otherwise from = where the run
-// starts: 'depot', or the id of a station reached before (the train starts 60 px before its stop).
-function newGame(demo, from) {
-  const at = demo ? null : STATIONS.find((d) => d.id === from) || null;
+// demo = the battle behind the menus. A real ride starts 60 rail px after its departure stop.
+function newGame(demo, number, replay) {
+  const leg = demo ? null : legDef(number);
   const yd = Math.round(rnd(-40000, 40000));
-  const s0 = demo ? trackS(yd) : at ? sAtKm(at.km) - STOP_OFF + 60 : DEPOT_S;
+  const s0 = demo ? trackS(yd) : stopRailS(leg.from) - 60;
   const y0 = demo ? yd : yOfS(s0), up = runUp(demo), hp = up.hp;
   const cars = [];
   for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
-    demo: !!demo, t: 0, run: 0, endT: 0, result: '', up,
+    demo: !!demo, leg: leg ? leg.n : 0, replay: !!replay, events: [], t: 0, run: 0, endT: 0, result: '', up,
     kills: 0, cash: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0, scavAcc: 0, scavPaid: 0,
     trigger: false, mgCd: 0, heat: 0, overheat: false, heReload: 0, heQueue: false, hitT: 0, muzzle: [0, 0],
     // the train: s = distance along the rails of the engine's nose (it falls as the train runs north),
@@ -145,7 +140,7 @@ function newGame(demo, from) {
       clack: 0, smokeT: 0, hornT: 0, fx: trackX(y0), fy: y0, cars },
     // the helicopters (helis.js)
     helis: [],
-    goalS: demo ? -1e12 : sAtKm(CFG.line.end), goalY: -1e9,
+    goalS: demo ? -1e12 : stopRailS(leg.to), goalY: -1e9,
     // the stops on this run (the Depot and the stations ahead), the stations alone, the one the
     // train goes to next (or stands at), and the Dead Walls ahead
     stops: [], stations: [], station: null, walls: [],
@@ -156,7 +151,7 @@ function newGame(demo, from) {
     // this run's scrap by where it came from (the summary lists them), the survivors aboard, the px
     // the train has ridden, the furthest km, and what is already in the save
     pay: { kills: 0, dist: 0, stop: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0 },
-    newBest: false, oldBest: 0, bot: false, botT: 0, botZ: null, hurt: { crush: 0, claw: 0, shell: 0 },
+    bot: false, botT: 0, botZ: null, hurt: { crush: 0, claw: 0, shell: 0 },
     // the rail cannon on the flatcar (cannon.js)
     gun: newCannon(),
     // the Turbo Ram: on = running, t = seconds since it started, dur = its seconds at top speed,
@@ -180,27 +175,24 @@ function newGame(demo, from) {
   if (!demo) {
     G.goalY = yOfS(G.goalS);
     G.maxKm = DK();
-    buildSafeZone();
-    buildLine(at);
+    buildLine(leg);
     rollLoot();
   }
   placeCamera();
-  scatter(at);
+  scatter(leg && leg.from !== DEPOT ? leg.from : null);
 }
-// Start a real run from 'depot' or a reached station.
-function startGame(from) {
+// Start the next leg, or a selected old leg. Replays cannot advance the route again.
+function startGame(number, replay) {
   audioInit();
-  from = startsOpen().includes(from) ? from : 'depot';
-  SAVE.start = from;
+  number = Number.isInteger(number) ? clamp(number, 1, 12) : Math.min(SAVE.leg, 12);
+  replay = !!replay || !!(SAVE.legs[number] && SAVE.legs[number].won);
   SAVE.runs++;
   saveSave();
-  newGame(false, from);
-  // the best before this run (NEW BEST is measured against it, even after the run is banked)
-  G.oldBest = SAVE.best;
+  newGame(false, number, replay);
   mode = 'play';
   paused = false;
   const st = G.station;
-  banner('ESCORT THE TRAIN', st ? 'NEXT: ' + st.name + '  ' + fmtM(kmAt(st.s) - DK()) : 'GET IT AS FAR AS YOU CAN', U.gold);
+  banner('LEG ' + number + ': ' + st.name, replay ? 'REPLAY: SCRAP ONLY' : 'ESCORT THE TRAIN TO THE NEXT STATION', U.gold);
   SFX.horn();
 }
 // Put what this run has earned so far in the save. You keep it all, whatever happens to the train.
@@ -211,7 +203,6 @@ function bankRun() {
   SAVE.surv += sv;
   G.banked.scrap += sc;
   G.banked.surv += sv;
-  SAVE.best = Math.max(SAVE.best, km2(G.maxKm));
   saveSave();
 }
 // The run is over: bank it and build the summary (drawn by drawSummary).
@@ -227,7 +218,7 @@ function endGame() {
   bankRun();
   G.sum = {
     result: G.result, km: km2(k), ride: km2(G.ride / CFG.line.km), kills: G.kills, pay: Object.assign({}, G.pay),
-    scrap: Math.floor(G.cash), surv: G.surv, stops: G.stopNames.slice(), best: SAVE.best, newBest: G.oldBest > 0 && SAVE.best > G.oldBest,
+    scrap: Math.floor(G.cash), surv: G.surv, stops: G.stopNames.slice(),
     near: nearMiss(k), wall: wallStop(k), goal: summaryGoal(), sounds: 0
   };
 }
@@ -236,7 +227,7 @@ function nearMiss(k) {
   if (G.result !== 'lost') return '';
   const st = G.stations.find((s) => s.state === 'ahead' || s.state === 'braking');
   if (!st) return '';
-  const m = kmAt(st.s) - k;
+  const m = kmAt(st.stopS) - k;
   return m < 0.7 ? st.name + ' WAS ' + fmtM(Math.max(0.01, m)) + ' AWAY!' : '';
 }
 // The summary's lines for a run lost at a Dead Wall, or after one that cost the train a quarter of
@@ -326,6 +317,7 @@ function hurtTrain(a, car, why) {
 }
 // The safe zone: a concrete wall right across the land, a gate for the railway, two watchtowers.
 function buildSafeZone() {
+  G.safeZone = true;
   const y = Math.round(G.goalY), gx = Math.round(trackX(G.goalY)), st = G.statics;
   for (let x = gx - 640; x <= gx + 640; x += 16) {
     if (Math.abs(x - gx) < 26) continue;
@@ -336,14 +328,23 @@ function buildSafeZone() {
     st.push({ d: SAFE.tower, x: gx + s * 50, y: y - 4, k: y - 4, tower: s });
   }
 }
-// The train gets through the safe zone gate: the guards shoot the dead off it.
+// Arrival wins this leg. The station guards clear the climbers while the short summary opens.
 function arrive() {
-  G.result = 'safe';
+  if (G.demo || G.result) return;
+  G.result = 'won';
+  G.tr.v = 0;
+  G.tr.s = G.goalS;
+  layoutTrain();
+  if (!G.replay) {
+    legSave(G.leg).won = true;
+    SAVE.leg = Math.max(SAVE.leg, G.leg + 1);
+    saveSave();
+  }
   mode = 'ending';
   G.endT = 0;
   G.trigger = false;
   G.lock = null;
-  banner('SAFE ZONE!', 'THE TRAIN MADE IT ALL THE WAY', U.gold, 9);
+  banner('LEG WON!', G.station.name, U.gold, 3);
   SFX.horn();
   for (const z of G.zombies) if (z.st === 2) later(rnd(0.2, 1.4), () => {
     if (z.dead) return;
@@ -358,7 +359,7 @@ function lose() {
   G.endT = 0;
   G.trigger = false;
   G.lock = null;
-  banner('TRAIN LOST', 'AT ' + km2(G.maxKm).toFixed(2) + ' KM.  YOU KEEP ALL YOUR SCRAP.', U.red, 9);
+  banner('TRAIN LOST', 'YOU KEEP ALL YOUR SCRAP. RETRY THIS LEG.', U.red, 9);
   const blast = (k, big) => () => {
     const c = G.tr.cars[k], x = c.cx + rnd(-3, 3), y = c.cy;
     boomFx(x, y, big);
@@ -654,7 +655,7 @@ const ramFill = () => CFG.ram.charge - (G.up.ramCharge || 0);
 function nearStop(d) {
   const st = G.station;
   if (!st || st.state === 'done') return false;
-  return st.state !== 'ahead' || G.tr.s - st.s < d;
+  return st.state !== 'ahead' || G.tr.s - st.stopS < d;
 }
 // A kill (not the Ram's) fills the Ram a little, also while it runs; when it gets full: a beep and a
 // gold flash on its card (once the Ram that runs is over).
@@ -679,7 +680,7 @@ function tryRam(bot) {
   }
   if (bot || G.demo || s === 'on' || s === 'none') return false;
   // say why not, over the card
-  const st = G.station, m = st ? Math.max(0, Math.round((G.tr.s - st.s) / 20) * 10) : 0;
+  const st = G.station, m = st ? Math.max(0, Math.round((G.tr.s - st.stopS) / 20) * 10) : 0;
   r.msg = { t: realT, s: s === 'lock' ? 'BUY TURBO RAM IN THE SKILL TREE.'
     : s === 'stop' ? (st && st.state === 'ahead' ? 'STATION IN ' + m + ' M. NO RAM UNDER ' + CFG.ram.noStart / 2 + ' M.' : 'NO RAM AT A STATION.')
       : 'KILL ' + r.left + ' MORE TO FILL IT.' };
@@ -1113,8 +1114,7 @@ function botPlay(dt) {
 }
 
 // ---------- the ride
-// The train has ridden d px further: it pays 1 scrap every CFG.pay.dist px (20 m), and passing the
-// best km of all runs shows NEW BEST.
+// Distance bookkeeping; distance pay is removed when the new scrap economy is connected.
 function ride(d) {
   G.ride += d;
   const due = Math.floor(G.ride / CFG.pay.dist) - G.pay.dist;
@@ -1123,21 +1123,15 @@ function ride(d) {
     G.pay.dist += due;
   }
   G.maxKm = Math.max(G.maxKm, DK());
-  if (!G.newBest && G.oldBest > 0 && km2(G.maxKm) > G.oldBest) {
-    G.newBest = true;
-    banner('NEW BEST', 'PAST ' + G.oldBest.toFixed(2) + ' KM. KEEP GOING!', U.gold, 1);
-    SFX.fanfare();
-  }
 }
 
 // ---------- one step of the game (STEP seconds)
 function step(dt) {
   G.t += dt;
   const tr = G.tr, st = G.station;
-  // The train gets back up to speed after every bump. Keep the braking branch for the coming legs;
-  // stations roll past for now. Lost, it stops; safe, it brakes once the whole train is inside.
+  // The train recovers after bumps, brakes at its goal, and remains parked after winning.
   if (G.result === 'lost') tr.v = Math.max(0, tr.v - 30 * dt);
-  else if (G.result === 'safe' && tr.s + TRAIN_LEN < G.goalS - 14) tr.v = Math.max(0, tr.v - 12 * dt);
+  else if (G.result === 'won') tr.v = 0;
   else if (st && st.state === 'braking') {
     tr.v = Math.min(tr.v, Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - st.stopS)) + 1.5);
     if (tr.s - st.stopS < 0.6) {
@@ -1192,14 +1186,13 @@ function step(dt) {
     // (the mouse: where the 105 goes)
     G.aimSX = clamp(M.x, 0, W - 1);
     G.aimSY = clamp(M.y, 0, H - 1);
-    if (!G.result && tr.s <= G.goalS) arrive();
   } else {
     G.aimSX = W / 2;
     G.aimSY = H / 2;
     if (mode === 'title' || mode === 'depot') attract(dt);
     else if (mode === 'ending') {
       G.endT += dt;
-      if (G.endT > 3.4 && (G.result !== 'safe' || tr.v < 0.5) || G.endT > 14) endGame();
+      if (G.endT > 3.4) endGame();
     }
   }
   G.hitT = Math.max(0, G.hitT - dt);

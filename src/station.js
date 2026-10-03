@@ -1,16 +1,15 @@
-// station.js - the stops on the fixed line: the Depot and the stations further north. The train
-// rolls past each station for now. Platforms, lamps, houses and corn stay as scenery; station
-// holds, defense towers and survivors waiting at the house are gone.
+// station.js - the stops on the fixed line. Each leg builds its departure and destination, and
+// the train brakes at the destination to finish the ride. Platforms, lamps, houses and corn stay
+// as scenery; station holds, defense towers and survivors waiting at the house are gone.
 
 const DEPOT = { id: 'depot', name: 'DEPOT', km: 0 };
-const STATIONS = [
-  { id: 'farm', name: 'FARM STOP', km: 1, side: 1 },
-  { id: 'mill', name: 'MILL TOWN', km: 2, side: -1 }
-];
 // Spacing of the stop's scenery in world px. The positions still bend with the railway.
 const TILE = 16;
 // px from a stop's house along the rails to the engine's stopping point: car 1 lines up with it.
 const STOP_OFF = CAR.L + CAR.gap + CAR.L / 2;
+// Stop km is the engine nose's rail position; the house/platform sits STOP_OFF behind it.
+function stopRailS(def) { return sAtKm(def.km); }
+function stopHouseS(def) { return stopRailS(def) + STOP_OFF; }
 const stopDef = (id) => (id === 'depot' ? DEPOT : STATIONS.find((d) => d.id === id) || null);
 
 // Scenery coordinates around a stop -> the world. The rails lie between columns 6 and 7, and the
@@ -50,21 +49,14 @@ function buildCorn(st) {
   }
 }
 
-// A run starts at the Depot or a reached station, with the remaining stations and Dead Walls ahead.
-function buildLine(at) {
-  const k0 = at ? at.km : 0;
-  if (!at) {
-    const dp = buildStop(DEPOT, DEPOT_S + STOP_OFF, 1);
-    dp.state = 'done';
-  }
-  for (const d of STATIONS) {
-    if (d.km < k0) continue;
-    const st = buildStop(d, sAtKm(d.km), d.side);
-    st.start = at === d;
-    G.stations.push(st);
-  }
-  G.station = G.stations[0] || null;
-  for (const w of WALLS) if (w.km > k0) G.walls.push({ km: w.km, walkers: w.walkers, brutes: w.brutes, s: sAtKm(w.km), placed: false, warned: false, awake: false, zs: [] });
+// A leg has two visible stops. Only its destination is active; walls will be leg events.
+function buildLine(leg) {
+  const from = buildStop(leg.from, stopHouseS(leg.from), leg.from.side);
+  from.state = 'done';
+  from.start = true;
+  const to = buildStop(leg.to, stopHouseS(leg.to), leg.to.side);
+  G.stations.push(to);
+  G.station = to;
 }
 
 // A platform, house and lamps on one side of the rails, dressed with the same scenery as before.
@@ -92,7 +84,7 @@ function buildStop(def, s, side) {
 const SZ = { u: 0, a: 0, c: 1 };
 function stationZone(x, y) {
   for (const d of STATIONS) {
-    const s = sAtKm(d.km);
+    const s = stopHouseS(d);
     if (d.y0 == null) d.y0 = yOfS(s);
     if (Math.abs(y - d.y0) > 150) continue;
     trackLocal(x, y, SZ);
@@ -101,17 +93,15 @@ function stationZone(x, y) {
   return false;
 }
 
-// Mark a station reached without a combat hold, repair or reward. The braking branch in game.js
-// keeps this entry point for the coming station-to-station legs, but it is never entered for now.
+// Finish braking at the destination. arrive() records the won leg and starts its ending.
 function trainStops(st) {
   if (st.state === 'done') return;
+  G.tr.s = st.stopS;
+  G.tr.v = 0;
+  layoutTrain();
   st.state = 'done';
   G.stopNames.push(st.name);
-  if (!SAVE.reached.includes(st.id)) {
-    SAVE.reached.push(st.id);
-    saveSave();
-  }
-  banner(st.name, 'PASSING THE STATION', U.blue, 2);
+  arrive();
 }
 
 // These helpers remain for the generic zombie and 105mm code that reads G.people. Stops no longer
@@ -129,13 +119,11 @@ function catchPerson(p) {
   stampPix(p.x, p.y, P.bl1, 2);
 }
 
-// Keep the approach check ready for legs, but pass the stop before marking it done. Nothing here
-// switches to braking, changes the train's speed, or starts a station wave.
+// Start braking when the remaining rail distance reaches the current stopping distance.
 function updateStation(dt) {
   if (G.demo || G.result) return;
-  let st = G.station;
-  if (st && st.state === 'done') st = G.station = G.stations.find((s) => s.state !== 'done') || null;
+  const st = G.station;
   if (!st) return;
   const tr = G.tr, d = tr.s - st.stopS;
-  if (st.state === 'ahead' && d < tr.v * tr.v / (2 * CFG.train.brake) + 1 && d <= 0) trainStops(st);
+  if (st.state === 'ahead' && d < tr.v * tr.v / (2 * CFG.train.brake) + 1) st.state = 'braking';
 }

@@ -53,7 +53,7 @@ const furrowDir = (x, y) => Math.floor(vnoise(x / 520 + 9, y / 520 - 4, 36) * 4)
 const CORN_A0 = -86, CORN_A1 = 104, CORN_U0 = 120, CORN_U1 = 200;
 function cornAt(T) {
   for (const d of STATIONS) {
-    const s = sAtKm(d.km), a = T.a - s, u = Math.abs(T.u);
+    const s = stopHouseS(d), a = T.a - s, u = Math.abs(T.u);
     if (a > CORN_A0 - 4 && a < CORN_A1 + 4 && u > CORN_U0 && u < CORN_U1) return a - CORN_A0;
   }
   return -1;
@@ -75,7 +75,7 @@ function paintLand(g, ci, cj) {
     NW[k] = woodsVal(X, Y);
     NS[k] = shadeVal(X, Y);
   }
-  const yardsNear = landYards(X0, Y0), stNear = STATIONS.some((d) => Math.abs(yOfS(sAtKm(d.km)) - (Y0 + 64)) < 300);
+  const yardsNear = landYards(X0, Y0), stNear = STATIONS.some((d) => Math.abs(yOfS(stopHouseS(d)) - (Y0 + 64)) < 300);
   const im = g.createImageData(CH, CH), D = im.data, L = LRGB;
   const fa = furrowDir(X0 + 64, Y0 + 64), fc = Math.cos(fa), fs = Math.sin(fa);
   let col;
