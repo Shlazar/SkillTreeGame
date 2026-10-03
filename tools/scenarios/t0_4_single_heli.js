@@ -1,0 +1,20 @@
+// Run mode: exactly one heli in the run and title demo; removed nodes and effects stay absent.
+__sr.start();
+__sr.bot(true);
+__sr.sim(20);
+__sr.frames(30);
+const run = __sr.stats().helis.length;
+if (run !== 1) throw new Error('Run has ' + run + ' helis');
+const skills = __sr.skills();
+if ('chain' in skills || 'zaps' in skills || 'chainSeen' in skills) throw new Error('Old skill fields remain');
+__sr.title();
+__sr.frames(30);
+const demo = __sr.stats().helis.length;
+if (demo !== 1) throw new Error('Demo has ' + demo + ' helis');
+const removed = __sr.treeNodes().filter((n) => ['chain', 'wingman', 'extra'].includes(n.id));
+if (removed.length) throw new Error('Removed heli nodes remain');
+__sr.node('root', 1);
+__sr.node('hdmg', 1);
+__sr.depot('tree');
+__sr.frames(30);
+QA_DONE({run, demo, removed});

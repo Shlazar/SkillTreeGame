@@ -512,9 +512,6 @@ const NODE_ART = {
   // LAST TRAIN: the engine, side on
   root: ['............', '........dd..', 'dddd....ld..', 'dBBd....ld..', 'dBBdlllllld.', 'dsssssssssdG',
     'dllllllllldd', 'dggggggggggd', 'dmmmmmmmmmmd', '.ls..ls..ls.', '.sl..sl..sl.', '............'],
-  // CHAIN SHOT: a bolt of lightning jumping from zombie to zombie
-  chain: ['.........Gw.', '........GwY.', '.......GwY..', '......GwY...', '.....GwwwwY.', '....GwwwwY..',
-    '......wY....', '.....wY.....', '....wY......', '...wY.......', '..wY........', '.wY.........'],
   // COW CATCHER: the steel plow on the engine's nose, seen from the front
   cow: ['............', 'dddddddddddd', 'dmmmmmmmmmmd', '.slslslslsl.', '.slslslslsl.', '..lslslsls..',
     '..lslslsls..', '...slslsl...', '...slslsl...', '....lsls....', '....mmmm....', '............'],

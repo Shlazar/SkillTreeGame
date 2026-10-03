@@ -152,12 +152,6 @@ function bakeHelis() {
 }
 // the skill tree's icons for the new heli nodes (sprites.js turns them into NICON at startup)
 Object.assign(NODE_ART, {
-  // WINGMAN: two helis side by side
-  wingman: ['............', '.m.......m..', 'xvx.....xvx.', 'vBv.....vBv.', 'vvvV...vvvV.', 'xvx.....xvx.',
-    '.v.......v..', '.v.......v..', 'vvv.....vvv.', '.v.......v..', '............', '............'],
-  // EXTRA HELI: a heli and a gold plus
-  extra: ['.....m......', '....xvx.....', '....vBv.....', 'xx..vvv..xx.', 'vVvvvVvvvVv.', 'xx..vvv..xx.',
-    '....xvx..Gg.', '.....v..GGGg', '.....v...Gy.', '...vvvvv....', '.....v......', '............'],
   // FAST ROTORS: a rotor and speed lines
   radio: ['............', 'll........ll', '.ll......ll.', '..ll....ll..', '...llmmll...', '....mddm....',
     '....mddm....', '...llmmll...', '..ll....ll..', '.ll......ll.', 'll........ll', '............']

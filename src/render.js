@@ -347,7 +347,11 @@ function render() {
   drawRounds();
   drawHeliFx();
   drawCannonFx();
-  drawZaps();
+  // Draw the steel plow over the headlights with solid colours.
+  ctx.globalCompositeOperation = 'source-over';
+  drawPlow();
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'lighter';
   drawJuiceTop();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;

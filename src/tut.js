@@ -89,8 +89,7 @@ function tutEvent(name, d) {
     crate_taken: () => tutCount('crate'),
     sos_seen: () => { if (!d.winch) tip('p_sos', 'A SURVIVOR! YOU NEED THE WINCH.', P(d)); },
     sos_near: () => tip('p_lift', 'KEEP A HELI OVER THEM TO LIFT THEM UP.', P(d)),
-    golden_seen: () => tip('p_golden', 'GOLDEN ZOMBIE! CATCH IT FOR ' + goldenPay(d) + ' SCRAP.', P(d.z || d)),
-    chain_first: () => tip('p_chain', 'CHAIN SHOT! A KILL JUMPS TO MORE ZOMBIES.', null)
+    golden_seen: () => tip('p_golden', 'GOLDEN ZOMBIE! CATCH IT FOR ' + goldenPay(d) + ' SCRAP.', P(d.z || d))
   }[name];
   if (ev) ev();
 }
@@ -181,7 +180,6 @@ function tutLook(dt) {
   if (G.taste ? G.ram.crack > 0 && realT - G.ram.crack > 0.6 : G.run > 1.5) {
     task('t_sel', 'CLICK YOUR HELI', 1, 'select');
     task('t_attack', 'RIGHT CLICK A ZOMBIE TO ATTACK IT', 1, 'attack');
-    if (G.helis.length > 1) task('t_all', 'DRAG A BOX OR PRESS A TO SELECT ALL HELIS', 1, 'selall');
     const h = G.helis[0];
     if (h) tip('p_auto', 'YOUR HELI FIGHTS BY ITSELF. RIGHT CLICK TO SEND IT.', () => [h.x - G.camX, h.y - h.alt - G.camY]);
   }
@@ -328,12 +326,6 @@ function tutTag() {
   const tree = depotTab === 'tree';
   if (!lv('root')) return tree ? ['root', "CLICK THE TRAIN. IT'S FREE."] : null;
   if (!SAVE.runs) return ['start', 'PRESS START RUN.'];
-  const wm = NODE.wingman;
-  if (wm && !seen('g_wing')) {
-    TUT.after.add('g_wing');
-    if (!lv(wm.id)) return tree && shownAs(wm) === 2 ? [wm.id, 'BUY WINGMAN: A SECOND HELI JOINS YOU! THEN PRESS START RUN.'] : null;
-    return ['start', 'PRESS START RUN.'];
-  }
   const he = NODE.he;
   if (tree && he && !lv('he') && stationOpen() && nodeState(he) === 'buy') return ['he', 'BUY THE 105MM WITH ' + he.cost[0] + ' SURVIVORS.'];
   const wi = NODE.winch;

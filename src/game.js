@@ -109,21 +109,20 @@ const UP = {
   nest: (l) => CFG.nest.rate + CFG.up.nest * l                       // NEST SPEED: MG nest rounds/s
 };
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
-// menus uses the plain numbers, but shows off two helis, the 105mm, the rail cannon and the Turbo
-// Ram. he, winch, ram, wire = owned; gun = the rail cannon's reload seconds (0 = none); helis =
-// how many (1, and WINGMAN and EXTRA HELI add one each).
+// menus uses the plain numbers, but shows off the 105mm, rail cannon and Turbo Ram for now.
+// he, winch, ram, wire = owned; gun = the rail cannon's reload seconds (0 = none). One Viper flies.
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
   // (tree.js adds the newer nodes' numbers: treeUp)
   return treeUp(L, {
     hp: UP.hp(L('armor')), rate: UP.rate(L('feed')), heat: UP.heat(L('cool'), L('feed')), dmg: UP.dmg(L('heavy')),
     he: demo || L('he') > 0, reload: UP.reload(L('reload')), fly: UP.fly(L('radio')), pickup: UP.pickup(L('magnet')),
-    helis: demo ? 2 : 1 + L('wingman') + L('extra'),
+    helis: 1,
     scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: demo || L('gun') > 0 ? UP.gun(L('gunspd')) : 0, ram: demo || L('ram') > 0,
     nest: UP.nest(L('nestspd')), wire: L('wire') > 0,
-    // the first ring (skills.js): chain jumps, the cow catcher, 1 golden zombie in this many (0 = none),
+    // The first ring (skills.js): the cow catcher, 1 golden zombie in this many (0 = none),
     // and the armor level (its plates show on the engine)
-    chain: UP.chain(L('chain')), cow: L('cow') > 0, gold: UP.gold(L('goldz')), armor: L('armor')
+    cow: L('cow') > 0, gold: UP.gold(L('goldz')), armor: L('armor')
   });
 }
 // The train's full health.
@@ -956,7 +955,7 @@ function kill(z, cause, cx, cy, dist, free) {
     if (sc && pay) addTotal(z.x, z.y - S.h, pay, U.gold, !!z.gold);
     if (!G.demo) SFX.splat();
   } else {
-    // a gun kill (a heli round, the flatcar gun, a chain spark, a nest, a blast of an explosive
+    // a gun kill (a heli round, the flatcar gun, a blast of an explosive
     // zombie): the body bursts into a red splat that stays. In a horde only the big ones show
     // their scrap; the rest go to the counter as coins now and then.
     popKill(z, cause);
@@ -991,7 +990,7 @@ function hitZombie(z, dmg, cause) {
   return false;
 }
 // A 25mm round lands: its locked target first, then the nearest round the burst. KILLED = the
-// ones it killed (for CHAIN SHOT and the hit-stop).
+// ones it killed for the hit-stop.
 const NEAR = [], KILLED = [];
 function mgImpact(r) {
   const x = r.bx, y = r.by, T = r.tgt, from = r.h ? [r.h.x, r.h.y] : null;

@@ -6,7 +6,7 @@
 // every zombie (updateZombies, with the railway looked up from a cache of rows), the fast pixel
 // layer that draws a crowd of hundreds in one go (gatherHorde, drawHorde), the kill pop, silver
 // zombies (G.up.silver: they shine and pay more), explosive zombies (G.up.boom, G.up.boomR: they
-// blow up when they die and take their neighbours with them, in a chain), the hit sparks where a
+// blow up when they die and trigger neighbouring explosions), the hit sparks where a
 // heli round lands and the heli's muzzle flash.
 
 // ---------- the zombie art

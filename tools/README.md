@@ -217,7 +217,7 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 - `spawn(type, sx, sy)`: a zombie standing still at screen pixel (sx, sy): 0 walker, 1 runner, 2 brute. Returns it.
 - `hit(z, dmg, cause)`: zombie z takes dmg (default 1) from cause `'mg'` (default) or `'gun'` (the flatcar gun).
 - `gold(sx, sy)`: a golden zombie at screen pixel (sx, sy). Returns it (test_a.js).
-- `skills()`: first-ring skill state: `{chain, cow, gold, armor, zaps, golden, goldSeen, chainSeen, lockWait, kills, cash, hp, v}` (test_a.js).
+- `skills()`: first-ring skill state: `{cow, gold, armor, golden, goldSeen, lockWait, kills, cash, hp, v}` (test_a.js).
 - `horde()`: the spawner now: `{streams, waves, alive, layer, booms, hd}`, where `hd` is `horde(DK())` here (test_z.js).
 - `stream(n, edge)`: a stream of n zombies (default 20) now from edge -1 left, 1 right, 0 top (default) (test_z.js).
 - `wave()`: a wave now (sets `G.waveCd = 0`) (test_z.js).

@@ -1,18 +1,14 @@
-// skills.js - the first ring of the skill tree: things you SEE in a run. CHAIN SHOT (a 25mm kill
-// sparks on to more zombies), the COW CATCHER (a steel plow on the engine that throws walkers and
-// runners aside), GOLDEN ZOMBIES (rare gold ones that run away and pay big) and the ARMOR plates on
-// the engine. Also the 25mm's kill feel: a short hit-stop when one round kills 3 or more.
+// skills.js - the COW CATCHER (a steel plow that throws walkers and runners aside), GOLDEN ZOMBIES
+// (rare gold ones that run away and pay big), and the ARMOR plates on the engine.
+// Also the 25mm's kill feel: a short hit-stop when one round kills 3 or more.
 
-// CHAIN SHOT: how far a spark jumps (px), its damage, seconds between two jumps.
 // GOLDEN ZOMBIES: 1 in every[l] new zombies is golden at level l, the scrap one pays, its speed
 // (px/s), and how near the heli or the train (px) it starts to run away.
 const SK = {
-  chain: { reach: 40, dmg: 1, gap: 0.04 },
   gold: { every: [0, 60, 40, 25], value: 25, speed: [26, 31], fear: 190 }
 };
 // What a level of the new nodes gives (the tree's info box shows the same numbers).
 Object.assign(UP, {
-  chain: (l) => l,                          // CHAIN SHOT: zombies a kill sparks on to
   gold: (l) => SK.gold.every[l] || 0        // GOLDEN ZOMBIES: 1 in this many (0 = none)
 });
 // A tutorial moment for part D's prompts (nothing happens when they are not there).
@@ -21,64 +17,10 @@ function skillEvent(name, data) {
 }
 
 // ---------- one 25mm round's kills
-// After a player round lands: a short hit-stop when it killed 3 or more, and each kill sparks on
-// with CHAIN SHOT.
+// After a player round lands: a short hit-stop when it killed 3 or more.
 function roundKills(list) {
   if (G.demo || !list.length) return;
   if (list.length >= 3) hitStop(0.03);
-  if (G.up.chain) for (const z of list) chainFrom(z, G.up.chain, [z]);
-}
-
-// ---------- CHAIN SHOT
-// zaps = the lightning lines in the air: [x0, y0, x1, y1, seed, age]
-const zaps = [];
-// A spark jumps from zombie z0 to the nearest living one within reach (not hit by this chain yet),
-// hurts it, and jumps on while left > 1.
-function chainFrom(z0, left, hit) {
-  let best = null, bd = SK.chain.reach + 1;
-  queryEll(z0.x, z0.y, SK.chain.reach, (z, d) => {
-    if (d < bd && !hit.includes(z)) { bd = d; best = z; }
-  });
-  if (!best) return;
-  hit.push(best);
-  const x0 = z0.x, y0 = z0.y - z0.S.h * 0.5, x1 = best.x, y1 = best.y - best.S.h * 0.5;
-  zaps.push({ x0, y0, x1, y1, seed: (Math.random() * 1e6) | 0, t: 0, T: 0.18 });
-  // a small flash and sparks where it lands
-  lights.push({ x: x1, y: best.y, z: best.S.h * 0.5, r: 12, c: '#ffd24a', life: 0.12, max: 0.12, a: 0.9 });
-  for (let k = 0; k < 4; k++) {
-    const a = rnd(TAU), s = rnd(20, 50);
-    part({ x: x1, y: best.y, z: best.S.h * 0.5, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(10, 40), g: 120,
-      life: rnd(0.15, 0.3), max: 0.3, s: 1, c: pick(['#fff6c0', '#ffd24a']), add: true, drag: 2 });
-  }
-  SFX.zap();
-  if (hitZombie(best, SK.chain.dmg, 'chain') && !G.chainSeen) {
-    G.chainSeen = true;
-    skillEvent('chain_first');
-  }
-  if (left > 1) later(SK.chain.gap, () => chainFrom(best, left - 1, hit));
-}
-// The lightning: a jagged 1 px line that flickers (its kinks move every 0.04 s), white in the
-// middle of a yellow glow, gone in 0.18 s.
-function drawZaps() {
-  ctx.globalCompositeOperation = 'source-over';
-  drawPlow();
-  for (const z of zaps) {
-    const u = z.t / z.T, f = (z.t / 0.04) | 0, dx = z.x1 - z.x0, dy = z.y1 - z.y0, l = Math.hypot(dx, dy) || 1;
-    const n = Math.max(2, Math.round(l / 6)), px = -dy / l, py = dx / l;
-    let ax = z.x0, ay = z.y0;
-    ctx.globalAlpha = 1 - u * 0.7;
-    for (let i = 1; i <= n; i++) {
-      const o = i === n ? 0 : (hrnd(z.seed, i, f) - 0.5) * 7;
-      const bx = z.x0 + dx * i / n + px * o, by = z.y0 + dy * i / n + py * o;
-      pl(ctx, ax, ay, bx, by, u < 0.4 ? '#ffffff' : '#ffe27a');
-      ax = bx;
-      ay = by;
-    }
-  }
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = 'lighter';
-  for (const z of zaps) light((z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2, 10, '#ffd24a', 0.4 * (1 - z.t / z.T));
-  ctx.globalAlpha = 1;
 }
 
 // ---------- the COW CATCHER and the ARMOR plates
@@ -214,10 +156,6 @@ function drawGold(z) {
 
 // ---------- each step
 function updateSkills(dt) {
-  for (let i = zaps.length - 1; i >= 0; i--) {
-    zaps[i].t += dt;
-    if (zaps[i].t >= zaps[i].T) zaps.splice(i, 1);
-  }
   if (!G.up.gold) return;
   for (const z of G.zombies) {
     if (!z.gold || z.dead || offView(z.x, z.y, 0)) continue;
@@ -234,12 +172,6 @@ function updateSkills(dt) {
 
 // ---------- sounds
 Object.assign(SFX, {
-  zap() {
-    // a short electric crack
-    if (!gap('zap', 30)) return;
-    tone(rnd(1500, 1900), 0.05, 'sawtooth', 0.012, 500);
-    nz(0.05, 0.03, 'highpass', 3500, 0.8, 1800);
-  },
   clang() {
     // the plow hits one: a steel knock
     if (!gap('clang', 40)) return;
