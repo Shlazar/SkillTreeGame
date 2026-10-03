@@ -330,7 +330,7 @@ function tutHint() {
     }
     if (SAVE.seen.h_starAt != null) {
       if (stars > SAVE.seen.h_starAt) see('h_star');
-      else return ['* NODES ARE BIG UNLOCKS.', U.gold];
+      else return ['ORANGE NODES ARE BIG UNLOCKS.', U.gold];
     }
   }
   if (lv('ram') && !seen('h_ram')) {
@@ -422,6 +422,7 @@ function drawPause() {
   const L = ['YOUR HELIS FIGHT BY THEMSELVES.', 'CLICK OR DRAG: SELECT.  A: ALL.  1 2 3: ONE.', 'RIGHT CLICK: ATTACK, MOVE OR ESCORT.'];
   if (G.up.he) L.push('SPACE: 105MM AT THE MOUSE.');
   if (G.up.ram) L.push('E: TURBO RAM.');
+  if (G.up.strafe) L.push('Q: STRAFING RUN, THEN CLICK THE MAP.');
   L.push('T: CAMERA.  M: SOUND.  WHEEL: ZOOM.');
   const w = 280, h = 112 + L.length * 10, x = Math.round(W / 2 - w / 2), y = Math.max(22, Math.round((H + 19) / 2 - h / 2)), cx = x + w / 2;
   Object.assign(PAUSE, { x, y, w, h });
@@ -482,7 +483,7 @@ function tutSumLines() {
   return TUT.sum;
 }
 function tutSumOpen() {
-  TUT.sum = TUT.heldFirst && see('s_held') ? [['NEW: SURVIVORS. THEY BUY THE BIGGEST * NODES.', U.green],
+  TUT.sum = TUT.heldFirst && see('s_held') ? [['NEW: SURVIVORS. THEY BUY THE BIGGEST UNLOCKS.', U.green],
     [STATIONS[0].name + ' IS YOURS. SEE THE STATION TAB.', U.green]] : [];
 }
 

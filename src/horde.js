@@ -908,6 +908,6 @@ function drawMuzzle(h) {
   ctx.fillRect(Math.round(x) - 1, Math.round(y) - 2, 3, 5);
 }
 // heli numbers from the skill tree (part T), or the plain ones
-const heliRate = () => G.up.heliRate || G.up.rate;
-const heliDmg = () => G.up.heliDmg || G.up.dmg;
-const heliRange = () => G.up.heliRange || HC.range;
+const heliRate = () => G.up.rate;   // HELI FIRE RATE is already folded into G.up.rate (treeUp in tree.js)
+const heliDmg = () => G.up.dmg;     // HELI DAMAGE is already folded into G.up.dmg
+const heliRange = () => HC.range * (G.up.heliRange || 1);   // G.up.heliRange is a multiplier (HELI RANGE node)

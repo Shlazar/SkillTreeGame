@@ -265,6 +265,7 @@ function drawWeapons() {
   let rx = drawUnitCards(4, y), ry = y;
   if (rx + RAMCARD.w > W - 82) [rx, ry] = [4, y - 30];
   drawRamCard(rx, ry);
+  drawStrafeCard(rx, ry, y);
   text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
 }
 // The Turbo Ram's card: E in gold when it is full, the % while it fills (the bar is the charge),
@@ -475,6 +476,7 @@ function sumPlan(s) {
     ['DISTANCE ' + s.ride.toFixed(2) + ' KM', p.dist, '+1 PER ' + CFG.pay.dist / 2 + ' M']];
   if (p.stop) rows.push(['STATION', p.stop, s.stops.join(' + ')]);
   if (p.loot) rows.push(['LOOT', p.loot, '']);
+  if (p.bonus) rows.push(['BONUS', p.bonus, 'FROM THE SKILL TREE']);
   const t = rows.map((r, i) => 0.55 + i * 0.32), total = t[t.length - 1] + 0.45, surv = total + 0.7;
   const icons = Math.min(s.surv, 12), best = surv + (s.surv ? icons * 0.14 + 0.25 : 0) + 0.15;
   const ev = t.map((x) => [x, 'tick']).concat([[total, 'total']]);

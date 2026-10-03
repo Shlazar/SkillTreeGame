@@ -234,6 +234,8 @@ function render() {
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = '#060708';
   ctx.fillRect(0, 0, W, H);
+  // (the skill tree covers the whole world: nothing to draw under it)
+  if (treeCovers()) return;
   const [sx, sy] = shakeOff();
   const ci0 = Math.floor((G.camX - 8) / CH), ci1 = Math.floor((G.camX + W + 8) / CH);
   const cj0 = Math.floor((G.camY - 8) / CH), cj1 = Math.floor((G.camY + H + 8) / CH);
@@ -267,6 +269,7 @@ function render() {
   for (const b of G.bodies) blit(BODYSH, Math.round(b.x - 4), Math.round(b.y - 2));
   ctx.globalAlpha = 1;
   drawHeliGround();
+  drawPlaneShadows();
   // trees, props, the train and the dead, back to front. A tree under the sight fades so you can
   // see past it.
   const ax = G.camX + G.aimSX, ay = G.camY + G.aimSY, aiming = mode === 'play';
@@ -358,6 +361,7 @@ function render() {
   }
   drawLoot();
   drawHeliTop();
+  drawPlanes();
   drawTexts();
   drawRamCount();
   ctx.restore();

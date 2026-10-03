@@ -184,6 +184,8 @@ function makeHelis() {
       cmdT: -9, spin: rnd(8), dust: 0, smoke: rnd(0.2), lean: 0 });
   }
 }
+// how far the heli guns reach this run (HELI RANGE makes it more)
+const hRange = () => HC.range * (G.up.heliRange || 1);
 // ground distance from heli h to zombie z (round the ellipse the view squashes, like queryEll)
 const hDist = (h, z) => Math.hypot(z.x - h.x, (z.y - h.y) / FORE);
 // The best target in reach of heli h (one the rounds in the air will not already kill), or null:
@@ -192,7 +194,7 @@ const hDist = (h, z) => Math.hypot(z.x - h.x, (z.y - h.y) / FORE);
 function heliTarget(h) {
   let best = null, bk = Infinity;
   const s0 = G.tr.s;
-  queryEll(h.x, h.y, heliRange(), (z, d) => {
+  queryEll(h.x, h.y, hRange(), (z, d) => {
     if (z.pending >= z.hp || z.gate && z.still) return;
     const k = z.st === 2 ? d : z.st === 1 && trackLocal(z.x, z.y, TL).a < s0 ? 1000 + d : 2000 + d;
     if (k < bk) {
@@ -217,7 +219,7 @@ function updateHelis(dt) {
       fy = c0.dy * tv;
     } else if (o.kind === 'move') [tx, ty] = [o.x, o.y];
     else {
-      const z = o.z, d = hDist(h, z) || 1, r = Math.min(d, heliRange() * 0.55);
+      const z = o.z, d = hDist(h, z) || 1, r = Math.min(d, hRange() * 0.55);
       tx = z.x + (h.x - z.x) / d * r;
       ty = z.y + (h.y - z.y) / d * r;
     }
@@ -244,14 +246,14 @@ function updateHelis(dt) {
     h.alt += (ta - h.alt) * Math.min(1, dt * 1.4);
     // the target: its order's zombie, or the best one in reach (looked for again every 0.12 s)
     let z = o && o.kind === 'attack' ? o.z : h.tgt;
-    if (z && !(o && o.z === z) && (z.dead || hDist(h, z) > heliRange() + 8)) z = null;
+    if (z && !(o && o.z === z) && (z.dead || hDist(h, z) > hRange() + 8)) z = null;
     h.look -= dt;
     if (!(o && o.kind === 'attack') && (!z || h.look <= 0 || z.pending >= z.hp)) {
       z = heliTarget(h) || (z && !z.dead && z.pending < z.hp ? z : null);
       h.look = HC.look;
     }
     h.tgt = z;
-    const inR = z && hDist(h, z) <= heliRange();
+    const inR = z && hDist(h, z) <= hRange();
     // it turns its nose to the target in reach, else to where it flies (or the train's way)
     const own = Math.hypot(h.vx - fx, h.vy - fy);
     let aim = h.hd;
