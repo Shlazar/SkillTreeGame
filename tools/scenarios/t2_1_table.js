@@ -72,6 +72,7 @@ function maxTree() {
   __sr.reset();
   __sr.SAVE.flags.survShown = true;
   __sr.SAVE.flags.goldShown = true;
+  __sr.SAVE.flags.silverSeen = __sr.SAVE.flags.boomSeen = true;
   __sr.give(20000, 30, 500);
   for (const node of __sr.treeNodes()) {
     if (node.k !== 'tease' && !__sr.node(node.id, node.max)) throw new Error('Could not max ' + node.id);

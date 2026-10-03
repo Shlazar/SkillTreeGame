@@ -1,5 +1,6 @@
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  treeShown: () => NODES.filter((n) => shownAs(n) > 0).map((n) => n.id),
   treeArt: () => NODES.map((n) => ({ id: n.id, w: NICON[n.id]?.width || 0, h: NICON[n.id]?.height || 0 })),
   treeOverlap: () => {
     const pairs = [];

@@ -317,6 +317,7 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 - `summaryView()`: current summary layout and its Depot button rectangle, or null when there is no summary.
 - `treeOverlap()`: pairs of nodes less than 1.2 cells apart; a valid tree returns `[]`.
 - `treeArt()`: each current node's baked icon dimensions; a 12×12 drawing with its outline is 14×14.
+- `treeShown()`: the IDs currently revealed by parent ownership and currency/enemy discoveries, including full-game teases.
 
 ### 5.15 Tutorial (src/tut.js)
 

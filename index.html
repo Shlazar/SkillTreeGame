@@ -8415,36 +8415,29 @@ for (const n of NODES) NODE[n.id] = n;
 const T_CELL = 36;
 const maxLv = (n) => n.cost.length;
 const parentOf = (n) => (n.p ? NODE[n.p] : null);
-// the level its parent must have
-const needOf = (n) => n.need || 1;
-const needsMet = (n) => !n.p || lv(n.p) >= needOf(n);
 // the price of the next level, and whether you can pay it
 const priceOf = (n) => n.cost[Math.min(lv(n.id), maxLv(n) - 1)] || 0;
 const canPay = (n) => n.k !== 'tease' && SAVE[n.cur || 'scrap'] >= priceOf(n);
-// "ARMOR 1", "FAST ROTORS 2": a node at a level, as NEEDS: and the goal line say it
+// A node's name and level for the goal line.
 const nodeLv = (id, l) => NODE[id].name + (maxLv(NODE[id]) > 1 ? ' ' + l : '');
 // What a node is now:
-//  'off'    not on the map (what it grows from is not shown, or is still a padlock)
-//  'hidden' a padlock: what it grows from has no level yet (or it is from later in the game)
-//  'soon'   shown with its price, not for sale yet
+//  'off'    its currency or hunt has not appeared, or its parent is not owned
+//  'tease'  a grey FULL GAME node, never for sale
 //  'poor'   for sale, but you cannot pay
 //  'buy'    for sale, and you can pay
 //  'max'    every level bought
 function nodeState(n) {
-  if (n.k === 'tease') return n.p && lv(n.p) > 0 ? 'hidden' : 'off';
+  const flags = SAVE.flags;
+  if (n.cur === 'surv' && !flags.survShown || n.cur === 'gold' && !flags.goldShown) return 'off';
+  if (n.id === 'silverHunt' && !flags.silverSeen || n.id === 'boomHunt' && !flags.boomSeen ||
+    n.id === 'goldHunt' && !flags.goldShown) return 'off';
+  if (n.p && lv(n.p) < 1) return 'off';
+  if (n.k === 'tease') return 'tease';
   if (lv(n.id) >= maxLv(n)) return 'max';
-  const p = parentOf(n);
-  // (a node with a level always shows: an old save may own one whose parent has none)
-  if (p && !lv(n.id)) {
-    const ps = nodeState(p);
-    if (ps === 'off' || ps === 'hidden') return 'off';
-    if (n.later || !needsMet(n)) return 'hidden';
-  }
-  if (n.soon) return 'soon';
   return canPay(n) ? 'buy' : 'poor';
 }
-// 0 = not on the map, 1 = a padlock, 2 = shown
-const shownAs = (n) => ({ off: 0, hidden: 1 })[nodeState(n)] ?? 2;
+// 0 = absent, 1 = a FULL GAME tease, 2 = a demo node. Growth uses this visibility snapshot.
+const shownAs = (n) => ({ off: 0, tease: 1 })[nodeState(n)] ?? 2;
 
 // ---------- into a run
 // The active Viper upgrades are folded into the current gun. Weapons added in phases 3-5 use
@@ -8467,12 +8460,13 @@ function treeUp(L, up) {
 // pop[id] = when it popped in, lit[id] = when its line lit up, flash[id] = its last buy, shake[id] =
 // a click that could not buy, rings, sparks and floats after a buy, hov = the node under the mouse,
 // cam = the view (x, y = the cell in the middle of the panel, z = zoom; zt = the zoom it goes to,
-// anchor = the point that stays under the mouse while it zooms), drag = a drag of the map.
+// anchor = the point that stays under the mouse while it zooms), drag = a drag of the map,
+// shown = the previous visibility snapshot, so flags revealed during play can grow new lines.
 const TREE = {};
 const ZOOMS = [0.25, 0.5, 0.75, 1, 1.5, 2];
 function resetTree() {
   Object.assign(TREE, { born: {}, pop: {}, lit: {}, flash: {}, shake: {}, rings: [], sparks: [], floats: [], hov: null, sel: null,
-    cam: { x: 0, y: 0, z: 1 }, zt: 1, anchor: null, drag: null, lastBuy: -9, y0: 19, y1: 331 });
+    cam: { x: 0, y: 0, z: 1 }, zt: 1, anchor: null, drag: null, shown: null, lastBuy: -9, y0: 19, y1: 331 });
 }
 resetTree();
 const GROW = 0.3;
@@ -8480,7 +8474,7 @@ const GROW = 0.3;
 function buyNode(id) {
   const n = NODE[id];
   if (!n || n.k === 'tease' || nodeState(n) !== 'buy') return false;
-  const before = NODES.map(shownAs), p = priceOf(n);
+  const before = TREE.shown || NODES.map(shownAs), p = priceOf(n);
   SAVE[n.cur || 'scrap'] -= p;
   SAVE.nodes[id] = lv(id) + 1;
   if (p > 0 && (!n.cur || n.cur === 'scrap')) SAVE.flags.survShown = true;
@@ -8504,18 +8498,20 @@ function boughtFx(n, p) {
   if (p) TREE.floats.push({ id: n.id, s: '-' + fmt(p), c: n.cur === 'surv' ? U.amber : n.cur === 'gold' ? U.gold : U.blue, t: realT });
   if (lv(n.id) === 1) TREE.lit[n.id] = realT;
 }
-// After a change: nodes that just came onto the map grow their line, one ring after another; a
-// padlock that just opened pops.
+// After a change, new nodes grow their line and pop in. Save the mask after purchases as well as
+// flag changes, so rendering does not restart an animation that the purchase already started.
 function grew(before) {
+  const after = NODES.map(shownAs);
   NODES.forEach((n, i) => {
-    const now = shownAs(n), was = before[i];
-    if (now === was) return;
+    const now = after[i], was = before[i];
+    if (!now || now === was) return;
     if (was === 0) {
       const p = parentOf(n), pb = p ? TREE.born[p.id] : null;
       TREE.born[n.id] = pb != null && pb >= realT ? pb + GROW : realT;
     }
     if (now === 2) TREE.pop[n.id] = was === 0 ? TREE.born[n.id] + GROW : realT;
   });
+  TREE.shown = after;
 }
 // Set a node's level (tests): no price, no show.
 function setNode(id, l) {
@@ -8713,6 +8709,9 @@ function drawTreeBack(y0, y1) {
 function drawTreeTab(y0, y1) {
   TREE.y0 = y0;
   TREE.y1 = y1;
+  // The first visit establishes a baseline. Later visits animate flags earned during a ride.
+  if (TREE.shown) grew(TREE.shown);
+  else TREE.shown = NODES.map(shownAs);
   treeView();
   ctx.save();
   ctx.beginPath();
@@ -8866,7 +8865,7 @@ function treeLines(g, vis) {
       g.globalAlpha = 1;
       g.globalCompositeOperation = 'source-over';
       tLine(g, a.x, a.y, gx, gy, K.c, wide);
-    } else if (st === 'hidden') tLine(g, a.x, a.y, ex, ey, '#1a2232', 1);
+    } else if (st === 'tease') tLine(g, a.x, a.y, ex, ey, '#1a2232', 1);
     else tLine(g, a.x, a.y, ex, ey, st === 'buy' ? K.m : '#24324a', wide);
   });
 }
@@ -8905,7 +8904,7 @@ function drawTreeNode(n, st) {
   if (pp >= 0 && pp < 0.25) h = Math.max(2, Math.round(h * (0.4 + 0.6 * ease(pp / 0.25) + Math.sin(pp / 0.25 * Math.PI) * 0.2)));
   const s = h * 2, nx = x - h, ny = y - h, hov = TREE.hov === n, buy = st === 'buy', big = !!n.star || n.id === 'root';
   const pulse = 0.5 + 0.5 * Math.sin(realT * 5 + n.x);
-  const lock = st === 'hidden' || n.k === 'tease';
+  const lock = st === 'tease';
   // the glow round it
   const ga = lock ? 0 : st === 'max' ? 0.5 : buy ? 0.35 + 0.35 * pulse : l > 0 ? 0.4 : st === 'poor' ? 0.12 : 0.18;
   if (ga > 0 || hov) {
@@ -8959,7 +8958,6 @@ function drawTreeNode(n, st) {
   if (lock || z < 0.7) return;
   let lab, lc;
   if (n.id === 'root') [lab, lc] = l ? ['', ''] : ['FREE', pulse > 0.5 ? '#ffe39a' : U.gold];
-  else if (st === 'soon') [lab, lc] = ['SOON', '#5a6478'];
   else [lab, lc] = [l + '/' + m, st === 'max' ? K.c : l > 0 ? '#e6f2ff' : buy ? '#c8d4e6' : '#6c7890'];
   if (lab) text(lab, x, y + h + 2, lc, { align: 'center', outline: '#04060a' });
 }
@@ -9028,16 +9026,15 @@ function wrap(s, w) {
 function statSegs(stat, l, done) {
   const [label, val] = stat, now = String(val(l));
   if (done || now === String(val(l + 1))) return [[label, U.dim], [now, U.ink]];
-  return [[label, U.dim], [now, now === 'NONE' || now === 'LOCKED' ? U.faint : U.ink], ['>', U.faint], [String(val(l + 1)), U.green]];
+  return [[label, U.dim], [now, now === 'NONE' ? U.faint : U.ink], ['>', U.faint], [String(val(l + 1)), U.green]];
 }
 // The tooltip for node n beside it: NAME and LEVEL x/y, a line in its colour, what it does, NOW >
 // NEXT, then the price (red when you cannot pay) and what a click does.
 const INFO_W = 216;
 function drawInfo(n, st, y0, y1) {
-  const K = NODE_KIND[n.k], l = lv(n.id), m = maxLv(n), tease = n.k === 'tease', lock = st === 'hidden' || tease, p = parentOf(n);
-  const named = !lock || !n.later || (p && lv(p.id) > 0);
+  const K = NODE_KIND[n.k], l = lv(n.id), m = maxLv(n), tease = st === 'tease', lock = tease;
   const inner = INFO_W - 14;
-  const desc = wrap(named ? n.desc : '???', inner);
+  const desc = wrap(n.desc, inner);
   const vals = lock || !n.stat ? [] : [n.stat, n.stat2].filter(Boolean).map((s) => statSegs(s, l, l >= m));
   // the foot: [price text, colour, price icon, right text, colour]
   const surv = n.cur === 'surv', gold = n.cur === 'gold', pr = priceOf(n), have = SAVE[n.cur || 'scrap'];
@@ -9045,10 +9042,7 @@ function drawInfo(n, st, y0, y1) {
   const pcol = !canPay(n) ? U.red : surv ? U.amber : gold ? U.gold : U.blue;
   let foot;
   if (tease) foot = ['', U.faint, null, 'FULL GAME', U.dim];
-  else if (n.later) foot = ['', U.faint, null, 'COMING SOON', U.faint];
-  else if (lock) foot = [fmt(pr), canPay(n) ? U.dim : U.red, icon, 'NEEDS: ' + nodeLv(p.id, needOf(n)), U.amber];
   else if (st === 'max') foot = ['', U.dim, null, n.id === 'root' || m === 1 ? 'OWNED' : 'MAXED', K.c];
-  else if (st === 'soon') foot = [fmt(pr), U.faint, icon, 'COMING SOON', U.faint];
   else if (st === 'poor') foot = [fmt(pr), U.red, icon, 'NEED ' + fmt(pr - have) + ' MORE', U.red];
   else foot = pr ? [fmt(pr), pcol, icon, 'CLICK TO BUY', U.gold] : ['FREE', U.gold, null, 'CLICK TO TAKE IT', U.gold];
   const kindName = tease ? 'FULL GAME' : n.id === 'root' ? 'THE ROOT' : n.k === 'surv' ? 'NEW UNIT' : n.k === 'gold' ? 'SPECIAL' : 'UPGRADE';
@@ -9072,8 +9066,8 @@ function drawInfo(n, st, y0, y1) {
   ctx.fillRect(x + 1, y + 1, w - 2, 1);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  text(named ? n.name : '???', x + 7, y + 5, lock ? U.dim : '#ffffff');
-  text(lock && !n.later ? 'LOCKED' : n.id === 'root' ? (l ? 'OWNED' : '0/1') : l + '/' + m, x + w - 7, y + 5, lock ? U.faint : st === 'max' ? K.c : U.ink, { align: 'right' });
+  text(n.name, x + 7, y + 5, lock ? U.dim : '#ffffff');
+  if (!tease) text(n.id === 'root' ? (l ? 'OWNED' : '0/1') : l + '/' + m, x + w - 7, y + 5, st === 'max' ? K.c : U.ink, { align: 'right' });
   text(kindName, x + 7, y + 14, tease ? U.dim : lock ? '#3c4658' : K.m, { outline: false });
   ctx.fillStyle = lock ? '#1c2434' : K.m;
   ctx.fillRect(x + 6, y + 23, w - 12, 1);
@@ -11664,6 +11658,7 @@ Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assi
 
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  treeShown: () => NODES.filter((n) => shownAs(n) > 0).map((n) => n.id),
   treeArt: () => NODES.map((n) => ({ id: n.id, w: NICON[n.id]?.width || 0, h: NICON[n.id]?.height || 0 })),
   treeOverlap: () => {
     const pairs = [];
