@@ -1,5 +1,6 @@
 // ui.js - everything drawn over the world, in screen pixels: the gun sight and lock brackets, the
-// top bar (cash, kills, the train's health, the way to the safe zone), warnings, the weapon cards,
+// top bar (cash, kills, the train's health, the way to the station and the safe zone), warnings,
+// arrows on the screen edge to the train and to trouble out of view, the radar, the weapon cards,
 // coins, banners, hints, the red edge when the train is nearly lost, and the screens (title, pause,
 // summary). Buttons are drawn in the canvas too (from Ball x Archers).
 
@@ -133,16 +134,22 @@ function drawHUD() {
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 6);
   ctx.fillStyle = f < 0.35 ? '#e06a4f' : f < 0.65 ? '#e8b05a' : '#9cc777';
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 1);
-  // the way to the safe zone: the line, the train on it, the flag and the distance left
+  // the way to the safe zone: the line, the station halfway, the train on it, the flag, the
+  // distance left (2 px = 1 m)
   if (!G.demo) {
-    const px = hx + hw + 20, pw = W - 96 - px, left = Math.max(0, Math.round((tr.front - G.goalY) / 2));
-    const k = clamp((tr.start - tr.front) / (tr.start - G.goalY), 0, 1);
+    const px = hx + hw + 20, pw = W - 96 - px, left = Math.max(0, Math.round((tr.s - G.goalS) / 2));
+    const k = clamp((tr.startS - tr.s) / CFG.trip, 0, 1);
     if (pw >= 40) {
       ctx.fillStyle = '#2e3139';
       ctx.fillRect(px, 9, pw, 1);
       ctx.fillStyle = '#b8862f';
       ctx.fillRect(px, 9, Math.round(pw * k), 1);
       for (let t = 0; t <= 4; t++) ctx.fillRect(px + Math.round(pw * t / 4), 8, 1, 3);
+      const sx = px + Math.round(pw / 2), done = G.station && G.station.state === 'leaving';
+      ctx.fillStyle = '#07080a';
+      ctx.fillRect(sx - 2, 4, 5, 9);
+      ctx.fillStyle = done ? '#8fd18a' : '#9fd3f2';
+      ctx.fillRect(sx - 1, 5, 3, 7);
       ctx.fillStyle = '#07080a';
       ctx.fillRect(px + Math.round(pw * k) - 2, 6, 5, 7);
       ctx.fillStyle = '#e8dfc8';
@@ -160,26 +167,105 @@ function drawHUD() {
     bar(5, 33, 52, 2, 1 - st / 1.6, '#1a1716', '#e3b04b');
   }
 }
-// warnings under the top bar: the track ahead is blocked, the dead are on the train
+// warnings under the top bar: the dead on the track or on the train, the helicopter too far away,
+// the survivors boarding
 function drawWarnings() {
   if (G.result) return;
-  const blink = Math.floor(realT * 3) % 2 === 0;
-  let y = 24;
-  if (G.blocked) {
-    // a red arrow over the track, pointing down at the train
-    const ax = Math.round(RAIL_X - G.camX), on = blink ? '#ff3a2a' : '#a8241a';
-    ctx.fillStyle = '#07080a';
-    ctx.fillRect(ax - 5, y - 1, 11, 6);
-    ctx.fillRect(ax - 3, y + 5, 7, 2);
-    ctx.fillStyle = on;
-    ctx.fillRect(ax - 4, y, 9, 2);
-    ctx.fillRect(ax - 3, y + 2, 7, 2);
-    ctx.fillRect(ax - 2, y + 4, 5, 1);
-    ctx.fillRect(ax - 1, y + 5, 3, 1);
-    text('THE DEAD ARE ON THE TRACK', ax + 10, y, on);
-    y += 11;
+  const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', st = G.station, L = [];
+  if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD', red]);
+  if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
+  if (G.heli.far) L.push(['STAY WITH THE TRAIN  (F)', U.amber]);
+  if (st && st.state === 'boarding') {
+    L.push(['SURVIVORS ABOARD ' + st.saved + ' / ' + CFG.station.people, '#8fd18a']);
+    if (st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
   }
-  if (G.onTrain > 0) text(G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', W / 2, y, blink ? U.red : '#a8241a', { align: 'center' });
+  L.forEach(([t, c], i) => text(t, W / 2, 24 + i * 10, c, { align: 'center' }));
+}
+// An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
+// with a label just inside it.
+function edgeArrow(wx, wy, col, label) {
+  const sx = wx - G.camX, sy = wy - G.camY;
+  if (sx > 8 && sx < W - 8 && sy > 26 && sy < H - 8) return false;
+  // the arrows keep inside a frame below the warnings: x 12..W-12, y 62..H-12
+  const cx = W / 2, cy = (62 + H - 12) / 2, hw = W / 2 - 12, hh = (H - 74) / 2;
+  const dx = sx - cx, dy = sy - cy, l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l;
+  const t = Math.min(hw / Math.max(1e-6, Math.abs(dx)), hh / Math.max(1e-6, Math.abs(dy)));
+  const ax = Math.round(cx + dx * t), ay = Math.round(cy + dy * t);
+  // a small triangle, tip toward the target, with a dark edge
+  for (const [c, g] of [['#07080a', 1], [col, 0]]) {
+    ctx.fillStyle = c;
+    for (let py = -6; py <= 6; py++) for (let px = -6; px <= 6; px++) {
+      const a = px * ux + py * uy, b = -px * uy + py * ux;
+      if (a <= 4 + g && a >= -3 - g && Math.abs(b) <= (4 - a) * 0.62 + g * 0.9) ctx.fillRect(ax + px, ay + py, 1, 1);
+    }
+  }
+  // the label just inside the arrow: beside it on the left and right edges, under or over it on
+  // the top and bottom
+  if (label) {
+    const w = tw(label), side = Math.abs(dx) * hh > Math.abs(dy) * hw;
+    const lx = side ? ax - Math.sign(ux) * (9 + w / 2) : ax, ly = side ? ay - 3 : ay - Math.sign(uy) * 11 - 3;
+    text(label, clamp(lx, w / 2 + 4, W - w / 2 - 4), clamp(ly, 22, H - 10), col, { align: 'center' });
+  }
+  return true;
+}
+// Arrows to the train, and to trouble out of view: the dead on a car, on the track ahead, after a
+// survivor.
+const ON_CAR = [0, 0, 0, 0, 0];
+function drawArrows() {
+  const tr = G.tr, c = tr.cars[2];
+  ON_CAR.fill(0);
+  let rail = null, rd = 1e9;
+  for (const z of G.zombies) {
+    if (z.dead) continue;
+    if (z.st === 2) ON_CAR[z.car]++;
+    else if (z.st === 1) {
+      const ds = tr.s - trackLocal(z.x, z.y, TL).a;
+      if (ds > 0 && ds < 300 && ds < rd) { rd = ds; rail = z; }
+    }
+  }
+  // the train (its middle): gold, red with a count when the dead are on it; or, when the train is
+  // in view, an arrow to any car under attack that is not
+  const n = G.result ? 0 : G.onTrain;
+  if (!edgeArrow(c.cx, c.cy, n ? U.red : U.gold, 'TRAIN ' + Math.round(Math.hypot(c.cx - G.camX - W / 2, c.cy - G.camY - H / 2) / 2) + 'M' + (n ? '  ' + n + '!' : ''))) {
+    if (!G.result) ON_CAR.forEach((m, k) => { if (m) edgeArrow(tr.cars[k].cx, tr.cars[k].cy, U.red, m + '!'); });
+  }
+  if (G.result) return;
+  if (rail) edgeArrow(rail.x, rail.y, U.red, 'TRACK');
+  const held = G.people.find((p) => p.st === 'grab'), out = G.people.find((p) => p.st === 'run');
+  if (held) edgeArrow(held.x, held.y, U.red, 'HELP');
+  else if (out) edgeArrow(out.x, out.y, '#8fd18a', 'SURVIVOR');
+}
+// The radar: the land round the helicopter, 1280 px across, north up. The railway, the train,
+// the dead (bright red: on the track or the train), survivors, the station, the safe zone wall,
+// and the view.
+function drawRadar() {
+  const R = 36, x0 = W - R * 2 - 6, y0 = H - R * 2 - 6, cx = x0 + R, cy = y0 + R, k = R / 640;
+  const hx = G.camX + W / 2, hy = G.camY + H / 2;
+  ctx.fillStyle = 'rgba(6,10,8,0.84)';
+  ctx.fillRect(x0, y0, R * 2, R * 2);
+  frame(x0 - 1, y0 - 1, R * 2 + 2, R * 2 + 2, '#2e3139');
+  ctx.fillStyle = 'rgba(86,194,168,0.12)';
+  ctx.fillRect(cx, y0, 1, R * 2);
+  ctx.fillRect(x0, cy, R * 2, 1);
+  const dot = (wx, wy, c, s) => {
+    const px = Math.round(cx + (wx - hx) * k), py = Math.round(cy + (wy - hy) * k);
+    if (px < x0 || py < y0 || px > x0 + R * 2 - s || py > y0 + R * 2 - s) return;
+    ctx.fillStyle = c;
+    ctx.fillRect(px, py, s, s);
+  };
+  for (let wy = hy - 640; wy <= hy + 640; wy += 14) dot(trackX(wy), wy, '#3e434c', 1);
+  if (G.goalY > hy - 640 && G.goalY < hy + 640) for (let dx = -560; dx <= 560; dx += 18) dot(trackX(G.goalY) + dx, G.goalY, '#8fd18a', 1);
+  const st = G.station;
+  if (st) dot(st.house.x - 1, st.house.y - 1, '#9fd3f2', 2);
+  for (const z of G.zombies) if (!z.dead) dot(z.x, z.y, z.st ? '#ff4a32' : '#7a2a22', 1);
+  for (const p of G.people) if (p.st === 'run' || p.st === 'wait' || p.st === 'grab') dot(p.x, p.y, '#8fd18a', 1);
+  for (const c of G.tr.cars) dot(c.cx - 1, c.cy - 1, '#e8dfc8', 2);
+  // the view
+  const vx = Math.round(cx - W / 2 * k), vy = Math.round(cy - H / 2 * k);
+  ctx.globalAlpha = 0.55;
+  frame(vx, vy, Math.round(W * k) + 1, Math.round(H * k) + 1, '#9fd3f2');
+  ctx.globalAlpha = 1;
+  text('N', cx, y0 + 2, U.faint, { align: 'center', outline: false });
 }
 function drawWeapons() {
   const y = H - 30, rdy = G.heReload <= 0;
@@ -187,15 +273,15 @@ function drawWeapons() {
     G.overheat ? '#b8402e' : G.heat > 0.75 ? U.amber : '#8b919c');
   card(104, y, 96, 26, ICON.he, '105MM', rdy ? 'READY' : 'R-CLICK', rdy ? U.gold : U.faint, 1 - G.heReload / CFG.he.reload,
     rdy ? '#e3b04b' : '#7a6a50');
-  text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 5, H - 11, U.faint, { align: 'right' });
+  text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
 }
 // first seconds of a run: how to play
 function drawHint() {
   const a = clamp((10 - G.run) / 1.5, 0, 1);
   if (a <= 0 || G.run < 1.2 || G.result) return;
   ctx.globalAlpha = a;
-  text('KEEP THE DEAD OFF THE TRAIN AND OFF THE TRACK AHEAD.', W / 2, H - 58, U.ink, { align: 'center' });
-  text('HOLD LEFT CLICK: 25MM.   RIGHT CLICK OR SPACE: 105MM.   T: THERMAL.', W / 2, H - 47, U.dim, { align: 'center' });
+  text('WASD: FLY THE HELICOPTER.  LET GO: IT KEEPS PACE WITH THE TRAIN.', W / 2, H - 58, U.ink, { align: 'center' });
+  text('F: BACK OVER THE TRAIN.   LEFT CLICK: 25MM.   RIGHT CLICK: 105MM.', W / 2, H - 47, U.dim, { align: 'center' });
   ctx.globalAlpha = 1;
 }
 // red screen edge while the train is nearly lost
@@ -233,8 +319,8 @@ function drawTitle() {
   text('SKY REAPER', cx, py + 18, U.ink, { align: 'center', scale: 3, drop: true });
   ctx.fillStyle = '#8a6a2a';
   ctx.fillRect(cx - 110, py + 46, 220, 1);
-  text('GET THE TRAIN TO THE SAFE ZONE.', cx, py + 54, U.dim, { align: 'center' });
-  text('KEEP THE DEAD OFF IT AND OFF THE TRACK.', cx, py + 64, U.dim, { align: 'center' });
+  text('FLY ESCORT FOR THE LAST TRAIN.', cx, py + 54, U.dim, { align: 'center' });
+  text('PICK UP SURVIVORS. REACH THE SAFE ZONE.', cx, py + 64, U.dim, { align: 'center' });
   if (button(cx - 75, py + 82, 150, 20, 'START MISSION', { primary: true })) startGame();
   if (button(cx - 75, py + 108, 150, 20, 'CAMERA: ' + CAMS[thermal])) setThermal((thermal + 1) % 3);
   if (best.kills > 0) {
@@ -242,7 +328,7 @@ function drawTitle() {
     ctx.drawImage(ICON.skull, cx - w / 2, py + 140);
     text(s, cx - w / 2 + 10, py + 141, U.gold, { outline: false });
   }
-  const L = ['MOUSE: AIM. IT LOCKS ON THE NEAREST ZOMBIE.', 'HOLD LEFT CLICK: 25MM.  RIGHT CLICK / SPACE: 105MM.',
+  const L = ['WASD: FLY.  F: BACK OVER THE TRAIN.  MOUSE: AIM.', 'HOLD LEFT CLICK: 25MM.  RIGHT CLICK / SPACE: 105MM.',
     'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
   L.forEach((l, i) => text(l, cx, py + 160 + i * 11, U.faint, { align: 'center', outline: false }));
   text('ENTER TO START', cx, py + 205, U.faint, { align: 'center', outline: false });
@@ -256,8 +342,8 @@ function drawSummary() {
   text(safe ? 'TRAIN SAFE' : 'TRAIN LOST', x + w / 2, y + 12, safe ? U.gold : U.red, { align: 'center', scale: 2 });
   if (s.newBest) text('NEW BEST', x + w / 2, y + 30, U.gold, { align: 'center' });
   const k = ease(clamp((realT - sumStart - 0.3) / 1.4, 0, 1));
-  const rows = [['ZOMBIES KILLED', fmt(Math.round(s.kills * k))], ['TRAIN HEALTH', Math.round(s.hp * k) + '%'],
-    ['BEST STREAK', fmt(Math.round(s.streak * k))], ['BIGGEST BLAST', fmt(Math.round(s.blast * k))]];
+  const rows = [['ZOMBIES KILLED', fmt(Math.round(s.kills * k))], ['SURVIVORS SAVED', Math.round(s.saved * k) + ' / ' + s.people],
+    ['TRAIN HEALTH', Math.round(s.hp * k) + '%'], ['BIGGEST BLAST', fmt(Math.round(s.blast * k))]];
   rows.forEach((r, i) => {
     text(r[0], x + 20, y + 44 + i * 15, U.dim);
     text(r[1], x + w - 20, y + 44 + i * 15, U.ink, { align: 'right' });
@@ -283,9 +369,11 @@ function drawUI() {
   drawCoins();
   if (mode === 'play' || mode === 'ending') {
     drawWarnings();
+    drawRadar();
     drawWeapons();
     drawHint();
     drawBanners();
+    drawArrows();
     if (mode === 'play' && !paused) drawSight();
     if (paused) drawPause();
     drawTension();

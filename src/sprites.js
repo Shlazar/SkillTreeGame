@@ -150,118 +150,218 @@ function makeZSet(w, h, draw, pal, shw) {
 // ZS[type] = the colour variants of each type (0 walker, 1 runner, 2 brute)
 const ZS = [[], [], []];
 
-// ---------- the train
-// Seen from above and behind (it runs up the screen): the roof, then the rear end wall below it.
-// Each drawing is 16 x 37: rows 0-27 the roof, rows 28-36 the end wall with the wheels at the bottom.
-// The flatcar is low: its deck starts at row 6. The sun is in the north-west, so left edges are lit.
-function wheels(r) {
-  r(0, 35, 16, 2, '#0b0c0e');
-  r(2, 35, 3, 1, '#2a2d33');
-  r(11, 35, 3, 1, '#2a2d33');
+// ---------- the train, built from stacked slices
+// Each car is a pile of top-down slices (16 x 28 px, its front at the top), one per pixel of height.
+// Turned to the car's heading and drawn each 1 px above the one under it, the pile looks solid from
+// any angle: the roof on top, and below it whichever walls face the camera. Every car is made at
+// ANG_N headings between -ANG_MAX and +ANG_MAX (0 = north, + = clockwise).
+const ANG_MAX = 40 * Math.PI / 180, ANG_N = 33;
+const angIdx = (a) => clamp(Math.round((a + ANG_MAX) / (2 * ANG_MAX) * (ANG_N - 1)), 0, ANG_N - 1);
+const angOf = (i) => -ANG_MAX + i * 2 * ANG_MAX / (ANG_N - 1);
+const slice = (fn) => pix(16, 28, fn);
+// the wheels and the frame (the two bottom slices of every car)
+function underSlices() {
+  return [slice((r) => {
+    r(1, 2, 14, 24, '#0b0c0e');
+    for (const y of [4, 20]) { r(0, y, 1, 4, '#2a2d33'); r(15, y, 1, 4, '#2a2d33'); }
+  }), slice((r) => {
+    r(0, 0, 16, 28, '#1a1d22');
+    for (let y = 1; y < 28; y += 3) { r(0, y, 1, 1, '#4a4e57'); r(15, y, 1, 1, '#4a4e57'); }
+  })];
 }
-function dLoco(r) {
+// a wall slice: the whole outline filled with one colour (only its outer pixels ever show)
+const wallSlice = (col, nose) => slice((r) => {
+  if (nose) { r(2, 0, 12, 1, col); r(1, 1, 14, 1, col); r(0, 2, 16, 26, col); } else r(0, 0, 16, 28, col);
+});
+function locoSlices() {
   const B = ['#151b24', '#243042', '#34445c', '#4b5f7d'];
-  // the nose: rounded, two headlights, warning stripes
-  r(3, 0, 10, 1, B[2]); r(1, 1, 14, 1, B[2]); r(0, 2, 16, 4, B[1]);
-  r(0, 2, 1, 4, B[2]); r(15, 2, 1, 4, B[0]); r(1, 3, 14, 1, B[2]);
-  r(4, 0, 1, 1, '#fff1c2'); r(11, 0, 1, 1, '#fff1c2');
-  for (let x = 1; x < 15; x += 2) r(x, 4, 1, 1, '#c9772f');
-  // the cab: a raised roof with glass round it
-  r(0, 6, 16, 8, B[2]); r(1, 7, 14, 6, B[3]); r(1, 7, 14, 1, '#6d82a3');
-  r(2, 6, 12, 1, '#1b2836'); r(3, 6, 2, 1, '#6f8aa6');
-  r(0, 8, 1, 4, '#1b2836'); r(15, 8, 1, 4, '#1b2836');
-  r(7, 9, 2, 2, B[1]);
-  // the long hood between two walkways, an exhaust stack and two radiator fans
-  r(0, 14, 16, 14, '#2a2d33');
-  for (let y = 15; y < 28; y += 2) { r(0, y, 1, 1, '#4a4e57'); r(15, y, 1, 1, '#1a1c20'); }
-  r(2, 14, 12, 14, B[1]); r(2, 14, 2, 14, B[2]); r(13, 14, 1, 14, B[0]); r(2, 14, 12, 1, B[3]);
-  r(2, 17, 1, 9, '#c9772f'); r(13, 17, 1, 9, '#8a5020');
-  r(7, 15, 2, 2, '#07080a'); r(6, 15, 1, 2, B[0]); r(9, 15, 1, 2, B[0]);
-  for (const fy of [19, 23]) {
-    r(6, fy, 4, 3, '#14171c'); r(7, fy, 2, 3, '#3a3e48'); r(6, fy + 1, 4, 1, '#3a3e48'); r(7, fy + 1, 2, 1, '#14171c');
-  }
-  // the rear: a handrail, a door, two tail lights
-  r(0, 28, 16, 7, B[0]); r(0, 28, 16, 1, '#8b919c'); r(1, 29, 1, 6, B[1]);
-  r(6, 29, 4, 6, '#0d1118'); r(7, 30, 2, 2, '#26303f');
-  r(2, 30, 1, 1, '#d0553f'); r(13, 30, 1, 1, '#d0553f');
-  wheels(r);
+  return [...underSlices(), wallSlice(B[0], true), wallSlice('#a8641f', true), wallSlice(B[1], true), wallSlice(B[1], true),
+    // glass round the cab
+    slice((r) => {
+      r(2, 0, 12, 1, B[1]); r(1, 1, 14, 1, B[1]); r(0, 2, 16, 26, B[1]);
+      r(0, 7, 1, 6, '#1b2836'); r(15, 7, 1, 6, '#1b2836'); r(2, 6, 12, 1, '#1b2836'); r(3, 6, 2, 1, '#6f8aa6');
+    }),
+    // the roof: nose with headlights and stripes, the cab, the long hood with its fans
+    slice((r) => {
+      r(2, 0, 12, 1, B[2]); r(1, 1, 14, 1, B[2]); r(0, 2, 16, 26, B[1]);
+      r(4, 0, 1, 1, '#fff1c2'); r(11, 0, 1, 1, '#fff1c2');
+      for (let x = 1; x < 15; x += 2) r(x, 3, 1, 1, '#c9772f');
+      r(1, 6, 14, 8, B[3]);
+      r(0, 14, 2, 14, '#2a2d33'); r(14, 14, 2, 14, '#2a2d33'); r(2, 14, 1, 14, B[2]);
+      for (const fy of [19, 23]) { r(6, fy, 4, 3, '#14171c'); r(7, fy, 2, 3, '#3a3e48'); r(6, fy + 1, 4, 1, '#3a3e48'); }
+    }),
+    // on top: the cab roof and the exhaust stack
+    slice((r) => { r(1, 6, 14, 8, '#6d82a3'); r(1, 6, 14, 1, '#8ea3c4'); r(7, 15, 2, 2, '#07080a'); })];
 }
-function dCoach(r) {
+function coachSlices() {
   const C = ['#18221a', '#2a3a2a', '#3e563c', '#5b7656'];
-  // a rounded roof with vents along the ridge
-  r(0, 0, 16, 28, C[1]);
-  r(0, 0, 1, 28, C[2]); r(1, 0, 2, 28, C[3]); r(3, 0, 1, 28, C[2]);
-  r(12, 0, 2, 28, C[0]); r(14, 0, 2, 28, '#121a14');
-  r(0, 0, 16, 1, C[3]); r(0, 27, 16, 1, C[0]);
-  for (const vy of [4, 11, 18, 24]) { r(7, vy, 2, 2, '#121a14'); r(7, vy, 2, 1, C[3]); }
-  // the end wall: a door with a lit window, two small windows
-  r(0, 28, 16, 7, '#22301f'); r(0, 28, 16, 1, C[2]);
-  r(5, 29, 6, 6, '#141c13'); r(6, 30, 4, 2, '#ffcf6a'); r(6, 30, 1, 1, '#fff1c2');
-  r(2, 31, 2, 2, '#ffcf6a'); r(12, 31, 2, 2, '#e8913a');
-  wheels(r);
+  // lit windows along both sides, a door window at each end
+  const windows = slice((r) => {
+    r(0, 0, 16, 28, C[1]);
+    for (let y = 2; y < 26; y += 4) { r(0, y, 1, 2, '#ffcf6a'); r(15, y, 1, 2, '#ffcf6a'); }
+    r(7, 0, 2, 1, '#ffcf6a'); r(7, 27, 2, 1, '#ffcf6a');
+  });
+  return [...underSlices(), wallSlice(C[0]), wallSlice(C[0]), windows, windows, wallSlice(C[1]), wallSlice(C[2]),
+    slice((r) => {
+      r(0, 0, 16, 28, C[2]); r(0, 0, 2, 28, C[3]); r(13, 0, 3, 28, C[1]); r(7, 0, 2, 28, C[3]);
+      for (const vy of [4, 11, 18, 24]) { r(7, vy, 2, 2, '#121a14'); }
+    })];
 }
-function dFlat(r) {
-  // a low deck of planks with sandbags round it, a crate and ammo boxes
-  r(0, 6, 16, 28, '#4f3a26');
-  for (let y = 7; y < 34; y += 3) r(0, y, 16, 1, '#3a2718');
-  r(0, 6, 1, 28, '#6b5038');
-  const bag = (x, y) => { r(x, y, 3, 2, '#8f805f'); r(x, y, 3, 1, '#b3a27a'); r(x + 2, y + 1, 1, 1, '#5e533c'); };
-  for (let y = 7; y < 32; y += 3) { bag(0, y); bag(13, y); }
-  for (let x = 3; x < 13; x += 3) { bag(x, 5); bag(x, 31); }
-  r(5, 9, 5, 4, '#7b5735'); r(5, 9, 5, 1, '#a38558'); r(7, 9, 1, 4, '#3a2718');
-  r(6, 26, 4, 2, '#46523a'); r(6, 26, 4, 1, '#5c6b48');
-  r(0, 33, 16, 2, '#2a2420');
-  wheels(r);
+function flatSlices() {
+  const ring = (col) => slice((r) => {
+    r(0, 0, 16, 2, col); r(0, 26, 16, 2, col); r(0, 0, 2, 28, col); r(14, 0, 2, 28, col);
+    r(5, 8, 5, 4, '#7b5735'); r(6, 20, 4, 2, '#46523a');
+  });
+  return [...underSlices(),
+    // the deck of planks
+    slice((r) => {
+      r(0, 0, 16, 28, '#4f3a26');
+      for (let y = 1; y < 28; y += 3) r(0, y, 16, 1, '#3a2718');
+      r(0, 0, 1, 28, '#6b5038');
+    }),
+    ring('#7d6f52'), ring('#9a8a68'),
+    // sandbags on top of the ring, the lid of the crate
+    slice((r) => {
+      for (let k = 0; k < 28; k += 3) { r(0, k, 2, 2, '#b3a27a'); r(14, k, 2, 2, '#b3a27a'); }
+      for (let k = 3; k < 13; k += 3) { r(k, 0, 2, 2, '#b3a27a'); r(k, 26, 2, 2, '#b3a27a'); }
+      r(5, 8, 5, 4, '#a38558'); r(7, 8, 1, 4, '#5b3f27');
+    })];
 }
-function dBox(r) {
+function boxSlices() {
   const R = ['#2e120f', '#4e1d18', '#6c2c22', '#8a3d2c'];
-  // a roof with ribs and a wooden catwalk down the middle
-  r(0, 0, 16, 28, R[1]); r(0, 0, 2, 28, R[2]); r(0, 0, 1, 28, R[3]); r(14, 0, 2, 28, R[0]);
-  r(0, 0, 16, 1, R[3]);
-  for (let y = 3; y < 28; y += 4) r(1, y, 14, 1, R[0]);
-  r(6, 0, 4, 28, '#5b3f27');
-  for (let y = 1; y < 28; y += 2) r(6, y, 4, 1, '#4a3220');
-  r(6, 0, 1, 28, '#7b5735');
-  // the end wall: ribs, a ladder, the brake wheel
-  r(0, 28, 16, 7, R[1]); r(0, 28, 16, 1, R[3]);
-  for (let x = 2; x < 16; x += 3) r(x, 29, 1, 6, R[0]);
-  for (let y = 29; y < 35; y += 2) r(12, y, 3, 1, '#8b919c');
-  r(2, 29, 3, 3, '#1a1a1a'); r(3, 30, 1, 1, '#626875');
-  wheels(r);
+  // a sliding door on each side, ribs on the ends
+  const wall = (col) => slice((r) => {
+    r(0, 0, 16, 28, col);
+    r(0, 10, 1, 8, R[0]); r(15, 10, 1, 8, R[0]);
+    for (let x = 2; x < 16; x += 3) { r(x, 0, 1, 1, R[0]); r(x, 27, 1, 1, R[0]); }
+  });
+  return [...underSlices(), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[2]), wall(R[2]),
+    slice((r) => {
+      r(0, 0, 16, 28, R[2]); r(0, 0, 2, 28, R[3]); r(14, 0, 2, 28, R[1]);
+      for (let y = 3; y < 28; y += 4) r(1, y, 14, 1, R[1]);
+      r(6, 0, 4, 28, '#5b3f27');
+      for (let y = 1; y < 28; y += 2) r(6, y, 4, 1, '#4a3220');
+      r(6, 0, 1, 28, '#7b5735');
+    })];
 }
-function dTank(r) {
-  // a fuel tank lying along the track, lit on the left, with a red band and a dome hatch
-  r(0, 0, 16, 2, '#2a2420'); r(0, 26, 16, 2, '#2a2420');
-  const col = ['#2b2e35', '#434753', '#626875', '#8b919c', '#b4b9c1'];
-  const sh = [0, 1, 4, 4, 3, 3, 3, 3, 3, 3, 2, 2, 2, 1, 1, 0];
-  for (let x = 0; x < 16; x++) {
-    const inset = x === 0 || x === 15 ? 2 : x === 1 || x === 14 ? 1 : 0;
-    r(x, 1 + inset, 1, 26 - inset * 2, col[sh[x]]);
+function tankSlices() {
+  const out = underSlices(), col = ['#2b2e35', '#2b2e35', '#434753', '#434753', '#626875', '#626875', '#8b919c', '#a3a9b2', '#b4b9c1'];
+  // a fuel tank lying along the car: each slice as wide as the round tank is at that height
+  for (let z = 0; z < 9; z++) {
+    const hw = Math.max(1, Math.round(7 * Math.sqrt(Math.max(0, 1 - Math.pow((z - 4) / 4.6, 2)))));
+    out.push(slice((r) => {
+      for (let y = 1; y < 27; y++) {
+        const end = Math.min(y - 1, 26 - y), w = Math.max(1, hw - (end < 2 ? 2 - end : 0));
+        r(8 - w, y, w * 2, 1, col[z]);
+      }
+      if (z > 0 && z < 8) { const w = hw; r(8 - w, 9, w * 2, 2, '#9a3326'); }
+      if (z === 8) { r(6, 12, 4, 4, '#434753'); r(7, 12, 2, 1, '#e8e2cc'); r(7, 2, 1, 23, '#d0d4da'); }
+    }));
   }
-  r(0, 9, 16, 2, '#9a3326'); r(0, 9, 3, 1, '#c8432e');
-  r(6, 13, 4, 4, '#434753'); r(7, 13, 2, 1, '#b4b9c1'); r(6, 14, 1, 2, '#8b919c'); r(7, 14, 2, 2, '#626875');
-  // the round end of the tank above the frame
-  for (let y = 0; y < 7; y++) {
-    const hw = Math.round(Math.sqrt(Math.max(0, 1 - Math.pow((y - 3) / 3.6, 2))) * 7.5);
-    r(8 - hw, 28 + y, hw * 2, 1, y < 2 ? '#626875' : y < 5 ? '#434753' : '#2b2e35');
-  }
-  r(3, 29, 2, 1, '#b4b9c1');
-  wheels(r);
+  return out;
 }
-// TRAIN[k] = one car (0 = the engine): n = normal, h = hot (thermal camera), red = taking damage,
-// tall = how high it stands (for its shadow).
-const TRAIN = [];
-// The survivors on the flatcar: [x, y] of their feet on the car sprite, and their sprites.
-const RIDERS = [[5, 16], [11, 20], [4, 25], [10, 12]];
+// Draw a pile of slices turned to heading ang. c.ox, c.oy = where the car's middle on the ground is.
+function stackSpr(slices, ang) {
+  const n = slices.length, cy = 18 + n;
+  const [c, g] = mk(36, 36 + n, true);
+  for (let z = 0; z < n; z++) {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.translate(18, cy - z);
+    g.rotate(ang);
+    g.drawImage(slices[z], -8, -14);
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  // hard edges: a pixel is either there or not
+  const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
+  g.putImageData(im, 0, 0);
+  return c;
+}
+// The ground shadow of a car turned to heading ang (black).
+function footSpr(ang) {
+  const [c, g] = mk(36, 36, true);
+  g.translate(18, 18);
+  g.rotate(ang);
+  g.fillStyle = '#000';
+  g.fillRect(-8, -14, 16, 28);
+  const im = g.getImageData(0, 0, 36, 36), d = im.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
+  g.putImageData(im, 0, 0);
+  return c;
+}
+// TRAIN[k] = one car (0 = the engine): n[i] = its sprite at heading angOf(i), h[i] = hot (thermal),
+// red[i] = taking damage (made when first needed), tall = its height. FOOT[i] = a car's shadow.
+const TRAIN = [], FOOT = [];
+function carRed(t, i) {
+  if (!t.red[i]) {
+    const c = tint(t.n[i], '#ff4a30', 0.45);
+    c.ox = t.n[i].ox;
+    c.oy = t.n[i].oy;
+    t.red[i] = c;
+  }
+  return t.red[i];
+}
+// The survivors riding the flatcar: [px across (right), px along (to the front)] from its middle.
+const RIDERS = [[-3, 7], [3, 2], [-2, -4], [3, -9]];
+// SURV[k] = a survivor: n / h = standing (normal / hot), run = 2 running frames each [n, h].
 const SURV = [];
-// a survivor with a rifle, 4 x 7
-function survivorRaw(shirt, skin) {
+// a survivor with a rifle, 4 x 7; f = 0 standing, 1 / 2 = running
+function survivorRaw(shirt, skin, f) {
   return pix(4, 7, (r) => {
     r(0, 0, 3, 2, skin); r(0, 0, 3, 1, '#2e2620');
     r(0, 2, 3, 3, shirt); r(0, 2, 1, 3, '#d8cfb6');
     r(3, 1, 1, 3, '#1a1a1a');
-    r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20');
+    if (f === 1) { r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 1, '#1a1c20'); }
+    else if (f === 2) { r(0, 5, 1, 1, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20'); }
+    else { r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20'); }
   });
+}
+
+// ---------- the helicopter's shadow (a gunship seen from below: cabin, stub wings, tail)
+const HELI = [];
+const HELI_N = 32;
+function heliSil() {
+  return pix(20, 34, (r) => {
+    r(8, 1, 4, 2, '#000'); r(7, 3, 6, 3, '#000'); r(6, 6, 8, 12, '#000');
+    r(1, 10, 18, 2, '#000'); r(0, 9, 3, 5, '#000'); r(17, 9, 3, 5, '#000');
+    r(7, 18, 6, 3, '#000'); r(9, 21, 2, 11, '#000');
+    r(5, 29, 10, 2, '#000'); r(11, 31, 3, 3, '#000');
+  });
+}
+function heliSpr(src, ang) {
+  const [c, g] = mk(40, 40, true);
+  g.translate(20, 20);
+  g.rotate(ang);
+  g.drawImage(src, -10, -11);
+  const im = g.getImageData(0, 0, 40, 40), d = im.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
+  g.putImageData(im, 0, 0);
+  return c;
+}
+
+// ---------- the station halfway: a platform beside the rails, a small station house, lamps
+const STATION = {};
+function slabSpr() {
+  return pix(12, 7, (r) => {
+    r(0, 0, 12, 5, '#8f897c'); r(0, 0, 12, 1, '#aaa392'); r(0, 0, 1, 5, '#c9a23a');
+    r(0, 5, 12, 2, '#5a564e'); r(11, 0, 1, 5, '#7a756a');
+  });
+}
+function houseSpr() {
+  return pix(28, 26, (r) => {
+    // a tiled roof, lit on the left, with a chimney
+    r(0, 0, 28, 14, '#6a2a22'); r(0, 0, 28, 1, '#a8503a'); r(0, 0, 2, 14, '#8a3d2c'); r(26, 0, 2, 14, '#4a1d18');
+    for (let y = 3; y < 14; y += 3) r(1, y, 26, 1, '#5a221c');
+    r(13, 0, 2, 14, '#8a3d2c'); r(20, 2, 3, 4, '#3a2a24'); r(20, 2, 3, 1, '#5a4a40');
+    // the front wall: plaster, a door, two lit windows
+    r(0, 14, 28, 12, '#8f805f'); r(0, 14, 28, 1, '#5e533c'); r(0, 14, 1, 12, '#b3a27a'); r(27, 14, 1, 12, '#6b5f45');
+    r(12, 17, 5, 9, '#2e2216'); r(13, 18, 3, 3, '#ffcf6a');
+    r(4, 17, 4, 4, '#ffcf6a'); r(4, 17, 4, 1, '#fff1c2'); r(20, 17, 4, 4, '#ffcf6a'); r(20, 17, 4, 1, '#fff1c2');
+    r(0, 25, 28, 1, '#3e3b35');
+  });
+}
+function lampSpr() {
+  return pix(3, 18, (r) => { r(1, 2, 1, 16, '#3a3e48'); r(0, 0, 3, 2, '#2a2d33'); r(1, 1, 1, 1, '#fff1c2'); });
 }
 
 // ---------- props
@@ -473,18 +573,40 @@ function initSprites() {
   PROPS.crate.push(prop(crateSpr(), 4));
   for (let k = 0; k < 8; k++) PROPS.wall.push(prop(wallSpr(10 + ((rng() * 12) | 0), rng), 0, { wall: true }));
   PROPS.pole.push(prop(poleSpr(), 0));
-  // the train: [drawing, height, warmth on the thermal camera]
+  // the train at every heading: [slices, height, warmth on the thermal camera]
   TRAIN.length = 0;
-  for (const [draw, tall, heat] of [[dLoco, 9, 150], [dCoach, 9, 95], [dFlat, 3, 60], [dBox, 9, 75], [dTank, 9, 55]]) {
-    const raw = pix(16, 37, (r) => draw(r));
-    const n = selOut(rimLight(raw, '#e8e2cc', 0.18));
-    TRAIN.push({ n, h: outline(hotSpr(raw, heat), '#161616'), red: tint(n, '#ff4a30', 0.45), tall });
+  FOOT.length = 0;
+  for (const [make, heat] of [[locoSlices, 150], [coachSlices, 100], [flatSlices, 60], [boxSlices, 75], [tankSlices, 55]]) {
+    const sl = make(), t = { n: [], h: [], red: [], tall: sl.length };
+    for (let i = 0; i < ANG_N; i++) {
+      const raw = stackSpr(sl, angOf(i));
+      const n = selOut(rimLight(raw, '#e8e2cc', 0.15));
+      n.ox = 19;
+      n.oy = 19 + sl.length;
+      const h = outline(hotSpr(raw, heat), '#161616');
+      h.ox = n.ox;
+      h.oy = n.oy;
+      t.n.push(n);
+      t.h.push(h);
+    }
+    TRAIN.push(t);
   }
+  for (let i = 0; i < ANG_N; i++) FOOT.push(footSpr(angOf(i)));
   SURV.length = 0;
-  for (const [shirt, skin] of [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#5c6b40', '#b8876a'], ['#7d776b', '#d1a582']]) {
-    const raw = survivorRaw(shirt, skin);
-    SURV.push({ n: outline(raw, '#07080a'), h: outline(hotSpr(raw, 215), '#161616') });
+  for (const [shirt, skin] of [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#5c6b40', '#b8876a'], ['#7d776b', '#d1a582'],
+    ['#9fd3f2', '#c99a72'], ['#e3b04b', '#8a6448']]) {
+    const one = (f) => { const raw = survivorRaw(shirt, skin, f); return [outline(raw, '#07080a'), outline(hotSpr(raw, 215), '#161616')]; };
+    const [n, h] = one(0);
+    SURV.push({ n, h, run: [one(1), one(2)] });
   }
+  // the helicopter's shadow at every heading round the circle
+  HELI.length = 0;
+  const hs = heliSil();
+  for (let i = 0; i < HELI_N; i++) HELI.push(heliSpr(hs, i / HELI_N * TAU));
+  // the station
+  STATION.slab = prop(slabSpr(), 0);
+  STATION.house = prop(houseSpr(), 10);
+  STATION.lamp = prop(lampSpr(), 0);
   // the safe zone
   SAFE.blocks = [];
   for (let k = 0; k < 4; k++) SAFE.blocks.push(prop(wallBlockSpr(rng), 0));

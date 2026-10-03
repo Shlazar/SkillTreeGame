@@ -70,11 +70,18 @@ cv.addEventListener('wheel', (e) => {
   }
 }, { passive: false });
 
+// KEYS[k] = true while key k is held. keyAxis() = the way WASD / the arrow keys push, [x, y].
+const KEYS = {};
 const keyName = (e) => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
+function keyAxis() {
+  return [(KEYS.d || KEYS.ArrowRight ? 1 : 0) - (KEYS.a || KEYS.ArrowLeft ? 1 : 0),
+    (KEYS.s || KEYS.ArrowDown ? 1 : 0) - (KEYS.w || KEYS.ArrowUp ? 1 : 0)];
+}
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = keyName(e);
-  if (k === ' ') e.preventDefault();
+  if (k === ' ' || k.startsWith('Arrow')) e.preventDefault();
+  KEYS[k] = true;
   if (e.repeat) return;
   audioInit();
   if (k === 'm') {
@@ -88,6 +95,7 @@ addEventListener('keydown', (e) => {
   }
   if (mode === 'play') {
     if (k === ' ') tryHE();
+    else if (k === 'f') G.heli.home = true;
     else if (k === 'Escape' || k === 'p') {
       paused = !paused;
       G.trigger = false;
@@ -99,8 +107,10 @@ addEventListener('keydown', (e) => {
     else if (k === 'Escape') toTitle();
   }
 });
-// pause when the window loses focus or the tab is hidden; let go of the trigger
+addEventListener('keyup', (e) => { KEYS[keyName(e)] = false; });
+// pause when the window loses focus or the tab is hidden; let go of every key and the trigger
 function lostFocus() {
+  for (const k in KEYS) KEYS[k] = false;
   if (G) G.trigger = false;
   M.down = false;
   if (mode === 'play') paused = true;
@@ -202,6 +212,8 @@ function boot() {
     get mode() { return mode; },
     FPS,
     CFG,
+    // the sprites, for a test sheet
+    art: () => ({ TRAIN, FOOT, HELI, STATION, SURV, ZS }),
     start: startGame,
     title: toTitle,
     // sim(sec): run the game for sec seconds at once, without drawing
@@ -217,14 +229,17 @@ function boot() {
     trigger: (on) => { G.trigger = !!on && mode === 'play'; },
     he: () => tryHE(),
     thermal: (k) => setThermal(k),
-    // hp(v): set the train's health. goal(px): move the train to px before the safe zone.
+    // hp(v): set the train's health. jump(px): move the train on to px before where it brakes for
+    // the station (or, after the station, before the safe zone); the dead are left behind.
     hp: (v) => { G.tr.hp = G.tr.hpShown = v; },
-    goal: (px) => {
-      const d = G.tr.front - (G.goalY + px);
-      G.tr.front -= d;
-      G.camY -= d;
-      for (const z of G.zombies) z.y -= d;
+    jump: (px) => {
+      const st = G.station, to = (st && st.state === 'ahead' ? st.stopS : G.goalS) + px;
+      G.tr.s = Math.min(G.tr.s, to);
+      for (const z of G.zombies) z.gone = true;
+      layoutTrain();
+      placeCamera();
     },
+    keys: (k, on) => { KEYS[k] = !!on; },
     // bot(on): the autopilot plays (it aims and pulls the triggers)
     bot: (on) => { G.bot = !!on; if (!on) G.trigger = false; },
     pause: (p) => { paused = !!p; },
@@ -240,7 +255,9 @@ function boot() {
     },
     stats: () => ({
       mode, result: G.result, kills: G.kills, cash: Math.round(G.cash), hp: Math.round(G.tr.hp), speed: +G.tr.v.toFixed(1),
-      left: Math.round(G.tr.front - G.goalY), onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length,
+      left: Math.round(G.tr.s - G.goalS), onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length,
+      station: G.station ? G.station.state + ' ' + G.station.saved + '/' + G.station.lost : '-',
+      heli: [Math.round(G.heli.ox), Math.round(G.heli.oy)],
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
       W, H, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), lock: !!G.lock, heat: +G.heat.toFixed(2)
     })

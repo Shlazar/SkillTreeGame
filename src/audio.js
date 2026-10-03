@@ -1,7 +1,7 @@
 // audio.js - all sound, made live with the Web Audio API (no sound files). The engine follows
 // Ball x Archers: audioInit builds the graph (master -> compressor, plus a light reverb), voice and
 // gap limit how often a sound can play, tone and nz make one synth note or one noise burst.
-// SFX holds every game sound; drone() is the gunship's engine hum under everything.
+// SFX holds every game sound; drone() is the helicopter's rotor under everything.
 
 const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null };
 
@@ -101,40 +101,44 @@ function nz(d, v, ft, f, q, f2, delay) {
   s.start(t, Math.random() * 0.4, d + 0.05);
 }
 
-// The engine hum: two detuned saws and a triangle through a low-pass filter, throbbing like
-// propellers. v = loudness 0..1 (0 = silent); it glides to the new level.
+// The helicopter: rotor noise through a low-pass filter, chopped by the blades (an LFO on its
+// loudness), and a faint turbine whine. v = loudness 0..1 (0 = silent); it glides to the new level.
 function drone(v) {
   const a = Au.ctx;
-  if (!a) return;
+  if (!a || !Au.noise) return;
   if (!Au.hum) {
     try {
-      const out = a.createGain(), throb = a.createGain(), f = a.createBiquadFilter();
+      const out = a.createGain(), chop = a.createGain(), f = a.createBiquadFilter(), src = a.createBufferSource();
       out.gain.value = 0;
+      src.buffer = Au.noise;
+      src.loop = true;
       f.type = 'lowpass';
-      f.frequency.value = 240;
-      f.Q.value = 0.7;
-      for (const [fr, type] of [[54, 'sawtooth'], [54.6, 'sawtooth'], [108.3, 'triangle']]) {
-        const o = a.createOscillator();
-        o.type = type;
-        o.frequency.value = fr;
-        o.connect(f);
-        o.start();
-      }
+      f.frequency.value = 340;
+      f.Q.value = 0.9;
+      chop.gain.value = 0.55;
       const lfo = a.createOscillator(), lg = a.createGain();
-      lfo.frequency.value = 3.3;
-      lg.gain.value = 0.3;
+      lfo.frequency.value = 6.4;
+      lg.gain.value = 0.5;
       lfo.connect(lg);
-      lg.connect(throb.gain);
-      lfo.start();
-      f.connect(throb);
-      throb.connect(out);
+      lg.connect(chop.gain);
+      src.connect(f);
+      f.connect(chop);
+      chop.connect(out);
+      const whine = a.createOscillator(), wg = a.createGain();
+      whine.frequency.value = 1850;
+      wg.gain.value = 0.01;
+      whine.connect(wg);
+      wg.connect(out);
       out.connect(Au.master);
+      src.start();
+      lfo.start();
+      whine.start();
       Au.hum = out;
     } catch (e) {
       return;
     }
   }
-  Au.hum.gain.setTargetAtTime(Au.muted ? 0 : v * 0.05, a.currentTime, 0.5);
+  Au.hum.gain.setTargetAtTime(Au.muted ? 0 : v * 0.18, a.currentTime, 0.5);
 }
 
 // Every game sound, built from tone() and nz().
@@ -249,6 +253,11 @@ const SFX = {
     nz(0.14, big ? 0.12 : 0.07, 'lowpass', 600, 0.8, 120);
     tone(big ? 70 : 110, 0.1, 'triangle', 0.05, 50);
     nz(0.06, 0.04, 'bandpass', rnd(400, 700), 1.5);
+  },
+  saved() {
+    // a survivor made it aboard: a bright double chime
+    tone(988, 0.08, 'triangle', 0.035);
+    tone(1319, 0.14, 'triangle', 0.035, null, 0.07);
   },
   radio() {
     // a burst of radio static and a beep

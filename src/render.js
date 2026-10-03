@@ -1,8 +1,8 @@
-// render.js - draws one frame of the world: ground and its marks, tufts, shadows, then trees,
-// props, the train, the safe zone and the dead sorted by depth (the dead behind a tree show through
-// it), fires, particles, explosions, flying bodies, tracers and glows (the train's headlight, the
-// searchlights), the mist and cloud shadows, then the color grade and vignette, or the thermal
-// camera look (grey, hot things white).
+// render.js - draws one frame of the world: ground and its marks, tufts, the helicopter's shadow and
+// the other shadows, then trees, props, the train, the station, the safe zone, survivors and the
+// dead sorted by depth (the dead behind a tree show through it), fires, particles, explosions,
+// flying bodies, tracers and glows (headlights, lamps, searchlights), the mist and cloud shadows,
+// then the color grade and vignette, or the thermal camera look (grey, hot things white).
 
 let VIG = null, GRADE = null, HAZE = null, SCAN = null, GRAIN = null, MIST = null, BODYSH = null;
 const CLOUDSPR = [];
@@ -108,9 +108,12 @@ function gather(ci0, cj0, ci1, cj1) {
     DL.push(p);
   }
   for (let i = 0; i < CAR.n; i++) {
-    const c = CARS[i] || (CARS[i] = { isCar: true, i, k: 0 });
-    c.k = carBack(i);
-    if (c.k > y0 && c.k - 40 < y1) DL.push(c);
+    const c = CARS[i] || (CARS[i] = { isCar: true, i, k: 0 }), tc = G.tr.cars[i];
+    c.k = tc.k;
+    if (tc.cx > x0 - 30 && tc.cx < x1 + 30 && tc.cy > y0 - 30 && tc.cy < y1 + 40) DL.push(c);
+  }
+  for (const p of G.people) {
+    if ((p.st === 'wait' || p.st === 'run' || p.st === 'grab') && p.x > x0 && p.x < x1 && p.y > y0 && p.y < y1 + 10) DL.push(p);
   }
   for (const z of G.zombies) {
     if (z.dead || z.x < x0 - 10 || z.x > x1 + 10 || z.y < y0 || z.y > y1 + 24) continue;
@@ -140,22 +143,61 @@ function drawZombie(z) {
     ctx.fillRect(x, y, Math.max(1, Math.round(w * z.hp / z.max)), 2);
   }
 }
-// A car of the train (red while it takes damage). The survivors ride on the flatcar.
+// A car of the train, turned to its heading on the rails (red while it takes damage). The
+// survivors ride on the flatcar, standing on its deck.
 function drawCar(i) {
-  const t = TRAIN[i], sx = RAIL_X - 9, sy = carBack(i) - 38;
-  blit(G.tr.hit[i] > 0 && !thermal ? t.red : thermal ? t.h : t.n, sx, sy);
+  const t = TRAIN[i], c = G.tr.cars[i], a = angIdx(c.ang);
+  const img = thermal ? t.h[a] : G.tr.hit[i] > 0 ? carRed(t, a) : t.n[a];
+  blit(img, Math.round(c.cx) - img.ox, Math.round(c.cy) - img.oy);
   if (i === 2) for (let k = 0; k < RIDERS.length; k++) {
-    const [px, py] = RIDERS[k], s = SURV[k], bob = Math.sin(realT * 5 + k * 1.7) > 0.6 ? 1 : 0;
-    blit(thermal ? s.h : s.n, sx + px - 1, sy + py - 6 - bob);
+    const [u, al] = RIDERS[k], s = SURV[k], bob = Math.sin(realT * 5 + k * 1.7) > 0.6 ? 1 : 0;
+    const x = c.cx + c.dx * al + c.nx * u, y = c.cy + c.dy * al + c.ny * u;
+    blit(thermal ? s.h : s.n, Math.round(x) - 2, Math.round(y) - 10 - bob);
   }
 }
 // The train's shadow: each car's footprint, moved away from the sun by its height.
 function drawTrainShadow() {
-  ctx.fillStyle = '#000';
   for (let i = 0; i < CAR.n; i++) {
-    const h = TRAIN[i].tall;
-    ctx.fillRect(RAIL_X - 8 + Math.round(h * SUNX), carFront(i) + Math.round(h * SUNY), 16, CAR.L);
+    const c = G.tr.cars[i], h = TRAIN[i].tall;
+    blit(FOOT[angIdx(c.ang)], Math.round(c.cx + h * SUNX) - 18, Math.round(c.cy + h * SUNY) - 18);
   }
+}
+// A survivor on foot: waiting by the station house, running for the train (a green marker over
+// them), or held by the dead (a red marker, and they shake).
+function drawPerson(p) {
+  const sv = p.sv, run = p.st === 'run', grab = p.st === 'grab';
+  const x = Math.round(p.x) + (grab && Math.sin(realT * 40) > 0 ? 1 : 0), y = Math.round(p.y);
+  blit(run ? sv.run[(p.anim | 0) & 1][thermal ? 1 : 0] : thermal ? sv.h : sv.n, x - 2, y - 8);
+  if (run || grab) {
+    ctx.fillStyle = '#07080a';
+    ctx.fillRect(x - 2, y - 15, 5, 4);
+    ctx.fillStyle = thermal ? '#ffffff' : grab ? (Math.sin(realT * 18) > 0 ? '#ff3a2a' : '#a8241a') : '#8fd18a';
+    ctx.fillRect(x - 1, y - 14, 3, 1);
+    ctx.fillRect(x, y - 13, 1, 1);
+  }
+}
+// The helicopter's shadow on the ground, south-east of the view's middle (the sun is in the
+// north-west), lagging a little as it speeds up, with its rotor turning.
+function drawHeliShadow() {
+  const h = G.heli, alt = CFG.heli.alt;
+  const gx = Math.round(G.camX + W / 2 + alt * SUNX - h.vx * 0.08), gy = Math.round(G.camY + H / 2 + alt * SUNY - h.vy * 0.08);
+  ctx.globalAlpha = thermal ? 0.2 : 0.3;
+  blit(HELI[mod(Math.round(h.hd / TAU * HELI_N), HELI_N)], gx - 20, gy - 20);
+  // the faint disc the blades sweep, then the four blades
+  ctx.globalAlpha = thermal ? 0.04 : 0.06;
+  ctx.fillStyle = '#000';
+  const R = 21, ry = Math.round(R * FORE);
+  for (let dy = -ry; dy <= ry; dy++) {
+    const hw = Math.round(R * Math.sqrt(1 - (dy * dy) / (ry * ry)));
+    ctx.fillRect(gx - hw, gy + dy, hw * 2 + 1, 1);
+  }
+  ctx.globalAlpha = thermal ? 0.2 : 0.3;
+  const a0 = realT * 31;
+  for (let k = 0; k < 4; k++) {
+    const a = a0 + k * Math.PI / 2;
+    pl(ctx, gx, gy, gx + Math.cos(a) * R, gy + Math.sin(a) * R * FORE, '#000');
+  }
+  ctx.globalAlpha = 1;
 }
 // Grass tufts that sway a little.
 function drawTufts(ci0, cj0, ci1, cj1) {
@@ -297,14 +339,17 @@ function render() {
   ctx.globalAlpha = 0.25;
   for (const b of G.bodies) blit(BODYSH, Math.round(b.x - 4), Math.round(b.y - 2));
   ctx.globalAlpha = 1;
-  // the safe zone's name, painted on the ground past the gate
-  if (G.goalY > G.camY - 80 && G.goalY < G.camY + H + 80) text('SAFE ZONE', RAIL_X, G.goalY - 56, '#8fd18a', { align: 'center', scale: 2 });
+  drawHeliShadow();
   // trees, props, the train and the dead, back to front. A tree under the sight fades so you can
   // see past it.
   const ax = G.camX + G.aimSX, ay = G.camY + G.aimSY, aiming = mode === 'play';
   for (const o of DL) {
     if (o.isCar) {
       drawCar(o.i);
+      continue;
+    }
+    if (o.person) {
+      drawPerson(o);
       continue;
     }
     if (o.S) {
@@ -344,14 +389,18 @@ function render() {
   drawLights();
   for (const f of FIRES) light(f.x, f.y - (f.big ? 6 : 3), f.big ? 30 : 18, '#ff9a4a', 0.45 + Math.sin(realT * 13 + f.seed) * 0.08);
   for (const f of flames) light(f.x, f.y - 2, 10, '#ff8a3a', 0.35 * Math.min(1, f.life));
-  // the train's headlights and their beam on the track ahead
+  // the train's headlights, and their beam on the rails ahead (it follows the bends)
   if (G.result !== 'lost') {
-    const F = carFront(0);
-    light(RAIL_X - 4, F - 9, 6, '#fff1c2', 0.8);
-    light(RAIL_X + 3, F - 9, 6, '#fff1c2', 0.8);
-    light(RAIL_X, F - 30, 22, '#ffe2a0', 0.3);
-    light(RAIL_X, F - 62, 30, '#ffe2a0', 0.16);
+    const tr = G.tr, c = tr.cars[0];
+    light(c.x0 - c.nx * 4, c.y0 - c.ny * 4 - 7, 6, '#fff1c2', 0.8);
+    light(c.x0 + c.nx * 3, c.y0 + c.ny * 3 - 7, 6, '#fff1c2', 0.8);
+    for (const [ds, r, a] of [[24, 22, 0.3], [56, 30, 0.16]]) {
+      const y = yAtS(tr.s - ds, tr.fy - ds);
+      light(trackX(y), y, r, '#ffe2a0', a);
+    }
   }
+  // station lamps
+  for (const p of G.statics) if (p.lamp && Math.abs(p.y - G.camY - H / 2) < H) light(p.x, p.y - 17, 16, '#ffe2a0', 0.45);
   // the searchlights of the safe zone sweep the ground in front of the wall
   for (const p of G.statics) if (p.tower && Math.abs(p.y - (G.camY + H / 2)) < H) {
     light(p.x + 5, p.y - 26, 5, '#fff1c2', 0.9);
@@ -367,6 +416,10 @@ function render() {
     drawMist();
     drawClouds();
   }
+  // the names of the safe zone (past the gate) and of the station, over everything on the ground
+  if (G.goalY > G.camY - 80 && G.goalY < G.camY + H + 80) text('SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30, '#8fd18a', { align: 'center', scale: 2 });
+  const hs = G.station && G.station.house;
+  if (hs && Math.abs(hs.y - G.camY - H / 2) < H) text('STATION', hs.x, hs.y - 36, '#9fd3f2', { align: 'center' });
   drawTexts();
   ctx.restore();
   // the camera's look over everything

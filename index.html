@@ -57,6 +57,8 @@ const pick = (a) => a[(Math.random() * a.length) | 0];
 const inR = (px, py, x, y, w, h) => px >= x && py >= y && px < x + w && py < y + h;
 // ease-out (cubic): fast at the start, slow at the end
 const ease = (t) => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+// 0 below a, 1 above b, a smooth S-curve in between
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
 // Make an offscreen canvas (no smoothing). Returns [canvas, context]. rf = its pixels will be read
 // back (sprite making), which is faster on a canvas kept in memory.
@@ -674,118 +676,218 @@ function makeZSet(w, h, draw, pal, shw) {
 // ZS[type] = the colour variants of each type (0 walker, 1 runner, 2 brute)
 const ZS = [[], [], []];
 
-// ---------- the train
-// Seen from above and behind (it runs up the screen): the roof, then the rear end wall below it.
-// Each drawing is 16 x 37: rows 0-27 the roof, rows 28-36 the end wall with the wheels at the bottom.
-// The flatcar is low: its deck starts at row 6. The sun is in the north-west, so left edges are lit.
-function wheels(r) {
-  r(0, 35, 16, 2, '#0b0c0e');
-  r(2, 35, 3, 1, '#2a2d33');
-  r(11, 35, 3, 1, '#2a2d33');
+// ---------- the train, built from stacked slices
+// Each car is a pile of top-down slices (16 x 28 px, its front at the top), one per pixel of height.
+// Turned to the car's heading and drawn each 1 px above the one under it, the pile looks solid from
+// any angle: the roof on top, and below it whichever walls face the camera. Every car is made at
+// ANG_N headings between -ANG_MAX and +ANG_MAX (0 = north, + = clockwise).
+const ANG_MAX = 40 * Math.PI / 180, ANG_N = 33;
+const angIdx = (a) => clamp(Math.round((a + ANG_MAX) / (2 * ANG_MAX) * (ANG_N - 1)), 0, ANG_N - 1);
+const angOf = (i) => -ANG_MAX + i * 2 * ANG_MAX / (ANG_N - 1);
+const slice = (fn) => pix(16, 28, fn);
+// the wheels and the frame (the two bottom slices of every car)
+function underSlices() {
+  return [slice((r) => {
+    r(1, 2, 14, 24, '#0b0c0e');
+    for (const y of [4, 20]) { r(0, y, 1, 4, '#2a2d33'); r(15, y, 1, 4, '#2a2d33'); }
+  }), slice((r) => {
+    r(0, 0, 16, 28, '#1a1d22');
+    for (let y = 1; y < 28; y += 3) { r(0, y, 1, 1, '#4a4e57'); r(15, y, 1, 1, '#4a4e57'); }
+  })];
 }
-function dLoco(r) {
+// a wall slice: the whole outline filled with one colour (only its outer pixels ever show)
+const wallSlice = (col, nose) => slice((r) => {
+  if (nose) { r(2, 0, 12, 1, col); r(1, 1, 14, 1, col); r(0, 2, 16, 26, col); } else r(0, 0, 16, 28, col);
+});
+function locoSlices() {
   const B = ['#151b24', '#243042', '#34445c', '#4b5f7d'];
-  // the nose: rounded, two headlights, warning stripes
-  r(3, 0, 10, 1, B[2]); r(1, 1, 14, 1, B[2]); r(0, 2, 16, 4, B[1]);
-  r(0, 2, 1, 4, B[2]); r(15, 2, 1, 4, B[0]); r(1, 3, 14, 1, B[2]);
-  r(4, 0, 1, 1, '#fff1c2'); r(11, 0, 1, 1, '#fff1c2');
-  for (let x = 1; x < 15; x += 2) r(x, 4, 1, 1, '#c9772f');
-  // the cab: a raised roof with glass round it
-  r(0, 6, 16, 8, B[2]); r(1, 7, 14, 6, B[3]); r(1, 7, 14, 1, '#6d82a3');
-  r(2, 6, 12, 1, '#1b2836'); r(3, 6, 2, 1, '#6f8aa6');
-  r(0, 8, 1, 4, '#1b2836'); r(15, 8, 1, 4, '#1b2836');
-  r(7, 9, 2, 2, B[1]);
-  // the long hood between two walkways, an exhaust stack and two radiator fans
-  r(0, 14, 16, 14, '#2a2d33');
-  for (let y = 15; y < 28; y += 2) { r(0, y, 1, 1, '#4a4e57'); r(15, y, 1, 1, '#1a1c20'); }
-  r(2, 14, 12, 14, B[1]); r(2, 14, 2, 14, B[2]); r(13, 14, 1, 14, B[0]); r(2, 14, 12, 1, B[3]);
-  r(2, 17, 1, 9, '#c9772f'); r(13, 17, 1, 9, '#8a5020');
-  r(7, 15, 2, 2, '#07080a'); r(6, 15, 1, 2, B[0]); r(9, 15, 1, 2, B[0]);
-  for (const fy of [19, 23]) {
-    r(6, fy, 4, 3, '#14171c'); r(7, fy, 2, 3, '#3a3e48'); r(6, fy + 1, 4, 1, '#3a3e48'); r(7, fy + 1, 2, 1, '#14171c');
-  }
-  // the rear: a handrail, a door, two tail lights
-  r(0, 28, 16, 7, B[0]); r(0, 28, 16, 1, '#8b919c'); r(1, 29, 1, 6, B[1]);
-  r(6, 29, 4, 6, '#0d1118'); r(7, 30, 2, 2, '#26303f');
-  r(2, 30, 1, 1, '#d0553f'); r(13, 30, 1, 1, '#d0553f');
-  wheels(r);
+  return [...underSlices(), wallSlice(B[0], true), wallSlice('#a8641f', true), wallSlice(B[1], true), wallSlice(B[1], true),
+    // glass round the cab
+    slice((r) => {
+      r(2, 0, 12, 1, B[1]); r(1, 1, 14, 1, B[1]); r(0, 2, 16, 26, B[1]);
+      r(0, 7, 1, 6, '#1b2836'); r(15, 7, 1, 6, '#1b2836'); r(2, 6, 12, 1, '#1b2836'); r(3, 6, 2, 1, '#6f8aa6');
+    }),
+    // the roof: nose with headlights and stripes, the cab, the long hood with its fans
+    slice((r) => {
+      r(2, 0, 12, 1, B[2]); r(1, 1, 14, 1, B[2]); r(0, 2, 16, 26, B[1]);
+      r(4, 0, 1, 1, '#fff1c2'); r(11, 0, 1, 1, '#fff1c2');
+      for (let x = 1; x < 15; x += 2) r(x, 3, 1, 1, '#c9772f');
+      r(1, 6, 14, 8, B[3]);
+      r(0, 14, 2, 14, '#2a2d33'); r(14, 14, 2, 14, '#2a2d33'); r(2, 14, 1, 14, B[2]);
+      for (const fy of [19, 23]) { r(6, fy, 4, 3, '#14171c'); r(7, fy, 2, 3, '#3a3e48'); r(6, fy + 1, 4, 1, '#3a3e48'); }
+    }),
+    // on top: the cab roof and the exhaust stack
+    slice((r) => { r(1, 6, 14, 8, '#6d82a3'); r(1, 6, 14, 1, '#8ea3c4'); r(7, 15, 2, 2, '#07080a'); })];
 }
-function dCoach(r) {
+function coachSlices() {
   const C = ['#18221a', '#2a3a2a', '#3e563c', '#5b7656'];
-  // a rounded roof with vents along the ridge
-  r(0, 0, 16, 28, C[1]);
-  r(0, 0, 1, 28, C[2]); r(1, 0, 2, 28, C[3]); r(3, 0, 1, 28, C[2]);
-  r(12, 0, 2, 28, C[0]); r(14, 0, 2, 28, '#121a14');
-  r(0, 0, 16, 1, C[3]); r(0, 27, 16, 1, C[0]);
-  for (const vy of [4, 11, 18, 24]) { r(7, vy, 2, 2, '#121a14'); r(7, vy, 2, 1, C[3]); }
-  // the end wall: a door with a lit window, two small windows
-  r(0, 28, 16, 7, '#22301f'); r(0, 28, 16, 1, C[2]);
-  r(5, 29, 6, 6, '#141c13'); r(6, 30, 4, 2, '#ffcf6a'); r(6, 30, 1, 1, '#fff1c2');
-  r(2, 31, 2, 2, '#ffcf6a'); r(12, 31, 2, 2, '#e8913a');
-  wheels(r);
+  // lit windows along both sides, a door window at each end
+  const windows = slice((r) => {
+    r(0, 0, 16, 28, C[1]);
+    for (let y = 2; y < 26; y += 4) { r(0, y, 1, 2, '#ffcf6a'); r(15, y, 1, 2, '#ffcf6a'); }
+    r(7, 0, 2, 1, '#ffcf6a'); r(7, 27, 2, 1, '#ffcf6a');
+  });
+  return [...underSlices(), wallSlice(C[0]), wallSlice(C[0]), windows, windows, wallSlice(C[1]), wallSlice(C[2]),
+    slice((r) => {
+      r(0, 0, 16, 28, C[2]); r(0, 0, 2, 28, C[3]); r(13, 0, 3, 28, C[1]); r(7, 0, 2, 28, C[3]);
+      for (const vy of [4, 11, 18, 24]) { r(7, vy, 2, 2, '#121a14'); }
+    })];
 }
-function dFlat(r) {
-  // a low deck of planks with sandbags round it, a crate and ammo boxes
-  r(0, 6, 16, 28, '#4f3a26');
-  for (let y = 7; y < 34; y += 3) r(0, y, 16, 1, '#3a2718');
-  r(0, 6, 1, 28, '#6b5038');
-  const bag = (x, y) => { r(x, y, 3, 2, '#8f805f'); r(x, y, 3, 1, '#b3a27a'); r(x + 2, y + 1, 1, 1, '#5e533c'); };
-  for (let y = 7; y < 32; y += 3) { bag(0, y); bag(13, y); }
-  for (let x = 3; x < 13; x += 3) { bag(x, 5); bag(x, 31); }
-  r(5, 9, 5, 4, '#7b5735'); r(5, 9, 5, 1, '#a38558'); r(7, 9, 1, 4, '#3a2718');
-  r(6, 26, 4, 2, '#46523a'); r(6, 26, 4, 1, '#5c6b48');
-  r(0, 33, 16, 2, '#2a2420');
-  wheels(r);
+function flatSlices() {
+  const ring = (col) => slice((r) => {
+    r(0, 0, 16, 2, col); r(0, 26, 16, 2, col); r(0, 0, 2, 28, col); r(14, 0, 2, 28, col);
+    r(5, 8, 5, 4, '#7b5735'); r(6, 20, 4, 2, '#46523a');
+  });
+  return [...underSlices(),
+    // the deck of planks
+    slice((r) => {
+      r(0, 0, 16, 28, '#4f3a26');
+      for (let y = 1; y < 28; y += 3) r(0, y, 16, 1, '#3a2718');
+      r(0, 0, 1, 28, '#6b5038');
+    }),
+    ring('#7d6f52'), ring('#9a8a68'),
+    // sandbags on top of the ring, the lid of the crate
+    slice((r) => {
+      for (let k = 0; k < 28; k += 3) { r(0, k, 2, 2, '#b3a27a'); r(14, k, 2, 2, '#b3a27a'); }
+      for (let k = 3; k < 13; k += 3) { r(k, 0, 2, 2, '#b3a27a'); r(k, 26, 2, 2, '#b3a27a'); }
+      r(5, 8, 5, 4, '#a38558'); r(7, 8, 1, 4, '#5b3f27');
+    })];
 }
-function dBox(r) {
+function boxSlices() {
   const R = ['#2e120f', '#4e1d18', '#6c2c22', '#8a3d2c'];
-  // a roof with ribs and a wooden catwalk down the middle
-  r(0, 0, 16, 28, R[1]); r(0, 0, 2, 28, R[2]); r(0, 0, 1, 28, R[3]); r(14, 0, 2, 28, R[0]);
-  r(0, 0, 16, 1, R[3]);
-  for (let y = 3; y < 28; y += 4) r(1, y, 14, 1, R[0]);
-  r(6, 0, 4, 28, '#5b3f27');
-  for (let y = 1; y < 28; y += 2) r(6, y, 4, 1, '#4a3220');
-  r(6, 0, 1, 28, '#7b5735');
-  // the end wall: ribs, a ladder, the brake wheel
-  r(0, 28, 16, 7, R[1]); r(0, 28, 16, 1, R[3]);
-  for (let x = 2; x < 16; x += 3) r(x, 29, 1, 6, R[0]);
-  for (let y = 29; y < 35; y += 2) r(12, y, 3, 1, '#8b919c');
-  r(2, 29, 3, 3, '#1a1a1a'); r(3, 30, 1, 1, '#626875');
-  wheels(r);
+  // a sliding door on each side, ribs on the ends
+  const wall = (col) => slice((r) => {
+    r(0, 0, 16, 28, col);
+    r(0, 10, 1, 8, R[0]); r(15, 10, 1, 8, R[0]);
+    for (let x = 2; x < 16; x += 3) { r(x, 0, 1, 1, R[0]); r(x, 27, 1, 1, R[0]); }
+  });
+  return [...underSlices(), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[1]), wall(R[2]), wall(R[2]),
+    slice((r) => {
+      r(0, 0, 16, 28, R[2]); r(0, 0, 2, 28, R[3]); r(14, 0, 2, 28, R[1]);
+      for (let y = 3; y < 28; y += 4) r(1, y, 14, 1, R[1]);
+      r(6, 0, 4, 28, '#5b3f27');
+      for (let y = 1; y < 28; y += 2) r(6, y, 4, 1, '#4a3220');
+      r(6, 0, 1, 28, '#7b5735');
+    })];
 }
-function dTank(r) {
-  // a fuel tank lying along the track, lit on the left, with a red band and a dome hatch
-  r(0, 0, 16, 2, '#2a2420'); r(0, 26, 16, 2, '#2a2420');
-  const col = ['#2b2e35', '#434753', '#626875', '#8b919c', '#b4b9c1'];
-  const sh = [0, 1, 4, 4, 3, 3, 3, 3, 3, 3, 2, 2, 2, 1, 1, 0];
-  for (let x = 0; x < 16; x++) {
-    const inset = x === 0 || x === 15 ? 2 : x === 1 || x === 14 ? 1 : 0;
-    r(x, 1 + inset, 1, 26 - inset * 2, col[sh[x]]);
+function tankSlices() {
+  const out = underSlices(), col = ['#2b2e35', '#2b2e35', '#434753', '#434753', '#626875', '#626875', '#8b919c', '#a3a9b2', '#b4b9c1'];
+  // a fuel tank lying along the car: each slice as wide as the round tank is at that height
+  for (let z = 0; z < 9; z++) {
+    const hw = Math.max(1, Math.round(7 * Math.sqrt(Math.max(0, 1 - Math.pow((z - 4) / 4.6, 2)))));
+    out.push(slice((r) => {
+      for (let y = 1; y < 27; y++) {
+        const end = Math.min(y - 1, 26 - y), w = Math.max(1, hw - (end < 2 ? 2 - end : 0));
+        r(8 - w, y, w * 2, 1, col[z]);
+      }
+      if (z > 0 && z < 8) { const w = hw; r(8 - w, 9, w * 2, 2, '#9a3326'); }
+      if (z === 8) { r(6, 12, 4, 4, '#434753'); r(7, 12, 2, 1, '#e8e2cc'); r(7, 2, 1, 23, '#d0d4da'); }
+    }));
   }
-  r(0, 9, 16, 2, '#9a3326'); r(0, 9, 3, 1, '#c8432e');
-  r(6, 13, 4, 4, '#434753'); r(7, 13, 2, 1, '#b4b9c1'); r(6, 14, 1, 2, '#8b919c'); r(7, 14, 2, 2, '#626875');
-  // the round end of the tank above the frame
-  for (let y = 0; y < 7; y++) {
-    const hw = Math.round(Math.sqrt(Math.max(0, 1 - Math.pow((y - 3) / 3.6, 2))) * 7.5);
-    r(8 - hw, 28 + y, hw * 2, 1, y < 2 ? '#626875' : y < 5 ? '#434753' : '#2b2e35');
-  }
-  r(3, 29, 2, 1, '#b4b9c1');
-  wheels(r);
+  return out;
 }
-// TRAIN[k] = one car (0 = the engine): n = normal, h = hot (thermal camera), red = taking damage,
-// tall = how high it stands (for its shadow).
-const TRAIN = [];
-// The survivors on the flatcar: [x, y] of their feet on the car sprite, and their sprites.
-const RIDERS = [[5, 16], [11, 20], [4, 25], [10, 12]];
+// Draw a pile of slices turned to heading ang. c.ox, c.oy = where the car's middle on the ground is.
+function stackSpr(slices, ang) {
+  const n = slices.length, cy = 18 + n;
+  const [c, g] = mk(36, 36 + n, true);
+  for (let z = 0; z < n; z++) {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.translate(18, cy - z);
+    g.rotate(ang);
+    g.drawImage(slices[z], -8, -14);
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  // hard edges: a pixel is either there or not
+  const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
+  g.putImageData(im, 0, 0);
+  return c;
+}
+// The ground shadow of a car turned to heading ang (black).
+function footSpr(ang) {
+  const [c, g] = mk(36, 36, true);
+  g.translate(18, 18);
+  g.rotate(ang);
+  g.fillStyle = '#000';
+  g.fillRect(-8, -14, 16, 28);
+  const im = g.getImageData(0, 0, 36, 36), d = im.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
+  g.putImageData(im, 0, 0);
+  return c;
+}
+// TRAIN[k] = one car (0 = the engine): n[i] = its sprite at heading angOf(i), h[i] = hot (thermal),
+// red[i] = taking damage (made when first needed), tall = its height. FOOT[i] = a car's shadow.
+const TRAIN = [], FOOT = [];
+function carRed(t, i) {
+  if (!t.red[i]) {
+    const c = tint(t.n[i], '#ff4a30', 0.45);
+    c.ox = t.n[i].ox;
+    c.oy = t.n[i].oy;
+    t.red[i] = c;
+  }
+  return t.red[i];
+}
+// The survivors riding the flatcar: [px across (right), px along (to the front)] from its middle.
+const RIDERS = [[-3, 7], [3, 2], [-2, -4], [3, -9]];
+// SURV[k] = a survivor: n / h = standing (normal / hot), run = 2 running frames each [n, h].
 const SURV = [];
-// a survivor with a rifle, 4 x 7
-function survivorRaw(shirt, skin) {
+// a survivor with a rifle, 4 x 7; f = 0 standing, 1 / 2 = running
+function survivorRaw(shirt, skin, f) {
   return pix(4, 7, (r) => {
     r(0, 0, 3, 2, skin); r(0, 0, 3, 1, '#2e2620');
     r(0, 2, 3, 3, shirt); r(0, 2, 1, 3, '#d8cfb6');
     r(3, 1, 1, 3, '#1a1a1a');
-    r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20');
+    if (f === 1) { r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 1, '#1a1c20'); }
+    else if (f === 2) { r(0, 5, 1, 1, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20'); }
+    else { r(0, 5, 1, 2, '#1a1c20'); r(2, 5, 1, 2, '#1a1c20'); }
   });
+}
+
+// ---------- the helicopter's shadow (a gunship seen from below: cabin, stub wings, tail)
+const HELI = [];
+const HELI_N = 32;
+function heliSil() {
+  return pix(20, 34, (r) => {
+    r(8, 1, 4, 2, '#000'); r(7, 3, 6, 3, '#000'); r(6, 6, 8, 12, '#000');
+    r(1, 10, 18, 2, '#000'); r(0, 9, 3, 5, '#000'); r(17, 9, 3, 5, '#000');
+    r(7, 18, 6, 3, '#000'); r(9, 21, 2, 11, '#000');
+    r(5, 29, 10, 2, '#000'); r(11, 31, 3, 3, '#000');
+  });
+}
+function heliSpr(src, ang) {
+  const [c, g] = mk(40, 40, true);
+  g.translate(20, 20);
+  g.rotate(ang);
+  g.drawImage(src, -10, -11);
+  const im = g.getImageData(0, 0, 40, 40), d = im.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = d[i] < 110 ? 0 : 255;
+  g.putImageData(im, 0, 0);
+  return c;
+}
+
+// ---------- the station halfway: a platform beside the rails, a small station house, lamps
+const STATION = {};
+function slabSpr() {
+  return pix(12, 7, (r) => {
+    r(0, 0, 12, 5, '#8f897c'); r(0, 0, 12, 1, '#aaa392'); r(0, 0, 1, 5, '#c9a23a');
+    r(0, 5, 12, 2, '#5a564e'); r(11, 0, 1, 5, '#7a756a');
+  });
+}
+function houseSpr() {
+  return pix(28, 26, (r) => {
+    // a tiled roof, lit on the left, with a chimney
+    r(0, 0, 28, 14, '#6a2a22'); r(0, 0, 28, 1, '#a8503a'); r(0, 0, 2, 14, '#8a3d2c'); r(26, 0, 2, 14, '#4a1d18');
+    for (let y = 3; y < 14; y += 3) r(1, y, 26, 1, '#5a221c');
+    r(13, 0, 2, 14, '#8a3d2c'); r(20, 2, 3, 4, '#3a2a24'); r(20, 2, 3, 1, '#5a4a40');
+    // the front wall: plaster, a door, two lit windows
+    r(0, 14, 28, 12, '#8f805f'); r(0, 14, 28, 1, '#5e533c'); r(0, 14, 1, 12, '#b3a27a'); r(27, 14, 1, 12, '#6b5f45');
+    r(12, 17, 5, 9, '#2e2216'); r(13, 18, 3, 3, '#ffcf6a');
+    r(4, 17, 4, 4, '#ffcf6a'); r(4, 17, 4, 1, '#fff1c2'); r(20, 17, 4, 4, '#ffcf6a'); r(20, 17, 4, 1, '#fff1c2');
+    r(0, 25, 28, 1, '#3e3b35');
+  });
+}
+function lampSpr() {
+  return pix(3, 18, (r) => { r(1, 2, 1, 16, '#3a3e48'); r(0, 0, 3, 2, '#2a2d33'); r(1, 1, 1, 1, '#fff1c2'); });
 }
 
 // ---------- props
@@ -997,18 +1099,40 @@ function initSprites() {
   PROPS.crate.push(prop(crateSpr(), 4));
   for (let k = 0; k < 8; k++) PROPS.wall.push(prop(wallSpr(10 + ((rng() * 12) | 0), rng), 0, { wall: true }));
   PROPS.pole.push(prop(poleSpr(), 0));
-  // the train: [drawing, height, warmth on the thermal camera]
+  // the train at every heading: [slices, height, warmth on the thermal camera]
   TRAIN.length = 0;
-  for (const [draw, tall, heat] of [[dLoco, 9, 150], [dCoach, 9, 95], [dFlat, 3, 60], [dBox, 9, 75], [dTank, 9, 55]]) {
-    const raw = pix(16, 37, (r) => draw(r));
-    const n = selOut(rimLight(raw, '#e8e2cc', 0.18));
-    TRAIN.push({ n, h: outline(hotSpr(raw, heat), '#161616'), red: tint(n, '#ff4a30', 0.45), tall });
+  FOOT.length = 0;
+  for (const [make, heat] of [[locoSlices, 150], [coachSlices, 100], [flatSlices, 60], [boxSlices, 75], [tankSlices, 55]]) {
+    const sl = make(), t = { n: [], h: [], red: [], tall: sl.length };
+    for (let i = 0; i < ANG_N; i++) {
+      const raw = stackSpr(sl, angOf(i));
+      const n = selOut(rimLight(raw, '#e8e2cc', 0.15));
+      n.ox = 19;
+      n.oy = 19 + sl.length;
+      const h = outline(hotSpr(raw, heat), '#161616');
+      h.ox = n.ox;
+      h.oy = n.oy;
+      t.n.push(n);
+      t.h.push(h);
+    }
+    TRAIN.push(t);
   }
+  for (let i = 0; i < ANG_N; i++) FOOT.push(footSpr(angOf(i)));
   SURV.length = 0;
-  for (const [shirt, skin] of [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#5c6b40', '#b8876a'], ['#7d776b', '#d1a582']]) {
-    const raw = survivorRaw(shirt, skin);
-    SURV.push({ n: outline(raw, '#07080a'), h: outline(hotSpr(raw, 215), '#161616') });
+  for (const [shirt, skin] of [['#45608e', '#c99a72'], ['#94372c', '#8a6448'], ['#5c6b40', '#b8876a'], ['#7d776b', '#d1a582'],
+    ['#9fd3f2', '#c99a72'], ['#e3b04b', '#8a6448']]) {
+    const one = (f) => { const raw = survivorRaw(shirt, skin, f); return [outline(raw, '#07080a'), outline(hotSpr(raw, 215), '#161616')]; };
+    const [n, h] = one(0);
+    SURV.push({ n, h, run: [one(1), one(2)] });
   }
+  // the helicopter's shadow at every heading round the circle
+  HELI.length = 0;
+  const hs = heliSil();
+  for (let i = 0; i < HELI_N; i++) HELI.push(heliSpr(hs, i / HELI_N * TAU));
+  // the station
+  STATION.slab = prop(slabSpr(), 0);
+  STATION.house = prop(houseSpr(), 10);
+  STATION.lamp = prop(lampSpr(), 0);
   // the safe zone
   SAFE.blocks = [];
   for (let k = 0; k < 4; k++) SAFE.blocks.push(prop(wallBlockSpr(rng), 0));
@@ -1049,13 +1173,50 @@ const CH = 128;
 const GR = ['#1e2a24', '#243226', '#2b3928', '#323f29', '#3a472b', '#44502e'].map(hexRgb);
 const DR = ['#2a2521', '#332b24', '#3c3229', '#463b2f', '#514435'].map(hexRgb);
 const PLOW = ['#251e19', '#2f2620', '#3a3027', '#46392d'].map(hexRgb);
-// the railway runs north and south along x = RAIL_X: gravel, wooden sleepers, two steel rails
-const RAIL_X = 0;
+// ---------- the railway
+// It winds north for ever: its middle is at x = trackX(y), two gentle waves added together (the
+// steepest bend is under 30 degrees from north). trackSlope(y) = dx/dy, trackS(y) = the distance
+// along the rails from y = 0 (from the first terms of the arc-length integral: off by far less
+// than a pixel per sleeper).
+const TK = { a1: 140, l1: 520, p1: 0.7, a2: 50, l2: 190, p2: 2.1 };
+function trackX(y) {
+  return TK.a1 * Math.sin(y / TK.l1 + TK.p1) + TK.a2 * Math.sin(y / TK.l2 + TK.p2);
+}
+function trackSlope(y) {
+  return TK.a1 / TK.l1 * Math.cos(y / TK.l1 + TK.p1) + TK.a2 / TK.l2 * Math.cos(y / TK.l2 + TK.p2);
+}
+function trackS(y) {
+  const a1 = TK.a1 / TK.l1, a2 = TK.a2 / TK.l2, k1 = 1 / TK.l1, k2 = 1 / TK.l2, km = k1 - k2, kp = k1 + k2;
+  const i1 = y / 2 + Math.sin(2 * (y * k1 + TK.p1)) / (4 * k1);
+  const i2 = y / 2 + Math.sin(2 * (y * k2 + TK.p2)) / (4 * k2);
+  const i12 = 0.5 * (Math.sin(km * y + TK.p1 - TK.p2) / km + Math.sin(kp * y + TK.p1 + TK.p2) / kp);
+  return y + 0.5 * (a1 * a1 * i1 + a2 * a2 * i2 + 2 * a1 * a2 * i12);
+}
+// The y where the distance along the rails is s (Newton's method from a nearby guess).
+function yAtS(s, guess) {
+  let y = guess;
+  for (let i = 0; i < 3; i++) {
+    const fp = trackSlope(y);
+    y -= (trackS(y) - s) / (1 + 0.5 * fp * fp);
+  }
+  return y;
+}
+// A point in the railway's own terms: u = px to the right of its middle (east), a = distance along it.
+function trackLocal(x, y, out) {
+  const fp = trackSlope(y), c = 1 / Math.sqrt(1 + fp * fp), off = x - trackX(y);
+  out.u = off * c;
+  out.a = trackS(y) + off * fp * c;
+  out.c = c;
+  return out;
+}
+// true when (x, y) is closer than m (across) to the middle of the railway
+const nearRail = (x, y, m) => Math.abs(x - trackX(y)) < m;
+// the colours: gravel, wooden sleepers, steel rails (shadow, top)
 const BAL = ['#2e2b27', '#3b3732', '#47423b', '#555047'].map(hexRgb);
 const SLP = ['#2a1f17', '#3d2d20', '#4f3b29'].map(hexRgb);
 const RAILC = ['#24262b', '#8f959e'].map(hexRgb);
-// true when x is closer than m to the middle of the railway
-const nearRail = (x, m) => Math.abs(x - RAIL_X) < m;
+// the railway at the row being painted (groundPix goes row by row)
+let tkY = NaN, tkX = 0, tkP = 0, tkC = 1, tkS = 0;
 
 // farm tracks: a warped grid, about 1400 x 1000 px
 function roadDist(x, y) {
@@ -1093,18 +1254,25 @@ function groundPix(X, Y, out) {
     else if (Math.abs(rd - 3.6) < 1.1) col = DR[0];
     else col = DR[clamp(2 + (gv > 0.5 ? 1 : 0) + (th > 0.75 ? 1 : 0) - (rd > 6.5 ? 1 : 0), 0, 4)];
   }
-  // the railway: a bed of gravel with a ragged edge, a sleeper every 6 px (lit top, shadow below),
-  // and the two rails (bright tops, their shadow on the east side)
-  const rx = X - RAIL_X;
-  if (rx >= -13 && rx <= 12) {
-    const edge = rx < 0 ? -rx - 10 : rx - 9;
+  // the railway: a bed of gravel with a ragged edge, a sleeper every 6 px along the rails (lit
+  // side, shadow), and the two rails (bright tops, their shadow on the east side)
+  if (Y !== tkY) {
+    tkY = Y;
+    tkX = trackX(Y);
+    tkP = trackSlope(Y);
+    tkC = 1 / Math.sqrt(1 + tkP * tkP);
+    tkS = trackS(Y);
+  }
+  const off = X - tkX, ru = Math.floor(off * tkC);
+  if (ru >= -13 && ru <= 12) {
+    const edge = ru < 0 ? -ru - 10 : ru - 9;
     if (edge <= 0 || th * 3 > edge) {
       col = BAL[clamp(Math.floor(hrnd(X, Y, 91) * 2.4 + gv * 1.5 - (edge > 0 ? 1 : 0)), 0, 3)];
-      const sy = mod(Y, 6);
-      if (rx >= -8 && rx <= 7 && sy < 2) col = SLP[sy === 0 ? 2 : 1];
-      else if (rx >= -8 && rx <= 7 && sy === 2) col = SLP[0];
-      if (rx === -5 || rx === 4) col = RAILC[1];
-      else if (rx === -4 || rx === 5) col = RAILC[0];
+      const sy = mod(Math.floor(tkS + off * tkP * tkC), 6);
+      if (ru >= -8 && ru <= 7 && sy < 2) col = SLP[sy === 0 ? 2 : 1];
+      else if (ru >= -8 && ru <= 7 && sy === 2) col = SLP[0];
+      if (ru === -5 || ru === 4) col = RAILC[1];
+      else if (ru === -4 || ru === 5) col = RAILC[0];
     }
   }
   out[0] = col[0]; out[1] = col[1]; out[2] = col[2];
@@ -1133,7 +1301,7 @@ function plan(ci, cj) {
   // groves where the noise is high, a lone tree now and then
   for (let k = 0; k < 30; k++) {
     const x = X0 + rng() * CH, y = Y0 + rng() * CH;
-    if (roadDist(x, y) < 16 || fieldAt(x, y) > 0.61 || nearRail(x, 40)) continue;
+    if (roadDist(x, y) < 16 || fieldAt(x, y) > 0.61 || nearRail(x, y, 40)) continue;
     const gv = vnoise(x / 110, y / 110, 41);
     if (gv > 0.68 ? rng() < (gv - 0.68) * 4.5 : rng() < 0.01) {
       const r = rng();
@@ -1144,7 +1312,7 @@ function plan(ci, cj) {
   if (rng() < 0.4) {
     for (let k = 0; k < 12; k++) {
       const x = X0 + 12 + rng() * (CH - 24), y = Y0 + 8 + rng() * (CH - 16);
-      if (roadDist(x, y) > 5 || nearRail(x, 60)) continue;
+      if (roadDist(x, y) > 5 || nearRail(x, y, 60)) continue;
       const burning = rng() < 0.35;
       put(take(burning ? PROPS.burnt : rng() < 0.4 ? PROPS.burnt : PROPS.wreck), x, y);
       if (burning) pl.fires.push({ x: Math.round(x) + 1, y: Math.round(y) - 7, seed: (rng() * 1000) | 0, big: true });
@@ -1153,7 +1321,7 @@ function plan(ci, cj) {
     }
   }
   // now and then a burnt-out farm: broken walls, rubble, a barrel or crate, a smouldering fire
-  if (hrnd(ci, cj, 5) < 0.05 && roadDist(X0 + 64, Y0 + 64) > 40 && fieldAt(X0 + 64, Y0 + 64) < 0.6 && !nearRail(X0 + 64, 200)) {
+  if (hrnd(ci, cj, 5) < 0.05 && roadDist(X0 + 64, Y0 + 64) > 40 && fieldAt(X0 + 64, Y0 + 64) < 0.6 && !nearRail(X0 + 64, Y0 + 64, 220)) {
     const cx = X0 + 40 + rng() * 48, cy = Y0 + 40 + rng() * 48;
     for (let k = 0; k < 3 + ((rng() * 3) | 0); k++) {
       const w = take(PROPS.wall), x = cx + (rng() - 0.5) * 50, y = cy + (k - 1.5) * 12 + (rng() - 0.5) * 4;
@@ -1167,22 +1335,24 @@ function plan(ci, cj) {
   // bushes, rocks, stumps
   for (let k = 0; k < 3; k++) if (rng() < 0.5) {
     const x = X0 + rng() * CH, y = Y0 + rng() * CH;
-    if (roadDist(x, y) > 10 && fieldAt(x, y) < 0.62 && !nearRail(x, 22)) put(take(PROPS.bush), x, y);
+    if (roadDist(x, y) > 10 && fieldAt(x, y) < 0.62 && !nearRail(x, y, 24)) put(take(PROPS.bush), x, y);
   }
-  if (rng() < 0.25) { const x = X0 + rng() * CH, y = Y0 + rng() * CH; if (roadDist(x, y) > 12 && !nearRail(x, 26)) put(take(PROPS.big), x, y); }
+  if (rng() < 0.25) { const x = X0 + rng() * CH, y = Y0 + rng() * CH; if (roadDist(x, y) > 12 && !nearRail(x, y, 28)) put(take(PROPS.big), x, y); }
   for (let k = 0; k < 8; k++) {
     const x = X0 + rng() * CH, y = Y0 + rng() * CH;
-    if (roadDist(x, y) < 7 || nearRail(x, 15)) continue;
+    if (roadDist(x, y) < 7 || nearRail(x, y, 17)) continue;
     pl.flats.push({ d: rng() < 0.1 ? PROPS.stump[0] : take(PROPS.rock), x: Math.round(x), y: Math.round(y) });
   }
   // telegraph poles beside the railway, one every 72 px
-  const px = RAIL_X + 24;
-  if (px >= X0 && px < X0 + CH) for (let y = Math.ceil(Y0 / 72) * 72; y < Y0 + CH; y += 72) put(PROPS.pole[0], px, y);
+  for (let y = Math.ceil(Y0 / 72) * 72; y < Y0 + CH; y += 72) {
+    const px = trackX(y) + 27;
+    if (px >= X0 && px < X0 + CH) put(PROPS.pole[0], px, y);
+  }
   // grass tufts (they sway, so they are drawn live)
   for (let k = 0; k < 40 && pl.tufts.length < 16; k++) {
     const x = X0 + ((rng() * CH) | 0), y = Y0 + ((rng() * CH) | 0);
     if (vnoise(x / 16, y / 16, 31) < 0.5 && rng() < 0.8) continue;
-    if (roadDist(x, y) < 9 || fieldAt(x, y) > 0.62 || nearRail(x, 15)) continue;
+    if (roadDist(x, y) < 9 || fieldAt(x, y) > 0.62 || nearRail(x, y, 17)) continue;
     pl.tufts.push({ x, y, h: 2 + ((rng() * 3) | 0), c: rng() < 0.5 ? '#5c6a3d' : '#4a5732', p: rng() * TAU });
   }
   pl.props.sort((a, b) => a.y - b.y);
@@ -1214,7 +1384,7 @@ function bakeChunk(ci, cj) {
   }
   for (let k = 0; k < 40; k++) {
     const x = (rng() * CH) | 0, y = (rng() * CH) | 0;
-    if (vnoise((X0 + x) / 40, (Y0 + y) / 40, 34) < 0.6 && roadDist(X0 + x, Y0 + y) > 8 || nearRail(X0 + x, 12)) continue;
+    if (vnoise((X0 + x) / 40, (Y0 + y) / 40, 34) < 0.6 && roadDist(X0 + x, Y0 + y) > 8 || nearRail(X0 + x, Y0 + y, 14)) continue;
     r(x, y, 1, 1, '#6d6a62'); r(x, y + 1, 1, 1, '#1d1b18');
   }
   for (let k = 0; k < 10; k++) {
@@ -1651,7 +1821,7 @@ function drawBanners() {
       continue;
     }
     const a = u < 0.1 ? u / 0.1 : u > 0.75 ? (1 - u) / 0.25 : 1;
-    const dy = Math.round(u < 0.1 ? (1 - u / 0.1) * -6 : 0), y = 44 + dy, h = b.b ? 40 : 28;
+    const dy = Math.round(u < 0.1 ? (1 - u / 0.1) * -6 : 0), y = 58 + dy, h = b.b ? 40 : 28;
     ctx.globalAlpha = a;
     ctx.fillStyle = 'rgba(5,6,8,0.55)';
     ctx.fillRect(0, y, W, h);
@@ -1669,7 +1839,7 @@ function drawBanners() {
 // audio.js - all sound, made live with the Web Audio API (no sound files). The engine follows
 // Ball x Archers: audioInit builds the graph (master -> compressor, plus a light reverb), voice and
 // gap limit how often a sound can play, tone and nz make one synth note or one noise burst.
-// SFX holds every game sound; drone() is the gunship's engine hum under everything.
+// SFX holds every game sound; drone() is the helicopter's rotor under everything.
 
 const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null };
 
@@ -1769,40 +1939,44 @@ function nz(d, v, ft, f, q, f2, delay) {
   s.start(t, Math.random() * 0.4, d + 0.05);
 }
 
-// The engine hum: two detuned saws and a triangle through a low-pass filter, throbbing like
-// propellers. v = loudness 0..1 (0 = silent); it glides to the new level.
+// The helicopter: rotor noise through a low-pass filter, chopped by the blades (an LFO on its
+// loudness), and a faint turbine whine. v = loudness 0..1 (0 = silent); it glides to the new level.
 function drone(v) {
   const a = Au.ctx;
-  if (!a) return;
+  if (!a || !Au.noise) return;
   if (!Au.hum) {
     try {
-      const out = a.createGain(), throb = a.createGain(), f = a.createBiquadFilter();
+      const out = a.createGain(), chop = a.createGain(), f = a.createBiquadFilter(), src = a.createBufferSource();
       out.gain.value = 0;
+      src.buffer = Au.noise;
+      src.loop = true;
       f.type = 'lowpass';
-      f.frequency.value = 240;
-      f.Q.value = 0.7;
-      for (const [fr, type] of [[54, 'sawtooth'], [54.6, 'sawtooth'], [108.3, 'triangle']]) {
-        const o = a.createOscillator();
-        o.type = type;
-        o.frequency.value = fr;
-        o.connect(f);
-        o.start();
-      }
+      f.frequency.value = 340;
+      f.Q.value = 0.9;
+      chop.gain.value = 0.55;
       const lfo = a.createOscillator(), lg = a.createGain();
-      lfo.frequency.value = 3.3;
-      lg.gain.value = 0.3;
+      lfo.frequency.value = 6.4;
+      lg.gain.value = 0.5;
       lfo.connect(lg);
-      lg.connect(throb.gain);
-      lfo.start();
-      f.connect(throb);
-      throb.connect(out);
+      lg.connect(chop.gain);
+      src.connect(f);
+      f.connect(chop);
+      chop.connect(out);
+      const whine = a.createOscillator(), wg = a.createGain();
+      whine.frequency.value = 1850;
+      wg.gain.value = 0.01;
+      whine.connect(wg);
+      wg.connect(out);
       out.connect(Au.master);
+      src.start();
+      lfo.start();
+      whine.start();
       Au.hum = out;
     } catch (e) {
       return;
     }
   }
-  Au.hum.gain.setTargetAtTime(Au.muted ? 0 : v * 0.05, a.currentTime, 0.5);
+  Au.hum.gain.setTargetAtTime(Au.muted ? 0 : v * 0.18, a.currentTime, 0.5);
 }
 
 // Every game sound, built from tone() and nz().
@@ -1918,6 +2092,11 @@ const SFX = {
     tone(big ? 70 : 110, 0.1, 'triangle', 0.05, 50);
     nz(0.06, 0.04, 'bandpass', rnd(400, 700), 1.5);
   },
+  saved() {
+    // a survivor made it aboard: a bright double chime
+    tone(988, 0.08, 'triangle', 0.035);
+    tone(1319, 0.14, 'triangle', 0.035, null, 0.07);
+  },
   radio() {
     // a burst of radio static and a beep
     nz(0.22, 0.03, 'bandpass', 1900, 2.5);
@@ -1925,16 +2104,21 @@ const SFX = {
   }
 };
 
-// game.js - the game: a train runs north along the railway to the safe zone, and the gunship above
-// keeps it alive. The dead walk in from the left and the right; the ones ahead of the train step
-// onto the rails and wait for it. The engine runs them down, but each one slows it, and the dead
-// that reach the train climb on and tear at it. Behind the title the same game runs as a demo.
+// game.js - the game: escort the last train. You fly a gunship helicopter (WASD) over a railway that
+// winds north. The train runs along it to a walled safe zone, stopping halfway at a station to take
+// on survivors who run for it. The dead walk in from both sides; the ones ahead of the train step
+// onto the rails. The engine runs them down, but each one slows it, and the dead that reach the
+// train climb on and tear at it. When no key is held the helicopter keeps pace with the train.
+// Behind the title the same game runs as a demo.
 // Units are world pixels and seconds; y on the ground is squashed by FORE; the train runs to -y.
 
 const CFG = {
-  trip: 1800,                  // px of railway from the start to the safe zone
-  // the train: top speed (px/s), how fast it gets back up to speed, its health
-  train: { cruise: 26, accel: 7, hp: 150 },
+  trip: 2000,                  // px along the rails from the start to the safe zone (the station is halfway)
+  // the train: top speed (px/s), how fast it gets back up to speed, how hard it brakes, its health
+  train: { cruise: 26, accel: 7, brake: 10, hp: 150 },
+  // the helicopter: top speed against the train, how fast it gets there, how far from the engine it
+  // may fly, its height (where its shadow falls)
+  heli: { speed: 170, accel: 3.2, leash: 470, alt: 100 },
   lock: 16,                    // px round the sight that a zombie is locked within
   // 25mm: rounds per second, flight time, spread without a lock, burst radius, most zombies one
   // round can hit, heat per round, cooling per second
@@ -1943,7 +2127,11 @@ const CFG = {
   // and how close to the train a blast hurts the train too
   he: { reload: 2.4, travel: 1.1, kill: 34, hurt: 56, close: 28 },
   // the horde: zombies at the start, more each second, the most at once
-  pop: { start: 110, perSec: 5, max: 480 },
+  pop: { start: 110, perSec: 3.5, max: 400 },
+  // the station: survivors waiting, seconds between two setting off, their speed, the shortest stop,
+  // how long a zombie holds a survivor before it is too late, how near the door the dead keep the
+  // survivors in (and for how long, at most)
+  station: { people: 8, gap: 1.1, run: 24, minStop: 12, grab: 1.4, clear: 34, wait: 8 },
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 1, speed: [11, 16], value: 1, dps: 0.5 },                // walker
@@ -1953,6 +2141,7 @@ const CFG = {
 };
 // the cars: length on the ground, the gap between two, half the width, how many (TRAIN in sprites)
 const CAR = { L: 28, gap: 4, half: 8, n: 5 };
+const TRAIN_LEN = CAR.n * (CAR.L + CAR.gap) - CAR.gap;
 // streak bonuses: [kills in a row, cash]
 const STREAKS = [[10, 5], [25, 15], [50, 30], [100, 60], [200, 120]];
 const CAMS = ['COLOUR', 'WHITE HOT', 'BLACK HOT'];
@@ -1962,13 +2151,14 @@ const CAMS = ['COLOUR', 'WHITE HOT', 'BLACK HOT'];
 let G = null, mode = 'title', paused = false, realT = 0, frameDt = 0, sumStart = 0, thermal = 0;
 
 // best score, kept in this browser
-const BEST_KEY = 'sky-reaper-train';
-const best = { kills: 0, safe: 0 };
+const BEST_KEY = 'sky-reaper-escort';
+const best = { kills: 0, safe: 0, saved: 0 };
 function loadBest() {
   try {
     const o = JSON.parse(localStorage.getItem(BEST_KEY) || '{}');
     best.kills = Math.max(0, o.kills | 0);
     best.safe = Math.max(0, o.safe | 0);
+    best.saved = Math.max(0, o.saved | 0);
   } catch (e) { /* no storage: the best is not kept */ }
 }
 function saveBest() {
@@ -1977,25 +2167,37 @@ function saveBest() {
 
 // ---------- a run
 function newGame(demo) {
-  const y0 = Math.round(rnd(-40000, 40000));
+  const y0 = Math.round(rnd(-40000, 40000)), s0 = trackS(y0);
+  const cars = [];
+  for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
     demo: !!demo, t: 0, run: 0, endT: 0, result: '', bonus: 0,
     kills: 0, cash: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
     trigger: false, mgCd: 0, heat: 0, overheat: false, heReload: 0, heQueue: false, hitT: 0, muzzle: [0, 0],
-    // the train: front = ground y of the engine's nose, v = speed, hit[k] = car k flashes red
-    tr: { front: y0, start: y0, v: CFG.train.cruise, hp: CFG.train.hp, hit: [0, 0, 0, 0, 0], clack: 0, smokeT: 0, hornT: 0, hpShown: CFG.train.hp },
-    goalY: demo ? -1e9 : y0 - CFG.trip,
+    // the train: s = distance along the rails of the engine's nose (it falls as the train runs north),
+    // v = speed, hit[k] = car k flashes red, fx / fy = the nose on the ground
+    tr: { s: s0, startS: s0, v: CFG.train.cruise, hp: CFG.train.hp, hpShown: CFG.train.hp, hit: [0, 0, 0, 0, 0],
+      clack: 0, smokeT: 0, hornT: 0, fx: trackX(y0), fy: y0, cars },
+    // the helicopter: ox / oy = where it is from the engine's nose, vx / vy = its speed against the
+    // train, hd = its heading, home = flying back over the train
+    heli: { ox: 0, oy: Math.round(H * 0.12), vx: 0, vy: 0, hd: 0, home: false, far: false },
+    goalS: demo ? -1e12 : s0 - CFG.trip, goalY: -1e9, station: null,
     camX: 0, camY: 0, aimSX: W / 2, aimSY: H / 2,
     lock: null, box: null,
-    zombies: [], bodies: [], rounds: [], timers: [], statics: [],
+    zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
     streak: { n: 0, t: -9, best: 0 },
     spawnCd: 0, railCd: rnd(5, 7), onTrain: 0, blocked: false, decalT: 0, sum: null,
     bot: false, botT: 0, botZ: null
   };
   clearFX();
   GRID.clear();
+  layoutTrain();
+  if (!demo) {
+    G.goalY = yAtS(G.goalS, y0 - CFG.trip);
+    buildSafeZone();
+    buildStation(s0 - CFG.trip * 0.5);
+  }
   placeCamera();
-  if (!demo) buildSafeZone();
   scatter();
 }
 function startGame() {
@@ -2003,20 +2205,24 @@ function startGame() {
   newGame(false);
   mode = 'play';
   paused = false;
-  banner('PROTECT THE TRAIN', 'GET IT TO THE SAFE ZONE', U.gold);
+  banner('ESCORT THE TRAIN', 'PICK UP SURVIVORS AT THE STATION', U.gold);
   SFX.horn();
 }
 function endGame() {
   mode = 'summary';
   sumStart = realT;
   G.trigger = false;
-  const nb = G.kills > best.kills;
+  const nb = G.kills > best.kills, st = G.station;
   G.sum = {
     result: G.result, kills: G.kills, cash: Math.round(G.cash), streak: G.streak.best, blast: G.bestBlast,
-    acc: G.shots ? Math.round(G.hits / G.shots * 100) : 0, hp: Math.round(G.tr.hp / CFG.train.hp * 100), newBest: nb && G.kills > 0
+    hp: Math.round(G.tr.hp / CFG.train.hp * 100), saved: st ? st.saved : 0, people: CFG.station.people,
+    newBest: nb && G.kills > 0
   };
   if (nb) best.kills = G.kills;
-  if (G.result === 'safe') best.safe++;
+  if (G.result === 'safe') {
+    best.safe++;
+    best.saved = Math.max(best.saved, G.sum.saved);
+  }
   saveBest();
 }
 function toTitle() {
@@ -2031,15 +2237,44 @@ function later(t, f) {
 }
 
 // ---------- the train
-const carFront = (k) => Math.round(G.tr.front) + k * (CAR.L + CAR.gap);      // ground y of car k's front end
-const carBack = (k) => carFront(k) + CAR.L;                                  // and of its back end
-const trainTail = () => carBack(CAR.n - 1);
-const carAt = (y) => clamp(Math.floor((y - Math.round(G.tr.front)) / (CAR.L + CAR.gap)), 0, CAR.n - 1);
+// Place the cars along the curve: each car's front and back on the rails, its middle, its heading
+// (dx, dy = unit vector to its front, nx, ny = to its right) and its depth for drawing.
+function layoutTrain() {
+  const tr = G.tr;
+  let y = yAtS(tr.s, tr.fy);
+  tr.fy = y;
+  tr.fx = trackX(y);
+  for (let k = 0; k < CAR.n; k++) {
+    const c = tr.cars[k], s0 = tr.s + k * (CAR.L + CAR.gap);
+    const y0 = k ? yAtS(s0, y + CAR.gap) : y, y1 = yAtS(s0 + CAR.L, y0 + CAR.L);
+    const x0 = trackX(y0), x1 = trackX(y1), dx = x0 - x1, dy = y0 - y1, l = Math.hypot(dx, dy) || 1;
+    c.x0 = x0; c.y0 = y0; c.x1 = x1; c.y1 = y1;
+    c.cx = (x0 + x1) / 2; c.cy = (y0 + y1) / 2;
+    c.dx = dx / l; c.dy = dy / l;
+    c.nx = -c.dy; c.ny = c.dx;
+    c.ang = Math.atan2(c.dx, -c.dy);
+    c.k = Math.max(y0, y1) + 3;
+    y = y1;
+  }
+}
+// Distance from (x, y) to the segment a-b, with y squashed like the blasts measure it.
+function segDist(px, py, ax, ay, bx, by) {
+  py /= FORE; ay /= FORE; by /= FORE;
+  const vx = bx - ax, vy = by - ay, t = clamp(((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy || 1), 0, 1);
+  return Math.hypot(px - ax - vx * t, py - ay - vy * t);
+}
 // How far (x, y) on the ground is from the train (0 = on it); ahead = px the train will have moved on.
 function trainDist(x, y, ahead) {
-  const a = ahead || 0, dx = Math.max(0, Math.abs(x - RAIL_X) - CAR.half);
-  const dy = Math.max(0, carFront(0) - a - 6 - y, y - (trainTail() - a)) / FORE;
-  return Math.hypot(dx, dy);
+  const a = ahead || 0;
+  let d = 1e9;
+  for (const c of G.tr.cars) d = Math.min(d, segDist(x, y, c.x1 + c.dx * a, c.y1 + c.dy * a, c.x0 + c.dx * (a + 6), c.y0 + c.dy * (a + 6)));
+  return Math.max(0, d - CAR.half);
+}
+// The car nearest (x, y).
+function carNear(x, y) {
+  let best = 0, bd = 1e9;
+  G.tr.cars.forEach((c, k) => { const d = Math.hypot(c.cx - x, c.cy - y); if (d < bd) { bd = d; best = k; } });
+  return best;
 }
 function hurtTrain(a, car) {
   if (G.demo || G.result) return;
@@ -2054,15 +2289,41 @@ function hurtTrain(a, car) {
 }
 // The safe zone: a concrete wall right across the land, a gate for the railway, two watchtowers.
 function buildSafeZone() {
-  const y = G.goalY, st = G.statics;
-  for (let x = RAIL_X - 640; x <= RAIL_X + 640; x += 16) {
-    if (Math.abs(x - RAIL_X) < 24) continue;
+  const y = Math.round(G.goalY), gx = Math.round(trackX(G.goalY)), st = G.statics;
+  for (let x = gx - 640; x <= gx + 640; x += 16) {
+    if (Math.abs(x - gx) < 26) continue;
     st.push({ d: SAFE.blocks[mod(x >> 4, SAFE.blocks.length)], x, y, k: y });
   }
   for (const s of [-1, 1]) {
-    st.push({ d: SAFE.pillar, x: RAIL_X + s * 17, y: y + 1, k: y + 1 });
-    st.push({ d: SAFE.tower, x: RAIL_X + s * 46, y: y - 4, k: y - 4, tower: s });
+    st.push({ d: SAFE.pillar, x: gx + s * 20, y: y + 1, k: y + 1 });
+    st.push({ d: SAFE.tower, x: gx + s * 50, y: y - 4, k: y - 4, tower: s });
   }
+}
+// The station halfway, on the east side of the rails: a platform, the station house, two lamps.
+// The train stops with its passenger car (car 1) at the house.
+function buildStation(s) {
+  const y = yAtS(s, G.tr.fy - (G.tr.s - s)), tl = trackLocal(trackX(y), y, {}), c = tl.c, fp = trackSlope(y);
+  const nx = c, ny = -fp * c;                               // to the right of the rails
+  const hx = trackX(y) + nx * 74, hy = y + ny * 74;
+  const st = G.station = {
+    s, stopS: s - (CAR.L + CAR.gap) - CAR.L / 2, y, state: 'ahead', t: 0, warned: false,
+    saved: 0, lost: 0, blockedT: 0, house: { x: hx, y: hy }, door: { x: hx, y: hy + 4 }
+  };
+  for (let a = -66; a <= 66; a += 12) {
+    const yy = yAtS(s + a, y + a), fpp = trackSlope(yy), cc = 1 / Math.sqrt(1 + fpp * fpp);
+    const x = Math.round(trackX(yy) + cc * 18), py = Math.round(yy - fpp * cc * 18);
+    G.statics.push({ d: STATION.slab, x, y: py, k: py });
+  }
+  for (const a of [-44, 44]) {
+    const yy = yAtS(s + a, y + a), x = Math.round(trackX(yy) + 26);
+    G.statics.push({ d: STATION.lamp, x, y: Math.round(yy), k: Math.round(yy), lamp: true });
+  }
+  G.statics.push({ d: STATION.house, x: Math.round(hx), y: Math.round(hy), k: Math.round(hy) });
+  for (let i = 0; i < CFG.station.people; i++) {
+    G.people.push({ person: true, x: hx + rnd(-8, 8), y: hy + rnd(3, 7), st: 'wait', go: 0.6 + i * CFG.station.gap,
+      sv: SURV[i % SURV.length], anim: rnd(2), left: Math.random() < 0.5, k: 0, by: null, gt: 0 });
+  }
+  return st;
 }
 // The train gets through the gate: the guards shoot the dead off it, the survivors are safe.
 function arrive() {
@@ -2071,9 +2332,10 @@ function arrive() {
   G.endT = 0;
   G.trigger = false;
   G.lock = null;
-  G.bonus = Math.round(G.tr.hp / CFG.train.hp * 100) * 2;
+  const st = G.station, saved = st ? st.saved : 0;
+  G.bonus = Math.round(G.tr.hp / CFG.train.hp * 100) * 2 + saved * 20;
   G.cash += G.bonus;
-  banner('TRAIN SAFE', 'THE SURVIVORS MADE IT.  +$' + G.bonus, U.gold, 9);
+  banner('TRAIN SAFE', saved + ' SURVIVORS SAVED.  +$' + G.bonus, U.gold, 9);
   SFX.horn();
   for (const z of G.zombies) if (z.st === 2) later(rnd(0.2, 1.4), () => {
     if (z.dead) return;
@@ -2090,7 +2352,7 @@ function lose() {
   G.lock = null;
   banner('TRAIN LOST', 'THE DEAD HAVE TAKEN IT', U.red, 9);
   const blast = (k, big) => () => {
-    const x = RAIL_X + rnd(-3, 3), y = carFront(k) + CAR.L * 0.5;
+    const c = G.tr.cars[k], x = c.cx + rnd(-3, 3), y = c.cy;
     boomFx(x, y, big);
     for (const z of G.zombies) if (!z.dead && Math.hypot(z.x - x, (z.y - y) / FORE) < 30) kill(z, 'he', x, y, 10, true);
     addShake(big ? 0.8 : 0.4);
@@ -2109,7 +2371,7 @@ function makeZombie(x, y, type) {
     sp: rnd(T.speed[0], T.speed[1]), dps: T.dps, wob: rnd(TAU), anim: rnd(2), left: Math.random() < 0.5,
     vx: 0, vy: 0, kbx: 0, kby: 0, flash: 0, pending: 0, block: [], blockT: rnd(0.5), dead: false, gone: false, qd: 0, k: y,
     // st: 0 walking, 1 on the rails ahead of the train, 2 holding on to the train
-    st: 0, rx: rnd(-3, 3), side: 0, car: 0, ady: 0, ox: 0, bang: 0, dmg: 0
+    st: 0, rx: rnd(-3, 3), side: 0, car: 0, al: 0, ox: 0, bang: 0, dmg: 0
   };
 }
 function pickType() {
@@ -2125,45 +2387,60 @@ function pack(n, hx, hy) {
     G.zombies.push(makeZombie(hx + Math.cos(b) * r, hy + Math.sin(b) * r * FORE, pickType()));
   }
 }
-// A pack walks in from beyond the left or right edge, or from ahead, off to one side.
-function sidePack(n) {
-  const side = Math.random() < 0.5 ? -1 : 1;
-  let x, y;
-  if (Math.random() < 0.55) {
-    x = RAIL_X + side * (W / 2 + rnd(20, 60));
-    y = G.camY + rnd(-200, H * 0.5);
-  } else {
-    x = RAIL_X + side * rnd(60, W / 2);
-    y = G.camY - rnd(30, 180);
+// true when (x, y) is out of the camera's view by more than m px
+const offView = (x, y, m) => x < G.camX - m || x > G.camX + W + m || y < G.camY - m || y > G.camY + H + m;
+// A pack walks in from one side of the railway, out of view; ds = along the rails from the engine.
+function sidePack(n, ds0, ds1) {
+  for (let i = 0; i < 6; i++) {
+    const s = G.tr.s + rnd(ds0, ds1), y = yAtS(s, G.tr.fy + (s - G.tr.s)), side = Math.random() < 0.5 ? -1 : 1;
+    const x = trackX(y) + side * rnd(110, 380);
+    if (y < G.goalY + 40 || !offView(x, y, 24)) continue;
+    pack(n, x, y);
+    return;
   }
-  if (y > G.goalY + 40) pack(n, x, y);
 }
-// A crowd standing on the rails ahead of the train.
-function railGroup(n, y) {
-  if (y < G.goalY + 60) return;
-  for (let k = 0; k < n; k++) {
-    const z = makeZombie(RAIL_X + rnd(-3, 3), y - k * rnd(3, 8), pickType());
+// A crowd standing on the rails ahead of the train, out of view.
+function railGroup(n) {
+  for (let i = 0; i < 4; i++) {
+    const s = G.tr.s - rnd(230, 380) - i * 90, y = yAtS(s, G.tr.fy + (s - G.tr.s));
+    if (y < G.goalY + 60) return;
+    if (!offView(trackX(y), y, 16)) continue;
+    for (let k = 0; k < n; k++) {
+      const yy = y - k * rnd(3, 8), z = makeZombie(trackX(yy) + rnd(-3, 3), yy, pickType());
+      z.st = 1;
+      z.rx = z.x - trackX(yy);
+      G.zombies.push(z);
+    }
+    return;
+  }
+}
+// the start: packs on both sides of the railway, most of them ahead, and a crowd on the rails ahead
+function scatter() {
+  for (let k = 0; k < 10; k++) {
+    const s = G.tr.s - rnd(-40, 300), y = yAtS(s, G.tr.fy + (s - G.tr.s));
+    pack(rndi(5, 12), trackX(y) + (Math.random() < 0.5 ? -1 : 1) * rnd(90, W / 2), y);
+  }
+  const s = G.tr.s - 110, y = yAtS(s, G.tr.fy - 110);
+  for (let k = 0; k < 5; k++) {
+    const yy = y - k * 6, z = makeZombie(trackX(yy) + rnd(-3, 3), yy, 0);
     z.st = 1;
-    z.rx = z.x - RAIL_X;
+    z.rx = z.x - trackX(yy);
     G.zombies.push(z);
   }
 }
-// the start: packs on both sides of the track, most of them ahead, and a crowd on the rails ahead
-function scatter() {
-  for (let k = 0; k < 10; k++) pack(rndi(5, 12), RAIL_X + (Math.random() < 0.5 ? -1 : 1) * rnd(90, W / 2), G.camY + rnd(-160, H * 0.4));
-  railGroup(5, carFront(0) - 110);
-}
 function spawn(dt) {
+  const st = G.station, stopped = st && st.state === 'boarding';
   const want = G.demo ? 300 : Math.min(CFG.pop.max, CFG.pop.start + CFG.pop.perSec * G.run);
   G.spawnCd -= dt;
-  if (G.spawnCd <= 0 && G.zombies.length < want) {
-    sidePack(rndi(3, 7) + Math.floor(G.run / 15));
-    G.spawnCd = rnd(0.3, 0.6);
+  if (G.spawnCd <= 0 && G.zombies.length < want + (stopped ? 50 : 0)) {
+    if (stopped) sidePack(rndi(4, 8), -240, 300);
+    else sidePack(rndi(3, 7) + Math.min(4, Math.floor(G.run / 25)), -420, 80);
+    G.spawnCd = stopped ? rnd(0.3, 0.45) : rnd(0.3, 0.6);
   }
   G.railCd -= dt;
-  if (G.railCd <= 0) {
-    railGroup(rndi(3, 6) + Math.floor(G.run / 12), G.camY - rnd(10, 80));
-    G.railCd = Math.max(3.2, rnd(7, 10) - G.run * 0.05);
+  if (G.railCd <= 0 && !stopped) {
+    railGroup(rndi(3, 6) + Math.min(5, Math.floor(G.run / 20)));
+    G.railCd = Math.max(3.6, rnd(7, 10) - G.run * 0.04);
   }
 }
 
@@ -2195,9 +2472,9 @@ function queryEll(x, y, R, fn) {
   }
 }
 
-// The dead take hold of the train: side -1 / 1 = on its left / right side, 0 = on the engine's nose.
-function attach(z, side) {
-  const rel = z.y - carFront(0);
+// The dead take hold of the train: side -1 / 1 = its left / right side, 0 = the engine's nose.
+// ds = how far behind the nose (along the rails), u = how far right of the rails.
+function attach(z, side, ds, u) {
   z.st = 2;
   z.side = side;
   z.dmg = 0;
@@ -2205,33 +2482,46 @@ function attach(z, side) {
   z.kbx = z.kby = 0;
   if (side === 0) {
     z.car = 0;
-    z.ox = clamp(z.x - RAIL_X, -6, 6);
-    z.left = z.x > RAIL_X;
+    z.ox = clamp(u, -6, 6);
+    z.left = u > 0;
   } else {
-    z.car = carAt(z.y);
-    z.ady = clamp(rel - z.car * (CAR.L + CAR.gap), 4, CAR.L - 6);
+    z.car = clamp(Math.floor(ds / (CAR.L + CAR.gap)), 0, CAR.n - 1);
+    z.al = CAR.L / 2 - clamp(ds - z.car * (CAR.L + CAR.gap), 4, CAR.L - 6);
     z.ox = rnd(0, 2);
     z.left = side > 0;
   }
 }
 // The engine runs one down: it dies, and the train loses speed.
 function crush(z) {
-  const tr = G.tr, F = carFront(0);
+  const tr = G.tr, c = tr.cars[0];
   tr.v *= z.big ? 0.35 : 0.85;
   kill(z, 'train', 0, 0, 0);
   hurtTrain(z.big ? 5 : 1, 0);
-  for (let k = 0; k < 5; k++) part({ x: RAIL_X + (k & 1 ? 5 : -5), y: F + 2, z: 1, vx: rnd(-30, 30), vy: rnd(-10, 25), vz: rnd(10, 40),
-    g: 140, life: rnd(0.2, 0.4), max: 0.4, s: 1, c: pick(['#ffe2a0', '#ffb347']), add: true, drag: 2 });
+  for (let k = 0; k < 5; k++) {
+    const s = k & 1 ? 5 : -5;
+    part({ x: c.x0 + c.nx * s, y: c.y0 + c.ny * s + 2, z: 1, vx: rnd(-30, 30), vy: rnd(-10, 25), vz: rnd(10, 40),
+      g: 140, life: rnd(0.2, 0.4), max: 0.4, s: 1, c: pick(['#ffe2a0', '#ffb347']), add: true, drag: 2 });
+  }
   if (!G.demo) {
     addShake(z.big ? 0.35 : 0.08);
     SFX.crush(z.big);
   }
 }
-
+// The nearest survivor out in the open (running, or held by the dead) within r of zombie z.
+function preyNear(z, r) {
+  let best = null, bd = r;
+  for (const p of G.people) {
+    if (p.st !== 'run' && p.st !== 'grab') continue;
+    const d = Math.hypot(p.x - z.x, (p.y - z.y) / FORE);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+const TL = { u: 0, a: 0, c: 1 };
 function updateZombies(dt) {
-  const zs = G.zombies, tr = G.tr, F = carFront(0), T = trainTail(), hw = CAR.half;
+  const zs = G.zombies, tr = G.tr, hw = CAR.half, safe = G.result === 'safe';
   if (!G.result) spawn(dt);
-  const kb = Math.exp(-5 * dt), behind = G.camY + H + 140, wide = W / 2 + 240;
+  const kb = Math.exp(-5 * dt), mid = tr.cars[2];
   let onTrain = 0, ahead = 1e9;
   for (const z of zs) {
     if (z.dead) continue;
@@ -2239,18 +2529,20 @@ function updateZombies(dt) {
     if (z.st === 2) {
       // holding on: it rides along and claws at the car
       onTrain++;
+      const c = tr.cars[z.car];
       z.bang += dt * (z.run ? 11 : 8);
       const lunge = Math.sin(z.bang) > 0.5 ? 1 : 0;
       if (z.side === 0) {
-        z.x = RAIL_X + z.ox;
-        z.y = F - 3 + lunge;
+        z.x = c.x0 + c.dx * (3 - lunge) + c.nx * z.ox;
+        z.y = c.y0 + c.dy * (3 - lunge) + c.ny * z.ox;
       } else {
-        z.x = RAIL_X + z.side * (hw + 2 + z.ox - lunge);
-        z.y = carFront(z.car) + z.ady;
+        const o = (hw + 2 + z.ox - lunge) * z.side;
+        z.x = c.cx + c.dx * z.al + c.nx * o;
+        z.y = c.cy + c.dy * z.al + c.ny * o;
       }
-      z.k = carBack(z.car) + 0.5;
-      z.vx = 0;
-      z.vy = -tr.v;
+      z.k = c.k + 0.5;
+      z.vx = c.dx * tr.v;
+      z.vy = c.dy * tr.v;
       z.anim += dt * 5;
       z.dmg += z.dps * dt;
       if (z.dmg >= 1) {
@@ -2259,13 +2551,20 @@ function updateZombies(dt) {
       }
       continue;
     }
-    // where to walk: onto the rails ahead of the train, to its side, or after it
-    const side = z.x < RAIL_X ? -1 : 1;
+    trackLocal(z.x, z.y, TL);
+    const ds = TL.a - tr.s, side = TL.u < 0 ? -1 : 1;
+    // where to walk: after a survivor, down the rails, onto the rails ahead, to the train's side,
+    // or after the train
     let tx, ty;
-    if (z.st === 1) { tx = RAIL_X + z.rx; ty = z.y + 40; }
-    else if (z.y < F - 6) { tx = RAIL_X + z.rx; ty = z.y + 6; }
-    else if (z.y < T + 6) { tx = RAIL_X + side * (hw + 3); ty = z.y; }
-    else { tx = RAIL_X + side * (hw + 3); ty = T; }
+    const prey = z.st === 0 ? preyNear(z, 70) : null;
+    if (prey) {
+      tx = prey.x;
+      ty = prey.y;
+      if (Math.hypot(prey.x - z.x, (prey.y - z.y) / FORE) < 4) grabPerson(prey, z);
+    } else if (z.st === 1) { ty = z.y + 24; tx = trackX(ty) + z.rx; }
+    else if (ds < -6) { tx = trackX(z.y) + z.rx; ty = z.y + 4; }
+    else if (ds <= TRAIN_LEN + 6) { tx = trackX(z.y) + side * (hw + 3) / TL.c; ty = z.y; }
+    else { const c = tr.cars[CAR.n - 1]; tx = c.x1 + side * (hw + 3); ty = c.y1; }
     const dx = tx - z.x, dy = (ty - z.y) / FORE, d = Math.hypot(dx, dy) || 1;
     z.wob += dt * (z.run ? 2 : 0.8);
     const w = z.st === 1 ? 0 : Math.sin(z.wob) * (z.run ? 0.25 : 0.4), cw = Math.cos(w), sw = Math.sin(w);
@@ -2280,23 +2579,23 @@ function updateZombies(dt) {
     z.k = z.y;
     if (Math.abs(ux) > 0.3) z.left = ux < 0;
     z.anim += dt * (0.6 + sp / 3.2);
-    if (z.st === 0 && z.y < F - 6 && Math.abs(z.x - RAIL_X - z.rx) < 2.5) z.st = 1;
+    if (z.st === 0 && ds < -6 && Math.abs(TL.u - z.rx) < 2.5) z.st = 1;
     // the engine runs it down, or (too slow to crush it) it climbs onto the nose; beside the train
     // it climbs on. Not once the train is safe.
-    const ax = Math.abs(z.x - RAIL_X);
-    if (G.result !== 'safe') {
-      if (ax < hw + 2 && z.y > F - 5 && z.y < F + 6) {
+    if (!safe) {
+      if (Math.abs(TL.u) < hw + 2 && ds > -5 && ds < 6) {
         if (tr.v > 7 && !G.result) crush(z);
-        else attach(z, 0);
+        else attach(z, 0, ds, TL.u);
         continue;
       }
-      if (z.y >= F && z.y <= T && ax < hw + 4) {
-        attach(z, side);
+      if (ds >= 0 && ds <= TRAIN_LEN && Math.abs(TL.u) < hw + 4) {
+        attach(z, side, ds, TL.u);
         continue;
       }
     }
-    if (z.st === 1 && z.y < F) ahead = Math.min(ahead, F - z.y);
-    if (z.y > behind || ax > wide) z.gone = true;
+    if (z.st === 1 && ds < 0) ahead = Math.min(ahead, -ds);
+    // far from the train and out of view: gone
+    if (Math.abs(z.x - mid.cx) + Math.abs(z.y - mid.cy) > 900 && offView(z.x, z.y, 40)) z.gone = true;
   }
   G.onTrain = onTrain;
   // the dead on the track ahead: a warning, and the train sounds its horn
@@ -2307,7 +2606,7 @@ function updateZombies(dt) {
     SFX.horn();
   }
   gridBuild();
-  // spacing in the crowd, round trees and walls, and never inside the train or past the safe zone wall
+  // spacing in the crowd, round trees and walls, never inside the train or past the safe zone wall
   for (const a of zs) {
     if (a.dead || a.st === 2) continue;
     const ra = a.big ? 6 : 3.5, i0 = Math.floor(a.x / GC), j0 = Math.floor(a.y / GC);
@@ -2338,13 +2637,179 @@ function updateZombies(dt) {
         a.y = a.block[k + 1] + dy / d * m * FORE;
       }
     }
-    if (a.y > F && a.y < T && Math.abs(a.x - RAIL_X) < hw + 2) a.x = RAIL_X + (a.x < RAIL_X ? -1 : 1) * (hw + 2);
+    const hs = G.station && G.station.house;
+    if (hs) {
+      const dx = a.x - hs.x, dy = (a.y - hs.y + 6) / FORE, d = Math.hypot(dx, dy);
+      if (d < 16 && d > 1e-4) {
+        a.x = hs.x + dx / d * 16;
+        a.y = hs.y - 6 + dy / d * 16 * FORE;
+      }
+    }
+    if (Math.abs(a.x - trackX(a.y)) < 26) {
+      trackLocal(a.x, a.y, TL);
+      const ds = TL.a - tr.s;
+      if (ds > 0 && ds < TRAIN_LEN && Math.abs(TL.u) < hw + 2) a.x = trackX(a.y) + (TL.u < 0 ? -1 : 1) * (hw + 2) / TL.c;
+    }
     if (a.y < G.goalY + 8) a.y = G.goalY + 8;
   }
   // drop the dead and the lost
   let j = 0;
   for (let i = 0; i < zs.length; i++) if (!zs[i].dead && !zs[i].gone) zs[j++] = zs[i];
   zs.length = j;
+}
+
+// ---------- the station stop and its survivors
+// A zombie gets hold of a survivor: shoot it in time and the survivor runs on.
+function grabPerson(p, z) {
+  if (p.st !== 'run') return;
+  p.st = 'grab';
+  p.by = z;
+  p.gt = CFG.station.grab;
+  if (!G.demo) {
+    floatText(p.x, p.y - 8, 'HELP!', U.red);
+    SFX.hit();
+  }
+}
+function catchPerson(p) {
+  if (p.st !== 'run' && p.st !== 'grab') return;
+  p.st = 'dead';
+  G.station.lost++;
+  blood(p.x, p.y, 10, 5);
+  stampPix(p.x, p.y, P.bl1, 2);
+  if (!G.demo) {
+    floatText(p.x, p.y - 6, 'SURVIVOR DOWN', U.red);
+    SFX.splat();
+  }
+}
+function updateStation(dt) {
+  const st = G.station;
+  if (!st) return;
+  const tr = G.tr;
+  if (st.state === 'ahead') {
+    if (!st.warned && tr.s - st.stopS < 260) {
+      st.warned = true;
+      banner('STATION AHEAD', 'THE TRAIN STOPS FOR SURVIVORS', U.blue, 3);
+    }
+    // brake to stop with the passenger car at the house
+    if (tr.s - st.stopS < tr.v * tr.v / (2 * CFG.train.brake) + 1) st.state = 'braking';
+  } else if (st.state === 'boarding') {
+    st.t += dt;
+    const c = tr.cars[1], door = { x: c.cx + c.nx * (CAR.half + 2), y: c.cy + c.ny * (CAR.half + 2) };
+    // the next survivor runs once the way out of the door is clear (or, in the end, anyway)
+    let near = false;
+    for (const z of G.zombies) if (!z.dead && Math.hypot(z.x - st.door.x, (z.y - st.door.y) / FORE) < CFG.station.clear) { near = true; break; }
+    let busy = 0, waiting = false;
+    for (const p of G.people) {
+      if (p.st === 'wait') {
+        busy++;
+        if (st.t >= p.go) {
+          waiting = true;
+          if (!near || st.blockedT > CFG.station.wait) {
+            p.st = 'run';
+            st.blockedT = 0;
+          }
+        }
+        continue;
+      }
+      if (p.st === 'grab') {
+        busy++;
+        if (p.by.dead) p.st = 'run';
+        else if ((p.gt -= dt) <= 0) catchPerson(p);
+        continue;
+      }
+      if (p.st !== 'run') continue;
+      busy++;
+      const dx = door.x - p.x, dy = door.y - p.y, d = Math.hypot(dx, dy);
+      if (d < 3) {
+        p.st = 'in';
+        st.saved++;
+        if (!G.demo) {
+          floatText(p.x, p.y - 6, '+1 SAVED', '#8fd18a');
+          SFX.saved();
+        }
+        continue;
+      }
+      p.x += dx / d * CFG.station.run * dt;
+      p.y += dy / d * CFG.station.run * dt;
+      p.left = dx < 0;
+      p.anim += dt * 8;
+    }
+    st.blockedT = waiting && near ? st.blockedT + dt : 0;
+    if (!busy && st.t >= CFG.station.minStop) {
+      st.state = 'leaving';
+      banner('ALL ABOARD', st.saved + ' OF ' + CFG.station.people + ' SURVIVORS SAVED', '#8fd18a', 3);
+      SFX.horn();
+    }
+  }
+  for (const p of G.people) p.k = p.y;
+}
+
+// ---------- the helicopter
+// The keys push it about; with no key held it keeps its place over the train. F flies it back
+// over the engine. It cannot stray more than the leash from the train.
+function updateHeli(dt) {
+  const h = G.heli, c = CFG.heli, homeY = Math.round(H * 0.12);
+  if (G.demo || mode === 'title') {
+    // the title: a slow circle off to the side of the train, the menu on the left
+    const off = W >= 560 ? -W * 0.22 : 0;
+    h.ox = off + Math.cos(G.t * 0.15) * 30;
+    h.oy = homeY + Math.sin(G.t * 0.15) * 24;
+    h.vx = -Math.sin(G.t * 0.15) * 4.5;
+    h.vy = Math.cos(G.t * 0.15) * 3.6;
+  } else {
+    let [ix, iy] = mode === 'play' ? keyAxis() : [0, 0];
+    if (mode === 'play' && M.inside && !G.bot) {
+      const ex = M.x / W * 2 - 1, ey = M.y / H * 2 - 1;
+      ix = clamp(ix + Math.sign(ex) * smooth(0.94, 0.995, Math.abs(ex)), -1, 1);
+      iy = clamp(iy + Math.sign(ey) * smooth(0.92, 0.99, Math.abs(ey)), -1, 1);
+    }
+    const l = Math.hypot(ix, iy);
+    if (l > 1) { ix /= l; iy /= l; }
+    if (l > 0.05) h.home = false;
+    let tx = ix * c.speed, ty = iy * c.speed;
+    if (h.home) {
+      const dx = -h.ox, dy = homeY - h.oy, d = Math.hypot(dx, dy);
+      if (d < 3) h.home = false;
+      else {
+        tx = dx / d * Math.min(c.speed, d * 2.5);
+        ty = dy / d * Math.min(c.speed, d * 2.5);
+      }
+    }
+    const k = Math.min(1, dt * c.accel);
+    h.vx += (tx - h.vx) * k;
+    h.vy += (ty - h.vy) * k;
+    h.ox += h.vx * dt;
+    h.oy += h.vy * dt;
+    // the leash: pulled back softly past it
+    const d = Math.hypot(h.ox, h.oy - homeY);
+    h.far = d > c.leash * 0.85;
+    if (d > c.leash) {
+      const f = c.leash / d;
+      h.ox *= f;
+      h.oy = homeY + (h.oy - homeY) * f;
+      h.vx *= 0.8;
+      h.vy *= 0.8;
+    }
+  }
+  // the heading follows where it flies (the train's way plus its own)
+  const t0 = G.tr.cars[0], gx = t0.dx * G.tr.v + h.vx, gy = t0.dy * G.tr.v + h.vy;
+  if (Math.hypot(gx, gy) > 10) {
+    let a = Math.atan2(gx, -gy) - h.hd;
+    a = mod(a + Math.PI, TAU) - Math.PI;
+    h.hd += clamp(a, -2.4 * dt, 2.4 * dt);
+  }
+}
+// The view: over the helicopter, swinging a little ahead of where it flies, swaying as it hovers.
+function placeCamera() {
+  const h = G.heli, sw = REDUCED ? 0 : 1;
+  const cx = G.tr.fx + h.ox + h.vx * 0.22 + Math.sin(G.t * 0.9) * 1.3 * sw;
+  const cy = G.tr.fy + h.oy + h.vy * 0.22 + Math.sin(G.t * 1.27 + 1) * 0.9 * sw;
+  G.camX = Math.round(cx - W / 2);
+  G.camY = Math.round(cy - H / 2);
+}
+// chunks in view: [first column, first row, last column, last row]
+function viewChunks() {
+  return [Math.floor(G.camX / CH), Math.floor(G.camY / CH), Math.floor((G.camX + W) / CH), Math.floor((G.camY + H) / CH)];
 }
 
 // ---------- lock-on
@@ -2477,20 +2942,21 @@ function kill(z, cause, cx, cy, dist, free) {
       life: rnd(0.4, 0.8), max: 0.8, s: 1, c: pick(['#ff8a3a', '#ffc27a']), add: true, drag: 1.5 });
   } else if (cause === 'train') {
     // run down: flung aside and ahead, a burst of blood
-    const s = z.x < RAIL_X ? -1 : 1;
-    if (room) bs.push({ S, x: z.x, y: z.y, z: 2, vx: s * rnd(40, 80), vy: -rnd(15, 35), vz: rnd(40, 80),
+    const c = G.tr.cars[0], s = trackLocal(z.x, z.y, TL).u < 0 ? -1 : 1, v = rnd(40, 80), f = rnd(15, 35);
+    if (room) bs.push({ S, x: z.x, y: z.y, z: 2, vx: c.nx * s * v + c.dx * f, vy: c.ny * s * v + c.dy * f, vz: rnd(40, 80),
       spin: rnd(10, 18) * s, rot: 0, fall: false, age: 0 });
     else stampCorpse(S, z.x, z.y);
     blood(z.x, z.y, z.big ? 16 : 10, S.h * 0.6);
     if (sc) addTotal(z.x, z.y - S.h, z.value, U.gold, false);
   } else {
     // a 25mm round: knocked over backwards, away from the gun, or off the side of the train
-    const off = z.st === 2, s = z.side || (z.x < RAIL_X ? -1 : 1);
-    if (room) bs.push(off
-      ? { S, x: z.x, y: z.y, z: 3, vx: z.side ? s * rnd(25, 45) : rnd(-10, 10), vy: z.side ? rnd(-8, 8) - G.tr.v : -rnd(25, 45),
-        vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 }
-      : { S, x: z.x, y: z.y, z: 0, vx: rnd(-8, 8), vy: -rnd(10, 22), vz: rnd(22, 40), spin: 0, rot: 0, fall: true, age: 0 });
-    else stampCorpse(S, z.x, z.y);
+    if (room) {
+      if (z.st === 2) {
+        const c = G.tr.cars[z.car], s = z.side, v = rnd(25, 45), tv = G.tr.v * 0.6;
+        bs.push(s ? { S, x: z.x, y: z.y, z: 3, vx: c.nx * s * v + c.dx * tv, vy: c.ny * s * v + c.dy * tv, vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 }
+          : { S, x: z.x, y: z.y, z: 3, vx: c.dx * (v + tv), vy: c.dy * (v + tv), vz: rnd(25, 45), spin: 0, rot: 0, fall: true, age: 0 });
+      } else bs.push({ S, x: z.x, y: z.y, z: 0, vx: rnd(-8, 8), vy: -rnd(10, 22), vz: rnd(22, 40), spin: 0, rot: 0, fall: true, age: 0 });
+    } else stampCorpse(S, z.x, z.y);
     blood(z.x, z.y, z.big ? 14 : 8, S.h * 0.6);
     part({ x: z.x, y: z.y, z: S.h * 0.5, vx: rnd(-4, 4), vy: rnd(-6, 0), vz: rnd(4, 10), g: 0, life: 0.45, max: 0.45, s: 3,
       c: 'rgba(110,24,20,0.55)', grow: 7, drag: 3, smoke: true });
@@ -2592,7 +3058,7 @@ function boomFx(x, y, big) {
   stampScorch(x, y, 3);
 }
 // The 105 lands: everything near dies, the edge of the blast throws the rest back. Too close to
-// the train, the blast hurts the train as well.
+// the train, the blast hurts the train as well; it kills survivors on foot too.
 function explode(x, y, player) {
   let killed = 0, value = 0;
   queryEll(x, y, CFG.he.hurt, (z, d) => {
@@ -2616,11 +3082,12 @@ function explode(x, y, player) {
     hitStop(killed >= 12 ? 0.1 : 0.04, 0.25);
     SFX.boom();
   }
+  for (const p of G.people) if ((p.st === 'run' || p.st === 'grab') && Math.hypot(p.x - x, (p.y - y) / FORE) < CFG.he.kill) catchPerson(p);
   const td = trainDist(x, y);
   if (player && td < CFG.he.close && !G.demo && !G.result) {
-    const a = Math.round(14 * (1 - td / CFG.he.close)) + 3, k = carAt(y);
+    const a = Math.round(14 * (1 - td / CFG.he.close)) + 3, k = carNear(x, y), c = G.tr.cars[k];
     hurtTrain(a, k);
-    floatText(RAIL_X, carFront(k) + 8, '-' + a, U.red);
+    floatText(c.cx, c.cy - 8, '-' + a, U.red);
     banner('CHECK FIRE!', 'YOUR SHELL HIT THE TRAIN', U.red, 3);
     SFX.radio();
   }
@@ -2675,10 +3142,10 @@ function updateFireSpots(dt) {
 }
 
 // ---------- the autopilot (the title demo, and tests through window.__sr.bot)
-// It shoots the dead on the train first, then the ones on the rails nearest the engine, then
-// whoever is nearest the train; the 105 goes to a crowd on the rails well ahead of the train.
+// It shoots the dead on the train first, then the ones near the survivors, then the ones on the
+// rails nearest the engine, then whoever is nearest the train; the 105 goes to a crowd on the rails
+// well ahead of the train.
 function autopilot(dt) {
-  const F = carFront(0);
   G.botT -= dt;
   if (G.botT <= 0 || !G.botZ || G.botZ.dead) {
     G.botT = 0.2;
@@ -2687,13 +3154,22 @@ function autopilot(dt) {
       if (z.dead) continue;
       const sx = z.x - G.camX, sy = z.y - G.camY;
       if (sx < 6 || sx > W - 6 || sy < 26 || sy > H - 6) continue;
-      const s = z.st === 2 ? Math.abs(z.y - F) : z.st === 1 && z.y < F ? 300 + F - z.y : 700 + trainDist(z.x, z.y);
+      let s;
+      const prey = preyNear(z, 50);
+      if (prey && prey.by === z) s = -100;
+      else if (z.st === 2) s = 0;
+      else if (prey) s = 100;
+      else if (z.st === 1) s = 300 + Math.max(0, trackLocal(z.x, z.y, TL).a - G.tr.s + 400);
+      else s = 900 + trainDist(z.x, z.y);
       if (s < bs) { bs = s; bestZ = z; }
     }
     G.botZ = bestZ;
   }
   let he = null;
-  for (const q of G.zombies) if (!q.dead && q.st === 1 && F - q.y > 110 && q.y - G.camY > 24) { he = q; break; }
+  for (const q of G.zombies) {
+    if (q.dead || q.st !== 1 || q.y - G.camY < 24 || q.y - G.camY > H) continue;
+    if (G.tr.s - trackLocal(q.x, q.y, TL).a > 110) { he = q; break; }
+  }
   return { z: G.botZ && !G.botZ.dead ? G.botZ : null, he };
 }
 // the title demo: bursts of 25mm and a 105 now and then
@@ -2708,7 +3184,7 @@ function attract(dt) {
   } else G.mgCd = Math.max(0, G.mgCd);
   G.heReload -= dt;
   if (b.he && G.heReload <= 0) {
-    fireHE(false, b.he.x, b.he.y + b.he.vy * CFG.he.travel);
+    fireHE(false, b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel);
     G.heReload = 3.5;
   }
 }
@@ -2721,34 +3197,34 @@ function botPlay(dt) {
     M.inside = true;
   }
   G.trigger = !!b.z;
-  if (b.he && G.heReload <= 0) fireHE(true, b.he.x, b.he.y + b.he.vy * CFG.he.travel);
-}
-
-// ---------- the view
-// The train runs up the middle of the view (on the title, off to the right of the menu).
-function placeCamera() {
-  G.camX = Math.round(RAIL_X - W * (mode === 'title' && W >= 560 ? 0.72 : 0.5));
-  G.camY = Math.round(G.tr.front) - Math.round(H * 0.38);
-}
-// chunks in view: [first column, first row, last column, last row]
-function viewChunks() {
-  return [Math.floor(G.camX / CH), Math.floor(G.camY / CH), Math.floor((G.camX + W) / CH), Math.floor((G.camY + H) / CH)];
+  if (b.he && G.heReload <= 0) fireHE(true, b.he.x + b.he.vx * CFG.he.travel, b.he.y + b.he.vy * CFG.he.travel);
 }
 
 // ---------- one step of the game (STEP seconds)
 function step(dt) {
   G.t += dt;
-  const tr = G.tr;
-  // the train gets back up to speed after every bump. Lost, it stops; safe, it rolls on until the
-  // whole train is inside the wall, then brakes.
+  const tr = G.tr, st = G.station;
+  // the train gets back up to speed after every bump. It brakes for the station and waits there;
+  // lost, it stops; safe, it rolls on until the whole train is inside the wall, then brakes.
   if (G.result === 'lost') tr.v = Math.max(0, tr.v - 30 * dt);
-  else if (G.result === 'safe' && trainTail() < G.goalY - 14) tr.v = Math.max(0, tr.v - 12 * dt);
+  else if (G.result === 'safe' && tr.s + TRAIN_LEN < G.goalS - 14) tr.v = Math.max(0, tr.v - 12 * dt);
+  else if (st && st.state === 'braking') {
+    tr.v = Math.min(tr.v, Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - st.stopS)) + 1.5);
+    if (tr.s - st.stopS < 0.6) {
+      tr.v = 0;
+      st.state = 'boarding';
+      st.t = 0;
+      banner('COVER THE SURVIVORS', 'THEY RUN FOR THE TRAIN', '#8fd18a', 3);
+      SFX.radio();
+    }
+  } else if (st && st.state === 'boarding') tr.v = 0;
   else tr.v = Math.min(CFG.train.cruise, tr.v + CFG.train.accel * dt);
-  tr.front -= tr.v * dt;
+  tr.s -= tr.v * dt;
+  layoutTrain();
   for (let k = 0; k < CAR.n; k++) if (tr.hit[k] > 0) tr.hit[k] -= dt;
-  // the little fires it runs over go out
-  for (const f of flames) if (Math.abs(f.x - RAIL_X) < CAR.half + 2 && f.y > carFront(0) - 4 && f.y < trainTail() + 4) f.life = 0;
   tr.hpShown = Math.max(tr.hp, tr.hpShown - dt * 12);
+  // the little fires it runs over go out
+  for (const f of flames) if (Math.abs(f.x - trackX(f.y)) < CAR.half + 2 && trainDist(f.x, f.y) < 1) f.life = 0;
   // wheels over the rail joints, and smoke from the stack
   tr.clack += tr.v * dt;
   if (tr.clack > 30) {
@@ -2757,10 +3233,12 @@ function step(dt) {
   }
   tr.smokeT -= dt;
   if (tr.smokeT <= 0 && G.result !== 'lost') {
-    tr.smokeT = 0.16;
-    part({ x: RAIL_X + rnd(-1, 1), y: carFront(0) + 15, z: 10, vx: rnd(-3, 3) + 3, vy: rnd(-2, 2), vz: rnd(14, 22), g: 0,
+    const c = tr.cars[0];
+    tr.smokeT = tr.v > 1 ? 0.16 : 0.4;
+    part({ x: c.x0 - c.dx * 15 + rnd(-1, 1), y: c.y0 - c.dy * 15, z: 10, vx: rnd(-3, 3) + 3, vy: rnd(-2, 2), vz: rnd(14, 22), g: 0,
       life: rnd(1.6, 2.6), max: 2.6, s: rnd(2, 3), c: pick(['rgba(40,38,36,0.6)', 'rgba(56,52,48,0.55)']), grow: 3, drag: 0.8, smoke: true });
   }
+  updateHeli(dt);
   placeCamera();
   for (let i = G.timers.length - 1; i >= 0; i--) {
     const tm = G.timers[i];
@@ -2801,7 +3279,7 @@ function step(dt) {
         } else SFX.ready();
       }
     }
-    if (!G.result && tr.front <= G.goalY - 6) arrive();
+    if (!G.result && tr.s <= G.goalS) arrive();
   } else {
     G.aimSX = W / 2;
     G.aimSY = H / 2;
@@ -2816,6 +3294,7 @@ function step(dt) {
   G.muzzle[1] = Math.max(0, G.muzzle[1] - dt);
   G.killBump = Math.max(0, G.killBump - dt * 6);
   G.cashPulse = Math.max(0, G.cashPulse - dt * 3);
+  updateStation(dt);
   updateZombies(dt);
   updateRounds(dt);
   updateBodies(dt);
@@ -2830,11 +3309,11 @@ function step(dt) {
   }
 }
 
-// render.js - draws one frame of the world: ground and its marks, tufts, shadows, then trees,
-// props, the train, the safe zone and the dead sorted by depth (the dead behind a tree show through
-// it), fires, particles, explosions, flying bodies, tracers and glows (the train's headlight, the
-// searchlights), the mist and cloud shadows, then the color grade and vignette, or the thermal
-// camera look (grey, hot things white).
+// render.js - draws one frame of the world: ground and its marks, tufts, the helicopter's shadow and
+// the other shadows, then trees, props, the train, the station, the safe zone, survivors and the
+// dead sorted by depth (the dead behind a tree show through it), fires, particles, explosions,
+// flying bodies, tracers and glows (headlights, lamps, searchlights), the mist and cloud shadows,
+// then the color grade and vignette, or the thermal camera look (grey, hot things white).
 
 let VIG = null, GRADE = null, HAZE = null, SCAN = null, GRAIN = null, MIST = null, BODYSH = null;
 const CLOUDSPR = [];
@@ -2940,9 +3419,12 @@ function gather(ci0, cj0, ci1, cj1) {
     DL.push(p);
   }
   for (let i = 0; i < CAR.n; i++) {
-    const c = CARS[i] || (CARS[i] = { isCar: true, i, k: 0 });
-    c.k = carBack(i);
-    if (c.k > y0 && c.k - 40 < y1) DL.push(c);
+    const c = CARS[i] || (CARS[i] = { isCar: true, i, k: 0 }), tc = G.tr.cars[i];
+    c.k = tc.k;
+    if (tc.cx > x0 - 30 && tc.cx < x1 + 30 && tc.cy > y0 - 30 && tc.cy < y1 + 40) DL.push(c);
+  }
+  for (const p of G.people) {
+    if ((p.st === 'wait' || p.st === 'run' || p.st === 'grab') && p.x > x0 && p.x < x1 && p.y > y0 && p.y < y1 + 10) DL.push(p);
   }
   for (const z of G.zombies) {
     if (z.dead || z.x < x0 - 10 || z.x > x1 + 10 || z.y < y0 || z.y > y1 + 24) continue;
@@ -2972,22 +3454,61 @@ function drawZombie(z) {
     ctx.fillRect(x, y, Math.max(1, Math.round(w * z.hp / z.max)), 2);
   }
 }
-// A car of the train (red while it takes damage). The survivors ride on the flatcar.
+// A car of the train, turned to its heading on the rails (red while it takes damage). The
+// survivors ride on the flatcar, standing on its deck.
 function drawCar(i) {
-  const t = TRAIN[i], sx = RAIL_X - 9, sy = carBack(i) - 38;
-  blit(G.tr.hit[i] > 0 && !thermal ? t.red : thermal ? t.h : t.n, sx, sy);
+  const t = TRAIN[i], c = G.tr.cars[i], a = angIdx(c.ang);
+  const img = thermal ? t.h[a] : G.tr.hit[i] > 0 ? carRed(t, a) : t.n[a];
+  blit(img, Math.round(c.cx) - img.ox, Math.round(c.cy) - img.oy);
   if (i === 2) for (let k = 0; k < RIDERS.length; k++) {
-    const [px, py] = RIDERS[k], s = SURV[k], bob = Math.sin(realT * 5 + k * 1.7) > 0.6 ? 1 : 0;
-    blit(thermal ? s.h : s.n, sx + px - 1, sy + py - 6 - bob);
+    const [u, al] = RIDERS[k], s = SURV[k], bob = Math.sin(realT * 5 + k * 1.7) > 0.6 ? 1 : 0;
+    const x = c.cx + c.dx * al + c.nx * u, y = c.cy + c.dy * al + c.ny * u;
+    blit(thermal ? s.h : s.n, Math.round(x) - 2, Math.round(y) - 10 - bob);
   }
 }
 // The train's shadow: each car's footprint, moved away from the sun by its height.
 function drawTrainShadow() {
-  ctx.fillStyle = '#000';
   for (let i = 0; i < CAR.n; i++) {
-    const h = TRAIN[i].tall;
-    ctx.fillRect(RAIL_X - 8 + Math.round(h * SUNX), carFront(i) + Math.round(h * SUNY), 16, CAR.L);
+    const c = G.tr.cars[i], h = TRAIN[i].tall;
+    blit(FOOT[angIdx(c.ang)], Math.round(c.cx + h * SUNX) - 18, Math.round(c.cy + h * SUNY) - 18);
   }
+}
+// A survivor on foot: waiting by the station house, running for the train (a green marker over
+// them), or held by the dead (a red marker, and they shake).
+function drawPerson(p) {
+  const sv = p.sv, run = p.st === 'run', grab = p.st === 'grab';
+  const x = Math.round(p.x) + (grab && Math.sin(realT * 40) > 0 ? 1 : 0), y = Math.round(p.y);
+  blit(run ? sv.run[(p.anim | 0) & 1][thermal ? 1 : 0] : thermal ? sv.h : sv.n, x - 2, y - 8);
+  if (run || grab) {
+    ctx.fillStyle = '#07080a';
+    ctx.fillRect(x - 2, y - 15, 5, 4);
+    ctx.fillStyle = thermal ? '#ffffff' : grab ? (Math.sin(realT * 18) > 0 ? '#ff3a2a' : '#a8241a') : '#8fd18a';
+    ctx.fillRect(x - 1, y - 14, 3, 1);
+    ctx.fillRect(x, y - 13, 1, 1);
+  }
+}
+// The helicopter's shadow on the ground, south-east of the view's middle (the sun is in the
+// north-west), lagging a little as it speeds up, with its rotor turning.
+function drawHeliShadow() {
+  const h = G.heli, alt = CFG.heli.alt;
+  const gx = Math.round(G.camX + W / 2 + alt * SUNX - h.vx * 0.08), gy = Math.round(G.camY + H / 2 + alt * SUNY - h.vy * 0.08);
+  ctx.globalAlpha = thermal ? 0.2 : 0.3;
+  blit(HELI[mod(Math.round(h.hd / TAU * HELI_N), HELI_N)], gx - 20, gy - 20);
+  // the faint disc the blades sweep, then the four blades
+  ctx.globalAlpha = thermal ? 0.04 : 0.06;
+  ctx.fillStyle = '#000';
+  const R = 21, ry = Math.round(R * FORE);
+  for (let dy = -ry; dy <= ry; dy++) {
+    const hw = Math.round(R * Math.sqrt(1 - (dy * dy) / (ry * ry)));
+    ctx.fillRect(gx - hw, gy + dy, hw * 2 + 1, 1);
+  }
+  ctx.globalAlpha = thermal ? 0.2 : 0.3;
+  const a0 = realT * 31;
+  for (let k = 0; k < 4; k++) {
+    const a = a0 + k * Math.PI / 2;
+    pl(ctx, gx, gy, gx + Math.cos(a) * R, gy + Math.sin(a) * R * FORE, '#000');
+  }
+  ctx.globalAlpha = 1;
 }
 // Grass tufts that sway a little.
 function drawTufts(ci0, cj0, ci1, cj1) {
@@ -3129,14 +3650,17 @@ function render() {
   ctx.globalAlpha = 0.25;
   for (const b of G.bodies) blit(BODYSH, Math.round(b.x - 4), Math.round(b.y - 2));
   ctx.globalAlpha = 1;
-  // the safe zone's name, painted on the ground past the gate
-  if (G.goalY > G.camY - 80 && G.goalY < G.camY + H + 80) text('SAFE ZONE', RAIL_X, G.goalY - 56, '#8fd18a', { align: 'center', scale: 2 });
+  drawHeliShadow();
   // trees, props, the train and the dead, back to front. A tree under the sight fades so you can
   // see past it.
   const ax = G.camX + G.aimSX, ay = G.camY + G.aimSY, aiming = mode === 'play';
   for (const o of DL) {
     if (o.isCar) {
       drawCar(o.i);
+      continue;
+    }
+    if (o.person) {
+      drawPerson(o);
       continue;
     }
     if (o.S) {
@@ -3176,14 +3700,18 @@ function render() {
   drawLights();
   for (const f of FIRES) light(f.x, f.y - (f.big ? 6 : 3), f.big ? 30 : 18, '#ff9a4a', 0.45 + Math.sin(realT * 13 + f.seed) * 0.08);
   for (const f of flames) light(f.x, f.y - 2, 10, '#ff8a3a', 0.35 * Math.min(1, f.life));
-  // the train's headlights and their beam on the track ahead
+  // the train's headlights, and their beam on the rails ahead (it follows the bends)
   if (G.result !== 'lost') {
-    const F = carFront(0);
-    light(RAIL_X - 4, F - 9, 6, '#fff1c2', 0.8);
-    light(RAIL_X + 3, F - 9, 6, '#fff1c2', 0.8);
-    light(RAIL_X, F - 30, 22, '#ffe2a0', 0.3);
-    light(RAIL_X, F - 62, 30, '#ffe2a0', 0.16);
+    const tr = G.tr, c = tr.cars[0];
+    light(c.x0 - c.nx * 4, c.y0 - c.ny * 4 - 7, 6, '#fff1c2', 0.8);
+    light(c.x0 + c.nx * 3, c.y0 + c.ny * 3 - 7, 6, '#fff1c2', 0.8);
+    for (const [ds, r, a] of [[24, 22, 0.3], [56, 30, 0.16]]) {
+      const y = yAtS(tr.s - ds, tr.fy - ds);
+      light(trackX(y), y, r, '#ffe2a0', a);
+    }
   }
+  // station lamps
+  for (const p of G.statics) if (p.lamp && Math.abs(p.y - G.camY - H / 2) < H) light(p.x, p.y - 17, 16, '#ffe2a0', 0.45);
   // the searchlights of the safe zone sweep the ground in front of the wall
   for (const p of G.statics) if (p.tower && Math.abs(p.y - (G.camY + H / 2)) < H) {
     light(p.x + 5, p.y - 26, 5, '#fff1c2', 0.9);
@@ -3199,6 +3727,10 @@ function render() {
     drawMist();
     drawClouds();
   }
+  // the names of the safe zone (past the gate) and of the station, over everything on the ground
+  if (G.goalY > G.camY - 80 && G.goalY < G.camY + H + 80) text('SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30, '#8fd18a', { align: 'center', scale: 2 });
+  const hs = G.station && G.station.house;
+  if (hs && Math.abs(hs.y - G.camY - H / 2) < H) text('STATION', hs.x, hs.y - 36, '#9fd3f2', { align: 'center' });
   drawTexts();
   ctx.restore();
   // the camera's look over everything
@@ -3231,7 +3763,8 @@ function render() {
 }
 
 // ui.js - everything drawn over the world, in screen pixels: the gun sight and lock brackets, the
-// top bar (cash, kills, the train's health, the way to the safe zone), warnings, the weapon cards,
+// top bar (cash, kills, the train's health, the way to the station and the safe zone), warnings,
+// arrows on the screen edge to the train and to trouble out of view, the radar, the weapon cards,
 // coins, banners, hints, the red edge when the train is nearly lost, and the screens (title, pause,
 // summary). Buttons are drawn in the canvas too (from Ball x Archers).
 
@@ -3365,16 +3898,22 @@ function drawHUD() {
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 6);
   ctx.fillStyle = f < 0.35 ? '#e06a4f' : f < 0.65 ? '#e8b05a' : '#9cc777';
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 1);
-  // the way to the safe zone: the line, the train on it, the flag and the distance left
+  // the way to the safe zone: the line, the station halfway, the train on it, the flag, the
+  // distance left (2 px = 1 m)
   if (!G.demo) {
-    const px = hx + hw + 20, pw = W - 96 - px, left = Math.max(0, Math.round((tr.front - G.goalY) / 2));
-    const k = clamp((tr.start - tr.front) / (tr.start - G.goalY), 0, 1);
+    const px = hx + hw + 20, pw = W - 96 - px, left = Math.max(0, Math.round((tr.s - G.goalS) / 2));
+    const k = clamp((tr.startS - tr.s) / CFG.trip, 0, 1);
     if (pw >= 40) {
       ctx.fillStyle = '#2e3139';
       ctx.fillRect(px, 9, pw, 1);
       ctx.fillStyle = '#b8862f';
       ctx.fillRect(px, 9, Math.round(pw * k), 1);
       for (let t = 0; t <= 4; t++) ctx.fillRect(px + Math.round(pw * t / 4), 8, 1, 3);
+      const sx = px + Math.round(pw / 2), done = G.station && G.station.state === 'leaving';
+      ctx.fillStyle = '#07080a';
+      ctx.fillRect(sx - 2, 4, 5, 9);
+      ctx.fillStyle = done ? '#8fd18a' : '#9fd3f2';
+      ctx.fillRect(sx - 1, 5, 3, 7);
       ctx.fillStyle = '#07080a';
       ctx.fillRect(px + Math.round(pw * k) - 2, 6, 5, 7);
       ctx.fillStyle = '#e8dfc8';
@@ -3392,26 +3931,105 @@ function drawHUD() {
     bar(5, 33, 52, 2, 1 - st / 1.6, '#1a1716', '#e3b04b');
   }
 }
-// warnings under the top bar: the track ahead is blocked, the dead are on the train
+// warnings under the top bar: the dead on the track or on the train, the helicopter too far away,
+// the survivors boarding
 function drawWarnings() {
   if (G.result) return;
-  const blink = Math.floor(realT * 3) % 2 === 0;
-  let y = 24;
-  if (G.blocked) {
-    // a red arrow over the track, pointing down at the train
-    const ax = Math.round(RAIL_X - G.camX), on = blink ? '#ff3a2a' : '#a8241a';
-    ctx.fillStyle = '#07080a';
-    ctx.fillRect(ax - 5, y - 1, 11, 6);
-    ctx.fillRect(ax - 3, y + 5, 7, 2);
-    ctx.fillStyle = on;
-    ctx.fillRect(ax - 4, y, 9, 2);
-    ctx.fillRect(ax - 3, y + 2, 7, 2);
-    ctx.fillRect(ax - 2, y + 4, 5, 1);
-    ctx.fillRect(ax - 1, y + 5, 3, 1);
-    text('THE DEAD ARE ON THE TRACK', ax + 10, y, on);
-    y += 11;
+  const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', st = G.station, L = [];
+  if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD', red]);
+  if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
+  if (G.heli.far) L.push(['STAY WITH THE TRAIN  (F)', U.amber]);
+  if (st && st.state === 'boarding') {
+    L.push(['SURVIVORS ABOARD ' + st.saved + ' / ' + CFG.station.people, '#8fd18a']);
+    if (st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
   }
-  if (G.onTrain > 0) text(G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', W / 2, y, blink ? U.red : '#a8241a', { align: 'center' });
+  L.forEach(([t, c], i) => text(t, W / 2, 24 + i * 10, c, { align: 'center' }));
+}
+// An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
+// with a label just inside it.
+function edgeArrow(wx, wy, col, label) {
+  const sx = wx - G.camX, sy = wy - G.camY;
+  if (sx > 8 && sx < W - 8 && sy > 26 && sy < H - 8) return false;
+  // the arrows keep inside a frame below the warnings: x 12..W-12, y 62..H-12
+  const cx = W / 2, cy = (62 + H - 12) / 2, hw = W / 2 - 12, hh = (H - 74) / 2;
+  const dx = sx - cx, dy = sy - cy, l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l;
+  const t = Math.min(hw / Math.max(1e-6, Math.abs(dx)), hh / Math.max(1e-6, Math.abs(dy)));
+  const ax = Math.round(cx + dx * t), ay = Math.round(cy + dy * t);
+  // a small triangle, tip toward the target, with a dark edge
+  for (const [c, g] of [['#07080a', 1], [col, 0]]) {
+    ctx.fillStyle = c;
+    for (let py = -6; py <= 6; py++) for (let px = -6; px <= 6; px++) {
+      const a = px * ux + py * uy, b = -px * uy + py * ux;
+      if (a <= 4 + g && a >= -3 - g && Math.abs(b) <= (4 - a) * 0.62 + g * 0.9) ctx.fillRect(ax + px, ay + py, 1, 1);
+    }
+  }
+  // the label just inside the arrow: beside it on the left and right edges, under or over it on
+  // the top and bottom
+  if (label) {
+    const w = tw(label), side = Math.abs(dx) * hh > Math.abs(dy) * hw;
+    const lx = side ? ax - Math.sign(ux) * (9 + w / 2) : ax, ly = side ? ay - 3 : ay - Math.sign(uy) * 11 - 3;
+    text(label, clamp(lx, w / 2 + 4, W - w / 2 - 4), clamp(ly, 22, H - 10), col, { align: 'center' });
+  }
+  return true;
+}
+// Arrows to the train, and to trouble out of view: the dead on a car, on the track ahead, after a
+// survivor.
+const ON_CAR = [0, 0, 0, 0, 0];
+function drawArrows() {
+  const tr = G.tr, c = tr.cars[2];
+  ON_CAR.fill(0);
+  let rail = null, rd = 1e9;
+  for (const z of G.zombies) {
+    if (z.dead) continue;
+    if (z.st === 2) ON_CAR[z.car]++;
+    else if (z.st === 1) {
+      const ds = tr.s - trackLocal(z.x, z.y, TL).a;
+      if (ds > 0 && ds < 300 && ds < rd) { rd = ds; rail = z; }
+    }
+  }
+  // the train (its middle): gold, red with a count when the dead are on it; or, when the train is
+  // in view, an arrow to any car under attack that is not
+  const n = G.result ? 0 : G.onTrain;
+  if (!edgeArrow(c.cx, c.cy, n ? U.red : U.gold, 'TRAIN ' + Math.round(Math.hypot(c.cx - G.camX - W / 2, c.cy - G.camY - H / 2) / 2) + 'M' + (n ? '  ' + n + '!' : ''))) {
+    if (!G.result) ON_CAR.forEach((m, k) => { if (m) edgeArrow(tr.cars[k].cx, tr.cars[k].cy, U.red, m + '!'); });
+  }
+  if (G.result) return;
+  if (rail) edgeArrow(rail.x, rail.y, U.red, 'TRACK');
+  const held = G.people.find((p) => p.st === 'grab'), out = G.people.find((p) => p.st === 'run');
+  if (held) edgeArrow(held.x, held.y, U.red, 'HELP');
+  else if (out) edgeArrow(out.x, out.y, '#8fd18a', 'SURVIVOR');
+}
+// The radar: the land round the helicopter, 1280 px across, north up. The railway, the train,
+// the dead (bright red: on the track or the train), survivors, the station, the safe zone wall,
+// and the view.
+function drawRadar() {
+  const R = 36, x0 = W - R * 2 - 6, y0 = H - R * 2 - 6, cx = x0 + R, cy = y0 + R, k = R / 640;
+  const hx = G.camX + W / 2, hy = G.camY + H / 2;
+  ctx.fillStyle = 'rgba(6,10,8,0.84)';
+  ctx.fillRect(x0, y0, R * 2, R * 2);
+  frame(x0 - 1, y0 - 1, R * 2 + 2, R * 2 + 2, '#2e3139');
+  ctx.fillStyle = 'rgba(86,194,168,0.12)';
+  ctx.fillRect(cx, y0, 1, R * 2);
+  ctx.fillRect(x0, cy, R * 2, 1);
+  const dot = (wx, wy, c, s) => {
+    const px = Math.round(cx + (wx - hx) * k), py = Math.round(cy + (wy - hy) * k);
+    if (px < x0 || py < y0 || px > x0 + R * 2 - s || py > y0 + R * 2 - s) return;
+    ctx.fillStyle = c;
+    ctx.fillRect(px, py, s, s);
+  };
+  for (let wy = hy - 640; wy <= hy + 640; wy += 14) dot(trackX(wy), wy, '#3e434c', 1);
+  if (G.goalY > hy - 640 && G.goalY < hy + 640) for (let dx = -560; dx <= 560; dx += 18) dot(trackX(G.goalY) + dx, G.goalY, '#8fd18a', 1);
+  const st = G.station;
+  if (st) dot(st.house.x - 1, st.house.y - 1, '#9fd3f2', 2);
+  for (const z of G.zombies) if (!z.dead) dot(z.x, z.y, z.st ? '#ff4a32' : '#7a2a22', 1);
+  for (const p of G.people) if (p.st === 'run' || p.st === 'wait' || p.st === 'grab') dot(p.x, p.y, '#8fd18a', 1);
+  for (const c of G.tr.cars) dot(c.cx - 1, c.cy - 1, '#e8dfc8', 2);
+  // the view
+  const vx = Math.round(cx - W / 2 * k), vy = Math.round(cy - H / 2 * k);
+  ctx.globalAlpha = 0.55;
+  frame(vx, vy, Math.round(W * k) + 1, Math.round(H * k) + 1, '#9fd3f2');
+  ctx.globalAlpha = 1;
+  text('N', cx, y0 + 2, U.faint, { align: 'center', outline: false });
 }
 function drawWeapons() {
   const y = H - 30, rdy = G.heReload <= 0;
@@ -3419,15 +4037,15 @@ function drawWeapons() {
     G.overheat ? '#b8402e' : G.heat > 0.75 ? U.amber : '#8b919c');
   card(104, y, 96, 26, ICON.he, '105MM', rdy ? 'READY' : 'R-CLICK', rdy ? U.gold : U.faint, 1 - G.heReload / CFG.he.reload,
     rdy ? '#e3b04b' : '#7a6a50');
-  text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 5, H - 11, U.faint, { align: 'right' });
+  text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
 }
 // first seconds of a run: how to play
 function drawHint() {
   const a = clamp((10 - G.run) / 1.5, 0, 1);
   if (a <= 0 || G.run < 1.2 || G.result) return;
   ctx.globalAlpha = a;
-  text('KEEP THE DEAD OFF THE TRAIN AND OFF THE TRACK AHEAD.', W / 2, H - 58, U.ink, { align: 'center' });
-  text('HOLD LEFT CLICK: 25MM.   RIGHT CLICK OR SPACE: 105MM.   T: THERMAL.', W / 2, H - 47, U.dim, { align: 'center' });
+  text('WASD: FLY THE HELICOPTER.  LET GO: IT KEEPS PACE WITH THE TRAIN.', W / 2, H - 58, U.ink, { align: 'center' });
+  text('F: BACK OVER THE TRAIN.   LEFT CLICK: 25MM.   RIGHT CLICK: 105MM.', W / 2, H - 47, U.dim, { align: 'center' });
   ctx.globalAlpha = 1;
 }
 // red screen edge while the train is nearly lost
@@ -3465,8 +4083,8 @@ function drawTitle() {
   text('SKY REAPER', cx, py + 18, U.ink, { align: 'center', scale: 3, drop: true });
   ctx.fillStyle = '#8a6a2a';
   ctx.fillRect(cx - 110, py + 46, 220, 1);
-  text('GET THE TRAIN TO THE SAFE ZONE.', cx, py + 54, U.dim, { align: 'center' });
-  text('KEEP THE DEAD OFF IT AND OFF THE TRACK.', cx, py + 64, U.dim, { align: 'center' });
+  text('FLY ESCORT FOR THE LAST TRAIN.', cx, py + 54, U.dim, { align: 'center' });
+  text('PICK UP SURVIVORS. REACH THE SAFE ZONE.', cx, py + 64, U.dim, { align: 'center' });
   if (button(cx - 75, py + 82, 150, 20, 'START MISSION', { primary: true })) startGame();
   if (button(cx - 75, py + 108, 150, 20, 'CAMERA: ' + CAMS[thermal])) setThermal((thermal + 1) % 3);
   if (best.kills > 0) {
@@ -3474,7 +4092,7 @@ function drawTitle() {
     ctx.drawImage(ICON.skull, cx - w / 2, py + 140);
     text(s, cx - w / 2 + 10, py + 141, U.gold, { outline: false });
   }
-  const L = ['MOUSE: AIM. IT LOCKS ON THE NEAREST ZOMBIE.', 'HOLD LEFT CLICK: 25MM.  RIGHT CLICK / SPACE: 105MM.',
+  const L = ['WASD: FLY.  F: BACK OVER THE TRAIN.  MOUSE: AIM.', 'HOLD LEFT CLICK: 25MM.  RIGHT CLICK / SPACE: 105MM.',
     'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
   L.forEach((l, i) => text(l, cx, py + 160 + i * 11, U.faint, { align: 'center', outline: false }));
   text('ENTER TO START', cx, py + 205, U.faint, { align: 'center', outline: false });
@@ -3488,8 +4106,8 @@ function drawSummary() {
   text(safe ? 'TRAIN SAFE' : 'TRAIN LOST', x + w / 2, y + 12, safe ? U.gold : U.red, { align: 'center', scale: 2 });
   if (s.newBest) text('NEW BEST', x + w / 2, y + 30, U.gold, { align: 'center' });
   const k = ease(clamp((realT - sumStart - 0.3) / 1.4, 0, 1));
-  const rows = [['ZOMBIES KILLED', fmt(Math.round(s.kills * k))], ['TRAIN HEALTH', Math.round(s.hp * k) + '%'],
-    ['BEST STREAK', fmt(Math.round(s.streak * k))], ['BIGGEST BLAST', fmt(Math.round(s.blast * k))]];
+  const rows = [['ZOMBIES KILLED', fmt(Math.round(s.kills * k))], ['SURVIVORS SAVED', Math.round(s.saved * k) + ' / ' + s.people],
+    ['TRAIN HEALTH', Math.round(s.hp * k) + '%'], ['BIGGEST BLAST', fmt(Math.round(s.blast * k))]];
   rows.forEach((r, i) => {
     text(r[0], x + 20, y + 44 + i * 15, U.dim);
     text(r[1], x + w - 20, y + 44 + i * 15, U.ink, { align: 'right' });
@@ -3515,9 +4133,11 @@ function drawUI() {
   drawCoins();
   if (mode === 'play' || mode === 'ending') {
     drawWarnings();
+    drawRadar();
     drawWeapons();
     drawHint();
     drawBanners();
+    drawArrows();
     if (mode === 'play' && !paused) drawSight();
     if (paused) drawPause();
     drawTension();
@@ -3596,11 +4216,18 @@ cv.addEventListener('wheel', (e) => {
   }
 }, { passive: false });
 
+// KEYS[k] = true while key k is held. keyAxis() = the way WASD / the arrow keys push, [x, y].
+const KEYS = {};
 const keyName = (e) => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
+function keyAxis() {
+  return [(KEYS.d || KEYS.ArrowRight ? 1 : 0) - (KEYS.a || KEYS.ArrowLeft ? 1 : 0),
+    (KEYS.s || KEYS.ArrowDown ? 1 : 0) - (KEYS.w || KEYS.ArrowUp ? 1 : 0)];
+}
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = keyName(e);
-  if (k === ' ') e.preventDefault();
+  if (k === ' ' || k.startsWith('Arrow')) e.preventDefault();
+  KEYS[k] = true;
   if (e.repeat) return;
   audioInit();
   if (k === 'm') {
@@ -3614,6 +4241,7 @@ addEventListener('keydown', (e) => {
   }
   if (mode === 'play') {
     if (k === ' ') tryHE();
+    else if (k === 'f') G.heli.home = true;
     else if (k === 'Escape' || k === 'p') {
       paused = !paused;
       G.trigger = false;
@@ -3625,8 +4253,10 @@ addEventListener('keydown', (e) => {
     else if (k === 'Escape') toTitle();
   }
 });
-// pause when the window loses focus or the tab is hidden; let go of the trigger
+addEventListener('keyup', (e) => { KEYS[keyName(e)] = false; });
+// pause when the window loses focus or the tab is hidden; let go of every key and the trigger
 function lostFocus() {
+  for (const k in KEYS) KEYS[k] = false;
   if (G) G.trigger = false;
   M.down = false;
   if (mode === 'play') paused = true;
@@ -3728,6 +4358,8 @@ function boot() {
     get mode() { return mode; },
     FPS,
     CFG,
+    // the sprites, for a test sheet
+    art: () => ({ TRAIN, FOOT, HELI, STATION, SURV, ZS }),
     start: startGame,
     title: toTitle,
     // sim(sec): run the game for sec seconds at once, without drawing
@@ -3743,14 +4375,17 @@ function boot() {
     trigger: (on) => { G.trigger = !!on && mode === 'play'; },
     he: () => tryHE(),
     thermal: (k) => setThermal(k),
-    // hp(v): set the train's health. goal(px): move the train to px before the safe zone.
+    // hp(v): set the train's health. jump(px): move the train on to px before where it brakes for
+    // the station (or, after the station, before the safe zone); the dead are left behind.
     hp: (v) => { G.tr.hp = G.tr.hpShown = v; },
-    goal: (px) => {
-      const d = G.tr.front - (G.goalY + px);
-      G.tr.front -= d;
-      G.camY -= d;
-      for (const z of G.zombies) z.y -= d;
+    jump: (px) => {
+      const st = G.station, to = (st && st.state === 'ahead' ? st.stopS : G.goalS) + px;
+      G.tr.s = Math.min(G.tr.s, to);
+      for (const z of G.zombies) z.gone = true;
+      layoutTrain();
+      placeCamera();
     },
+    keys: (k, on) => { KEYS[k] = !!on; },
     // bot(on): the autopilot plays (it aims and pulls the triggers)
     bot: (on) => { G.bot = !!on; if (!on) G.trigger = false; },
     pause: (p) => { paused = !!p; },
@@ -3766,7 +4401,9 @@ function boot() {
     },
     stats: () => ({
       mode, result: G.result, kills: G.kills, cash: Math.round(G.cash), hp: Math.round(G.tr.hp), speed: +G.tr.v.toFixed(1),
-      left: Math.round(G.tr.front - G.goalY), onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length,
+      left: Math.round(G.tr.s - G.goalS), onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length,
+      station: G.station ? G.station.state + ' ' + G.station.saved + '/' + G.station.lost : '-',
+      heli: [Math.round(G.heli.ox), Math.round(G.heli.oy)],
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
       W, H, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), lock: !!G.lock, heat: +G.heat.toFixed(2)
     })

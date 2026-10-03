@@ -11,13 +11,50 @@ const CH = 128;
 const GR = ['#1e2a24', '#243226', '#2b3928', '#323f29', '#3a472b', '#44502e'].map(hexRgb);
 const DR = ['#2a2521', '#332b24', '#3c3229', '#463b2f', '#514435'].map(hexRgb);
 const PLOW = ['#251e19', '#2f2620', '#3a3027', '#46392d'].map(hexRgb);
-// the railway runs north and south along x = RAIL_X: gravel, wooden sleepers, two steel rails
-const RAIL_X = 0;
+// ---------- the railway
+// It winds north for ever: its middle is at x = trackX(y), two gentle waves added together (the
+// steepest bend is under 30 degrees from north). trackSlope(y) = dx/dy, trackS(y) = the distance
+// along the rails from y = 0 (from the first terms of the arc-length integral: off by far less
+// than a pixel per sleeper).
+const TK = { a1: 140, l1: 520, p1: 0.7, a2: 50, l2: 190, p2: 2.1 };
+function trackX(y) {
+  return TK.a1 * Math.sin(y / TK.l1 + TK.p1) + TK.a2 * Math.sin(y / TK.l2 + TK.p2);
+}
+function trackSlope(y) {
+  return TK.a1 / TK.l1 * Math.cos(y / TK.l1 + TK.p1) + TK.a2 / TK.l2 * Math.cos(y / TK.l2 + TK.p2);
+}
+function trackS(y) {
+  const a1 = TK.a1 / TK.l1, a2 = TK.a2 / TK.l2, k1 = 1 / TK.l1, k2 = 1 / TK.l2, km = k1 - k2, kp = k1 + k2;
+  const i1 = y / 2 + Math.sin(2 * (y * k1 + TK.p1)) / (4 * k1);
+  const i2 = y / 2 + Math.sin(2 * (y * k2 + TK.p2)) / (4 * k2);
+  const i12 = 0.5 * (Math.sin(km * y + TK.p1 - TK.p2) / km + Math.sin(kp * y + TK.p1 + TK.p2) / kp);
+  return y + 0.5 * (a1 * a1 * i1 + a2 * a2 * i2 + 2 * a1 * a2 * i12);
+}
+// The y where the distance along the rails is s (Newton's method from a nearby guess).
+function yAtS(s, guess) {
+  let y = guess;
+  for (let i = 0; i < 3; i++) {
+    const fp = trackSlope(y);
+    y -= (trackS(y) - s) / (1 + 0.5 * fp * fp);
+  }
+  return y;
+}
+// A point in the railway's own terms: u = px to the right of its middle (east), a = distance along it.
+function trackLocal(x, y, out) {
+  const fp = trackSlope(y), c = 1 / Math.sqrt(1 + fp * fp), off = x - trackX(y);
+  out.u = off * c;
+  out.a = trackS(y) + off * fp * c;
+  out.c = c;
+  return out;
+}
+// true when (x, y) is closer than m (across) to the middle of the railway
+const nearRail = (x, y, m) => Math.abs(x - trackX(y)) < m;
+// the colours: gravel, wooden sleepers, steel rails (shadow, top)
 const BAL = ['#2e2b27', '#3b3732', '#47423b', '#555047'].map(hexRgb);
 const SLP = ['#2a1f17', '#3d2d20', '#4f3b29'].map(hexRgb);
 const RAILC = ['#24262b', '#8f959e'].map(hexRgb);
-// true when x is closer than m to the middle of the railway
-const nearRail = (x, m) => Math.abs(x - RAIL_X) < m;
+// the railway at the row being painted (groundPix goes row by row)
+let tkY = NaN, tkX = 0, tkP = 0, tkC = 1, tkS = 0;
 
 // farm tracks: a warped grid, about 1400 x 1000 px
 function roadDist(x, y) {
@@ -55,18 +92,25 @@ function groundPix(X, Y, out) {
     else if (Math.abs(rd - 3.6) < 1.1) col = DR[0];
     else col = DR[clamp(2 + (gv > 0.5 ? 1 : 0) + (th > 0.75 ? 1 : 0) - (rd > 6.5 ? 1 : 0), 0, 4)];
   }
-  // the railway: a bed of gravel with a ragged edge, a sleeper every 6 px (lit top, shadow below),
-  // and the two rails (bright tops, their shadow on the east side)
-  const rx = X - RAIL_X;
-  if (rx >= -13 && rx <= 12) {
-    const edge = rx < 0 ? -rx - 10 : rx - 9;
+  // the railway: a bed of gravel with a ragged edge, a sleeper every 6 px along the rails (lit
+  // side, shadow), and the two rails (bright tops, their shadow on the east side)
+  if (Y !== tkY) {
+    tkY = Y;
+    tkX = trackX(Y);
+    tkP = trackSlope(Y);
+    tkC = 1 / Math.sqrt(1 + tkP * tkP);
+    tkS = trackS(Y);
+  }
+  const off = X - tkX, ru = Math.floor(off * tkC);
+  if (ru >= -13 && ru <= 12) {
+    const edge = ru < 0 ? -ru - 10 : ru - 9;
     if (edge <= 0 || th * 3 > edge) {
       col = BAL[clamp(Math.floor(hrnd(X, Y, 91) * 2.4 + gv * 1.5 - (edge > 0 ? 1 : 0)), 0, 3)];
-      const sy = mod(Y, 6);
-      if (rx >= -8 && rx <= 7 && sy < 2) col = SLP[sy === 0 ? 2 : 1];
-      else if (rx >= -8 && rx <= 7 && sy === 2) col = SLP[0];
-      if (rx === -5 || rx === 4) col = RAILC[1];
-      else if (rx === -4 || rx === 5) col = RAILC[0];
+      const sy = mod(Math.floor(tkS + off * tkP * tkC), 6);
+      if (ru >= -8 && ru <= 7 && sy < 2) col = SLP[sy === 0 ? 2 : 1];
+      else if (ru >= -8 && ru <= 7 && sy === 2) col = SLP[0];
+      if (ru === -5 || ru === 4) col = RAILC[1];
+      else if (ru === -4 || ru === 5) col = RAILC[0];
     }
   }
   out[0] = col[0]; out[1] = col[1]; out[2] = col[2];
@@ -95,7 +139,7 @@ function plan(ci, cj) {
   // groves where the noise is high, a lone tree now and then
   for (let k = 0; k < 30; k++) {
     const x = X0 + rng() * CH, y = Y0 + rng() * CH;
-    if (roadDist(x, y) < 16 || fieldAt(x, y) > 0.61 || nearRail(x, 40)) continue;
+    if (roadDist(x, y) < 16 || fieldAt(x, y) > 0.61 || nearRail(x, y, 40)) continue;
     const gv = vnoise(x / 110, y / 110, 41);
     if (gv > 0.68 ? rng() < (gv - 0.68) * 4.5 : rng() < 0.01) {
       const r = rng();
@@ -106,7 +150,7 @@ function plan(ci, cj) {
   if (rng() < 0.4) {
     for (let k = 0; k < 12; k++) {
       const x = X0 + 12 + rng() * (CH - 24), y = Y0 + 8 + rng() * (CH - 16);
-      if (roadDist(x, y) > 5 || nearRail(x, 60)) continue;
+      if (roadDist(x, y) > 5 || nearRail(x, y, 60)) continue;
       const burning = rng() < 0.35;
       put(take(burning ? PROPS.burnt : rng() < 0.4 ? PROPS.burnt : PROPS.wreck), x, y);
       if (burning) pl.fires.push({ x: Math.round(x) + 1, y: Math.round(y) - 7, seed: (rng() * 1000) | 0, big: true });
@@ -115,7 +159,7 @@ function plan(ci, cj) {
     }
   }
   // now and then a burnt-out farm: broken walls, rubble, a barrel or crate, a smouldering fire
-  if (hrnd(ci, cj, 5) < 0.05 && roadDist(X0 + 64, Y0 + 64) > 40 && fieldAt(X0 + 64, Y0 + 64) < 0.6 && !nearRail(X0 + 64, 200)) {
+  if (hrnd(ci, cj, 5) < 0.05 && roadDist(X0 + 64, Y0 + 64) > 40 && fieldAt(X0 + 64, Y0 + 64) < 0.6 && !nearRail(X0 + 64, Y0 + 64, 220)) {
     const cx = X0 + 40 + rng() * 48, cy = Y0 + 40 + rng() * 48;
     for (let k = 0; k < 3 + ((rng() * 3) | 0); k++) {
       const w = take(PROPS.wall), x = cx + (rng() - 0.5) * 50, y = cy + (k - 1.5) * 12 + (rng() - 0.5) * 4;
@@ -129,22 +173,24 @@ function plan(ci, cj) {
   // bushes, rocks, stumps
   for (let k = 0; k < 3; k++) if (rng() < 0.5) {
     const x = X0 + rng() * CH, y = Y0 + rng() * CH;
-    if (roadDist(x, y) > 10 && fieldAt(x, y) < 0.62 && !nearRail(x, 22)) put(take(PROPS.bush), x, y);
+    if (roadDist(x, y) > 10 && fieldAt(x, y) < 0.62 && !nearRail(x, y, 24)) put(take(PROPS.bush), x, y);
   }
-  if (rng() < 0.25) { const x = X0 + rng() * CH, y = Y0 + rng() * CH; if (roadDist(x, y) > 12 && !nearRail(x, 26)) put(take(PROPS.big), x, y); }
+  if (rng() < 0.25) { const x = X0 + rng() * CH, y = Y0 + rng() * CH; if (roadDist(x, y) > 12 && !nearRail(x, y, 28)) put(take(PROPS.big), x, y); }
   for (let k = 0; k < 8; k++) {
     const x = X0 + rng() * CH, y = Y0 + rng() * CH;
-    if (roadDist(x, y) < 7 || nearRail(x, 15)) continue;
+    if (roadDist(x, y) < 7 || nearRail(x, y, 17)) continue;
     pl.flats.push({ d: rng() < 0.1 ? PROPS.stump[0] : take(PROPS.rock), x: Math.round(x), y: Math.round(y) });
   }
   // telegraph poles beside the railway, one every 72 px
-  const px = RAIL_X + 24;
-  if (px >= X0 && px < X0 + CH) for (let y = Math.ceil(Y0 / 72) * 72; y < Y0 + CH; y += 72) put(PROPS.pole[0], px, y);
+  for (let y = Math.ceil(Y0 / 72) * 72; y < Y0 + CH; y += 72) {
+    const px = trackX(y) + 27;
+    if (px >= X0 && px < X0 + CH) put(PROPS.pole[0], px, y);
+  }
   // grass tufts (they sway, so they are drawn live)
   for (let k = 0; k < 40 && pl.tufts.length < 16; k++) {
     const x = X0 + ((rng() * CH) | 0), y = Y0 + ((rng() * CH) | 0);
     if (vnoise(x / 16, y / 16, 31) < 0.5 && rng() < 0.8) continue;
-    if (roadDist(x, y) < 9 || fieldAt(x, y) > 0.62 || nearRail(x, 15)) continue;
+    if (roadDist(x, y) < 9 || fieldAt(x, y) > 0.62 || nearRail(x, y, 17)) continue;
     pl.tufts.push({ x, y, h: 2 + ((rng() * 3) | 0), c: rng() < 0.5 ? '#5c6a3d' : '#4a5732', p: rng() * TAU });
   }
   pl.props.sort((a, b) => a.y - b.y);
@@ -176,7 +222,7 @@ function bakeChunk(ci, cj) {
   }
   for (let k = 0; k < 40; k++) {
     const x = (rng() * CH) | 0, y = (rng() * CH) | 0;
-    if (vnoise((X0 + x) / 40, (Y0 + y) / 40, 34) < 0.6 && roadDist(X0 + x, Y0 + y) > 8 || nearRail(X0 + x, 12)) continue;
+    if (vnoise((X0 + x) / 40, (Y0 + y) / 40, 34) < 0.6 && roadDist(X0 + x, Y0 + y) > 8 || nearRail(X0 + x, Y0 + y, 14)) continue;
     r(x, y, 1, 1, '#6d6a62'); r(x, y + 1, 1, 1, '#1d1b18');
   }
   for (let k = 0; k < 10; k++) {

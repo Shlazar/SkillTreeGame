@@ -42,6 +42,8 @@ const pick = (a) => a[(Math.random() * a.length) | 0];
 const inR = (px, py, x, y, w, h) => px >= x && py >= y && px < x + w && py < y + h;
 // ease-out (cubic): fast at the start, slow at the end
 const ease = (t) => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+// 0 below a, 1 above b, a smooth S-curve in between
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
 // Make an offscreen canvas (no smoothing). Returns [canvas, context]. rf = its pixels will be read
 // back (sprite making), which is faster on a canvas kept in memory.

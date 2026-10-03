@@ -347,7 +347,7 @@ function drawBanners() {
       continue;
     }
     const a = u < 0.1 ? u / 0.1 : u > 0.75 ? (1 - u) / 0.25 : 1;
-    const dy = Math.round(u < 0.1 ? (1 - u / 0.1) * -6 : 0), y = 44 + dy, h = b.b ? 40 : 28;
+    const dy = Math.round(u < 0.1 ? (1 - u / 0.1) * -6 : 0), y = 58 + dy, h = b.b ? 40 : 28;
     ctx.globalAlpha = a;
     ctx.fillStyle = 'rgba(5,6,8,0.55)';
     ctx.fillRect(0, y, W, h);
