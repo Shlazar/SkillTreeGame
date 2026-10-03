@@ -3,15 +3,15 @@
 // line under the summary. What a node does in a run is read from the UP numbers (game.js, and the new
 // ones below), the same numbers the tooltip shows.
 // The look: a dark starry panel with glowing nodes and lines around VIPER. Drag to move the map,
-// use the wheel to zoom, and C to centre it. The three currency colours are updated in T2.2.
+// use the wheel to zoom, and C to centre it. Blue is scrap, orange is survivors, and gold is gold.
 
 // ---------- colours and numbers
 // Each kind of node: c = bright, m = mid, d = dark (the body when maxed), g = its glow.
 const NODE_KIND = {
   root: { c: '#ffd36a', m: '#a07a30', d: '#2e2410', g: '#ffb040' },
-  up: { c: '#62c8ff', m: '#2f6f9e', d: '#0b2234', g: '#2a9dff' },
-  big: { c: '#ffa448', m: '#a55a1e', d: '#331b08', g: '#ff7a1a' },
-  spec: { c: '#ff70d4', m: '#9e3a84', d: '#2e0c26', g: '#ff3ab8' },
+  scrap: { c: '#62c8ff', m: '#2f6f9e', d: '#0b2234', g: '#2a9dff' },
+  surv: { c: '#ffa448', m: '#a55a1e', d: '#331b08', g: '#ff7a1a' },
+  gold: { c: '#ffd36a', m: '#a07a30', d: '#2e2410', g: '#ffb040' },
   tease: { c: '#3a4458', m: '#202838', d: '#10141c', g: '#3a4458' }
 };
 // A value with its unit, for the tooltip. (2 px on the ground = 1 m.)
@@ -85,14 +85,14 @@ Object.assign(UP, {
 // p is the neighbouring parent, x/y are 36 px cells, and cost has one price per level.
 // Explicit currencies keep table data and buying consistent. Charges are single-level gold nodes.
 function scrapNode(id, name, p, x, y, track, levels, desc, stat, stat2) {
-  return { id, name, k: 'up', p, x, y, cost: typeof track === 'string' ? TRACKS[track].slice(0, levels) : track.slice(),
+  return { id, name, k: 'scrap', p, x, y, cost: typeof track === 'string' ? TRACKS[track].slice(0, levels) : track.slice(),
     cur: 'scrap', desc, stat, stat2 };
 }
 function unlockNode(id, name, p, x, y, desc, stat, stat2) {
-  return { id, name, k: 'big', p, x, y, cost: [1], cur: 'surv', star: true, desc, stat, stat2 };
+  return { id, name, k: 'surv', p, x, y, cost: [1], cur: 'surv', star: true, desc, stat, stat2 };
 }
 function goldNode(id, name, p, x, y, cost, desc, stat, charge = false) {
-  return { id, name, k: 'spec', p, x, y, cost, cur: 'gold', charge, desc, stat };
+  return { id, name, k: 'gold', p, x, y, cost, cur: 'gold', charge, desc, stat };
 }
 function teaseNode(id, name, p, x, y) {
   return { id, name, k: 'tease', p, x, y, cost: [], cur: 'scrap', desc: 'AVAILABLE IN THE FULL GAME.' };
@@ -672,7 +672,7 @@ function drawTreeNode(n, st) {
   if (pp >= 0 && pp < 0.25) h = Math.max(2, Math.round(h * (0.4 + 0.6 * ease(pp / 0.25) + Math.sin(pp / 0.25 * Math.PI) * 0.2)));
   const s = h * 2, nx = x - h, ny = y - h, hov = TREE.hov === n, buy = st === 'buy', big = !!n.star || n.id === 'root';
   const pulse = 0.5 + 0.5 * Math.sin(realT * 5 + n.x);
-  const lock = st === 'hidden';
+  const lock = st === 'hidden' || n.k === 'tease';
   // the glow round it
   const ga = lock ? 0 : st === 'max' ? 0.5 : buy ? 0.35 + 0.35 * pulse : l > 0 ? 0.4 : st === 'poor' ? 0.12 : 0.18;
   if (ga > 0 || hov) {
@@ -699,7 +699,7 @@ function drawTreeNode(n, st) {
   }
   if (hov) {
     ctx.globalAlpha = 0.6;
-    frame(nx - 1, ny - 1, s + 2, s + 2, '#ffffff');
+    frame(nx - 1, ny - 1, s + 2, s + 2, lock ? '#3a4458' : '#ffffff');
     ctx.globalAlpha = 1;
   }
   // the icon: crisp, 1x up to 2x and 3x as the view zooms in (none when it is very small)
@@ -801,7 +801,7 @@ function statSegs(stat, l, done) {
 // NEXT, then the price (red when you cannot pay) and what a click does.
 const INFO_W = 216;
 function drawInfo(n, st, y0, y1) {
-  const K = NODE_KIND[n.k], l = lv(n.id), m = maxLv(n), lock = st === 'hidden', p = parentOf(n);
+  const K = NODE_KIND[n.k], l = lv(n.id), m = maxLv(n), tease = n.k === 'tease', lock = st === 'hidden' || tease, p = parentOf(n);
   const named = !lock || !n.later || (p && lv(p.id) > 0);
   const inner = INFO_W - 14;
   const desc = wrap(named ? n.desc : '???', inner);
@@ -811,14 +811,14 @@ function drawInfo(n, st, y0, y1) {
   const icon = surv ? ICON.survS : gold ? ICON.goldS : ICON.boltS;
   const pcol = !canPay(n) ? U.red : surv ? U.amber : gold ? U.gold : U.blue;
   let foot;
-  if (n.k === 'tease') foot = ['', U.faint, null, 'FULL GAME', U.faint];
+  if (tease) foot = ['', U.faint, null, 'FULL GAME', U.dim];
   else if (n.later) foot = ['', U.faint, null, 'COMING SOON', U.faint];
   else if (lock) foot = [fmt(pr), canPay(n) ? U.dim : U.red, icon, 'NEEDS: ' + nodeLv(p.id, needOf(n)), U.amber];
   else if (st === 'max') foot = ['', U.dim, null, n.id === 'root' || m === 1 ? 'OWNED' : 'MAXED', K.c];
   else if (st === 'soon') foot = [fmt(pr), U.faint, icon, 'COMING SOON', U.faint];
   else if (st === 'poor') foot = [fmt(pr), U.red, icon, 'NEED ' + fmt(pr - have) + ' MORE', U.red];
   else foot = pr ? [fmt(pr), pcol, icon, 'CLICK TO BUY', U.gold] : ['FREE', U.gold, null, 'CLICK TO TAKE IT', U.gold];
-  const kindName = n.k === 'tease' ? 'FULL GAME' : n.id === 'root' ? 'THE ROOT' : n.star ? 'BIG UNLOCK' : n.k === 'spec' ? 'SPECIAL' : 'UPGRADE';
+  const kindName = tease ? 'FULL GAME' : n.id === 'root' ? 'THE ROOT' : n.k === 'surv' ? 'NEW UNIT' : n.k === 'gold' ? 'SPECIAL' : 'UPGRADE';
   const w = INFO_W, h = 31 + desc.length * 10 + vals.length * 10 + 17;
   // beside the node (right, else left), kept on the panel
   const q = nodeXY(n.id), hn = halfOf(n);
@@ -841,7 +841,7 @@ function drawInfo(n, st, y0, y1) {
   ctx.globalCompositeOperation = 'source-over';
   text(named ? n.name : '???', x + 7, y + 5, lock ? U.dim : '#ffffff');
   text(lock && !n.later ? 'LOCKED' : n.id === 'root' ? (l ? 'OWNED' : '0/1') : l + '/' + m, x + w - 7, y + 5, lock ? U.faint : st === 'max' ? K.c : U.ink, { align: 'right' });
-  text(kindName, x + 7, y + 14, lock ? '#3c4658' : K.m, { outline: false });
+  text(kindName, x + 7, y + 14, tease ? U.dim : lock ? '#3c4658' : K.m, { outline: false });
   ctx.fillStyle = lock ? '#1c2434' : K.m;
   ctx.fillRect(x + 6, y + 23, w - 12, 1);
   let ty = y + 27;
