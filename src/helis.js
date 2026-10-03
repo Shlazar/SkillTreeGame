@@ -178,7 +178,7 @@ function makeHelis() {
     const [x, y] = escortAt(i);
     G.helis.push({ i, name: HC.names[i] || 'VIPER ' + (i + 1), x, y, vx: 0, vy: 0, hd: G.tr.cars[0].ang, alt: HC.alt, ph: rnd(TAU),
       heat: 0, hot: false, firing: false, cd: rnd(0.15), tgt: null, look: 0, order: null, sel: G.up.helis === 1, flash: 0, heR: 0, kick: 0,
-      cmdT: -9, spin: rnd(8), dust: 0, smoke: rnd(0.2), lean: 0 });
+      cmdT: -9, spin: rnd(8), dust: 0, smoke: rnd(0.2), lean: 0, podFlash: [0, 0] });
   }
 }
 // how far the heli guns reach this run (HELI RANGE makes it more)
@@ -279,6 +279,7 @@ function updateHelis(dt) {
       if (z.pending >= z.hp) h.look = 0;
     } else h.cd = Math.max(0, h.cd - dt);
     h.flash = Math.max(0, h.flash - dt);
+    for (let k = 0; k < h.podFlash.length; k++) h.podFlash[k] = Math.max(0, h.podFlash[k] - dt);
     h.spin += dt;
     // the 105 loads
     if (h.heR > 0) {
@@ -301,6 +302,7 @@ function updateHelis(dt) {
   }
   for (let i = HUI.marks.length - 1; i >= 0; i--) if (realT - HUI.marks[i].t > 0.7) HUI.marks.splice(i, 1);
   updateHeShells();
+  updateHeliWeapons(dt);
 }
 // A nose-gun shot: an ordinary bullet lands almost at once, or Rockets replaces it with a blast.
 // Both keep the same muzzle flash and shot count.
@@ -663,6 +665,17 @@ function drawHelis() {
       ctx.fillStyle = '#fff6e0';
       ctx.fillRect(px, py, 1, 1);
     }
+    // Small launch flashes at the two pod mouths on the stub wings.
+    for (let k = 0; k < h.podFlash.length; k++) {
+      if (h.podFlash[k] <= 0) continue;
+      const [ox, oy] = turnXY(h.hd, (k ? 1 : -1) * HWC.pod.mountX, HWC.pod.mountY);
+      const px = Math.round(X + ox), py = Math.round(Y + oy - 1);
+      ctx.fillStyle = '#ffd27a';
+      ctx.fillRect(px - 1, py, 3, 1);
+      ctx.fillRect(px, py - 1, 1, 3);
+      ctx.fillStyle = '#fff6e0';
+      ctx.fillRect(px, py, 1, 1);
+    }
     h.sx = X;
     h.sy = Y;
   }
@@ -714,6 +727,11 @@ function drawHeliFx() {
     if (h.sx == null) continue;
     const X = h.sx, Y = h.sy;
     if (h.flash > 0) drawMuzzle(h);
+    for (let k = 0; k < h.podFlash.length; k++) {
+      if (h.podFlash[k] <= 0) continue;
+      const [ox, oy] = turnXY(h.hd, (k ? 1 : -1) * HWC.pod.mountX, HWC.pod.mountY);
+      light(X + ox, Y + oy - 1, HWC.pod.flashRadius, '#ffd27a', h.podFlash[k] / HWC.pod.flash);
+    }
     const t = (G.t + h.ph) % 1.2, on = t < 0.5;
     if (on) {
       for (const [dx, col] of [[-11, '#ff3a2a'], [11, '#5aff7a']]) {

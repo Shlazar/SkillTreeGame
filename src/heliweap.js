@@ -6,18 +6,79 @@ const HWC = {
   // Seconds without a rocket before the next nose-gun shot must become one.
   rocketWait: 6,
   // Flight seconds, blast radius/damage, arc height, smoke lifetime and hot streak spacing (proposal)
-  rocket: { travel: 0.25, radius: 16, damage: 6, arc: 12, smokeLife: [0.4, 0.6], streakStep: 0.005 }
+  rocket: { travel: 0.25, radius: 16, damage: 6, arc: 12, smokeLife: [0.4, 0.6], streakStep: 0.005 },
+  // Ground range, launch/retry seconds, spread/mount px, flash seconds and glow radius (proposal)
+  pod: { range: 180, gap: 0.08, retry: 0.25, spread: 8, mountX: 11, mountY: -9, flash: 0.07, flashRadius: 8 }
 };
 // Lazy run state also works behind the title: a new G starts fresh counters without touching SAVE.
 // first/last/maxGap are game seconds since departure; shots includes ordinary bullets.
 const HW = { g: null };
+const heliWeaponTime = () => G.demo ? G.t : G.run;
 function heliWeaponState() {
   if (HW.g !== G) Object.assign(HW, {
     g: G, shots: 0, rockets: 0, first: null, last: 0, maxGap: 0,
     forced: !G.demo && G.up.rocketChance > 0 && !SAVE.flags.rocketShown,
-    impacts: 0, kills: 0, lastImpact: null
+    impacts: 0, kills: 0, lastImpact: null,
+    pods: { next: G.up.podReload, retry: 0, salvos: 0, shots: 0, queue: [],
+      lastTarget: null, impacts: 0, kills: 0, lastImpact: null }
   });
   return HW;
+}
+// Exact crowd count at every living zombie centre in reach. The grid keeps each local count small;
+// callers search only when a weapon is due, never for every projectile or every frame.
+function bestCrowd(x, y, R, r) {
+  let best = null, distance = Infinity;
+  queryEll(x, y, R, (z, d) => {
+    if (z.gone || z.gate && z.still) return;
+    let count = 0;
+    queryEll(z.x, z.y, r, (q) => {
+      if (!q.gone && !(q.gate && q.still)) count++;
+    });
+    if (!best || count > best.count || count === best.count && d < distance) {
+      best = { x: z.x, y: z.y, count };
+      distance = d;
+    }
+  });
+  return best;
+}
+// Pod payload and target are fixed for a salvo; its launch position follows the actual heli.
+function launchPod(q) {
+  const p = heliWeaponState().pods, h = q.h, c = HWC.pod;
+  const [ox, oy] = turnXY(h.hd, q.side * c.mountX, c.mountY);
+  G.rounds.push({ kind: 'rocket', source: 'pods', h, tgt: null,
+    sx: h.x + ox, sy: h.y + oy, sz: h.alt + 1, bx: q.x, by: q.y,
+    age: 0, T: q.T, dmg: q.dmg, R: q.R, arc: q.arc, player: true });
+  h.podFlash[q.side < 0 ? 0 : 1] = c.flash;
+  p.shots++;
+  if (!G.demo) { G.shots++; SFX.rocket(); }
+}
+// Automatic pods have their own range and reload: Gun Range affects only the nose gun.
+function updateHeliWeapons(dt) {
+  const p = heliWeaponState().pods, now = heliWeaponTime(), c = HWC.pod;
+  if (!G.up.pods || G.result || !(mode === 'play' || G.demo)) {
+    p.queue.length = 0;
+    return;
+  }
+  while (p.queue.length && p.queue[0].at <= now + 1e-9) launchPod(p.queue.shift());
+  if (now < p.next - 1e-9 || now < p.retry - 1e-9) return;
+  const h = G.helis[0];
+  if (!h) return;
+  const target = bestCrowd(h.x, h.y, c.range, HWC.rocket.radius);
+  if (!target) { p.retry = now + c.retry; return; }
+  p.salvos++;
+  p.lastTarget = { ...target, t: now };
+  // Waiting for a crowd does not bank missed salvos to launch all at once.
+  p.next = now + G.up.podReload;
+  p.retry = 0;
+  const n = G.up.podSalvo, rocket = HWC.rocket;
+  for (let k = 0; k < n; k++) {
+    const a = k / n * TAU;
+    const q = { h, at: now + k * c.gap, side: k % 2 ? 1 : -1,
+      x: target.x + Math.cos(a) * c.spread, y: target.y + Math.sin(a) * c.spread * FORE,
+      dmg: rocket.damage * G.up.podDamage, R: rocket.radius, T: rocket.travel, arc: rocket.arc };
+    if (k === 0) launchPod(q);
+    else p.queue.push(q);
+  }
 }
 // Called for every nose-gun shot. True means a rocket replaced the ordinary bullet.
 function heliRocketShot(h, z) {
@@ -95,11 +156,11 @@ function rocketBlast(x, y) {
 }
 // Lethal blast hits throw bodies from the actual centre; survivors of a hit use a gun cause.
 function rocketImpact(r) {
-  const state = heliWeaponState(), x = r.bx, y = r.by;
+  const weapons = heliWeaponState(), state = r.source === 'pods' ? weapons.pods : weapons, x = r.bx, y = r.by;
   if (r.tgt) r.tgt.pending = Math.max(0, r.tgt.pending - r.dmg);
   let hits = 0, killed = 0;
   queryEll(x, y, r.R, (z, d) => {
-    if (z.gate && z.still) return;
+    if (z.gone || z.gate && z.still) return;
     hits++;
     if (z.hp <= r.dmg) {
       kill(z, 'he', x, y, d);
@@ -112,7 +173,7 @@ function rocketImpact(r) {
   });
   state.impacts++;
   state.kills += killed;
-  state.lastImpact = { x, y, radius: r.R, damage: r.dmg, hits, kills: killed, t: G.run };
+  state.lastImpact = { x, y, radius: r.R, damage: r.dmg, hits, kills: killed, t: heliWeaponTime() };
   if (hits && r.player && !G.demo) {
     G.hits++;
     G.hitT = 0.12;

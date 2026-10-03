@@ -1,18 +1,31 @@
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
   // Report only implemented unit systems; later weapons stay neutral until their own tasks.
-  units: () => G ? {
-    heli: { count: G.helis.length, damage: G.up.dmg, rate: G.up.rate, range: hRange(), winch: !!G.up.winch },
-    rockets: { chance: G.up.rocketChance || 0, enabled: !!G.up.rocketChance },
-    pods: null, hellfire: null, planes: [], cars: [], gadgets: []
-  } : null,
+  units: () => {
+    if (!G) return null;
+    const p = heliWeaponState().pods, clock = heliWeaponTime();
+    const active = G.rounds.filter((r) => r.kind === 'rocket' && r.source === 'pods');
+    return {
+      heli: { count: G.helis.length, damage: G.up.dmg, rate: G.up.rate, range: hRange(), winch: !!G.up.winch },
+      rockets: { chance: G.up.rocketChance || 0, enabled: !!G.up.rocketChance },
+      pods: { enabled: !!G.up.pods, range: HWC.pod.range, damage: HWC.rocket.damage * G.up.podDamage,
+        reload: G.up.podReload, salvo: G.up.podSalvo, salvos: p.salvos, shots: p.shots,
+        queued: p.queue.length, inFlight: active.length, cooldown: Math.max(0, p.next - clock),
+        ready: !!G.up.pods && clock >= p.next, impacts: p.impacts, kills: p.kills,
+        lastTarget: p.lastTarget ? { ...p.lastTarget } : null,
+        lastImpact: p.lastImpact ? { ...p.lastImpact } : null,
+        active: active.map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz, bx: r.bx, by: r.by,
+          age: r.age, T: r.T, dmg: r.dmg, R: r.R, position: rocketAt(r) })) },
+      hellfire: null, planes: [], cars: [], gadgets: []
+    };
+  },
   // Copy firing diagnostics and projectiles without exposing mutable targets or heli objects.
   rockets: () => {
     if (!G) return null;
     const s = heliWeaponState();
     return { shots: s.shots, rockets: s.rockets, first: s.first, last: s.last, maxGap: s.maxGap, forced: s.forced,
       impacts: s.impacts, kills: s.kills, lastImpact: s.lastImpact ? { ...s.lastImpact } : null,
-      active: G.rounds.filter((r) => r.kind === 'rocket').map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz,
+      active: G.rounds.filter((r) => r.kind === 'rocket' && r.source !== 'pods').map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz,
         bx: r.bx, by: r.by, age: r.age, T: r.T, dmg: r.dmg, R: r.R, position: rocketAt(r) })) };
   },
   // Real pointer events exercise the same held-state and order paths as the mouse.
