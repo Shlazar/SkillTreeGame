@@ -117,6 +117,7 @@ function drawDepot() {
   else drawTreeTab(y0, y1);
   drawDepotTop();
   drawDepotBottom();
+  drawTutTags();
   drawBanners();
   if (TIP.lines) drawTip();
 }
@@ -204,6 +205,8 @@ function drawDepotTop() {
 }
 // What the bottom bar says between the start picker and START RUN.
 function depotHint() {
+  const tut = tutHint();
+  if (tut) return tut;
   if (depotTab === 'station' && !stationOpen()) return ['HOLD FARM STOP ONCE TO BUILD HERE.', U.ink];
   if (depotTab === 'station' && ST.sel) return ['CLICK A TILE TO BUILD.  R-CLICK OR ESC: STOP.', U.dim];
   const th = depotTab === 'tree' && treeHint();

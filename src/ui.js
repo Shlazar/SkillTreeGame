@@ -217,10 +217,13 @@ function drawWarnings() {
   if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (E: RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
   if (G.heli.far) L.push(['RADIO RANGE LIMIT  (F: BACK)', U.amber]);
-  // the station hold: its bar and the survivors come first (stationtab.js)
-  const y = drawHoldBar(24);
   if (st && st.state === 'hold' && st.blockedT > 0.6) L.push(['CLEAR THE DEAD FROM THE STATION DOOR', U.amber]);
-  L.forEach(([t, c], i) => text(t, W / 2, y + i * 10, c, { align: 'center' }));
+  // the station hold bar comes first (stationtab.js), under the task box when they would touch;
+  // then the lines, beside the task box or under it (tut.js)
+  const b = taskBox();
+  const y = drawHoldBar(b && holdNow() && b[0] > W / 2 - 114 ? b[1] + 4 : 24);
+  const [wx, wy] = warnAt(L);
+  L.forEach(([t, c], i) => text(t, wx, Math.max(wy, y) + i * 10, c, { align: 'center' }));
 }
 // An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
 // with a label just inside it.
@@ -324,8 +327,7 @@ function drawWeapons() {
   let rx = G.up.he ? 204 : 104, ry = y;
   if (rx + RAMCARD.w > W - 82) [rx, ry] = [4, y - 30];
   drawRamCard(rx, ry);
-  // (on a narrow window the first seconds' hint needs that room)
-  if (W >= 480 || !hintOn()) text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
+  text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
 }
 // The Turbo Ram's card: E in gold when it is full, the % while it fills (the bar is the charge),
 // GO! while it runs (the bar is the time left), STOP near a station (grey), and after the first
@@ -384,35 +386,6 @@ function drawRamCard(x, y) {
     ctx.globalAlpha = 1;
   }
 }
-// first seconds of a run: how to play (in the first run, after the Engineer has spoken), just over
-// the weapon cards. Two groups (flying, then the keys), each on as many lines as the window needs.
-const hintT0 = () => (G.taste ? 11 : 1.2);
-const hintOn = () => G.run >= hintT0() && G.run < hintT0() + 8.8 && !G.result;
-function drawHint() {
-  const a = clamp((hintT0() + 8.8 - G.run) / 1.5, 0, 1);
-  if (!hintOn() || G.prompt) return;
-  const keys = ['F: BACK OVER THE TRAIN.', 'LEFT CLICK: 25MM.'];
-  if (G.up.he) keys.push('RIGHT CLICK: 105MM.');
-  if (G.up.ram) keys.push('E: TURBO RAM.');
-  const L = [];
-  for (const [group, col] of [[['WASD: FLY THE HELICOPTER.', 'LET GO: IT KEEPS PACE WITH THE TRAIN.'], U.ink], [keys, U.dim]]) {
-    let line = '';
-    for (const p of group) {
-      const t = line ? line + '   ' + p : p;
-      if (line && tw(t) > W - 16) {
-        L.push([line, col]);
-        line = p;
-      } else line = t;
-    }
-    L.push([line, col]);
-  }
-  // (over the radar too, when a line is long enough to reach it)
-  const wide = L.some(([l]) => tw(l) > W - 170);
-  const top = Math.min(RAMCARD.on ? RAMCARD.y : H - 30, H - 30, wide ? H - 82 : H) - 6 - L.length * 11;
-  ctx.globalAlpha = a;
-  L.forEach(([l, c], i) => text(l, W / 2, top + i * 11, c, { align: 'center' }));
-  ctx.globalAlpha = 1;
-}
 // White speed lines streaming down the outer 30% of the screen while the Ram runs (in game time:
 // they stand still on pause and slow down with the game).
 function drawSpeedLines() {
@@ -466,7 +439,7 @@ function drawRadio() {
   const name = r.who + ':', nw = tw(name), room = W - 8 - 20 - nw;
   const lines = tw(r.msg) <= room ? [r.msg] : wrap(r.msg, Math.max(60, room));
   const w = 20 + nw + Math.max(...lines.map((l) => tw(l))) + 8, h = 9 + lines.length * 10;
-  const x = 4, y = Math.min(H - 30, RAMCARD.on ? RAMCARD.y : H - 30) - 13 - h;
+  const x = 4, y = Math.min(H - 30, RAMCARD.on ? RAMCARD.y : H - 30) - 13 - h - tipRoom();
   // it fades in and out
   ctx.globalAlpha = r.t < 0.15 ? r.t / 0.15 : r.t > 3.6 ? (4 - r.t) / 0.4 : 1;
   panel(x, y, w, h, 'rgba(10,11,14,0.92)');
@@ -497,12 +470,7 @@ function drawTension() {
 }
 
 // ---------- screens
-function drawPause() {
-  ctx.fillStyle = 'rgba(5,6,8,0.5)';
-  ctx.fillRect(0, 19, W, H - 19);
-  text('PAUSED', W / 2, H / 2 - 20, U.ink, { align: 'center', scale: 2 });
-  text('CLICK, ESC OR P TO GO ON', W / 2, H / 2 + 2, U.dim, { align: 'center' });
-}
+// (the pause menu is drawPause in tut.js)
 // titleAsk = NEW GAME was clicked: the title asks before it wipes the save
 let titleAsk = false;
 function titleGo() {
@@ -598,11 +566,13 @@ function drawSummary() {
   const lines = s.wall.slice();
   if (s.near) lines.push([s.near, U.amber]);
   lines.push([s.surv ? 'YOU KEEP ALL YOUR SCRAP AND SURVIVORS.' : 'YOU KEEP ALL YOUR SCRAP.', U.dim]);
+  for (const g of tutSumLines()) lines.push(g);
   for (const g of s.goal) lines.push(g);
   const w = 264, h = 58 + pl.rows.length * 12 + 10 + 16 + (s.surv ? 16 : 0) + 10 + lines.length * 11 + 36;
   const x = Math.round(W / 2 - w / 2), y = Math.max(20, Math.round(H / 2 - h / 2)), cx = x + w / 2;
   panel(x, y, w, h, '#0f1014');
-  text(safe ? 'SAFE ZONE!' : 'TRAIN LOST', cx, y + 10, safe ? U.gold : U.red, { align: 'center', scale: 2, drop: true });
+  const quit = s.result === 'quit';
+  text(safe ? 'SAFE ZONE!' : quit ? 'RUN ENDED' : 'TRAIN LOST', cx, y + 10, safe ? U.gold : quit ? U.ink : U.red, { align: 'center', scale: 2, drop: true });
   text((safe ? 'ALL THE WAY: ' : 'AT ') + s.km.toFixed(2) + ' KM', cx, y + 30, U.ink, { align: 'center' });
   // NEW BEST: a gold tag that drops in
   if (s.newBest && t >= pl.best) {
@@ -678,7 +648,7 @@ function drawUI() {
     drawRadar();
     drawWeapons();
     drawRadio();
-    drawHint();
+    drawTut();
     // (the arrows under the banners, so a banner is never cut by an arrow's label)
     drawArrows();
     drawBanners();
