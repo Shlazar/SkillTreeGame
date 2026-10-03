@@ -159,41 +159,15 @@ function drawCar(i) {
   }
   if (i !== 2) return;
   const gun = G.up.gun > 0, R = gun ? RIDERS_GUN : RIDERS;
-  if (gun) drawTurret();
+  if (gun) drawCannon();
   for (let k = 0; k < R.length; k++) {
     const [u, al] = R[k], s = SURV[k], bob = Math.sin(realT * 5 + k * 1.7) > 0.6 ? 1 : 0;
     const x = c.cx + c.dx * al + c.nx * u, y = c.cy + c.dy * al + c.ny * u;
     blit(thermal ? s.h : s.n, Math.round(x) - 2, Math.round(y) - 10 - bob);
   }
 }
-// The flatcar gun on its deck, its barrel turned to G.gun.ang; a flash at the muzzle as it fires.
+// The deck's height over the rails (the rail cannon stands on it).
 const DECK = 3;
-function drawTurret() {
-  const g = G.gun, [gx, gy] = gunXY(), i = mod(Math.round(g.ang / TAU * TURRET_N), TURRET_N);
-  const img = (thermal ? TURRET.h : TURRET.n)[i], x = Math.round(gx), y = Math.round(gy) - DECK;
-  blit(img, x - img.ox, y - img.oy);
-  if (g.flash > 0) {
-    const mx = Math.round(gx + Math.sin(g.ang) * (TURRET_BARREL + 1)), my = Math.round(gy - DECK - TURRET_Z - Math.cos(g.ang) * (TURRET_BARREL + 1));
-    ctx.fillStyle = '#ffd27a';
-    ctx.fillRect(mx - 1, my, 3, 1);
-    ctx.fillRect(mx, my - 1, 1, 3);
-    ctx.fillStyle = '#fff6e0';
-    ctx.fillRect(mx, my, 1, 1);
-  }
-}
-// A flatcar gun round: a short tracer from the muzzle (it rides along with the train) to the target.
-function drawGunRound(r) {
-  const [gx, gy] = gunXY(), u = r.age / r.T;
-  const sx = gx + r.mx, sy = gy - DECK - TURRET_Z + r.my, ex = r.bx, ey = r.by - 7;
-  ctx.globalAlpha = 1;
-  const h = clamp(u * 1.15, 0, 1), t0 = Math.max(0, h - 0.4);
-  const hx = lerp(sx, ex, h), hy = lerp(sy, ey, h);
-  pl(ctx, lerp(sx, ex, t0), lerp(sy, ey, t0), hx, hy, '#c9772f');
-  pl(ctx, lerp(sx, ex, (t0 + h) / 2), lerp(sy, ey, (t0 + h) / 2), hx, hy, '#ffd27a');
-  ctx.fillStyle = '#fff6e0';
-  ctx.fillRect(Math.round(hx), Math.round(hy), 1, 1);
-  light(hx, hy, 4, '#ffb347', 0.5);
-}
 // The train's shadow: each car's footprint, moved away from the sun by its height.
 function drawTrainShadow() {
   for (let i = 0; i < CAR.n; i++) {
@@ -266,10 +240,6 @@ const muzzleY = (side) => G.camY + H + (side > 0 ? 26 : 36);
 const TRC = [['#fff1c2', '#ffd27a', '#ff9a3a', '#c9772f'], ['#fff6e0', '#ffd27a', '#ff9a3a', '#e2552f']];
 function drawRounds() {
   for (const r of G.rounds) {
-    if (r.kind === 'gun') {
-      drawGunRound(r);
-      continue;
-    }
     if (r.h) {
       drawHeliRound(r);
       continue;
@@ -294,14 +264,9 @@ function drawRounds() {
     ctx.fillRect(Math.round(hx - (s >> 1)), Math.round(hy - (s >> 1)), s, s);
     light(hx, hy, he ? 10 : 5, he ? '#ffd27a' : '#ffb347', he ? 0.7 : 0.45);
   }
-  // the gun flashes below the screen edge; the flatcar gun at its muzzle
+  // the gun flashes below the screen edge
   if (G.muzzle[0] > 0) light(muzzleX(1), muzzleY(1) - 10, 46, '#ffc27a', G.muzzle[0] / 0.05 * 0.5);
   if (G.muzzle[1] > 0) light(muzzleX(-1), muzzleY(-1) - 14, 80, '#ffb060', G.muzzle[1] / 0.12 * 0.8);
-  const g = G.gun;
-  if (g.flash > 0 && G.up.gun) {
-    const [gx, gy] = gunXY();
-    light(gx + Math.sin(g.ang) * 9, gy - DECK - TURRET_Z - Math.cos(g.ang) * 9, 10, '#ffd27a', g.flash / 0.06 * 0.8);
-  }
   ctx.globalAlpha = 1;
 }
 // While the Turbo Ram runs: its kills so far beside the engine's nose (white for a moment at each one;
@@ -451,6 +416,7 @@ function render() {
   drawParts(true);
   drawRounds();
   drawHeliFx();
+  drawCannonFx();
   drawZaps();
   drawTowerFx();
   ctx.globalCompositeOperation = 'source-over';

@@ -30,11 +30,11 @@ const NODES = [
     stat2: ['BRUTES', () => 'STILL STOP THE TRAIN'] },
   { id: 'armor', name: 'ARMOR', br: 'train', c: 2, r: -2, needs: ['cow', 1], cost: [40, 80, 160, 320, 640],
     desc: 'STEEL PLATES: MORE TRAIN HEALTH.', stat: ['TRAIN HP', (l) => UP.hp(l)] },
-  { id: 'gun', name: 'FLATCAR GUN', star: true, br: 'train', c: 4, r: 0, needs: ['cow', 1], cost: [300],
-    desc: 'AN AUTO GUN ON THE TRAIN.', stat: ['TRAIN GUN', (l) => (l ? perS(UP.gun(0)) : 'NONE')],
-    stat2: ['IT SHOOTS UP TO', () => metres(CFG.gun.range) + ' AWAY'] },
+  { id: 'gun', name: 'RAIL CANNON', star: true, br: 'train', c: 4, r: 0, needs: ['cow', 1], cost: [300],
+    desc: 'ONE SHOT KILLS A WHOLE LINE OF DEAD.', stat: ['RELOAD', (l) => (l ? secs(UP.gun(0)) : 'NONE')],
+    stat2: ['RANGE', () => 'THE WHOLE SCREEN'] },
   { id: 'gunspd', name: 'GUN SPEED', br: 'train', c: 6, r: 0, needs: ['gun', 1], cost: [150, 300, 600],
-    desc: 'THE TRAIN GUN SHOOTS FASTER.', stat: ['TRAIN GUN', (l) => perS(UP.gun(l))] },
+    desc: 'THE RAIL CANNON RELOADS FASTER.', stat: ['RELOAD', (l) => secs(UP.gun(l))] },
   { id: 'ram', name: 'TURBO RAM', star: true, br: 'train', c: 4, r: -2, needs: ['gun', 1], cost: [500],
     desc: 'PRESS E: SMASH THROUGH THE DEAD.',
     stat: ['TURBO RAM', (l) => (l ? CFG.ram.dur + ' S AT ' + Math.round(CFG.ram.speed / CFG.train.cruise) + '× SPEED' : 'NONE')],
@@ -197,7 +197,7 @@ function setNode(id, l) {
 }
 
 // ---------- the goal line under the summary
-// The cheapest * node you can work toward ("NEXT GOAL: FLATCAR GUN (300 SCRAP)"), with "YOU CAN BUY
+// The cheapest * node you can work toward ("NEXT GOAL: RAIL CANNON (300 SCRAP)"), with "YOU CAN BUY
 // IT NOW!" when you can, or what it needs first. Once no * node is left, the cheapest next level.
 // [[text, colour], ...]
 function summaryGoal() {

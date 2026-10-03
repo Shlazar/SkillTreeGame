@@ -201,7 +201,7 @@ function tutLook(dt) {
     if (h) tip('p_auto', 'YOUR HELI FIGHTS BY ITSELF. RIGHT CLICK TO SEND IT.', () => [h.x - G.camX, h.y - h.alt - G.camY]);
   }
   if (G.overheat) tip('p_hot', 'TOO HOT! THE GUN COOLS DOWN BY ITSELF.', () => [40, cardsTop() + 13]);
-  if (G.up.gun && G.run > 3) tip('p_gun', 'YOUR FLATCAR GUN GUARDS THE TRAIN. SEND A HELI FOR LOOT!', () => {
+  if (G.up.gun && G.run > 3) tip('p_gun', 'YOUR RAIL CANNON GUARDS THE TRAIN. SEND A HELI FOR LOOT!', () => {
     const [x, y] = gunXY();
     return [x - G.camX, y - G.camY];
   });
