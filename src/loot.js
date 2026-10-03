@@ -111,7 +111,7 @@ function rollLoot() {
 const LG = [0, 0];
 function heliGround() {
   LG[0] = G.camX + W / 2 - G.lead[0];
-  LG[1] = G.camY + H / 2 - G.lead[1];
+  LG[1] = G.camY + VH / 2 - G.lead[1];
   return LG;
 }
 // The heli nearest find f, and how far its ground point is from it: [heli, px]
@@ -202,7 +202,7 @@ function crateStep(f, d, dt) {
     for (const z of f.zs) z.still = false;
   }
   // a column of green smoke while it is near the view
-  if (!f.gone && Math.abs(f.x - G.camX - W / 2) < W && Math.abs(f.y - G.camY - H / 2) < H) {
+  if (!f.gone && Math.abs(f.x - G.camX - W / 2) < W && Math.abs(f.y - G.camY - VH / 2) < VH) {
     f.smoke = (f.smoke || 0) - dt;
     if (f.smoke <= 0) {
       f.smoke = 0.12;
@@ -218,7 +218,7 @@ function sosStep(f, d, dt, live, h) {
   if (f.stage === 'wait') {
     if (f.t >= 6) {
       f.t = 0;
-      if (Math.abs(f.x - G.camX - W / 2) < W * 1.5 && Math.abs(f.y - G.camY - H / 2) < H * 1.5) SFX.flare();
+      if (Math.abs(f.x - G.camX - W / 2) < W * 1.5 && Math.abs(f.y - G.camY - VH / 2) < VH * 1.5) SFX.flare();
     }
     if (live && !f.near && d < 70) {
       f.near = true;
@@ -256,7 +256,7 @@ function sosStep(f, d, dt, live, h) {
 // ---------- drawing (world layer, after everything on the ground)
 function drawLoot() {
   if (!G.loot) return;
-  const [gx, gy] = heliGround(), x0 = G.camX - 60, x1 = G.camX + W + 60, y0 = G.camY - 40, y1 = G.camY + H + 120;
+  const [gx, gy] = heliGround(), x0 = G.camX - 60, x1 = G.camX + W + 60, y0 = G.camY - 40, y1 = G.camY + VH + 120;
   for (const f of G.loot) {
     if (f.x < x0 || f.x > x1 || f.y < y0 || f.y > y1) continue;
     if (f.kind === 'pile' && !f.gone) {

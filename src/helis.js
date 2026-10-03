@@ -808,8 +808,8 @@ function drawUnitCards(x, y) {
 // 105 aim (its ring while the card is armed, a gold pip when one is loaded, DANGER CLOSE near the
 // train).
 function drawHeliCursor() {
-  const mx = Math.round(clamp(M.x, 0, W - 1)), my = Math.round(clamp(M.y, 0, H - 1)), b = HUI.box;
-  HUI.hov = M.inside && M.y >= 19 ? heliAt(mx, my) : null;
+  const mx = Math.round(clamp(M.x, 0, W - 1)), my = Math.round(clamp(M.y, 0, VH - 1)), b = HUI.box;
+  HUI.hov = M.inside && M.y >= 19 && M.y < VH ? heliAt(mx, my) : null;
   if (b && M.down) {
     const l = Math.round(Math.min(b.x0, mx)), t = Math.round(Math.min(b.y0, my)), w = Math.abs(Math.round(b.x0) - mx), h = Math.abs(Math.round(b.y0) - my);
     if (w + h > 5) {
@@ -827,7 +827,7 @@ function drawHeliCursor() {
       ctx.fillRect(l + w, t, 1, h + 1);
     }
   }
-  if (!M.inside || M.y < 19 || HUI.cards.some((c) => inR(mx, my, c.x, c.y, c.w, c.ht)) || (RAMCARD.on && inR(mx, my, RAMCARD.x, RAMCARD.y, RAMCARD.w, RAMCARD.h))) return;
+  if (!M.inside || M.y < 19 || M.y >= VH || HUI.cards.some((c) => inR(mx, my, c.x, c.y, c.w, c.ht)) || (RAMCARD.on && inR(mx, my, RAMCARD.x, RAMCARD.y, RAMCARD.w, RAMCARD.h))) return;
   if (HUI.hov) cursor = 'pointer';
   else if (G.helis.some((h) => h.sel) && zombieAt(mx, my)) cursor = 'crosshair';
   if (!G.up.he) return;

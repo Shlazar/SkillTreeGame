@@ -221,6 +221,7 @@ function treeUp(L, up) {
     napalmDuration: UP.napalm(L('napalm')),
     hellfire: L('hellfire') > 0, hellfireDamage: UP.hellfireDamage(L('hellfireDamage')),
     hellfireReload: UP.hellfireReload(L('hellfireReload')), hellfireBlast: UP.hellfireBlast(L('hellfireBlast')),
+    planeOwned: ['a10', 'f4', 'b52'].filter((id) => L(id) > 0),
     hellfireCount: UP.doubleHellfire(L('doubleHellfire')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,

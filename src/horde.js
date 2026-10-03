@@ -341,7 +341,7 @@ function addStream(n, edge, fast) {
   } else {
     // in from a side, level with the ground ahead of the engine (or beside it)
     sx = edge < 0 ? -10 : W + 10;
-    sy = clamp(nose.y0 - G.camY - rnd(-30, 150), 14, H * 0.7);
+    sy = clamp(nose.y0 - G.camY - rnd(-30, 150), 14, VH * 0.7);
   }
   STREAMS.push({ sx, sy, n, gap: fast ? rnd(0.05, 0.08) : rnd(0.09, 0.15), t: 0, edge, fast, age: 0 });
 }
@@ -684,7 +684,7 @@ function crowdPass(L, sx, sy) {
     }
     return;
   }
-  const R = H + 64;
+  const R = VH + 64;
   if (CROWD.head.length < R) CROWD.head = new Int32Array(R);
   if (CROWD.next.length < n) CROWD.next = new Int32Array(n * 2);
   const head = CROWD.head, next = CROWD.next;
@@ -694,13 +694,14 @@ function crowdPass(L, sx, sy) {
     next[i] = head[r];
     head[r] = i;
   }
-  const im = ctx.getImageData(0, 0, W, H), D = new Uint32Array(im.data.buffer);
+  // putImageData bypasses the world clip, so its buffer itself ends above the plane band.
+  const im = ctx.getImageData(0, 0, W, VH), D = new Uint32Array(im.data.buffer);
   for (let r = 0; r < R; r++) {
     for (let i = head[r]; i >= 0; i = next[i]) {
       const z = L[i], S = z.S, fr = S.walk[(z.anim | 0) & 3], P = fr.px;
       const p = thermal ? (z.left ? P.hf : P.h) : z.flash > 0 ? (z.left ? P.wf : P.w) : z.left ? P.nf : P.n;
       const X = Math.round(z.x - S.ax + ox), Y = Math.round(z.y - S.ay + oy), pw = p.w, ph = p.h, pd = p.d;
-      const xa = X < 0 ? -X : 0, xb = X + pw > W ? W - X : pw, ya = Y < 0 ? -Y : 0, yb = Y + ph > H ? H - Y : ph;
+      const xa = X < 0 ? -X : 0, xb = X + pw > W ? W - X : pw, ya = Y < 0 ? -Y : 0, yb = Y + ph > VH ? VH - Y : ph;
       for (let y = ya; y < yb; y++) {
         let o = (Y + y) * W + X + xa, q = y * pw + xa;
         for (let x = xa; x < xb; x++, o++, q++) {
@@ -721,7 +722,7 @@ function drawStreamMarks() {
   if (G.demo || thermal) return;
   for (const s of STREAMS) {
     if (s.age > 2.5 || (realT * 4 | 0) % 2) continue;
-    const x = Math.round(clamp(s.sx, 4, W - 6)), y = Math.round(clamp(s.sy, 30, H - 30));
+    const x = Math.round(clamp(s.sx, 4, W - 6)), y = Math.round(clamp(s.sy, 30, VH - 30));
     ctx.fillStyle = '#0c0f09';
     ctx.fillRect(x - 2, y - 5, 5, 11);
     ctx.fillStyle = s.fast ? '#ff3a2a' : '#c8432e';

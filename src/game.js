@@ -147,7 +147,7 @@ function newGame(demo, number, replay) {
     // the stops on this run (the Depot and the stations ahead), the stations alone, the one the
     // train goes to next (or stands at), and the Dead Walls ahead
     stops: [], stations: [], station: null, walls: [],
-    camX: 0, camY: 0, aimSX: W / 2, aimSY: H / 2,
+    camX: 0, camY: 0, aimSX: W / 2, aimSY: VH / 2,
     lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
     // Fractions from boosted kills and finds carry forward to the next reward in that group.
@@ -195,6 +195,8 @@ function startGame(number, replay) {
   saveSave();
   newGame(false, number, replay);
   mode = 'play';
+  syncViewHeight();
+  placeCamera();
   paused = false;
   const st = G.station;
   banner('LEG ' + number + ': ' + st.name, replay ? 'REPLAY: SCRAP ONLY' : 'ESCORT THE TRAIN TO THE NEXT STATION', U.gold);
@@ -394,7 +396,7 @@ function makeZombie(x, y, type) {
 // The horde by distance (HORDE), the streams and waves that bring the dead in (spawn) and their
 // step (updateZombies) are in horde.js.
 // true when (x, y) is out of the camera's view by more than m px
-const offView = (x, y, m) => x < G.camX - m || x > G.camX + W + m || y < G.camY - m || y > G.camY + H + m;
+const offView = (x, y, m) => x < G.camX - m || x > G.camX + W + m || y < G.camY - m || y > G.camY + VH + m;
 // One of the dead standing on the rails at s, u px right of the rail middle.
 function railZombie(s, u, type) {
   const y = yOfS(s), z = makeZombie(trackX(y) + u, y, type);
@@ -576,13 +578,13 @@ const TL = { u: 0, a: 0, c: 1 };
 function placeCamera() {
   camBase(CB);
   G.camX = Math.round(CB[0] + G.lead[0] - W / 2);
-  G.camY = Math.round(CB[1] + G.lead[1] - H / 2);
+  G.camY = Math.round(CB[1] + G.lead[1] - VH / 2);
 }
 // the middle of the view before the lead: ahead of the train's middle car, so the train sits a
 // little below the middle and you see what comes (behind the menus it stands right of the menu)
 const CB = [0, 0];
 function camBase(o) {
-  const c = G.tr.cars[2], f = G.tr.cars[0], a = H * 0.12, off = G.demo && W >= 560 ? W * 0.22 : 0;
+  const c = G.tr.cars[2], f = G.tr.cars[0], a = VH * 0.12, off = G.demo && W >= 560 ? W * 0.22 : 0;
   o[0] = c.cx + f.dx * a - off;
   o[1] = c.cy + f.dy * a;
   return o;
@@ -600,7 +602,7 @@ function camLead(dt) {
 }
 // chunks in view: [first column, first row, last column, last row]
 function viewChunks() {
-  return [Math.floor(G.camX / CH), Math.floor(G.camY / CH), Math.floor((G.camX + W) / CH), Math.floor((G.camY + H) / CH)];
+  return [Math.floor(G.camX / CH), Math.floor(G.camY / CH), Math.floor((G.camX + W) / CH), Math.floor((G.camY + VH) / CH)];
 }
 
 // ---------- the guns
@@ -1094,7 +1096,7 @@ function autopilot(dt) {
     for (const z of G.zombies) {
       if (z.dead) continue;
       const sx = z.x - G.camX, sy = z.y - G.camY;
-      if (sx < 6 || sx > W - 6 || sy < 26 || sy > H - 6) continue;
+      if (sx < 6 || sx > W - 6 || sy < 26 || sy > VH - 6) continue;
       let s;
       const prey = preyNear(z, 50);
       if (prey && prey.by === z) s = -100;
@@ -1190,10 +1192,10 @@ function step(dt) {
     if (G.bot) botPlay(dt);
     // (the mouse: where the 105 goes)
     G.aimSX = clamp(M.x, 0, W - 1);
-    G.aimSY = clamp(M.y, 0, H - 1);
+    G.aimSY = clamp(M.y, 0, VH - 1);
   } else {
     G.aimSX = W / 2;
-    G.aimSY = H / 2;
+    G.aimSY = VH / 2;
     if (mode === 'title' || mode === 'depot') attract(dt);
     else if (mode === 'ending') {
       G.endT += dt;

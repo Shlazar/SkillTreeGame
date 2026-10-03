@@ -185,7 +185,7 @@ function callStrafe(px, py, ux, uy) {
 // px from world point (x, y) along (ux, uy) to the edge of the view (the jet's sprite is half off it there)
 function jetEdge(x, y, ux, uy) {
   let t = 2000;
-  const x0 = G.camX - 30, y0 = G.camY - 30, x1 = G.camX + W + 30, y1 = G.camY + H + 30;
+  const x0 = G.camX - 30, y0 = G.camY - 30, x1 = G.camX + W + 30, y1 = G.camY + VH + 30;
   if (ux > 1e-6) t = Math.min(t, (x1 - x) / ux); else if (ux < -1e-6) t = Math.min(t, (x0 - x) / ux);
   if (uy > 1e-6) t = Math.min(t, (y1 - y + 60) / uy); else if (uy < -1e-6) t = Math.min(t, (y0 - y - 60) / uy);
   return Math.max(0, t);
@@ -471,5 +471,5 @@ function drawStrafeAim() {
   }
   ctx.globalAlpha = 1;
   const t = STRAF.aim ? 'LET GO: STRAFE' : 'CLICK: STRAFE HERE.  DRAG: AIM IT.', w = tw(t);
-  text(t, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, H - 44)), '#ffb060', { align: 'center' });
+  text(t, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, VH - 44)), '#ffb060', { align: 'center' });
 }

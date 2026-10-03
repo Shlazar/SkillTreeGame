@@ -4,13 +4,14 @@
 
 // ---------- screen and canvas
 // STEP = fixed update step. FORE = how much round things on the ground are squashed (the view is
-// three-quarters from above). W x H = the picture in game pixels, SCALE = screen pixels per game pixel.
+// three-quarters from above). W x H = the whole picture; VH ends above the plane band.
+// SCALE = screen pixels per game pixel.
 const STEP = 1 / 60, TAU = Math.PI * 2, FORE = 0.72;
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d', { alpha: false });
 ctx.imageSmoothingEnabled = false;
 const REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
-let W = 640, H = 360, SCALE = 2, zoomStep = 0;
+let W = 640, H = 360, VH = 360, SCALE = 2, zoomStep = 0;
 
 // Fit the canvas to the window: the zoom is a whole number of screen pixels per game pixel, and the
 // picture is as big as it needs to be to fill the window.
@@ -24,6 +25,7 @@ function resize() {
   const w = Math.ceil(dw / s), h = Math.ceil(dh / s);
   const changed = w !== W || h !== H || s !== SCALE;
   W = w; H = h; SCALE = s;
+  syncViewHeight();
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
   cv.style.width = (W * s / dpr) + 'px';
   cv.style.height = (H * s / dpr) + 'px';

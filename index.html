@@ -19,13 +19,14 @@
 
 // ---------- screen and canvas
 // STEP = fixed update step. FORE = how much round things on the ground are squashed (the view is
-// three-quarters from above). W x H = the picture in game pixels, SCALE = screen pixels per game pixel.
+// three-quarters from above). W x H = the whole picture; VH ends above the plane band.
+// SCALE = screen pixels per game pixel.
 const STEP = 1 / 60, TAU = Math.PI * 2, FORE = 0.72;
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d', { alpha: false });
 ctx.imageSmoothingEnabled = false;
 const REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
-let W = 640, H = 360, SCALE = 2, zoomStep = 0;
+let W = 640, H = 360, VH = 360, SCALE = 2, zoomStep = 0;
 
 // Fit the canvas to the window: the zoom is a whole number of screen pixels per game pixel, and the
 // picture is as big as it needs to be to fill the window.
@@ -39,6 +40,7 @@ function resize() {
   const w = Math.ceil(dw / s), h = Math.ceil(dh / s);
   const changed = w !== W || h !== H || s !== SCALE;
   W = w; H = h; SCALE = s;
+  syncViewHeight();
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
   cv.style.width = (W * s / dpr) + 'px';
   cv.style.height = (H * s / dpr) + 'px';
@@ -2879,7 +2881,7 @@ function newGame(demo, number, replay) {
     // the stops on this run (the Depot and the stations ahead), the stations alone, the one the
     // train goes to next (or stands at), and the Dead Walls ahead
     stops: [], stations: [], station: null, walls: [],
-    camX: 0, camY: 0, aimSX: W / 2, aimSY: H / 2,
+    camX: 0, camY: 0, aimSX: W / 2, aimSY: VH / 2,
     lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
     // Fractions from boosted kills and finds carry forward to the next reward in that group.
@@ -2927,6 +2929,8 @@ function startGame(number, replay) {
   saveSave();
   newGame(false, number, replay);
   mode = 'play';
+  syncViewHeight();
+  placeCamera();
   paused = false;
   const st = G.station;
   banner('LEG ' + number + ': ' + st.name, replay ? 'REPLAY: SCRAP ONLY' : 'ESCORT THE TRAIN TO THE NEXT STATION', U.gold);
@@ -3126,7 +3130,7 @@ function makeZombie(x, y, type) {
 // The horde by distance (HORDE), the streams and waves that bring the dead in (spawn) and their
 // step (updateZombies) are in horde.js.
 // true when (x, y) is out of the camera's view by more than m px
-const offView = (x, y, m) => x < G.camX - m || x > G.camX + W + m || y < G.camY - m || y > G.camY + H + m;
+const offView = (x, y, m) => x < G.camX - m || x > G.camX + W + m || y < G.camY - m || y > G.camY + VH + m;
 // One of the dead standing on the rails at s, u px right of the rail middle.
 function railZombie(s, u, type) {
   const y = yOfS(s), z = makeZombie(trackX(y) + u, y, type);
@@ -3308,13 +3312,13 @@ const TL = { u: 0, a: 0, c: 1 };
 function placeCamera() {
   camBase(CB);
   G.camX = Math.round(CB[0] + G.lead[0] - W / 2);
-  G.camY = Math.round(CB[1] + G.lead[1] - H / 2);
+  G.camY = Math.round(CB[1] + G.lead[1] - VH / 2);
 }
 // the middle of the view before the lead: ahead of the train's middle car, so the train sits a
 // little below the middle and you see what comes (behind the menus it stands right of the menu)
 const CB = [0, 0];
 function camBase(o) {
-  const c = G.tr.cars[2], f = G.tr.cars[0], a = H * 0.12, off = G.demo && W >= 560 ? W * 0.22 : 0;
+  const c = G.tr.cars[2], f = G.tr.cars[0], a = VH * 0.12, off = G.demo && W >= 560 ? W * 0.22 : 0;
   o[0] = c.cx + f.dx * a - off;
   o[1] = c.cy + f.dy * a;
   return o;
@@ -3332,7 +3336,7 @@ function camLead(dt) {
 }
 // chunks in view: [first column, first row, last column, last row]
 function viewChunks() {
-  return [Math.floor(G.camX / CH), Math.floor(G.camY / CH), Math.floor((G.camX + W) / CH), Math.floor((G.camY + H) / CH)];
+  return [Math.floor(G.camX / CH), Math.floor(G.camY / CH), Math.floor((G.camX + W) / CH), Math.floor((G.camY + VH) / CH)];
 }
 
 // ---------- the guns
@@ -3826,7 +3830,7 @@ function autopilot(dt) {
     for (const z of G.zombies) {
       if (z.dead) continue;
       const sx = z.x - G.camX, sy = z.y - G.camY;
-      if (sx < 6 || sx > W - 6 || sy < 26 || sy > H - 6) continue;
+      if (sx < 6 || sx > W - 6 || sy < 26 || sy > VH - 6) continue;
       let s;
       const prey = preyNear(z, 50);
       if (prey && prey.by === z) s = -100;
@@ -3922,10 +3926,10 @@ function step(dt) {
     if (G.bot) botPlay(dt);
     // (the mouse: where the 105 goes)
     G.aimSX = clamp(M.x, 0, W - 1);
-    G.aimSY = clamp(M.y, 0, H - 1);
+    G.aimSY = clamp(M.y, 0, VH - 1);
   } else {
     G.aimSX = W / 2;
-    G.aimSY = H / 2;
+    G.aimSY = VH / 2;
     if (mode === 'title' || mode === 'depot') attract(dt);
     else if (mode === 'ending') {
       G.endT += dt;
@@ -4302,7 +4306,7 @@ function addStream(n, edge, fast) {
   } else {
     // in from a side, level with the ground ahead of the engine (or beside it)
     sx = edge < 0 ? -10 : W + 10;
-    sy = clamp(nose.y0 - G.camY - rnd(-30, 150), 14, H * 0.7);
+    sy = clamp(nose.y0 - G.camY - rnd(-30, 150), 14, VH * 0.7);
   }
   STREAMS.push({ sx, sy, n, gap: fast ? rnd(0.05, 0.08) : rnd(0.09, 0.15), t: 0, edge, fast, age: 0 });
 }
@@ -4645,7 +4649,7 @@ function crowdPass(L, sx, sy) {
     }
     return;
   }
-  const R = H + 64;
+  const R = VH + 64;
   if (CROWD.head.length < R) CROWD.head = new Int32Array(R);
   if (CROWD.next.length < n) CROWD.next = new Int32Array(n * 2);
   const head = CROWD.head, next = CROWD.next;
@@ -4655,13 +4659,14 @@ function crowdPass(L, sx, sy) {
     next[i] = head[r];
     head[r] = i;
   }
-  const im = ctx.getImageData(0, 0, W, H), D = new Uint32Array(im.data.buffer);
+  // putImageData bypasses the world clip, so its buffer itself ends above the plane band.
+  const im = ctx.getImageData(0, 0, W, VH), D = new Uint32Array(im.data.buffer);
   for (let r = 0; r < R; r++) {
     for (let i = head[r]; i >= 0; i = next[i]) {
       const z = L[i], S = z.S, fr = S.walk[(z.anim | 0) & 3], P = fr.px;
       const p = thermal ? (z.left ? P.hf : P.h) : z.flash > 0 ? (z.left ? P.wf : P.w) : z.left ? P.nf : P.n;
       const X = Math.round(z.x - S.ax + ox), Y = Math.round(z.y - S.ay + oy), pw = p.w, ph = p.h, pd = p.d;
-      const xa = X < 0 ? -X : 0, xb = X + pw > W ? W - X : pw, ya = Y < 0 ? -Y : 0, yb = Y + ph > H ? H - Y : ph;
+      const xa = X < 0 ? -X : 0, xb = X + pw > W ? W - X : pw, ya = Y < 0 ? -Y : 0, yb = Y + ph > VH ? VH - Y : ph;
       for (let y = ya; y < yb; y++) {
         let o = (Y + y) * W + X + xa, q = y * pw + xa;
         for (let x = xa; x < xb; x++, o++, q++) {
@@ -4682,7 +4687,7 @@ function drawStreamMarks() {
   if (G.demo || thermal) return;
   for (const s of STREAMS) {
     if (s.age > 2.5 || (realT * 4 | 0) % 2) continue;
-    const x = Math.round(clamp(s.sx, 4, W - 6)), y = Math.round(clamp(s.sy, 30, H - 30));
+    const x = Math.round(clamp(s.sx, 4, W - 6)), y = Math.round(clamp(s.sy, 30, VH - 30));
     ctx.fillStyle = '#0c0f09';
     ctx.fillRect(x - 2, y - 5, 5, 11);
     ctx.fillStyle = s.fast ? '#ff3a2a' : '#c8432e';
@@ -6100,8 +6105,8 @@ function drawUnitCards(x, y) {
 // 105 aim (its ring while the card is armed, a gold pip when one is loaded, DANGER CLOSE near the
 // train).
 function drawHeliCursor() {
-  const mx = Math.round(clamp(M.x, 0, W - 1)), my = Math.round(clamp(M.y, 0, H - 1)), b = HUI.box;
-  HUI.hov = M.inside && M.y >= 19 ? heliAt(mx, my) : null;
+  const mx = Math.round(clamp(M.x, 0, W - 1)), my = Math.round(clamp(M.y, 0, VH - 1)), b = HUI.box;
+  HUI.hov = M.inside && M.y >= 19 && M.y < VH ? heliAt(mx, my) : null;
   if (b && M.down) {
     const l = Math.round(Math.min(b.x0, mx)), t = Math.round(Math.min(b.y0, my)), w = Math.abs(Math.round(b.x0) - mx), h = Math.abs(Math.round(b.y0) - my);
     if (w + h > 5) {
@@ -6119,7 +6124,7 @@ function drawHeliCursor() {
       ctx.fillRect(l + w, t, 1, h + 1);
     }
   }
-  if (!M.inside || M.y < 19 || HUI.cards.some((c) => inR(mx, my, c.x, c.y, c.w, c.ht)) || (RAMCARD.on && inR(mx, my, RAMCARD.x, RAMCARD.y, RAMCARD.w, RAMCARD.h))) return;
+  if (!M.inside || M.y < 19 || M.y >= VH || HUI.cards.some((c) => inR(mx, my, c.x, c.y, c.w, c.ht)) || (RAMCARD.on && inR(mx, my, RAMCARD.x, RAMCARD.y, RAMCARD.w, RAMCARD.h))) return;
   if (HUI.hov) cursor = 'pointer';
   else if (G.helis.some((h) => h.sel) && zombieAt(mx, my)) cursor = 'crosshair';
   if (!G.up.he) return;
@@ -6544,7 +6549,7 @@ function hitDir(z, cause, out) {
   let sx, sy;
   if (JUICE.from) [sx, sy] = JUICE.from;
   else if (cause === 'gun' && G.up.gun && typeof gunXY === 'function') [sx, sy] = gunXY();
-  else { sx = G.camX + W / 2; sy = G.camY + H + 40; }
+  else { sx = G.camX + W / 2; sy = G.camY + VH + 40; }
   const dx = z.x - sx, dy = (z.y - sy) / FORE, l = Math.hypot(dx, dy) || 1;
   out[0] = dx / l;
   out[1] = dy / l;
@@ -6921,7 +6926,7 @@ function drawJuiceTop() {
   if (JUICE.flash <= 0 || thermal) return;
   ctx.globalAlpha = Math.min(0.35, JUICE.flash * 3.5);
   ctx.fillStyle = '#ffcf9a';
-  ctx.fillRect(G.camX - 16, G.camY - 16, W + 32, H + 32);
+  ctx.fillRect(G.camX - 16, G.camY - 16, W + 32, VH + 32);
   ctx.globalAlpha = 1;
 }
 
@@ -7406,7 +7411,7 @@ function gather(ci0, cj0, ci1, cj1) {
   TREES.length = 0;
   VZ.length = 0;
   FIRES.length = 0;
-  const x0 = G.camX - 8, x1 = G.camX + W + 8, y0 = G.camY - 8, y1 = G.camY + H + 8;
+  const x0 = G.camX - 8, x1 = G.camX + W + 8, y0 = G.camY - 8, y1 = G.camY + VH + 8;
   for (let j = cj0 - 1; j <= cj1 + 1; j++) for (let i = ci0 - 1; i <= ci1 + 1; i++) {
     const pl = plan(i, j);
     for (const p of pl.props) {
@@ -7572,7 +7577,7 @@ const Z0 = 110, ZD = 1250;
 const persp = (u) => (1 - u) * Z0 / (Z0 + u * (ZD - Z0));
 // the gun's muzzle, below the bottom edge of the screen (25mm right, 105 left), in world px
 const muzzleX = (side) => G.camX + W * (side > 0 ? 0.7 : 0.36);
-const muzzleY = (side) => G.camY + H + (side > 0 ? 26 : 36);
+const muzzleY = (side) => G.camY + VH + (side > 0 ? 26 : 36);
 const TRC = [['#fff1c2', '#ffd27a', '#ff9a3a', '#c9772f'], ['#fff6e0', '#ffd27a', '#ff9a3a', '#e2552f']];
 function drawRounds() {
   for (const r of G.rounds) {
@@ -7615,11 +7620,11 @@ function drawRamCount() {
 }
 // The vignette: only the bands along the edges where it is not clear (the middle is skipped).
 function drawVignette() {
-  const bx = Math.round(W * 0.14), by = Math.round(H * 0.16);
+  const bx = Math.round(W * 0.14), by = Math.round(VH * 0.16);
   ctx.drawImage(VIG, 0, 0, W, by, 0, 0, W, by);
-  ctx.drawImage(VIG, 0, H - by, W, by, 0, H - by, W, by);
-  ctx.drawImage(VIG, 0, by, bx, H - 2 * by, 0, by, bx, H - 2 * by);
-  ctx.drawImage(VIG, W - bx, by, bx, H - 2 * by, W - bx, by, bx, H - 2 * by);
+  ctx.drawImage(VIG, 0, H - by, W, by, 0, VH - by, W, by);
+  ctx.drawImage(VIG, 0, by, bx, H - 2 * by, 0, by, bx, VH - 2 * by);
+  ctx.drawImage(VIG, W - bx, by, bx, H - 2 * by, W - bx, by, bx, VH - 2 * by);
 }
 
 // ---------- the frame (world layer)
@@ -7632,9 +7637,14 @@ function render() {
   ctx.fillRect(0, 0, W, H);
   // (the skill tree covers the whole world: nothing to draw under it)
   if (treeCovers()) return;
+  // Clip the entire world, including shake and camera effects, above the plane controls.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, W, VH);
+  ctx.clip();
   const [sx, sy] = shakeOff();
   const ci0 = Math.floor((G.camX - 8) / CH), ci1 = Math.floor((G.camX + W + 8) / CH);
-  const cj0 = Math.floor((G.camY - 8) / CH), cj1 = Math.floor((G.camY + H + 8) / CH);
+  const cj0 = Math.floor((G.camY - 8) / CH), cj1 = Math.floor((G.camY + VH + 8) / CH);
   // the ground in view is baked now; one more chunk round it per frame, before it is needed
   for (let j = cj0; j <= cj1; j++) for (let i = ci0; i <= ci1; i++) groundChunk(i, j, true);
   bakeSome(ci0, cj0, ci1, cj1, 1);
@@ -7649,7 +7659,7 @@ function render() {
   // the thermal camera sees the ground cooler than anything alive
   if (thermal) {
     ctx.fillStyle = 'rgba(0,0,0,0.32)';
-    ctx.fillRect(G.camX - 8, G.camY - 8, W + 16, H + 16);
+    ctx.fillRect(G.camX - 8, G.camY - 8, W + 16, VH + 16);
   }
   drawGroundLife();
   drawShellMarks();
@@ -7747,9 +7757,9 @@ function render() {
     if (k > 0 && !thermal) light(c.cx, c.cy - 6, 24, '#ff8a3a', 0.2 * k + 0.05 * Math.sin(realT * 18));
   }
   // station lamps (lit by day, just a glint)
-  for (const p of G.statics) if (p.lamp && Math.abs(p.y - G.camY - H / 2) < H) light(p.x, p.y - 17, 5, '#ffe2a0', 0.6);
+  for (const p of G.statics) if (p.lamp && Math.abs(p.y - G.camY - VH / 2) < VH) light(p.x, p.y - 17, 5, '#ffe2a0', 0.6);
   // the searchlights of the safe zone sweep the ground in front of the wall
-  for (const p of G.statics) if (p.tower && Math.abs(p.y - (G.camY + H / 2)) < H) {
+  for (const p of G.statics) if (p.tower && Math.abs(p.y - (G.camY + VH / 2)) < VH) {
     light(p.x + 5, p.y - 26, 5, '#fff1c2', 0.9);
     light(p.x + Math.sin(realT * 0.7 + p.tower) * 70, p.y + 46 + Math.cos(realT * 0.9 + p.tower * 2) * 18, 28, '#fff1c2', 0.22);
   }
@@ -7769,10 +7779,10 @@ function render() {
   ctx.globalAlpha = 1;
   drawSky();
   // the names of the safe zone (past the gate), the Depot and the stations, over everything on the ground
-  if (G.safeZone && G.goalY > G.camY - 80 && G.goalY < G.camY + H + 80) text('SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30, '#8fd18a', { align: 'center', scale: 2 });
+  if (G.safeZone && G.goalY > G.camY - 80 && G.goalY < G.camY + VH + 80) text('SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30, '#8fd18a', { align: 'center', scale: 2 });
   for (const st of G.stops) {
     const hs = st.house;
-    if (Math.abs(hs.y - G.camY - H / 2) < H) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });
+    if (Math.abs(hs.y - G.camY - VH / 2) < VH) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });
   }
   drawLoot();
   drawHeliTop();
@@ -7797,8 +7807,9 @@ function render() {
     ctx.drawImage(GRAIN, -((Math.random() * 64) | 0), -((Math.random() * 64) | 0));
     ctx.globalAlpha = 1;
     ctx.drawImage(SCAN, 0, 0);
-    ctx.drawImage(VIG, 0, 0);
+    ctx.drawImage(VIG, 0, 0, W, VH);
   }
+  ctx.restore();
 }
 
 // ui.js - everything drawn over the world, in screen pixels: the top bar (three currencies, kills, the train's health, the route up the line), warnings, arrows on
@@ -7986,9 +7997,9 @@ function drawWarnings() {
 // with a label just inside it.
 function edgeArrow(wx, wy, col, label) {
   const sx = wx - G.camX, sy = wy - G.camY;
-  if (sx > 8 && sx < W - 8 && sy > 26 && sy < H - 8) return false;
-  // the arrows keep inside a frame below the warnings: x 12..W-12, y 62..H-12
-  const cx = W / 2, cy = (62 + H - 12) / 2, hw = W / 2 - 12, hh = (H - 74) / 2;
+  if (sx > 8 && sx < W - 8 && sy > 26 && sy < VH - 8) return false;
+  // the arrows keep inside a frame below the warnings and above the plane band
+  const cx = W / 2, cy = (62 + VH - 12) / 2, hw = W / 2 - 12, hh = (VH - 74) / 2;
   const dx = sx - cx, dy = sy - cy, l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l;
   const t = Math.min(hw / Math.max(1e-6, Math.abs(dx)), hh / Math.max(1e-6, Math.abs(dy)));
   const ax = Math.round(cx + dx * t), ay = Math.round(cy + dy * t);
@@ -8005,7 +8016,7 @@ function edgeArrow(wx, wy, col, label) {
   if (label) {
     const w = tw(label), side = Math.abs(dx) * hh > Math.abs(dy) * hw;
     const lx = side ? ax - Math.sign(ux) * (9 + w / 2) : ax, ly = side ? ay - 3 : ay - Math.sign(uy) * 11 - 3;
-    text(label, clamp(lx, w / 2 + 4, W - w / 2 - 4), clamp(ly, 22, H - 10), col, { align: 'center' });
+    text(label, clamp(lx, w / 2 + 4, W - w / 2 - 4), clamp(ly, 22, VH - 10), col, { align: 'center' });
   }
   return true;
 }
@@ -8029,7 +8040,7 @@ function drawArrows() {
   // the train (its middle): gold, red with a count when the dead are on it; or, when the train is
   // in view, an arrow to any car under attack that is not
   const n = G.result ? 0 : G.onTrain;
-  if (!edgeArrow(c.cx, c.cy, n ? U.red : U.gold, 'TRAIN ' + Math.round(Math.hypot(c.cx - G.camX - W / 2, c.cy - G.camY - H / 2) / 2) + 'M' + (n ? '  ' + n + '!' : ''))) {
+  if (!edgeArrow(c.cx, c.cy, n ? U.red : U.gold, 'TRAIN ' + Math.round(Math.hypot(c.cx - G.camX - W / 2, c.cy - G.camY - VH / 2) / 2) + 'M' + (n ? '  ' + n + '!' : ''))) {
     if (!G.result) ON_CAR.forEach((m, k) => { if (m) edgeArrow(tr.cars[k].cx, tr.cars[k].cy, U.red, m + '!'); });
   }
   if (G.result) return;
@@ -8042,8 +8053,8 @@ function drawArrows() {
 // the dead (bright red: on the track or the train), survivors, the station, the safe zone wall,
 // and the view.
 function drawRadar() {
-  const R = 36, x0 = W - R * 2 - 6, y0 = H - R * 2 - 6, cx = x0 + R, cy = y0 + R, k = R / 640;
-  const hx = G.camX + W / 2, hy = G.camY + H / 2;
+  const R = 36, x0 = W - R * 2 - 6, y0 = VH - R * 2 - 6, cx = x0 + R, cy = y0 + R, k = R / 640;
+  const hx = G.camX + W / 2, hy = G.camY + VH / 2;
   ctx.fillStyle = 'rgba(6,10,8,0.84)';
   ctx.fillRect(x0, y0, R * 2, R * 2);
   frame(x0 - 1, y0 - 1, R * 2 + 2, R * 2 + 2, '#2e3139');
@@ -8067,22 +8078,22 @@ function drawRadar() {
   for (const c of G.tr.cars) dot(c.cx - 1, c.cy - 1, '#e8dfc8', 2);
   for (const h of G.helis) dot(h.x - 1, h.y - 1, h.sel ? U.green : '#9fd3f2', 2);
   // the view
-  const vx = Math.round(cx - W / 2 * k), vy = Math.round(cy - H / 2 * k);
+  const vx = Math.round(cx - W / 2 * k), vy = Math.round(cy - VH / 2 * k);
   ctx.globalAlpha = 0.55;
-  frame(vx, vy, Math.round(W * k) + 1, Math.round(H * k) + 1, '#9fd3f2');
+  frame(vx, vy, Math.round(W * k) + 1, Math.round(VH * k) + 1, '#9fd3f2');
   ctx.globalAlpha = 1;
   text('N', cx, y0 + 2, U.faint, { align: 'center', outline: false });
 }
 // The cards, bottom left: the heli (helis.js), then the
 // Turbo Ram.
 function drawWeapons() {
-  const y = H - 30;
+  const y = VH - 30;
   // (on a window too narrow for all the cards in a row, the Ram's goes over the first)
   let rx = drawUnitCards(4, y), ry = y;
   if (rx + RAMCARD.w > W - 82) [rx, ry] = [4, y - 30];
   drawRamCard(rx, ry);
   drawStrafeCard(rx, ry, y);
-  text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
+  text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, VH - 90, U.faint, { align: 'right' });
 }
 // The Turbo Ram's card: E in gold when it is full, the % while it fills (the bar is the charge),
 // GO! while it runs (the bar is the time left), and STOP near a station (grey). A click on it rams.
@@ -8129,7 +8140,7 @@ function drawRamCard(x, y) {
 function drawSpeedLines() {
   const k = ramK() * clamp(G.ram.t / 0.25, 0, 1);
   if (k <= 0) return;
-  const n = REDUCED ? 7 : 14, band = W * 0.3, span = H + 40;
+  const n = REDUCED ? 7 : 14, band = W * 0.3, span = VH + 40;
   ctx.fillStyle = '#ffffff';
   for (let i = 0; i < n; i++) {
     const sp = 320 + hrnd(i, 1, 51) * 260, len = 10 + Math.round(hrnd(i, 2, 51) * 20);
@@ -8163,7 +8174,7 @@ function drawRadio() {
   const name = r.who + ':', nw = tw(name), room = W - 8 - 20 - nw;
   const lines = tw(r.msg) <= room ? [r.msg] : wrap(r.msg, Math.max(60, room));
   const w = 20 + nw + Math.max(...lines.map((l) => tw(l))) + 8, h = 9 + lines.length * 10;
-  const x = 4, y = Math.min(H - 30, RAMCARD.on ? RAMCARD.y : H - 30) - 13 - h - tipRoom();
+  const x = 4, y = Math.min(VH - 30, RAMCARD.on ? RAMCARD.y : VH - 30) - 13 - h - tipRoom();
   // it fades in and out
   ctx.globalAlpha = r.t < 0.15 ? r.t / 0.15 : r.t > 3.6 ? (4 - r.t) / 0.4 : 1;
   panel(x, y, w, h, 'rgba(10,11,14,0.92)');
@@ -8186,9 +8197,9 @@ function drawTension() {
   for (let k = 0; k < 3; k++) {
     ctx.globalAlpha = a * (1 - k * 0.3);
     ctx.fillRect(k, k, W - 2 * k, 1);
-    ctx.fillRect(k, H - 1 - k, W - 2 * k, 1);
-    ctx.fillRect(k, k, 1, H - 2 * k);
-    ctx.fillRect(W - 1 - k, k, 1, H - 2 * k);
+    ctx.fillRect(k, VH - 1 - k, W - 2 * k, 1);
+    ctx.fillRect(k, k, 1, VH - 2 * k);
+    ctx.fillRect(W - 1 - k, k, 1, VH - 2 * k);
   }
   ctx.globalAlpha = 1;
 }
@@ -8364,7 +8375,13 @@ function drawUI() {
     return;
   }
   const run = mode === 'play' || mode === 'ending';
-  if (run) drawSpeedLines();
+  if (run) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, VH);
+    ctx.clip();
+    drawSpeedLines();
+  }
   drawHUD();
   drawCoins();
   if (run) {
@@ -8377,8 +8394,10 @@ function drawUI() {
     drawArrows();
     drawBanners();
     if (mode === 'play' && !paused) drawHeliCursor();
-    if (paused) drawPause();
     drawTension();
+    ctx.restore();
+    drawAirBand();
+    if (paused) drawPause();
   } else if (mode === 'summary') drawSummary();
 }
 
@@ -8906,6 +8925,7 @@ function treeUp(L, up) {
     napalmDuration: UP.napalm(L('napalm')),
     hellfire: L('hellfire') > 0, hellfireDamage: UP.hellfireDamage(L('hellfireDamage')),
     hellfireReload: UP.hellfireReload(L('hellfireReload')), hellfireBlast: UP.hellfireBlast(L('hellfireBlast')),
+    planeOwned: ['a10', 'f4', 'b52'].filter((id) => L(id) > 0),
     hellfireCount: UP.doubleHellfire(L('doubleHellfire')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
@@ -9745,7 +9765,7 @@ function callStrafe(px, py, ux, uy) {
 // px from world point (x, y) along (ux, uy) to the edge of the view (the jet's sprite is half off it there)
 function jetEdge(x, y, ux, uy) {
   let t = 2000;
-  const x0 = G.camX - 30, y0 = G.camY - 30, x1 = G.camX + W + 30, y1 = G.camY + H + 30;
+  const x0 = G.camX - 30, y0 = G.camY - 30, x1 = G.camX + W + 30, y1 = G.camY + VH + 30;
   if (ux > 1e-6) t = Math.min(t, (x1 - x) / ux); else if (ux < -1e-6) t = Math.min(t, (x0 - x) / ux);
   if (uy > 1e-6) t = Math.min(t, (y1 - y + 60) / uy); else if (uy < -1e-6) t = Math.min(t, (y0 - y - 60) / uy);
   return Math.max(0, t);
@@ -10031,7 +10051,23 @@ function drawStrafeAim() {
   }
   ctx.globalAlpha = 1;
   const t = STRAF.aim ? 'LET GO: STRAFE' : 'CLICK: STRAFE HERE.  DRAG: AIM IT.', w = tw(t);
-  text(t, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, H - 44)), '#ffb060', { align: 'center' });
+  text(t, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, VH - 44)), '#ffb060', { align: 'center' });
+}
+
+// air.js - the reserved plane band below the world and its shared view height.
+// Plane ownership is fixed when a leg starts, so the field never reads the skill tree.
+const AIRBAND = { height: 18 }; // Band height in game px.
+const planeBandVisible = () => !!G && !G.demo && (mode === 'play' || mode === 'ending') && G.up.planeOwned.length > 0;
+function syncViewHeight() {
+  VH = H - (planeBandVisible() ? AIRBAND.height : 0);
+}
+// Draw after the field's UI, before full-screen menus and fades.
+function drawAirBand() {
+  if (!planeBandVisible()) return;
+  ctx.fillStyle = 'rgba(6,7,9,0.88)';
+  ctx.fillRect(0, VH, W, H - VH);
+  ctx.fillStyle = '#24272e';
+  ctx.fillRect(0, VH, W, 1);
 }
 
 // main.js - input (mouse, keys, wheel), the camera mode, the main loop (fixed steps with hit-stop)
@@ -10070,11 +10106,12 @@ cv.addEventListener('pointerdown', (e) => {
     try { cv.setPointerCapture(e.pointerId); } catch (_) { /* release still reaches the window */ }
     if (mode === 'depot') M.rpressed = true;
     if (mode === 'play' && !paused && strafeCancel()) return;
-    if (mode === 'play' && !paused && p.y >= 19) heliRight(p.x, p.y);
+    if (mode === 'play' && !paused && p.y >= 19 && p.y < VH) heliRight(p.x, p.y);
     return;
   }
   if (e.button !== 0) return;
   // the Strafing Run's card, and its aim on the map (planes.js)
+  if (mode === 'play' && p.y >= VH) return;
   if (mode === 'play' && !paused && strafeDown(p.x, p.y)) return;
   // a click on the Turbo Ram's card rams (it does not fire the 25mm)
   if (mode === 'play' && !paused && RAMCARD.on && inR(p.x, p.y, RAMCARD.x, RAMCARD.y, RAMCARD.w, RAMCARD.h)) {
@@ -10107,8 +10144,10 @@ cv.addEventListener('pointerup', (e) => {
     M.down = false;
     M.released = true;
   }
+  // A drag released in the reserved strip cannot command units in the world above it.
+  if (mode === 'play' && p.y >= VH) { HUI.box = null; return; }
   if (mode === 'play' && !paused && strafeUp(p.x, p.y)) return;
-  if (mode === 'play' && !paused) heliUp(p.x, p.y);
+  if (mode === 'play' && !paused && p.y < VH) heliUp(p.x, p.y);
   else HUI.box = null;
 });
 cv.addEventListener('pointercancel', () => {
@@ -10227,6 +10266,7 @@ function loop(now) {
 // One frame of dt seconds: the game steps, the camera, the sound, the drawing, then the mouse
 // clicks are used up.
 function oneFrame(dt) {
+  syncViewHeight();
   realT += dt;
   frameDt = dt;
   // hit-stop: slow motion while slowT lasts
@@ -10487,7 +10527,7 @@ function boot() {
       walls: G.walls.map((w) => w.km + (w.awake ? ' awake' : w.placed ? ' placed' : ' ahead')),
       helis: G.helis.map((h) => [Math.round(h.x - G.tr.fx), Math.round(h.y - G.tr.fy)]),
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
-      W, H, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),
+      W, H, VH, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),
       gun: { rate: G.up.gun, shots: G.gun.shots, kills: G.gun.kills, ang: +G.gun.ang.toFixed(2), tgt: G.gun.tgt ? G.gun.tgt.st : -1 },
       ram: { state: ramState(), on: G.ram.on, t: +G.ram.t.toFixed(2), charge: +ramCharge().toFixed(3), kills: G.ram.kills, pay: G.ram.pay,
         uses: G.ram.uses, total: G.ram.total }
@@ -10613,7 +10653,7 @@ function rollLoot() {
 const LG = [0, 0];
 function heliGround() {
   LG[0] = G.camX + W / 2 - G.lead[0];
-  LG[1] = G.camY + H / 2 - G.lead[1];
+  LG[1] = G.camY + VH / 2 - G.lead[1];
   return LG;
 }
 // The heli nearest find f, and how far its ground point is from it: [heli, px]
@@ -10704,7 +10744,7 @@ function crateStep(f, d, dt) {
     for (const z of f.zs) z.still = false;
   }
   // a column of green smoke while it is near the view
-  if (!f.gone && Math.abs(f.x - G.camX - W / 2) < W && Math.abs(f.y - G.camY - H / 2) < H) {
+  if (!f.gone && Math.abs(f.x - G.camX - W / 2) < W && Math.abs(f.y - G.camY - VH / 2) < VH) {
     f.smoke = (f.smoke || 0) - dt;
     if (f.smoke <= 0) {
       f.smoke = 0.12;
@@ -10720,7 +10760,7 @@ function sosStep(f, d, dt, live, h) {
   if (f.stage === 'wait') {
     if (f.t >= 6) {
       f.t = 0;
-      if (Math.abs(f.x - G.camX - W / 2) < W * 1.5 && Math.abs(f.y - G.camY - H / 2) < H * 1.5) SFX.flare();
+      if (Math.abs(f.x - G.camX - W / 2) < W * 1.5 && Math.abs(f.y - G.camY - VH / 2) < VH * 1.5) SFX.flare();
     }
     if (live && !f.near && d < 70) {
       f.near = true;
@@ -10758,7 +10798,7 @@ function sosStep(f, d, dt, live, h) {
 // ---------- drawing (world layer, after everything on the ground)
 function drawLoot() {
   if (!G.loot) return;
-  const [gx, gy] = heliGround(), x0 = G.camX - 60, x1 = G.camX + W + 60, y0 = G.camY - 40, y1 = G.camY + H + 120;
+  const [gx, gy] = heliGround(), x0 = G.camX - 60, x1 = G.camX + W + 60, y0 = G.camY - 40, y1 = G.camY + VH + 120;
   for (const f of G.loot) {
     if (f.x < x0 || f.x > x1 || f.y < y0 || f.y > y1) continue;
     if (f.kind === 'pile' && !f.gone) {
@@ -11033,7 +11073,7 @@ function label(z, s, col) {
 const onScreen = (z) => [z.x - G.camX, z.y - G.camY];
 const inView = (z) => {
   const [x, y] = onScreen(z);
-  return x > 4 && x < W - 4 && y > 24 && y < H - 8;
+  return x > 4 && x < W - 4 && y > 24 && y < VH - 8;
 };
 
 // ---------- the events features send
@@ -11171,7 +11211,7 @@ function tutLook(dt) {
 
 // ---------- drawing in the run
 // the top of the weapon cards (the Ram's card can sit over the 25mm's on a narrow window)
-const cardsTop = () => Math.min(H - 30, RAMCARD.on ? RAMCARD.y : H - 30);
+const cardsTop = () => Math.min(VH - 30, RAMCARD.on ? RAMCARD.y : VH - 30);
 // the task box: [right edge, bottom], or null while it is empty
 function taskBox() {
   if (!TUT.tasks.length || mode !== 'play') return null;
@@ -12098,6 +12138,8 @@ Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assi
 
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  // The band's rectangle is in game px, including its full canvas and world heights.
+  planeBand: () => ({ visible: planeBandVisible(), x: 0, y: VH, w: W, h: H - VH, worldHeight: VH, fullHeight: H }),
   // Report only implemented unit systems; later weapons stay neutral until their own tasks.
   units: () => {
     if (!G) return null;

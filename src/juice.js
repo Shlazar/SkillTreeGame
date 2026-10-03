@@ -19,7 +19,7 @@ function hitDir(z, cause, out) {
   let sx, sy;
   if (JUICE.from) [sx, sy] = JUICE.from;
   else if (cause === 'gun' && G.up.gun && typeof gunXY === 'function') [sx, sy] = gunXY();
-  else { sx = G.camX + W / 2; sy = G.camY + H + 40; }
+  else { sx = G.camX + W / 2; sy = G.camY + VH + 40; }
   const dx = z.x - sx, dy = (z.y - sy) / FORE, l = Math.hypot(dx, dy) || 1;
   out[0] = dx / l;
   out[1] = dy / l;
@@ -396,6 +396,6 @@ function drawJuiceTop() {
   if (JUICE.flash <= 0 || thermal) return;
   ctx.globalAlpha = Math.min(0.35, JUICE.flash * 3.5);
   ctx.fillStyle = '#ffcf9a';
-  ctx.fillRect(G.camX - 16, G.camY - 16, W + 32, H + 32);
+  ctx.fillRect(G.camX - 16, G.camY - 16, W + 32, VH + 32);
   ctx.globalAlpha = 1;
 }

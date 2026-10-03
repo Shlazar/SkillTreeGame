@@ -34,11 +34,12 @@ cv.addEventListener('pointerdown', (e) => {
     try { cv.setPointerCapture(e.pointerId); } catch (_) { /* release still reaches the window */ }
     if (mode === 'depot') M.rpressed = true;
     if (mode === 'play' && !paused && strafeCancel()) return;
-    if (mode === 'play' && !paused && p.y >= 19) heliRight(p.x, p.y);
+    if (mode === 'play' && !paused && p.y >= 19 && p.y < VH) heliRight(p.x, p.y);
     return;
   }
   if (e.button !== 0) return;
   // the Strafing Run's card, and its aim on the map (planes.js)
+  if (mode === 'play' && p.y >= VH) return;
   if (mode === 'play' && !paused && strafeDown(p.x, p.y)) return;
   // a click on the Turbo Ram's card rams (it does not fire the 25mm)
   if (mode === 'play' && !paused && RAMCARD.on && inR(p.x, p.y, RAMCARD.x, RAMCARD.y, RAMCARD.w, RAMCARD.h)) {
@@ -71,8 +72,10 @@ cv.addEventListener('pointerup', (e) => {
     M.down = false;
     M.released = true;
   }
+  // A drag released in the reserved strip cannot command units in the world above it.
+  if (mode === 'play' && p.y >= VH) { HUI.box = null; return; }
   if (mode === 'play' && !paused && strafeUp(p.x, p.y)) return;
-  if (mode === 'play' && !paused) heliUp(p.x, p.y);
+  if (mode === 'play' && !paused && p.y < VH) heliUp(p.x, p.y);
   else HUI.box = null;
 });
 cv.addEventListener('pointercancel', () => {
@@ -191,6 +194,7 @@ function loop(now) {
 // One frame of dt seconds: the game steps, the camera, the sound, the drawing, then the mouse
 // clicks are used up.
 function oneFrame(dt) {
+  syncViewHeight();
   realT += dt;
   frameDt = dt;
   // hit-stop: slow motion while slowT lasts
@@ -451,7 +455,7 @@ function boot() {
       walls: G.walls.map((w) => w.km + (w.awake ? ' awake' : w.placed ? ' placed' : ' ahead')),
       helis: G.helis.map((h) => [Math.round(h.x - G.tr.fx), Math.round(h.y - G.tr.fy)]),
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
-      W, H, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),
+      W, H, VH, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),
       gun: { rate: G.up.gun, shots: G.gun.shots, kills: G.gun.kills, ang: +G.gun.ang.toFixed(2), tgt: G.gun.tgt ? G.gun.tgt.st : -1 },
       ram: { state: ramState(), on: G.ram.on, t: +G.ram.t.toFixed(2), charge: +ramCharge().toFixed(3), kills: G.ram.kills, pay: G.ram.pay,
         uses: G.ram.uses, total: G.ram.total }

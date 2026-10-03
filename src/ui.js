@@ -183,9 +183,9 @@ function drawWarnings() {
 // with a label just inside it.
 function edgeArrow(wx, wy, col, label) {
   const sx = wx - G.camX, sy = wy - G.camY;
-  if (sx > 8 && sx < W - 8 && sy > 26 && sy < H - 8) return false;
-  // the arrows keep inside a frame below the warnings: x 12..W-12, y 62..H-12
-  const cx = W / 2, cy = (62 + H - 12) / 2, hw = W / 2 - 12, hh = (H - 74) / 2;
+  if (sx > 8 && sx < W - 8 && sy > 26 && sy < VH - 8) return false;
+  // the arrows keep inside a frame below the warnings and above the plane band
+  const cx = W / 2, cy = (62 + VH - 12) / 2, hw = W / 2 - 12, hh = (VH - 74) / 2;
   const dx = sx - cx, dy = sy - cy, l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l;
   const t = Math.min(hw / Math.max(1e-6, Math.abs(dx)), hh / Math.max(1e-6, Math.abs(dy)));
   const ax = Math.round(cx + dx * t), ay = Math.round(cy + dy * t);
@@ -202,7 +202,7 @@ function edgeArrow(wx, wy, col, label) {
   if (label) {
     const w = tw(label), side = Math.abs(dx) * hh > Math.abs(dy) * hw;
     const lx = side ? ax - Math.sign(ux) * (9 + w / 2) : ax, ly = side ? ay - 3 : ay - Math.sign(uy) * 11 - 3;
-    text(label, clamp(lx, w / 2 + 4, W - w / 2 - 4), clamp(ly, 22, H - 10), col, { align: 'center' });
+    text(label, clamp(lx, w / 2 + 4, W - w / 2 - 4), clamp(ly, 22, VH - 10), col, { align: 'center' });
   }
   return true;
 }
@@ -226,7 +226,7 @@ function drawArrows() {
   // the train (its middle): gold, red with a count when the dead are on it; or, when the train is
   // in view, an arrow to any car under attack that is not
   const n = G.result ? 0 : G.onTrain;
-  if (!edgeArrow(c.cx, c.cy, n ? U.red : U.gold, 'TRAIN ' + Math.round(Math.hypot(c.cx - G.camX - W / 2, c.cy - G.camY - H / 2) / 2) + 'M' + (n ? '  ' + n + '!' : ''))) {
+  if (!edgeArrow(c.cx, c.cy, n ? U.red : U.gold, 'TRAIN ' + Math.round(Math.hypot(c.cx - G.camX - W / 2, c.cy - G.camY - VH / 2) / 2) + 'M' + (n ? '  ' + n + '!' : ''))) {
     if (!G.result) ON_CAR.forEach((m, k) => { if (m) edgeArrow(tr.cars[k].cx, tr.cars[k].cy, U.red, m + '!'); });
   }
   if (G.result) return;
@@ -239,8 +239,8 @@ function drawArrows() {
 // the dead (bright red: on the track or the train), survivors, the station, the safe zone wall,
 // and the view.
 function drawRadar() {
-  const R = 36, x0 = W - R * 2 - 6, y0 = H - R * 2 - 6, cx = x0 + R, cy = y0 + R, k = R / 640;
-  const hx = G.camX + W / 2, hy = G.camY + H / 2;
+  const R = 36, x0 = W - R * 2 - 6, y0 = VH - R * 2 - 6, cx = x0 + R, cy = y0 + R, k = R / 640;
+  const hx = G.camX + W / 2, hy = G.camY + VH / 2;
   ctx.fillStyle = 'rgba(6,10,8,0.84)';
   ctx.fillRect(x0, y0, R * 2, R * 2);
   frame(x0 - 1, y0 - 1, R * 2 + 2, R * 2 + 2, '#2e3139');
@@ -264,22 +264,22 @@ function drawRadar() {
   for (const c of G.tr.cars) dot(c.cx - 1, c.cy - 1, '#e8dfc8', 2);
   for (const h of G.helis) dot(h.x - 1, h.y - 1, h.sel ? U.green : '#9fd3f2', 2);
   // the view
-  const vx = Math.round(cx - W / 2 * k), vy = Math.round(cy - H / 2 * k);
+  const vx = Math.round(cx - W / 2 * k), vy = Math.round(cy - VH / 2 * k);
   ctx.globalAlpha = 0.55;
-  frame(vx, vy, Math.round(W * k) + 1, Math.round(H * k) + 1, '#9fd3f2');
+  frame(vx, vy, Math.round(W * k) + 1, Math.round(VH * k) + 1, '#9fd3f2');
   ctx.globalAlpha = 1;
   text('N', cx, y0 + 2, U.faint, { align: 'center', outline: false });
 }
 // The cards, bottom left: the heli (helis.js), then the
 // Turbo Ram.
 function drawWeapons() {
-  const y = H - 30;
+  const y = VH - 30;
   // (on a window too narrow for all the cards in a row, the Ram's goes over the first)
   let rx = drawUnitCards(4, y), ry = y;
   if (rx + RAMCARD.w > W - 82) [rx, ry] = [4, y - 30];
   drawRamCard(rx, ry);
   drawStrafeCard(rx, ry, y);
-  text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
+  text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, VH - 90, U.faint, { align: 'right' });
 }
 // The Turbo Ram's card: E in gold when it is full, the % while it fills (the bar is the charge),
 // GO! while it runs (the bar is the time left), and STOP near a station (grey). A click on it rams.
@@ -326,7 +326,7 @@ function drawRamCard(x, y) {
 function drawSpeedLines() {
   const k = ramK() * clamp(G.ram.t / 0.25, 0, 1);
   if (k <= 0) return;
-  const n = REDUCED ? 7 : 14, band = W * 0.3, span = H + 40;
+  const n = REDUCED ? 7 : 14, band = W * 0.3, span = VH + 40;
   ctx.fillStyle = '#ffffff';
   for (let i = 0; i < n; i++) {
     const sp = 320 + hrnd(i, 1, 51) * 260, len = 10 + Math.round(hrnd(i, 2, 51) * 20);
@@ -360,7 +360,7 @@ function drawRadio() {
   const name = r.who + ':', nw = tw(name), room = W - 8 - 20 - nw;
   const lines = tw(r.msg) <= room ? [r.msg] : wrap(r.msg, Math.max(60, room));
   const w = 20 + nw + Math.max(...lines.map((l) => tw(l))) + 8, h = 9 + lines.length * 10;
-  const x = 4, y = Math.min(H - 30, RAMCARD.on ? RAMCARD.y : H - 30) - 13 - h - tipRoom();
+  const x = 4, y = Math.min(VH - 30, RAMCARD.on ? RAMCARD.y : VH - 30) - 13 - h - tipRoom();
   // it fades in and out
   ctx.globalAlpha = r.t < 0.15 ? r.t / 0.15 : r.t > 3.6 ? (4 - r.t) / 0.4 : 1;
   panel(x, y, w, h, 'rgba(10,11,14,0.92)');
@@ -383,9 +383,9 @@ function drawTension() {
   for (let k = 0; k < 3; k++) {
     ctx.globalAlpha = a * (1 - k * 0.3);
     ctx.fillRect(k, k, W - 2 * k, 1);
-    ctx.fillRect(k, H - 1 - k, W - 2 * k, 1);
-    ctx.fillRect(k, k, 1, H - 2 * k);
-    ctx.fillRect(W - 1 - k, k, 1, H - 2 * k);
+    ctx.fillRect(k, VH - 1 - k, W - 2 * k, 1);
+    ctx.fillRect(k, k, 1, VH - 2 * k);
+    ctx.fillRect(W - 1 - k, k, 1, VH - 2 * k);
   }
   ctx.globalAlpha = 1;
 }
@@ -561,7 +561,13 @@ function drawUI() {
     return;
   }
   const run = mode === 'play' || mode === 'ending';
-  if (run) drawSpeedLines();
+  if (run) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, VH);
+    ctx.clip();
+    drawSpeedLines();
+  }
   drawHUD();
   drawCoins();
   if (run) {
@@ -574,7 +580,9 @@ function drawUI() {
     drawArrows();
     drawBanners();
     if (mode === 'play' && !paused) drawHeliCursor();
-    if (paused) drawPause();
     drawTension();
+    ctx.restore();
+    drawAirBand();
+    if (paused) drawPause();
   } else if (mode === 'summary') drawSummary();
 }

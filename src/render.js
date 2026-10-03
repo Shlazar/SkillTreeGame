@@ -47,7 +47,7 @@ function gather(ci0, cj0, ci1, cj1) {
   TREES.length = 0;
   VZ.length = 0;
   FIRES.length = 0;
-  const x0 = G.camX - 8, x1 = G.camX + W + 8, y0 = G.camY - 8, y1 = G.camY + H + 8;
+  const x0 = G.camX - 8, x1 = G.camX + W + 8, y0 = G.camY - 8, y1 = G.camY + VH + 8;
   for (let j = cj0 - 1; j <= cj1 + 1; j++) for (let i = ci0 - 1; i <= ci1 + 1; i++) {
     const pl = plan(i, j);
     for (const p of pl.props) {
@@ -213,7 +213,7 @@ const Z0 = 110, ZD = 1250;
 const persp = (u) => (1 - u) * Z0 / (Z0 + u * (ZD - Z0));
 // the gun's muzzle, below the bottom edge of the screen (25mm right, 105 left), in world px
 const muzzleX = (side) => G.camX + W * (side > 0 ? 0.7 : 0.36);
-const muzzleY = (side) => G.camY + H + (side > 0 ? 26 : 36);
+const muzzleY = (side) => G.camY + VH + (side > 0 ? 26 : 36);
 const TRC = [['#fff1c2', '#ffd27a', '#ff9a3a', '#c9772f'], ['#fff6e0', '#ffd27a', '#ff9a3a', '#e2552f']];
 function drawRounds() {
   for (const r of G.rounds) {
@@ -256,11 +256,11 @@ function drawRamCount() {
 }
 // The vignette: only the bands along the edges where it is not clear (the middle is skipped).
 function drawVignette() {
-  const bx = Math.round(W * 0.14), by = Math.round(H * 0.16);
+  const bx = Math.round(W * 0.14), by = Math.round(VH * 0.16);
   ctx.drawImage(VIG, 0, 0, W, by, 0, 0, W, by);
-  ctx.drawImage(VIG, 0, H - by, W, by, 0, H - by, W, by);
-  ctx.drawImage(VIG, 0, by, bx, H - 2 * by, 0, by, bx, H - 2 * by);
-  ctx.drawImage(VIG, W - bx, by, bx, H - 2 * by, W - bx, by, bx, H - 2 * by);
+  ctx.drawImage(VIG, 0, H - by, W, by, 0, VH - by, W, by);
+  ctx.drawImage(VIG, 0, by, bx, H - 2 * by, 0, by, bx, VH - 2 * by);
+  ctx.drawImage(VIG, W - bx, by, bx, H - 2 * by, W - bx, by, bx, VH - 2 * by);
 }
 
 // ---------- the frame (world layer)
@@ -273,9 +273,14 @@ function render() {
   ctx.fillRect(0, 0, W, H);
   // (the skill tree covers the whole world: nothing to draw under it)
   if (treeCovers()) return;
+  // Clip the entire world, including shake and camera effects, above the plane controls.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, W, VH);
+  ctx.clip();
   const [sx, sy] = shakeOff();
   const ci0 = Math.floor((G.camX - 8) / CH), ci1 = Math.floor((G.camX + W + 8) / CH);
-  const cj0 = Math.floor((G.camY - 8) / CH), cj1 = Math.floor((G.camY + H + 8) / CH);
+  const cj0 = Math.floor((G.camY - 8) / CH), cj1 = Math.floor((G.camY + VH + 8) / CH);
   // the ground in view is baked now; one more chunk round it per frame, before it is needed
   for (let j = cj0; j <= cj1; j++) for (let i = ci0; i <= ci1; i++) groundChunk(i, j, true);
   bakeSome(ci0, cj0, ci1, cj1, 1);
@@ -290,7 +295,7 @@ function render() {
   // the thermal camera sees the ground cooler than anything alive
   if (thermal) {
     ctx.fillStyle = 'rgba(0,0,0,0.32)';
-    ctx.fillRect(G.camX - 8, G.camY - 8, W + 16, H + 16);
+    ctx.fillRect(G.camX - 8, G.camY - 8, W + 16, VH + 16);
   }
   drawGroundLife();
   drawShellMarks();
@@ -388,9 +393,9 @@ function render() {
     if (k > 0 && !thermal) light(c.cx, c.cy - 6, 24, '#ff8a3a', 0.2 * k + 0.05 * Math.sin(realT * 18));
   }
   // station lamps (lit by day, just a glint)
-  for (const p of G.statics) if (p.lamp && Math.abs(p.y - G.camY - H / 2) < H) light(p.x, p.y - 17, 5, '#ffe2a0', 0.6);
+  for (const p of G.statics) if (p.lamp && Math.abs(p.y - G.camY - VH / 2) < VH) light(p.x, p.y - 17, 5, '#ffe2a0', 0.6);
   // the searchlights of the safe zone sweep the ground in front of the wall
-  for (const p of G.statics) if (p.tower && Math.abs(p.y - (G.camY + H / 2)) < H) {
+  for (const p of G.statics) if (p.tower && Math.abs(p.y - (G.camY + VH / 2)) < VH) {
     light(p.x + 5, p.y - 26, 5, '#fff1c2', 0.9);
     light(p.x + Math.sin(realT * 0.7 + p.tower) * 70, p.y + 46 + Math.cos(realT * 0.9 + p.tower * 2) * 18, 28, '#fff1c2', 0.22);
   }
@@ -410,10 +415,10 @@ function render() {
   ctx.globalAlpha = 1;
   drawSky();
   // the names of the safe zone (past the gate), the Depot and the stations, over everything on the ground
-  if (G.safeZone && G.goalY > G.camY - 80 && G.goalY < G.camY + H + 80) text('SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30, '#8fd18a', { align: 'center', scale: 2 });
+  if (G.safeZone && G.goalY > G.camY - 80 && G.goalY < G.camY + VH + 80) text('SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30, '#8fd18a', { align: 'center', scale: 2 });
   for (const st of G.stops) {
     const hs = st.house;
-    if (Math.abs(hs.y - G.camY - H / 2) < H) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });
+    if (Math.abs(hs.y - G.camY - VH / 2) < VH) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });
   }
   drawLoot();
   drawHeliTop();
@@ -438,6 +443,7 @@ function render() {
     ctx.drawImage(GRAIN, -((Math.random() * 64) | 0), -((Math.random() * 64) | 0));
     ctx.globalAlpha = 1;
     ctx.drawImage(SCAN, 0, 0);
-    ctx.drawImage(VIG, 0, 0);
+    ctx.drawImage(VIG, 0, 0, W, VH);
   }
+  ctx.restore();
 }

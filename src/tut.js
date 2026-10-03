@@ -85,7 +85,7 @@ function label(z, s, col) {
 const onScreen = (z) => [z.x - G.camX, z.y - G.camY];
 const inView = (z) => {
   const [x, y] = onScreen(z);
-  return x > 4 && x < W - 4 && y > 24 && y < H - 8;
+  return x > 4 && x < W - 4 && y > 24 && y < VH - 8;
 };
 
 // ---------- the events features send
@@ -223,7 +223,7 @@ function tutLook(dt) {
 
 // ---------- drawing in the run
 // the top of the weapon cards (the Ram's card can sit over the 25mm's on a narrow window)
-const cardsTop = () => Math.min(H - 30, RAMCARD.on ? RAMCARD.y : H - 30);
+const cardsTop = () => Math.min(VH - 30, RAMCARD.on ? RAMCARD.y : VH - 30);
 // the task box: [right edge, bottom], or null while it is empty
 function taskBox() {
   if (!TUT.tasks.length || mode !== 'play') return null;

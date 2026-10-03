@@ -1,5 +1,7 @@
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  // The band's rectangle is in game px, including its full canvas and world heights.
+  planeBand: () => ({ visible: planeBandVisible(), x: 0, y: VH, w: W, h: H - VH, worldHeight: VH, fullHeight: H }),
   // Report only implemented unit systems; later weapons stay neutral until their own tasks.
   units: () => {
     if (!G) return null;
