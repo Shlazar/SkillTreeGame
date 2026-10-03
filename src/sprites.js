@@ -545,6 +545,45 @@ function pillarSpr() {
   });
 }
 
+// ---------- finds out in the fields: a supply crate, a gold crate, a steel deep crate, a medkit,
+// an ammo dump, and a ruin with people on its roof waving for help (SOS). FIND.wave[f] = a waving
+// survivor, frame f, [normal, hot].
+const FIND = {};
+function makeFinds() {
+  FIND.crate = outline(pix(8, 7, (r) => {
+    r(0, 1, 8, 6, '#7b5735'); r(0, 0, 8, 2, '#a38558'); r(0, 0, 8, 1, '#c4a46c'); r(0, 3, 8, 1, '#e3b04b');
+    r(3, 1, 2, 6, '#5b3f27'); r(3, 3, 2, 1, '#b8862f'); r(7, 1, 1, 6, '#3a2718'); r(0, 6, 8, 1, '#3a2718');
+  }), P.out);
+  const big = (a, b, c, d, lock) => outline(pix(12, 9, (r) => {
+    r(0, 2, 12, 7, b); r(0, 0, 12, 3, c); r(0, 0, 12, 1, d); r(2, 2, 1, 7, a); r(9, 2, 1, 7, a);
+    r(5, 4, 2, 2, lock); r(5, 4, 1, 1, '#fff1c2'); r(0, 8, 12, 1, a); r(11, 2, 1, 7, a);
+  }), P.out);
+  FIND.gold = big('#7a5a1c', '#a8761f', '#e8bd55', '#f6dc8e', '#3a2a10');
+  FIND.deep = big('#2a3446', '#465469', '#6d82a3', '#9fd3f2', '#e3b04b');
+  FIND.medkit = outline(pix(9, 7, (r) => {
+    r(0, 1, 9, 6, '#d8d8d4'); r(0, 0, 9, 2, '#f0f0ec'); r(8, 1, 1, 6, '#9a9a96'); r(0, 6, 9, 1, '#8a8a86');
+    r(3, 2, 3, 4, '#3fae5a'); r(2, 3, 5, 2, '#3fae5a'); r(3, 2, 1, 1, '#7fd88a');
+  }), P.out);
+  FIND.ammo = outline(pix(16, 10, (r) => {
+    r(0, 4, 9, 6, '#4f5a32'); r(0, 4, 9, 1, '#6f7d45'); r(8, 6, 8, 4, '#3f4c2c'); r(8, 6, 8, 1, '#5c6b40');
+    r(2, 7, 4, 1, '#e3b04b'); r(10, 8, 4, 1, '#e3b04b'); r(0, 9, 16, 1, '#262f1c');
+    for (const x of [2, 4, 6, 11, 13]) { r(x, x < 9 ? 1 : 3, 1, 3, '#b8862f'); r(x, x < 9 ? 0 : 2, 1, 1, '#d6cdb6'); }
+  }), P.out);
+  FIND.ruin = outline(pix(22, 14, (r) => {
+    r(0, 4, 22, 10, '#5a564e'); r(0, 4, 22, 2, '#8f897c'); r(0, 4, 22, 1, '#aaa392'); r(21, 6, 1, 8, '#3e3b35');
+    r(3, 8, 3, 4, '#1e1c1a'); r(10, 8, 3, 6, '#2a2622'); r(16, 8, 3, 3, '#1e1c1a'); r(0, 13, 22, 1, '#2e2c28');
+    r(15, 2, 7, 2, '#5a564e'); r(17, 0, 3, 2, '#6b675e'); r(0, 3, 4, 1, '#6b675e');
+  }), P.out);
+  FIND.wave = [0, 1].map((f) => {
+    const raw = pix(5, 9, (r) => {
+      r(1, 2, 3, 2, '#c99a72'); r(1, 2, 3, 1, '#2e2620'); r(1, 4, 3, 3, '#45608e'); r(1, 4, 1, 3, '#9fd3f2');
+      r(1, 7, 1, 2, '#1a1c20'); r(3, 7, 1, 2, '#1a1c20');
+      if (f) { r(4, 0, 1, 4, '#c99a72'); r(0, 4, 1, 2, '#c99a72'); } else { r(0, 0, 1, 4, '#c99a72'); r(4, 4, 1, 2, '#c99a72'); }
+    });
+    return [outline(raw, '#07080a'), outline(hotSpr(raw, 215), '#161616')];
+  });
+}
+
 // ---------- icons
 const ICON = {};
 
@@ -612,6 +651,7 @@ function initSprites() {
   for (let k = 0; k < 4; k++) SAFE.blocks.push(prop(wallBlockSpr(rng), 0));
   SAFE.tower = prop(towerSpr(), 0);
   SAFE.pillar = prop(pillarSpr(), 0);
+  makeFinds();
   // icons
   ICON.coin = outline(pix(5, 5, (r) => {
     r(1, 0, 3, 1, '#e8bd55'); r(0, 1, 5, 3, '#d9a33a'); r(1, 4, 3, 1, '#a8761f'); r(1, 1, 1, 2, '#f6dc8e'); r(3, 2, 1, 2, '#a8761f');
