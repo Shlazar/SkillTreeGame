@@ -536,7 +536,7 @@ function treeInput(vis, y0, y1) {
     const was = TREE.drag;
     TREE.drag = null;
     if (was && was.moved) M.used = true;
-    else if (!M.used && inPanel(M.py)) {
+    else if (!M.used && inPanel(M.py) && !treeOnButton(M.px, M.py)) {
       const n = treeNodeAt(vis, M.px, M.py);
       if (n && n === treeNodeAt(vis, M.x, M.y)) {
         M.used = true;
@@ -699,8 +699,8 @@ function drawTreeNode(n, st) {
     ctx.globalAlpha = 1;
   }
   // the icon: crisp, 1x up to 2x and 3x as the view zooms in (none when it is very small)
-  const ic = lock ? ICON.lock : NICON[n.id] || ICON.star, k = Math.max(1, Math.floor((s - 6) / 12));
-  if (s >= 13) {
+  const ic = lock ? ICON.lock : NICON[n.id] || ICON.star, k = Math.max(1, Math.floor((s - 4) / Math.max(ic.width, ic.height)));
+  if (s >= ic.width + 4) {
     const iw = ic.width * k, ih = ic.height * k;
     ctx.globalAlpha = lock ? 0.45 : st === 'poor' && !l ? 0.55 : 1;
     blit(ic, Math.round(x - iw / 2), Math.round(y - ih / 2), iw, ih);
@@ -818,6 +818,7 @@ function drawInfo(n, st, y0, y1) {
   if (x < 4) x = clamp(q.x - w / 2, 4, W - w - 4);
   let y = clamp(q.y - Math.round(h / 2), y0 + 22, y1 - h - 4);
   if (x === clamp(q.x - w / 2, 4, W - w - 4)) y = q.y + hn + 12 + h < y1 ? q.y + hn + 12 : q.y - hn - 12 - h;
+  y = clamp(y, y0 + 22, y1 - h - 4);
   x = Math.round(x);
   y = Math.round(y);
   // the box: near black, a frame and a line under the head in the node's colour
