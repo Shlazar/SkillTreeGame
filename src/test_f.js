@@ -18,6 +18,7 @@ Object.assign(window.__sr, {
         active: active.map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz, bx: r.bx, by: r.by,
           age: r.age, T: r.T, dmg: r.dmg, R: r.R, burnTime: r.burnTime, burnDamage: r.burnDamage, position: rocketAt(r) })) },
       hellfire: { enabled: !!G.up.hellfire, range: HWC.hellfire.range,
+        count: G.up.hellfireCount,
         damage: HWC.hellfire.damage * G.up.hellfireDamage, reload: G.up.hellfireReload,
         blastRadius: HWC.hellfire.radius * G.up.hellfireBlast, salvos: f.salvos, shots: f.shots,
         inFlight: missiles.length, cooldown: Math.max(0, f.next - clock), ready: !!G.up.hellfire && clock >= f.next,

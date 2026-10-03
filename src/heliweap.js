@@ -93,10 +93,10 @@ function updateHeliWeapons(dt) {
   updateHellfire(dt);
 }
 // Walls join this priority list in T6.3. Within a priority, current hp wins, then distance.
-function hellfireTarget(h) {
+function hellfireTarget(h, excluded = null) {
   let best = null, bestRank = Infinity, bestHp = -Infinity, nearest = Infinity;
   queryEll(h.x, h.y, HWC.hellfire.range, (z, d) => {
-    if (z.gone || z.gate && z.still) return;
+    if (z.gone || z.gate && z.still || excluded && excluded.has(z)) return;
     const rank = z.big ? 0 : z.gold ? 1 : 2;
     if (rank < bestRank || rank === bestRank && (z.hp > bestHp || z.hp === bestHp && d < nearest)) {
       best = { z, priority: rank === 0 ? 'brute' : rank === 1 ? 'gold' : 'hp' };
@@ -107,30 +107,40 @@ function hellfireTarget(h) {
   });
   return best;
 }
+function launchHellfire(h, target, side, now) {
+  const state = heliWeaponState().hellfire, c = HWC.hellfire;
+  const z = target.z, snapshot = { x: z.x, y: z.y, hp: z.hp, type: z.type, priority: target.priority, t: now };
+  const [ox, oy] = turnXY(h.hd, side * c.mountX, c.mountY);
+  const r = { kind: 'hellfire', source: 'hellfire', h, tgt: z,
+    sx: h.x + ox, sy: h.y + oy, sz: h.alt + 1, bx: z.x, by: z.y,
+    age: 0, T: c.travel, arc: c.arc, curve: side * c.curve,
+    dmg: c.damage * G.up.hellfireDamage, R: c.radius * G.up.hellfireBlast,
+    priority: target.priority, targetSnapshot: snapshot, player: true };
+  // The gun leaves this target to the incoming missile; the blast releases the same reservation.
+  z.pending += r.dmg;
+  G.rounds.push(r);
+  state.shots++;
+  if (!G.demo) { G.shots++; SFX.rocket(); }
+  return snapshot;
+}
 function updateHellfire(dt) {
   const state = heliWeaponState().hellfire, now = heliWeaponTime(), c = HWC.hellfire;
   if (!G.up.hellfire || G.result || !(mode === 'play' || G.demo)) return;
   if (now < state.next - 1e-9 || now < state.retry - 1e-9) return;
   const h = G.helis[0];
   if (!h) return;
-  const target = hellfireTarget(h);
-  if (!target) { state.retry = now + c.retry; return; }
-  const z = target.z, snapshot = { x: z.x, y: z.y, hp: z.hp, type: z.type, priority: target.priority, t: now };
-  const [ox, oy] = turnXY(h.hd, -c.mountX, c.mountY);
-  const r = { kind: 'hellfire', source: 'hellfire', h, tgt: z,
-    sx: h.x + ox, sy: h.y + oy, sz: h.alt + 1, bx: z.x, by: z.y,
-    age: 0, T: c.travel, arc: c.arc, curve: -c.curve,
-    dmg: c.damage * G.up.hellfireDamage, R: c.radius * G.up.hellfireBlast,
-    priority: target.priority, targetSnapshot: snapshot, player: true };
-  // The gun leaves this target to the incoming missile; the blast releases the same reservation.
-  z.pending += r.dmg;
-  G.rounds.push(r);
+  const first = hellfireTarget(h);
+  if (!first) { state.retry = now + c.retry; return; }
+  const targets = [first];
+  if (G.up.hellfireCount > 1) {
+    const second = hellfireTarget(h, new Set([first.z]));
+    if (second) targets.push(second);
+  }
+  // Both missiles launch together at different targets; one available target gets one missile.
+  state.lastTargets = targets.map((target, k) => launchHellfire(h, target, k ? 1 : -1, now));
   state.salvos++;
-  state.shots++;
-  state.lastTargets = [snapshot];
   state.next = now + G.up.hellfireReload;
   state.retry = 0;
-  if (!G.demo) { G.shots++; SFX.rocket(); }
 }
 // The ground path bends sideways while the height makes its own small climb. A moving live target
 // updates the endpoint; after its death the missile finishes at the last known position.
