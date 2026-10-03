@@ -8,7 +8,10 @@ const HWC = {
   // Flight seconds, blast radius/damage, arc height, smoke lifetime and hot streak spacing (proposal)
   rocket: { travel: 0.25, radius: 16, damage: 6, arc: 12, smokeLife: [0.4, 0.6], streakStep: 0.005 },
   // Ground range, launch/retry seconds, spread/mount px, flash seconds/glow and burn DPS (proposal)
-  pod: { range: 180, gap: 0.08, retry: 0.25, spread: 8, mountX: 11, mountY: -9, flash: 0.07, flashRadius: 8, burnDps: 2 }
+  pod: { range: 180, gap: 0.08, retry: 0.25, spread: 8, mountX: 11, mountY: -9, flash: 0.07, flashRadius: 8, burnDps: 2 },
+  // Ground range/damage/radius, flight/arc/curve, retry seconds, mount px and trail timing (proposal)
+  hellfire: { range: 220, damage: 18, radius: 30, travel: 0.8, arc: 28, curve: 18,
+    retry: 0.25, mountX: 8, mountY: -8, smokeLife: [0.4, 0.6], streakStep: 0.015 }
 };
 // Lazy run state also works behind the title: a new G starts fresh counters without touching SAVE.
 // first/last/maxGap are game seconds since departure; shots includes ordinary bullets.
@@ -20,7 +23,9 @@ function heliWeaponState() {
     forced: !G.demo && G.up.rocketChance > 0 && !SAVE.flags.rocketShown,
     impacts: 0, kills: 0, lastImpact: null,
     pods: { next: G.up.podReload, retry: 0, salvos: 0, shots: 0, queue: [],
-      lastTarget: null, impacts: 0, kills: 0, lastImpact: null }
+      lastTarget: null, impacts: 0, kills: 0, lastImpact: null },
+    hellfire: { next: G.up.hellfireReload, retry: 0, salvos: 0, shots: 0,
+      impacts: 0, kills: 0, lastTargets: [], lastImpact: null }
   });
   return HW;
 }
@@ -54,7 +59,7 @@ function launchPod(q) {
   if (!G.demo) { G.shots++; SFX.rocket(); }
 }
 // Automatic pods have their own range and reload: Gun Range affects only the nose gun.
-function updateHeliWeapons(dt) {
+function updatePods(dt) {
   const p = heliWeaponState().pods, now = heliWeaponTime(), c = HWC.pod;
   if (!G.up.pods || G.result || !(mode === 'play' || G.demo)) {
     p.queue.length = 0;
@@ -81,6 +86,106 @@ function updateHeliWeapons(dt) {
     if (k === 0) launchPod(q);
     else p.queue.push(q);
   }
+}
+// Separate update paths let either automatic weapon work when the other is unowned.
+function updateHeliWeapons(dt) {
+  updatePods(dt);
+  updateHellfire(dt);
+}
+// Walls join this priority list in T6.3. Within a priority, current hp wins, then distance.
+function hellfireTarget(h) {
+  let best = null, bestRank = Infinity, bestHp = -Infinity, nearest = Infinity;
+  queryEll(h.x, h.y, HWC.hellfire.range, (z, d) => {
+    if (z.gone || z.gate && z.still) return;
+    const rank = z.big ? 0 : z.gold ? 1 : 2;
+    if (rank < bestRank || rank === bestRank && (z.hp > bestHp || z.hp === bestHp && d < nearest)) {
+      best = { z, priority: rank === 0 ? 'brute' : rank === 1 ? 'gold' : 'hp' };
+      bestRank = rank;
+      bestHp = z.hp;
+      nearest = d;
+    }
+  });
+  return best;
+}
+function updateHellfire(dt) {
+  const state = heliWeaponState().hellfire, now = heliWeaponTime(), c = HWC.hellfire;
+  if (!G.up.hellfire || G.result || !(mode === 'play' || G.demo)) return;
+  if (now < state.next - 1e-9 || now < state.retry - 1e-9) return;
+  const h = G.helis[0];
+  if (!h) return;
+  const target = hellfireTarget(h);
+  if (!target) { state.retry = now + c.retry; return; }
+  const z = target.z, snapshot = { x: z.x, y: z.y, hp: z.hp, type: z.type, priority: target.priority, t: now };
+  const [ox, oy] = turnXY(h.hd, -c.mountX, c.mountY);
+  const r = { kind: 'hellfire', source: 'hellfire', h, tgt: z,
+    sx: h.x + ox, sy: h.y + oy, sz: h.alt + 1, bx: z.x, by: z.y,
+    age: 0, T: c.travel, arc: c.arc, curve: -c.curve,
+    dmg: c.damage * G.up.hellfireDamage, R: c.radius * G.up.hellfireBlast,
+    priority: target.priority, targetSnapshot: snapshot, player: true };
+  // The gun leaves this target to the incoming missile; the blast releases the same reservation.
+  z.pending += r.dmg;
+  G.rounds.push(r);
+  state.salvos++;
+  state.shots++;
+  state.lastTargets = [snapshot];
+  state.next = now + G.up.hellfireReload;
+  state.retry = 0;
+  if (!G.demo) { G.shots++; SFX.rocket(); }
+}
+// The ground path bends sideways while the height makes its own small climb. A moving live target
+// updates the endpoint; after its death the missile finishes at the last known position.
+function hellfireAt(r, age = r.age) {
+  const u = clamp(age / r.T, 0, 1), bend = Math.sin(u * Math.PI), a = Math.atan2((r.by - r.sy) / FORE, r.bx - r.sx);
+  return [lerp(r.sx, r.bx, u) - Math.sin(a) * bend * r.curve,
+    lerp(r.sy, r.by, u) + Math.cos(a) * bend * r.curve * FORE,
+    lerp(r.sz, 0, u) + bend * r.arc];
+}
+function updateHellfireRound(r, dt) {
+  if (r.tgt && !r.tgt.dead && !r.tgt.gone) { r.bx = r.tgt.x; r.by = r.tgt.y; }
+  const [x, y, z] = hellfireAt(r), life = rnd(...HWC.hellfire.smokeLife);
+  part({ x, y, z, vx: rnd(-3, 3), vy: rnd(-2, 2), vz: rnd(1, 4), g: 0,
+    life, max: life, s: 2, grow: 4, drag: 1.2, smoke: true,
+    c: pick(['rgba(228,226,222,0.65)', 'rgba(198,198,194,0.55)']) });
+}
+function drawHellfire(r) {
+  const [x, y, z] = hellfireAt(r), px = Math.round(x), py = Math.round(y - z);
+  let hx = px, hy = py;
+  for (let k = 1; k <= 6; k++) {
+    const [bx, by, bz] = hellfireAt(r, Math.max(0, r.age - k * HWC.hellfire.streakStep));
+    const tx = Math.round(bx), ty = Math.round(by - bz);
+    ctx.globalAlpha = 1 - k / 7;
+    pl(ctx, hx, hy, tx, ty, k < 3 ? '#ffd27a' : '#c9772f');
+    hx = tx;
+    hy = ty;
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = thermal ? '#ffffff' : '#fff6e0';
+  ctx.fillRect(px - 1, py - 1, 3, 2);
+  light(px, py, 12, '#ffd27a', 0.8);
+  ctx.globalAlpha = 1;
+}
+function hellfireImpact(r) {
+  const state = heliWeaponState().hellfire, x = r.bx, y = r.by;
+  if (r.tgt) r.tgt.pending = Math.max(0, r.tgt.pending - r.dmg);
+  let hits = 0, killed = 0;
+  queryEll(x, y, r.R, (z, d) => {
+    if (z.gone || z.gate && z.still) return;
+    hits++;
+    if (z.hp <= r.dmg) { kill(z, 'he', x, y, d); killed++; }
+    else {
+      JUICE.from = [x, y];
+      hitZombie(z, r.dmg, 'boom');
+      JUICE.from = null;
+    }
+  });
+  state.impacts++;
+  state.kills += killed;
+  state.lastImpact = { x, y, radius: r.R, damage: r.dmg, hits, kills: killed, t: heliWeaponTime() };
+  if (hits && r.player && !G.demo) { G.hits++; G.hitT = 0.12; }
+  // STYLE's big-blast recipe supplies the hot core, dust ring, chunks, smoke column and crater.
+  juiceBoom(x, y, false);
+  addBoom(x, y - 2, 24, 8, 0.9, 11);
+  if (!G.demo) { addShake(0.45); hitStop(0.04, 0.3); SFX.boom(); }
 }
 // Called for every nose-gun shot. True means a rocket replaced the ordinary bullet.
 function heliRocketShot(h, z) {

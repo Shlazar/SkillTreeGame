@@ -688,6 +688,7 @@ function noseXY(h) {
 // Ordinary bullets have no tracer. Rockets and the dormant 105 shells are drawn in flight.
 function drawHeliRound(r) {
   if (r.kind === 'rocket') drawRocket(r);
+  else if (r.kind === 'hellfire') drawHellfire(r);
   else if (r.kind === 'he') drawHeShell(r);
 }
 // A 105 shell on its way: up and over from the heli's side to the spot, a bright head, a smoke

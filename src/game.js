@@ -629,11 +629,13 @@ function updateRounds(dt) {
     const r = rs[i];
     r.age += dt;
     if (r.kind === 'rocket') updateRocket(r, dt);
+    else if (r.kind === 'hellfire') updateHellfireRound(r, dt);
     if (r.age < r.T) continue;
     rs[i] = rs[rs.length - 1];
     rs.pop();
     if (r.kind === 'he') explode(r.bx, r.by, r.player);
     else if (r.kind === 'rocket') rocketImpact(r);
+    else if (r.kind === 'hellfire') hellfireImpact(r);
     else mgImpact(r);
   }
 }

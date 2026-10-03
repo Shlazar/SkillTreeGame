@@ -3,8 +3,9 @@ Object.assign(window.__sr, {
   // Report only implemented unit systems; later weapons stay neutral until their own tasks.
   units: () => {
     if (!G) return null;
-    const p = heliWeaponState().pods, clock = heliWeaponTime();
+    const weapons = heliWeaponState(), p = weapons.pods, f = weapons.hellfire, clock = heliWeaponTime();
     const active = G.rounds.filter((r) => r.kind === 'rocket' && r.source === 'pods');
+    const missiles = G.rounds.filter((r) => r.kind === 'hellfire');
     return {
       heli: { count: G.helis.length, damage: G.up.dmg, rate: G.up.rate, range: hRange(), winch: !!G.up.winch },
       rockets: { chance: G.up.rocketChance || 0, enabled: !!G.up.rocketChance },
@@ -16,7 +17,17 @@ Object.assign(window.__sr, {
         lastImpact: p.lastImpact ? { ...p.lastImpact } : null,
         active: active.map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz, bx: r.bx, by: r.by,
           age: r.age, T: r.T, dmg: r.dmg, R: r.R, burnTime: r.burnTime, burnDamage: r.burnDamage, position: rocketAt(r) })) },
-      hellfire: null, planes: [], cars: [], gadgets: []
+      hellfire: { enabled: !!G.up.hellfire, range: HWC.hellfire.range,
+        damage: HWC.hellfire.damage * G.up.hellfireDamage, reload: G.up.hellfireReload,
+        blastRadius: HWC.hellfire.radius * G.up.hellfireBlast, salvos: f.salvos, shots: f.shots,
+        inFlight: missiles.length, cooldown: Math.max(0, f.next - clock), ready: !!G.up.hellfire && clock >= f.next,
+        impacts: f.impacts, kills: f.kills,
+        lastTargets: f.lastTargets.map((t) => ({ x: t.x, y: t.y, hp: t.hp, type: t.type, priority: t.priority, t: t.t })),
+        lastImpact: f.lastImpact ? { ...f.lastImpact } : null,
+        active: missiles.map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz, bx: r.bx, by: r.by,
+          age: r.age, T: r.T, dmg: r.dmg, R: r.R, priority: r.priority, position: hellfireAt(r),
+          targetSnapshot: { ...r.targetSnapshot } })) },
+      planes: [], cars: [], gadgets: []
     };
   },
   // Copy the burning ground and its run counters without exposing mutable patches or G.

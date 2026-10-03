@@ -219,6 +219,8 @@ function treeUp(L, up) {
     pods: L('rocketPods') > 0, podDamage: UP.podDamage(L('podDamage')),
     podReload: UP.podReload(L('podReload')), podSalvo: UP.podSalvo(L('podSalvo')),
     napalmDuration: UP.napalm(L('napalm')),
+    hellfire: L('hellfire') > 0, hellfireDamage: UP.hellfireDamage(L('hellfireDamage')),
+    hellfireReload: UP.hellfireReload(L('hellfireReload')), hellfireBlast: UP.hellfireBlast(L('hellfireBlast')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
     ramTime: 0, ramCharge: 0, power: false,
