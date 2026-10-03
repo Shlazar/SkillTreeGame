@@ -482,6 +482,7 @@ function render() {
     const hs = st.house;
     if (Math.abs(hs.y - G.camY - H / 2) < H) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });
   }
+  drawLoot();
   drawTexts();
   drawRamCount();
   ctx.restore();

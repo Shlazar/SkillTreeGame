@@ -189,6 +189,7 @@ function newGame(demo, from) {
     G.maxKm = DK();
     buildSafeZone();
     buildLine(at);
+    rollLoot();
   }
   placeCamera();
   scatter(at);
@@ -1744,6 +1745,7 @@ function step(dt) {
   updateBodies(dt);
   updateFireSpots(dt);
   updateSkills(dt);
+  if (!G.demo) updateLoot(dt);
   updateFX(dt);
   // every 3 s the marks on the ground fade a little
   G.decalT += dt;
