@@ -90,12 +90,8 @@ function tutEvent(name, d) {
     sos_near: () => tip('p_lift', 'HOVER OVER THEM TO LIFT THEM UP.', P(d)),
     golden_seen: () => tip('p_golden', 'GOLDEN ZOMBIE! CATCH IT FOR ' + goldenPay(d) + ' SCRAP.', P(d.z || d)),
     chain_first: () => tip('p_chain', 'CHAIN SHOT! A KILL JUMPS TO MORE ZOMBIES.', null),
-    station_ahead: () => bannerOnce('b_ahead', (d.name || (G.station && G.station.name) || 'STATION') + ' AHEAD', 'YOUR TOWERS ARE READY', U.blue),
-    hold_start: () => {
-      if (!d.first) return;
-      bannerOnce('b_hold', 'HOLD THE STATION', (d.time || d.dur || (CFG.hold && CFG.hold.time) || 40) + ' SECONDS. SAVE THE SURVIVORS.', U.green);
-      tip('p_nest', 'YOUR MG NEST SHOOTS BY ITSELF.', null);
-    },
+    // (station.js shows the AHEAD and HOLD banners itself)
+    hold_start: () => { if (d.first) tip('p_nest', 'YOUR MG NEST SHOOTS BY ITSELF.', null); },
     survivor_grabbed: () => tip('p_grab', 'SHOOT THE ZOMBIE TO SAVE THEM.', P(d.x != null ? d : G.people.find((p) => p.st === 'grab'))),
     station_held: () => {
       if (d.first && d.id === STATIONS[0].id) TUT.heldFirst = true;
@@ -103,6 +99,12 @@ function tutEvent(name, d) {
     }
   }[name];
   if (ev) ev();
+}
+// how many survivors wait at station d (the first hold's crowd, else what is left in its house)
+function waiting(d) {
+  if (!SAVE.held.includes(d.id)) return d.first.people;
+  const h = SAVE.house[d.id];
+  return typeof h === 'number' ? h : HOLD_LATER.people;
 }
 // what a golden zombie pays (from the event, else from the game's numbers)
 function goldenPay(d) {
@@ -114,7 +116,8 @@ function tutKill(z, cause, free) {
   if (!scoring() || free) return;
   if (z.st === 1) tutCount('track');
   if (z.st === 2) tutCount('climber');
-  if (cause !== 'gun' && cause !== 'ram' && cause !== 'train') tutCount('shoot');
+  // (only your own shots count: not the flatcar gun, the MG nests, the ram or the train)
+  if (cause !== 'gun' && cause !== 'nest' && cause !== 'ram' && cause !== 'train') tutCount('shoot');
 }
 
 // ---------- each frame
@@ -208,8 +211,9 @@ function tutLook(dt) {
   });
   // scrap piles: from 11 s into run 2 (once there is loot on the line)
   if (runs >= 2 && G.run > 11 && G.loot) task('t_piles', 'GRAB 3 SCRAP PILES', 3, 'pile');
-  if (k >= 0.55) radioOnce('r_farm', STATIONS[0].name, 'WE SEE YOUR SMOKE! ' + STATIONS[0].people + ' OF US ARE WAITING.');
-  if (k >= 1.5 && STATIONS[1]) radioOnce('r_mill', STATIONS[1].name, STATIONS[1].people + ' OF US HERE. PLEASE HURRY!');
+  const F = STATIONS[0], M = STATIONS[1];
+  if (k >= 0.55 && waiting(F)) radioOnce('r_farm', F.name, 'WE SEE YOUR SMOKE! ' + waiting(F) + ' OF US ARE WAITING.');
+  if (k >= 1.5 && M && waiting(M)) radioOnce('r_mill', M.name, waiting(M) + ' OF US HERE. PLEASE HURRY!');
   // the dead in view: a crowd on the rails, one on the train, a runner, a brute
   let rail = 0, climb = null, runner = null, brute = null, railBrute = null;
   for (const z of G.zombies) {

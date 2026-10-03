@@ -224,7 +224,7 @@ function updateSkills(dt) {
       G.goldSeen = true;
       floatText(z.x, z.y - z.S.h - 4, 'GOLD! ' + SK.gold.value + ' SCRAP', U.gold);
       SFX.coin();
-      skillEvent('golden_seen');
+      skillEvent('golden_seen', { z, value: SK.gold.value });
     }
   }
 }
