@@ -4,15 +4,20 @@
 // (where the next run starts, and START RUN). The title demo keeps running behind it, dimmed.
 
 // ---------- the save
-const SAVE_KEY = 'sky-reaper-save-1', SAVE_V = 1;
-// v = version. scrap, surv = money. nodes = skill tree levels by node id. towers, house = what is
+const SAVE_KEY = 'sky-reaper-save-1', SAVE_V = 2;
+// v = version. scrap, surv, gold = money. leg = next ride (13 means the demo is complete).
+// legs keeps wins, three stars and paid gold item ids by leg. rescues are lifted survivors;
+// rescueDue are missed survivors waiting to wave again. chest = none/locked/opened (0/1/2).
+// hangar holds the two plane slot ids, or null for an empty slot. nodes = skill tree levels by id.
+// The old route fields stay until the leg route replaces every reader. towers, house = what is
 // built at each station, and the survivors waiting in each station house. reached = stations the
 // train has stopped at (a run can start there), held = stations held at least once. best = the
 // furthest km. runs = runs started. start = where the next run starts. seen = tutorial prompts
 // already shown. flags = one-off things done.
 function freshSave() {
   return {
-    v: SAVE_V, scrap: 0, surv: 0, nodes: {}, towers: {}, house: {}, reached: [], held: [], best: 0, runs: 0,
+    v: SAVE_V, scrap: 0, surv: 0, gold: 0, leg: 1, legs: {}, rescues: [], rescueDue: [], chest: 0,
+    hangar: [null, null], nodes: {}, towers: {}, house: {}, reached: [], held: [], best: 0, runs: 0,
     start: 'depot', seen: {}, flags: {}
   };
 }
@@ -26,25 +31,58 @@ function loadSave() {
   } catch (e) {
     o = null;
   }
-  if (!o || typeof o !== 'object' || o.v !== SAVE_V) return false;
+  if (!o || typeof o !== 'object' || Array.isArray(o) || o.v !== SAVE_V) return false;
   const num = (v) => (typeof v === 'number' && isFinite(v) && v > 0 ? v : 0);
   const obj = (m) => (m && typeof m === 'object' && !Array.isArray(m) ? m : {});
+  const integer = (v, min, max, fallback) => typeof v === 'number' && isFinite(v) ? clamp(Math.floor(v), min, max) : fallback;
+  const money = (v) => integer(v, 0, Number.MAX_SAFE_INTEGER, 0);
+  // Null-prototype maps safely keep arbitrary stable ids, including keys such as __proto__.
+  const boolMap = (value, trueOnly = false) => {
+    const map = Object.create(null);
+    for (const [id, flag] of Object.entries(obj(value))) {
+      if (id && typeof flag === 'boolean' && (!trueOnly || flag)) map[id] = flag;
+    }
+    return map;
+  };
+  const rescueIds = (a) => Array.isArray(a) ? [...new Set(a.filter((id) => typeof id === 'string' && id.length > 0))] : [];
   const ids = (a) => (Array.isArray(a) ? a.filter((id, i) => STATIONS.some((d) => d.id === id) && a.indexOf(id) === i) : []);
-  SAVE.scrap = Math.floor(num(o.scrap));
-  SAVE.surv = Math.floor(num(o.surv));
+  SAVE.scrap = money(o.scrap);
+  SAVE.surv = money(o.surv);
+  SAVE.gold = money(o.gold);
+  SAVE.leg = integer(o.leg, 1, 13, 1);
+  for (const [id, value] of Object.entries(obj(o.legs))) {
+    if (!/^(?:[1-9]|1[0-2])$/.test(id) || !value || typeof value !== 'object' || Array.isArray(value)) continue;
+    SAVE.legs[id] = {
+      won: value.won === true,
+      stars: [0, 1, 2].map((i) => Array.isArray(value.stars) && value.stars[i] === true),
+      paid: boolMap(value.paid, true)
+    };
+  }
+  SAVE.rescues = rescueIds(o.rescues);
+  SAVE.rescueDue = rescueIds(o.rescueDue).filter((id) => !SAVE.rescues.includes(id));
+  SAVE.chest = integer(o.chest, 0, 2, 0);
+  const planes = Array.isArray(o.hangar) ? o.hangar : [];
+  for (let i = 0; i < SAVE.hangar.length; i++) {
+    const id = planes[i];
+    if (['a10', 'f4', 'b52'].includes(id) && !SAVE.hangar.includes(id)) SAVE.hangar[i] = id;
+  }
   SAVE.best = num(o.best);
-  SAVE.runs = Math.floor(num(o.runs));
+  SAVE.runs = money(o.runs);
   SAVE.reached = ids(o.reached);
   SAVE.held = ids(o.held);
   // a station held is a station reached
   for (const id of SAVE.held) if (!SAVE.reached.includes(id)) SAVE.reached.push(id);
   SAVE.start = typeof o.start === 'string' && stopDef(o.start) ? o.start : 'depot';
   // skill tree levels: known nodes only, never above their top level
-  for (const [k, v] of Object.entries(obj(o.nodes))) if (num(v) && NODE[k]) SAVE.nodes[k] = Math.min(maxLv(NODE[k]), Math.floor(v));
+  for (const [k, v] of Object.entries(obj(o.nodes))) {
+    if (!Object.prototype.hasOwnProperty.call(NODE, k)) continue;
+    const l = integer(v, 0, maxLv(NODE[k]), 0);
+    if (l) SAVE.nodes[k] = l;
+  }
   SAVE.towers = obj(o.towers);
   SAVE.house = obj(o.house);
-  SAVE.seen = obj(o.seen);
-  SAVE.flags = obj(o.flags);
+  SAVE.seen = boolMap(o.seen);
+  SAVE.flags = boolMap(o.flags);
   return true;
 }
 function saveSave() {
@@ -59,7 +97,10 @@ function newSave() {
   resetTree();
 }
 // true once there is something to lose (the title then offers CONTINUE and NEW GAME)
-const hasProgress = () => SAVE.runs > 0 || SAVE.scrap > 0 || SAVE.surv > 0 || Object.keys(SAVE.nodes).length > 0;
+const hasProgress = () => SAVE.runs > 0 || SAVE.scrap > 0 || SAVE.surv > 0 || SAVE.gold > 0 || SAVE.leg > 1 ||
+  Object.keys(SAVE.nodes).some((id) => id !== 'root' && SAVE.nodes[id] > 0) ||
+  Object.values(SAVE.legs).some((leg) => leg.won || leg.stars.some(Boolean) || Object.values(leg.paid).some(Boolean)) ||
+  SAVE.rescues.length > 0 || SAVE.rescueDue.length > 0 || SAVE.chest > 0 || SAVE.hangar.some(Boolean);
 // the level of skill tree node id (0 = not bought)
 const lv = (id) => SAVE.nodes[id] | 0;
 // The starts on offer: the Depot, then every station reached, up the line.

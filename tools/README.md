@@ -271,7 +271,7 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 
 ### 5.11 Save and skill tree (src/main.js, src/test_t.js)
 
-- `give(scrap, surv)`: add scrap and survivors to the save (saved). Returns `{scrap, surv}`. (BUILD_PLAN T1.1 adds `gold` as a third argument.)
+- `give(scrap, surv, gold)`: add the three currencies to the save (saved). Returns `{scrap, surv, gold}`. Omitted amounts add zero.
 - `reach(id, held)`: mark station id reached (and held if `held`). Only for ids in `STATIONS` (`'farm'`, `'mill'`).
 - `save()`: a deep copy of the save.
 - `load()`: read the save again from localStorage.

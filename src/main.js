@@ -368,13 +368,15 @@ function boot() {
     bot: (on) => { G.bot = !!on; if (!on) G.trigger = false; },
     pause: (p) => setPaused(!!p),
     hold: (h) => { hold = !!h; },
-    // the save: give(scrap, surv) adds money, reach(id, held) marks a station reached (and held),
+    // the save: give(scrap, surv, gold) adds money, reach(id, held) marks a station reached (and held),
     // save() is a copy of it, load() reads it again from storage, reset() wipes it (to the title)
-    give: (scrap, surv) => {
-      SAVE.scrap = Math.max(0, SAVE.scrap + (scrap | 0));
-      SAVE.surv = Math.max(0, SAVE.surv + (surv | 0));
+    give: (scrap, surv, gold) => {
+      for (const [key, value] of [['scrap', scrap], ['surv', surv], ['gold', gold]]) {
+        const amount = typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0;
+        SAVE[key] = clamp(SAVE[key] + amount, 0, Number.MAX_SAFE_INTEGER);
+      }
       saveSave();
-      return { scrap: SAVE.scrap, surv: SAVE.surv };
+      return { scrap: SAVE.scrap, surv: SAVE.surv, gold: SAVE.gold };
     },
     reach: (id, held) => {
       if (!STATIONS.some((d) => d.id === id)) return;
