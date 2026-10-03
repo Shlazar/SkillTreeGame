@@ -9,12 +9,11 @@
 // tasks / taskQ = the task lines shown and waiting; tip / tipQ = the tip shown and waiting; banQ =
 // banners waiting; labels = words over a zombie (BRUTE!); mode = the screen last frame (for the
 // fades and for what a new run resets); fade = the black over the screen (1 = all black); heR = the
-// 105mm's reload last frame; heldFirst = this run held a station for the
-// first time; cardAt / card = the end-of-build card (when it opens, and its numbers); after = Depot
+// 105mm's reload last frame; cardAt / card = the end-of-build card (when it opens, and its numbers); after = Depot
 // prompts to mark seen when the next run starts
 const TUT = {
   tasks: [], taskQ: [], tip: null, tipQ: [], banQ: [], labels: [], mode: '', fade: 1, fadeK: 1,
-  heR: 0, heldFirst: false, cardAt: 0, card: null, sum: [], after: new Set()
+  heR: 0, cardAt: 0, card: null, sum: [], after: new Set()
 };
 const seen = (k) => !!SAVE.seen[k];
 // Mark prompt k as shown. True the first time.
@@ -91,22 +90,9 @@ function tutEvent(name, d) {
     sos_seen: () => { if (!d.winch) tip('p_sos', 'A SURVIVOR! YOU NEED THE WINCH.', P(d)); },
     sos_near: () => tip('p_lift', 'KEEP A HELI OVER THEM TO LIFT THEM UP.', P(d)),
     golden_seen: () => tip('p_golden', 'GOLDEN ZOMBIE! CATCH IT FOR ' + goldenPay(d) + ' SCRAP.', P(d.z || d)),
-    chain_first: () => tip('p_chain', 'CHAIN SHOT! A KILL JUMPS TO MORE ZOMBIES.', null),
-    // (station.js shows the AHEAD and HOLD banners itself)
-    hold_start: () => { if (d.first) tip('p_nest', 'YOUR MG NEST SHOOTS BY ITSELF.', null); },
-    survivor_grabbed: () => tip('p_grab', 'RIGHT CLICK THE ZOMBIE TO SAVE THEM.', P(d.x != null ? d : G.people.find((p) => p.st === 'grab'))),
-    station_held: () => {
-      if (d.first && d.id === STATIONS[0].id) TUT.heldFirst = true;
-      if (d.first && d.id === 'mill' && !seen('endcard')) TUT.cardAt = realT + 1.6;
-    }
+    chain_first: () => tip('p_chain', 'CHAIN SHOT! A KILL JUMPS TO MORE ZOMBIES.', null)
   }[name];
   if (ev) ev();
-}
-// how many survivors wait at station d (the first hold's crowd, else what is left in its house)
-function waiting(d) {
-  if (!SAVE.held.includes(d.id)) return d.first.people;
-  const h = SAVE.house[d.id];
-  return typeof h === 'number' ? h : HOLD_LATER.people;
 }
 // what a golden zombie pays (from the event, else from the game's numbers)
 function goldenPay(d) {
@@ -134,7 +120,7 @@ function tutFrame(dt) {
     TUT.mode = m;
   }
   TUT.fade = Math.max(0, TUT.fade - dt / 0.25 * TUT.fadeK);
-  // the end-of-build card opens a moment after Mill Town is held
+  // The end card opens after its scheduled story moment.
   if (TUT.cardAt && realT >= TUT.cardAt) {
     TUT.cardAt = 0;
     if (tutLive() && see('endcard')) {
@@ -151,7 +137,6 @@ function tutFrame(dt) {
 function tutNewRun() {
   TUT.tasks.length = TUT.taskQ.length = TUT.tipQ.length = TUT.banQ.length = TUT.labels.length = 0;
   TUT.tip = null;
-  TUT.heldFirst = false;
   TUT.card = null;
   TUT.cardAt = 0;
   if (G) TUT.heR = G.heReload;
@@ -207,9 +192,6 @@ function tutLook(dt) {
   });
   // scrap piles: from 11 s into run 2 (once there is loot on the line)
   if (runs >= 2 && G.run > 11 && G.loot) task('t_piles', 'GRAB 3 SCRAP PILES', 3, 'pile');
-  const F = STATIONS[0], M = STATIONS[1];
-  if (k >= 0.55 && waiting(F)) radioOnce('r_farm', F.name, 'WE SEE YOUR SMOKE! ' + waiting(F) + ' OF US ARE WAITING.');
-  if (k >= 1.5 && M && waiting(M)) radioOnce('r_mill', M.name, waiting(M) + ' OF US HERE. PLEASE HURRY!');
   // the dead in view: a crowd on the rails, one on the train, a runner, a brute
   let rail = 0, climb = null, runner = null, brute = null, railBrute = null;
   for (const z of G.zombies) {
@@ -336,13 +318,6 @@ function tutHint() {
   if (lv('ram') && !seen('h_ram')) {
     TUT.after.add('h_ram');
     return ['E: TURBO RAM. SAVE IT FOR THE DEAD WALL.', U.gold];
-  }
-  if (startsOpen().length > 1 && !seen('h_start')) {
-    if (SAVE.start !== 'depot') see('h_start');
-    else {
-      TUT.after.add('h_start');
-      return ['START AT ' + STATIONS[0].name + ': YOUR TOWERS FIGHT FIRST.', U.gold];
-    }
   }
   return null;
 }
@@ -477,13 +452,13 @@ function drawEndCard() {
     toTitle();
   }
 }
-// The summary's lines for a lesson from this run (after the first station held), worked out as
+// The summary's lines for a lesson from this run, worked out as
 // the summary opens.
 function tutSumLines() {
   return TUT.sum;
 }
 function tutSumOpen() {
-  TUT.sum = TUT.heldFirst && see('s_held') ? [['NEW: SURVIVORS. THEY BUY THE BIGGEST UNLOCKS.', U.green]] : [];
+  TUT.sum = [];
 }
 
 // ---------- the fade between screens

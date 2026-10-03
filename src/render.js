@@ -348,7 +348,6 @@ function render() {
   drawHeliFx();
   drawCannonFx();
   drawZaps();
-  drawTowerFx();
   drawJuiceTop();
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;

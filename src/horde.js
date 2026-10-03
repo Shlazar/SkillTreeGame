@@ -365,13 +365,11 @@ function updateStreams(dt, want) {
   }
 }
 // More of the dead come as the train goes: a stream every few seconds, a wave of streams from all
-// sides now and then, and a crowd on the rails ahead. None while the train stands at a station
-// (its own waves come then) and no crowds on the rails just before a Dead Wall.
+// sides now and then, and a crowd on the rails ahead. No rail crowds just before a Dead Wall.
 function spawn(dt) {
-  const st = G.station, stopped = st && st.state === 'hold', h = G.demo ? DEMO_HD : horde(DK());
+  const h = G.demo ? DEMO_HD : horde(DK());
   if (G.demo && !h.want) Object.assign(DEMO_HD, horde(0.9), { want: 420, run: 0.1, brute: 0.02 });
   updateStreams(dt, h.want);
-  if (stopped) return;
   G.spawnCd -= dt;
   if (G.spawnCd <= 0 && G.zombies.length < h.want) {
     const r = Math.random();

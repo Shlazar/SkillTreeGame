@@ -1,6 +1,6 @@
 // game.js - the game: escort the last train. Your gunship helicopters (helis.js) fly over a railway
-// that winds north, fighting by themselves or where you send them. The line is fixed: the train leaves the Depot (at y = 0), stops at the stations on the
-// way to take on survivors, and the safe zone wall stands at the far end. The dead walk in from both
+// that winds north, fighting by themselves or where you send them. The line is fixed: the train
+// leaves the Depot (at y = 0), rolls through stations, and the safe zone stands at the far end. The dead walk in from both
 // sides, more of them the further the train gets; the ones ahead of the train step onto the rails,
 // and before each station a Dead Wall of them stands on the track. The engine runs them down, but
 // each one slows it and hurts it, and the dead that reach the train climb on and tear at it. The run
@@ -239,7 +239,6 @@ function endGame() {
   M.px = M.py = -1e4;
   // where the run ended (the train may roll on a little after it is lost; that does not count)
   const k = G.maxKm;
-  refillHouses();
   payBonus();
   bankRun();
   G.sum = {
@@ -1213,8 +1212,8 @@ function ride(d) {
 function step(dt) {
   G.t += dt;
   const tr = G.tr, st = G.station;
-  // the train gets back up to speed after every bump. It brakes for the station and waits there;
-  // lost, it stops; safe, it rolls on until the whole train is inside the wall, then brakes.
+  // The train gets back up to speed after every bump. Keep the braking branch for the coming legs;
+  // stations roll past for now. Lost, it stops; safe, it brakes once the whole train is inside.
   if (G.result === 'lost') tr.v = Math.max(0, tr.v - 30 * dt);
   else if (G.result === 'safe' && tr.s + TRAIN_LEN < G.goalS - 14) tr.v = Math.max(0, tr.v - 12 * dt);
   else if (st && st.state === 'braking') {
@@ -1223,8 +1222,7 @@ function step(dt) {
       tr.v = 0;
       trainStops(st);
     }
-  } else if (st && st.state === 'hold') tr.v = 0;
-  else {
+  } else {
     // the Turbo Ram: up to its top speed in 0.4 s, then back down to the cruise over 1 s (also after
     // a Ram cut short). Otherwise the train gets back up to its cruise.
     const R = CFG.ram, cr = CFG.train.cruise, up = (R.speed - cr) / R.rise, down = (R.speed - cr) / R.ease;

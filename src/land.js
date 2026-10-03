@@ -6,7 +6,7 @@
 // worked out on a coarse 4 px grid and blended between its points, so a chunk costs about 1 ms.
 // The props are few and big (landPlan): clumps of round trees with a lit top and a shadow, dense
 // woods at the far sides, hay bales on the fields, a fence or a wreck now and then, the poles.
-// Hooks: initLand (initSprites), landPlan (plan), paintLand (bakeChunk), cornAt (towers.js).
+// Hooks: initLand (initSprites), landPlan (plan), paintLand (bakeChunk), cornAt (station.js).
 
 // ---------- palette (also for the other parts: the dead should be pale with dark outlines)
 const LAND = {
@@ -48,7 +48,7 @@ const inWoods = (x, y, m) => woodsVal(x, y) > (m || 0);
 // the dirt field's direction of furrows at (x, y): 0..3 eighths of a turn
 const furrowDir = (x, y) => Math.floor(vnoise(x / 520 + 9, y / 520 - 4, 36) * 4) * Math.PI / 4;
 
-// The corn round each station (towers.js), as [s along the rails, from, to] across: true at (x, y)
+// The corn round each station (station.js), as [s along the rails, from, to] across: true at (x, y)
 // when it is in one. The dead come out of it, so it is painted flat (they stay in plain view).
 const CORN_A0 = -86, CORN_A1 = 104, CORN_U0 = 120, CORN_U1 = 200;
 function cornAt(T) {
