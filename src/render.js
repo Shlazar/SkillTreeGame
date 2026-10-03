@@ -69,11 +69,8 @@ function gather(ci0, cj0, ci1, cj1) {
   for (const p of G.people) {
     if ((p.st === 'wait' || p.st === 'run' || p.st === 'grab') && p.x > x0 && p.x < x1 && p.y > y0 && p.y < y1 + 10) DL.push(p);
   }
-  for (const z of G.zombies) {
-    if (z.dead || z.x < x0 - 10 || z.x > x1 + 10 || z.y < y0 || z.y > y1 + 24) continue;
-    DL.push(z);
-    VZ.push(z);
-  }
+  // the dead: a crowd in the open is drawn in one go (drawHorde), the rest sorted in here (horde.js)
+  gatherHorde(x0, x1, y0, y1);
   DL.sort(byK);
 }
 
@@ -87,7 +84,7 @@ function zImg(z) {
 function drawZombie(z) {
   const S = z.S;
   if (z.gold && drawGold(z)) return;
-  blit(zImg(z), Math.round(z.x - S.ax), Math.round(z.y - S.ay));
+  ctx.drawImage(zImg(z), Math.round(z.x - S.ax), Math.round(z.y - S.ay));
   if (z.big && z.hp < z.max) {
     const w = 14, x = Math.round(z.x - w / 2), y = Math.round(z.y - S.ay - 4);
     ctx.fillStyle = '#07080a';
@@ -258,11 +255,12 @@ function render() {
   }
   drawGroundLife();
   drawShellMarks();
+  drawHorde(sx, sy);
   // shadows of the dead, and of bodies in the air
   ctx.globalAlpha = thermal ? 0.2 : 0.32;
   for (const z of VZ) {
     const S = z.S, fr = S.walk[(z.anim | 0) & 3];
-    blit(z.left ? fr.sf : fr.s, Math.round(z.x - S.ax), Math.round(z.y - 1 - S.shp));
+    ctx.drawImage(fr.s, Math.round(z.x - S.ax), Math.round(z.y - 1 - S.shp));
   }
   drawTrainShadow();
   ctx.globalAlpha = 0.25;
@@ -292,6 +290,8 @@ function render() {
       ctx.globalAlpha = 1;
     } else blit(d.spr, o.x - d.ax, o.y - d.ay);
   }
+  // the dead standing in front of everything near them (horde.js)
+  drawHordeTop(sx, sy);
   // the dead behind a tree show through it, faintly
   if (TREES.length) {
     ctx.globalAlpha = thermal ? 0.6 : 0.45;
