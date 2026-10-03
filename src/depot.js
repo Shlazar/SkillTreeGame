@@ -62,8 +62,6 @@ function newSave() {
 const hasProgress = () => SAVE.runs > 0 || SAVE.scrap > 0 || SAVE.surv > 0 || Object.keys(SAVE.nodes).length > 0;
 // the level of skill tree node id (0 = not bought)
 const lv = (id) => SAVE.nodes[id] | 0;
-// Farm Stop's tree branch opens once the station has been held.
-const stationOpen = () => SAVE.held.includes(STATIONS[0].id);
 // The starts on offer: the Depot, then every station reached, up the line.
 function startsOpen() {
   return ['depot'].concat(STATIONS.filter((d) => SAVE.reached.includes(d.id)).map((d) => d.id));
@@ -86,8 +84,6 @@ function toDepot(tab) {
   paused = false;
   SHOWN.scrap = SHOWN.surv = -1;
   setTab(tab);
-  // FARM STOP comes into the skill tree once Farm Stop has been held
-  syncGiven();
 }
 // Keep the Depot on the tree until another panel is added.
 function setTab() {

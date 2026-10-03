@@ -103,8 +103,8 @@ function tutKill(z, cause, free) {
   if (!scoring() || free) return;
   if (z.st === 1) tutCount('track');
   if (z.st === 2) tutCount('climber');
-  // (only your own shots count: not the flatcar gun, the MG nests, the ram or the train)
-  if (cause !== 'gun' && cause !== 'nest' && cause !== 'ram' && cause !== 'train') tutCount('shoot');
+  // (only your own shots count: not the flatcar gun, the ram or the train)
+  if (cause !== 'gun' && cause !== 'ram' && cause !== 'train') tutCount('shoot');
 }
 
 // ---------- each frame
@@ -171,9 +171,8 @@ function tutChannels(dt) {
 // What the run shows now that has a prompt (the ones no feature sends an event for).
 function tutLook(dt) {
   const runs = SAVE.runs;
-  // the first things to learn, right after the first run's Ram taste (or a moment into a run)
-  // (the helis: select, send, select all)
-  if (G.taste ? G.ram.crack > 0 && realT - G.ram.crack > 0.6 : G.run > 1.5) {
+  // the first things to learn, a moment into a run: select and send the heli
+  if (G.run > 1.5) {
     task('t_sel', 'CLICK YOUR HELI', 1, 'select');
     task('t_attack', 'RIGHT CLICK A ZOMBIE TO ATTACK IT', 1, 'attack');
     const h = G.helis[0];
@@ -239,7 +238,7 @@ function triangle(x, y, ux, uy, col) {
 function drawTut() {
   if (mode !== 'play') return;
   drawTasks();
-  if (!G.prompt) drawTipLine();     // (the PRESS E moment keeps the screen clear)
+  drawTipLine();
   for (const l of TUT.labels) {
     const [x, y] = onScreen(l.z), u = l.t;
     ctx.globalAlpha = u > 3.6 ? (4 - u) / 0.4 : 1;
@@ -290,7 +289,7 @@ function drawTipLine() {
 // ---------- the Depot: the hint bar and the tags
 // The bottom bar's line for a lesson here, or null.
 function tutHint() {
-  const stars = NODES.filter((n) => n.star && !n.given && lv(n.id)).length;
+  const stars = NODES.filter((n) => n.star && lv(n.id)).length;
   if (!seen('h_star')) {
     // * NODES: from the first time one can be bought, until one more is bought
     if (SAVE.seen.h_starAt == null && NODES.some((n) => n.star && nodeState(n) === 'buy')) {
@@ -394,7 +393,6 @@ function quitRun() {
   if (mode !== 'play' || !G || G.demo || G.result) return;
   paused = false;
   G.result = 'quit';
-  G.prompt = null;
   G.lock = null;
   banners.length = 0;
   SFX.ramStop(0.1);

@@ -43,20 +43,16 @@ const CFG = {
   // The Turbo Ram: top speed (px/s), seconds at it, seconds to get up to it and to ease back, the
   // kill zone (px either side of the rail middle, px behind and ahead of the nose), kills to fill it
   // again, the next stop nearer than noStart px = it can't start, nearer than cut px = it ends
-  // (250 and 200 m), px the camera leads, its kills pay ×pay. taste = the first run's Ram: the walkers
-  // at the Depot gate, and its seconds. prompt = px before a Dead Wall where PRESS E! shows (once).
+  // (250 and 200 m), px the camera leads, and its kills pay ×pay.
   ram: { speed: 120, dur: 3, rise: 0.4, ease: 1, band: 16, back: 10, front: 8, charge: 250, noStart: 500, cut: 400,
-    lead: 40, pay: 2, taste: 12, tasteDur: 3, prompt: 150 },
-  // what else the tree buys: an MG nest's rounds per second, the speed of the dead on barbed wire,
-  // the seconds the winch needs over a survivor
-  nest: { rate: 4 },
-  wire: { slow: 0.4 },
+    lead: 40, pay: 2 },
+  // seconds the winch needs over a survivor
   winch: { hover: 1.5 },
   // what one level of a skill tree node adds: train HP (ARMOR), the 25mm's heat per round is
   // multiplied (COOLING), 25mm rounds per second (FAST FEED), 25mm damage (HEAVY ROUNDS), 105mm
   // reload seconds taken off (FAST RELOAD), heli px/s (FAST ROTORS), px of pickup reach
-  // (MAGNET), share of kill scrap (SCAVENGER), rounds per second (GUN SPEED, NEST SPEED)
-  up: { armor: 10, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, rotor: 25, magnet: 10, scav: 0.1, gun: 1, nest: 1 },
+  // (MAGNET), share of kill scrap (SCAVENGER), rounds per second (GUN SPEED)
+  up: { armor: 10, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, rotor: 25, magnet: 10, scav: 0.1, gun: 1 },
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 1, speed: [15, 20], value: 1, dps: 0.25 },               // walker
@@ -105,12 +101,11 @@ const UP = {
   fly: (l) => CFG.heli.speed + CFG.up.rotor * l,                     // FAST ROTORS: heli speed (px/s)
   pickup: (l) => CFG.heli.pickup + CFG.up.magnet * l,                // MAGNET: pickup reach (px)
   scav: (l) => CFG.up.scav * l,                                      // SCAVENGER: extra kill scrap
-  gun: (l) => CFG.gun.reload - CFG.gun.fast * l,                     // GUN SPEED: rail cannon reload (s)
-  nest: (l) => CFG.nest.rate + CFG.up.nest * l                       // NEST SPEED: MG nest rounds/s
+  gun: (l) => CFG.gun.reload - CFG.gun.fast * l                      // GUN SPEED: rail cannon reload (s)
 };
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
 // menus uses the plain numbers and shows off the Turbo Ram for now.
-// he, winch, ram, wire = owned; gun = the rail cannon's reload seconds (0 = none). One Viper flies.
+// he, winch, ram = owned; gun = the rail cannon's reload seconds (0 = none). One Viper flies.
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
   // (tree.js adds the newer nodes' numbers: treeUp)
@@ -119,7 +114,6 @@ function runUp(demo) {
     he: false, reload: UP.reload(0), fly: UP.fly(L('radio')), pickup: UP.pickup(L('magnet')),
     helis: 1,
     scav: UP.scav(L('scav')), winch: L('winch') > 0, gun: 0, ram: demo || L('ram') > 0,
-    nest: UP.nest(L('nestspd')), wire: L('wire') > 0,
     // The first ring (skills.js): the cow catcher, 1 golden zombie in this many (0 = none),
     // and the armor level (its plates show on the engine)
     cow: false, gold: UP.gold(L('goldz')), armor: L('armor')
@@ -167,14 +161,12 @@ function newGame(demo, from) {
     gun: newCannon(),
     // the Turbo Ram: on = running, t = seconds since it started, dur = its seconds at top speed,
     // left = kills still needed to fill it (0 = full; every run starts full), kills / pay = this Ram's,
-    // card = its card shows, taste = the first run's Ram, flash = when it got full, crack = when the
-    // taste broke it, msg = a line over its card, pop = scrap of its kills not yet shown (popT = when
-    // the last +N popped)
-    ram: { on: false, t: 0, dur: 0, left: 0, kills: 0, pay: 0, card: up.ram || !!SAVE.flags.taste, taste: false,
-      hissed: false, flash: -9, crack: -9, killT: -9, msg: null, uses: 0, total: 0, pop: 0, popT: -9 },
-    // the first run's Ram taste is still to come; the dead on the rails within 130 m ahead; the PRESS E!
-    // moment ({left: real seconds, w: the Dead Wall}); px the camera is moved by (camLead)
-    taste: !demo && !at && !SAVE.flags.taste && !up.ram, railAhead: 0, prompt: null, lead: [0, 0]
+    // card = its card shows, flash = when it got full, msg = a line over its card, pop = scrap of
+    // its kills not yet shown (popT = when the last +N popped)
+    ram: { on: false, t: 0, dur: 0, left: 0, kills: 0, pay: 0, card: up.ram,
+      hissed: false, flash: -9, killT: -9, msg: null, uses: 0, total: 0, pop: 0, popT: -9 },
+    // the dead on the rails within 130 m ahead; px the camera is moved by (camLead)
+    railAhead: 0, lead: [0, 0]
   };
   RADIO.q.length = 0;
   RADIO.cur = null;
@@ -210,13 +202,6 @@ function startGame(from) {
   const st = G.station;
   banner('ESCORT THE TRAIN', st ? 'NEXT: ' + st.name + '  ' + fmtM(kmAt(st.s) - DK()) : 'GET IT AS FAR AS YOU CAN', U.gold);
   SFX.horn();
-  // the first run of a save: the dead stand at the Depot gate, and the Engineer gives it full steam
-  if (G.taste) {
-    SAVE.flags.taste = true;
-    saveSave();
-    later(0.3, () => radio('ENGINEER', 'DEAD ON THE TRACK! FULL STEAM!'));
-    later(1, () => { if (!G.result) ramStart(true); });
-  }
 }
 // Put what this run has earned so far in the save. You keep it all, whatever happens to the train.
 function bankRun() {
@@ -373,7 +358,6 @@ function lose() {
   G.endT = 0;
   G.trigger = false;
   G.lock = null;
-  G.prompt = null;
   banner('TRAIN LOST', 'AT ' + km2(G.maxKm).toFixed(2) + ' KM.  YOU KEEP ALL YOUR SCRAP.', U.red, 9);
   const blast = (k, big) => () => {
     const c = G.tr.cars[k], x = c.cx + rnd(-3, 3), y = c.cy;
@@ -427,22 +411,12 @@ function railGroup(n) {
 }
 // The start: packs on both sides of the railway, most of them ahead (10 behind the menus, 4 in a
 // run), and at the Depot 5 of the dead on the rails just ahead. at = the station a run starts at.
-// The first run of a save has 12 at the Depot gate instead, standing in a crowd for the Ram taste.
 function scatter(at) {
   for (let k = 0, n = G.demo ? 12 : 6; k < n; k++) {
     const s = G.tr.s - rnd(-40, 300), y = yAtS(s, G.tr.fy + (s - G.tr.s));
     pack(rndi(10, 22), trackX(y) + (Math.random() < 0.5 ? -1 : 1) * rnd(70, W / 2), y);
   }
   if (at) return;
-  if (G.taste) {
-    for (let k = 0; k < CFG.ram.taste; k++) {
-      const z = railZombie(G.tr.s - 105 - (k >> 1) * 7 - rnd(0, 3), (k & 1 ? 1 : -1) * rnd(1, 6), 0);
-      z.still = z.gate = true;
-    }
-    // (should the Ram not come, they wake after a while)
-    later(8, () => { for (const z of G.zombies) if (z.gate) z.still = false; });
-    return;
-  }
   for (let k = 0; k < 5; k++) railZombie(G.tr.s - 110 - k * 6, rnd(-3, 3), 0);
 }
 // ---------- Dead Walls
@@ -484,14 +458,6 @@ function updateWalls() {
       w.warned = true;
       banner('DEAD WALL IN ' + Math.round(d / 2 / 10) * 10 + ' M', G.up.ram ? 'SAVE YOUR TURBO RAM!' : 'BRUTES ON THE TRACK', U.red, 3);
       SFX.warn();
-    }
-    // the first time the train comes up to a wall with the Ram full: time slows, PRESS E!
-    if (!SAVE.flags.pressE && mode === 'play' && d > 0 && d < CFG.ram.prompt && ramState() === 'ready') {
-      SAVE.flags.pressE = true;
-      saveSave();
-      G.prompt = { left: 3, w };
-      banners.length = 0;
-      SFX.slow();
     }
     if (w.placed && !w.awake && d < c.wake) {
       w.awake = true;
@@ -612,36 +578,16 @@ function camBase(o) {
   o[1] = c.cy + f.dy * a;
   return o;
 }
-// G.lead = px the view is moved by (the heli's shadow stays where the heli is): 40 px up the line
-// while the Turbo Ram runs, and at PRESS E! over to the train's nose and the Dead Wall ahead of it.
-// It glides there in real time (dt = the frame's real seconds), so it is quick even while time runs
-// slow; with reduced motion it goes to PRESS E! at once.
+// G.lead = px the view glides up the line while the Turbo Ram runs.
 function camLead(dt) {
-  const L = G.lead, c = G.tr.cars[0], w = G.prompt && mode === 'play' ? G.prompt.w : null;
-  let tx = 0, ty = 0, k = 1 - Math.exp(-3 * dt);
-  if (w) {
-    promptLead(w, PL);
-    [tx, ty] = PL;
-    k = REDUCED ? 1 : 1 - Math.exp(-7 * dt);
-  } else if (G.ram.on) {
+  const L = G.lead, c = G.tr.cars[0], k = 1 - Math.exp(-3 * dt);
+  let tx = 0, ty = 0;
+  if (G.ram.on) {
     tx = c.dx * CFG.ram.lead;
     ty = c.dy * CFG.ram.lead;
   }
   L[0] += (tx - L[0]) * k;
   L[1] += (ty - L[1]) * k;
-}
-// At PRESS E!, the lead that shows the train's nose near the bottom and the Dead Wall w above it,
-// all of it if it fits (under the top bar and the warnings); if not, its far end is cut off.
-// o[2] = the screen y half-way from the nose to the front of the wall (PRESS E! goes there).
-const PL = [0, 0, 0];
-function promptLead(w, o) {
-  const tr = G.tr, yf = yOfS(w.s), yb = yOfS(w.s - CFG.wall.len);
-  const lo = tr.fy + 34, hi = yb - 48, cy = lo - hi <= H ? (lo + hi) / 2 : lo - H / 2;
-  camBase(CB);
-  o[0] = (tr.fx + trackX(yb)) / 2 - CB[0];
-  o[1] = cy - CB[1];
-  o[2] = Math.round((tr.fy + yf) / 2 - cy + H / 2);
-  return o;
 }
 // chunks in view: [first column, first row, last column, last row]
 function viewChunks() {
@@ -728,7 +674,7 @@ function tryRam(bot) {
   if (G.result || !(mode === 'play' || G.demo)) return false;
   const s = ramState(), r = G.ram;
   if (s === 'ready') {
-    ramStart(false);
+    ramStart();
     return true;
   }
   if (bot || G.demo || s === 'on' || s === 'none') return false;
@@ -740,13 +686,12 @@ function tryRam(bot) {
   SFX.deny();
   return false;
 }
-function ramStart(taste) {
+function ramStart() {
   const r = G.ram, tr = G.tr, c = tr.cars[0];
-  Object.assign(r, { on: true, t: 0, taste: !!taste, dur: taste ? CFG.ram.tasteDur : CFG.ram.dur + (G.up.ramTime || 0), kills: 0, pay: 0, hissed: false, card: true,
+  Object.assign(r, { on: true, t: 0, dur: CFG.ram.dur + (G.up.ramTime || 0), kills: 0, pay: 0, hissed: false, card: true,
     pop: 0, popT: -9 });
   r.left = ramFill();
   r.uses++;
-  G.prompt = null;
   // the dead holding the engine's nose die at once
   for (const z of G.zombies) if (!z.dead && z.st === 2 && z.side === 0) ramKill(z);
   // black smoke and a jet of steam from the stack, a flash of fire at the engine
@@ -805,7 +750,7 @@ function updateRam(dt) {
   }
   r.t += dt;
   // a station ahead: it ends now, so the train can brake in time
-  if (!r.taste && nearStop(CFG.ram.cut)) {
+  if (nearStop(CFG.ram.cut)) {
     ramEnd(true);
     return;
   }
@@ -847,8 +792,7 @@ function ramFx() {
   }
   juiceRamFx();
 }
-// The Ram is over (cut = a station is near: BRAKES!). Its rank and what it paid; after the first
-// run's taste, the boiler cracks.
+// The Ram is over (cut = a station is near: BRAKES!). Show its rank and what it paid.
 function ramEnd(cut) {
   const r = G.ram, c = G.tr.cars[0], n = r.kills;
   r.on = false;
@@ -861,19 +805,6 @@ function ramEnd(cut) {
   }
   // the kills made while it ran have filled it up again
   if (r.left <= 0) ramFull();
-  if (r.taste) {
-    // (its card shows it spent, 0%, until the crack a moment later: then it locks)
-    if (n) banner('RAM ×' + n, '+' + r.pay + ' SCRAP', U.amber, 3);
-    later(0.4, () => {
-      r.crack = realT;
-      SFX.crack();
-      radio('ENGINEER', 'THE BOILER CRACKED! FIX IT IN THE SKILL TREE.');
-      const e = G.tr.cars[0], sx = e.x0 - e.dx * 15, sy = e.y0 - e.dy * 15;
-      for (let k = 0; k < 10; k++) part({ x: sx + rnd(-2, 2), y: sy, z: 10, vx: rnd(-20, 20), vy: rnd(-8, 8), vz: rnd(30, 60), g: 0,
-        life: rnd(0.6, 1), max: 1, s: rnd(2, 3), c: 'rgba(230,230,224,0.75)', grow: 6, drag: 2.2, smoke: true });
-    });
-    return;
-  }
   if (n >= 5) {
     const [name, col] = n >= 30 ? ['UNSTOPPABLE', '#ff7a4a'] : n >= 15 ? ['RAMPAGE', U.amber] : ['SMASH', U.gold];
     banner(name + ' ×' + n, '+' + r.pay + ' SCRAP', col, 3);
@@ -1153,8 +1084,7 @@ function autopilot(dt) {
     G.botT = 0.2;
     let bestZ = null, bs = 1e9;
     for (const z of G.zombies) {
-      // (the dead at the Depot gate in the first run are left for the Ram taste)
-      if (z.dead || z.gate && (!G.ram.uses || G.ram.on)) continue;
+      if (z.dead) continue;
       const sx = z.x - G.camX, sy = z.y - G.camY;
       if (sx < 6 || sx > W - 6 || sy < 26 || sy > H - 6) continue;
       let s;
@@ -1168,9 +1098,9 @@ function autopilot(dt) {
     }
     G.botZ = bestZ;
   }
-  // the Turbo Ram: at a Dead Wall, at PRESS E!, or when 6 or more dead stand on the rails ahead (but
+  // the Turbo Ram: at a Dead Wall, or when 6 or more dead stand on the rails ahead (but
   // not when a Dead Wall is less than 600 m ahead: it saves the Ram for that)
-  if (ramState() === 'ready' && (G.prompt || wallAhead(130) || G.railAhead >= 6 && !wallAhead(1200))) tryRam(true);
+  if (ramState() === 'ready' && (wallAhead(130) || G.railAhead >= 6 && !wallAhead(1200))) tryRam(true);
   return { z: G.botZ && !G.botZ.dead ? G.botZ : null };
 }
 // The title demo: the heli fights by itself and the bot handles the Ram.

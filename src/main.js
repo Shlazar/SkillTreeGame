@@ -43,7 +43,6 @@ cv.addEventListener('pointerdown', (e) => {
     return;
   }
   // with reduced motion, PRESS E! stops the game: a click on the field goes on without the Ram
-  if (mode === 'play' && G.prompt && REDUCED) G.prompt = null;
   M.down = true;
   M.pressed = true;
   M.px = p.x;
@@ -114,7 +113,6 @@ addEventListener('keydown', (e) => {
   }
   if (mode === 'play') {
     // (with reduced motion PRESS E! stops the game: any other key goes on without the Ram)
-    if (G.prompt && REDUCED && k !== 'e') G.prompt = null;
     if (k === 'e') { if (!paused) tryRam(); }
     else if (k === 'q') { if (!paused) tryStrafe(); }
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
@@ -192,16 +190,6 @@ function oneFrame(dt) {
     slowT -= dt;
     ts = slowK;
     if (slowT <= 0) slowK = 1;
-  }
-  // PRESS E!: time at 25% for up to 3 s (with reduced motion it stands still until a key or a click)
-  const pr = G.prompt;
-  if (pr && mode === 'play' && !paused) {
-    if (REDUCED) ts = 0;
-    else {
-      ts = Math.min(ts, 0.25);
-      pr.left -= dt;
-      if (pr.left <= 0) G.prompt = null;
-    }
   }
   // fixed steps of STEP seconds, at most 8 a frame
   if (!(mode === 'play' && paused) && !hold && !treeCovers()) {
@@ -464,7 +452,7 @@ function boot() {
       W, H, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),
       gun: { rate: G.up.gun, shots: G.gun.shots, kills: G.gun.kills, ang: +G.gun.ang.toFixed(2), tgt: G.gun.tgt ? G.gun.tgt.st : -1 },
       ram: { state: ramState(), on: G.ram.on, t: +G.ram.t.toFixed(2), charge: +ramCharge().toFixed(3), kills: G.ram.kills, pay: G.ram.pay,
-        uses: G.ram.uses, total: G.ram.total, taste: G.taste, prompt: !!G.prompt }
+        uses: G.ram.uses, total: G.ram.total }
     })
   };
   requestAnimationFrame((t) => {

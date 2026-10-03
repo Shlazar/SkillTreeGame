@@ -48,11 +48,11 @@ Object.assign(UP, {
 // (in cells of 36 px, LAST TRAIN at 0, 0; -y is up), need = the level p must have (1 if not said),
 // cost = the price of each level (as many levels as prices), cur = 'surv' when it nodeCosts survivors
 // (else scrap), desc = one short sentence, stat (and stat2) = [label, value at level l] for the
-// NOW > NEXT line. given = not for sale (holding Farm Stop gives it). soon = shown with its price,
-// not for sale yet. later = from later in the game: a padlock for now.
+// NOW > NEXT line. soon = shown with its price, not for sale yet.
+// later = from later in the game: a padlock for now.
 const NODES = [
   { id: 'root', name: 'LAST TRAIN', k: 'root', x: 0, y: 0, cost: [0], desc: 'THE START OF YOUR WHOLE TREE.',
-    stat: ['BRANCHES OPEN', (l) => (l ? 6 : 0)] },
+    stat: ['BRANCHES OPEN', (l) => (l ? 5 : 0)] },
   // HELIS (west)
   { id: 'hdmg', name: 'HELI DAMAGE', k: 'up', p: 'root', x: -1.7, y: 0, cost: nodeCosts(15, 10, 1.4),
     desc: 'EVERY HELI ROUND HITS HARDER.', stat: ['HELI DAMAGE', (l) => pctS(UP.hdmg(l))] },
@@ -115,16 +115,6 @@ const NODES = [
     desc: 'THE JET DROPS BOMBS AT THE END.', stat: ['BOMBS', (l) => (l ? 3 : 0)] },
   { id: 'twin', name: 'TWIN JETS', k: 'big', p: 'strafeN', x: -3.5, y: -4.85, cost: [4], cur: 'surv', star: true,
     desc: 'TWO JETS FLY EVERY STRAFING RUN!', stat: ['JETS', (l) => 1 + l] },
-  // STATION (south)
-  { id: 'farm', name: 'FARM STOP', k: 'big', p: 'root', x: 0, y: 1.7, cost: [0], given: true,
-    desc: 'YOUR FIRST STATION TO BUILD AT.', stat: ['STATION TAB', (l) => (l ? 'OPEN' : 'LOCKED')] },
-  { id: 'nestspd', name: 'NEST SPEED', k: 'up', p: 'farm', x: -1.0, y: 2.85, cost: [80, 160, 320],
-    desc: 'ALL YOUR MG NESTS SHOOT FASTER.', stat: ['MG NEST', (l) => perS(UP.nest(l))] },
-  { id: 'wire', name: 'BARBED WIRE', k: 'spec', p: 'farm', x: 1.0, y: 2.85, cost: [60],
-    desc: 'BUILD WIRE THAT SLOWS THE DEAD.',
-    stat: ['ZOMBIE SPEED ON WIRE', (l) => (l ? Math.round(CFG.wire.slow * 100) : 100) + '%'] },
-  { id: 'mortar', name: 'MORTAR PIT', k: 'big', p: 'farm', x: 0, y: 3.55, cost: [8], cur: 'surv', star: true, station: true,
-    soon: true, desc: 'A BIG GUN FOR YOUR STATION.' }
 ];
 const NODE = {};
 for (const n of NODES) NODE[n.id] = n;
@@ -142,7 +132,6 @@ const nodeLv = (id, l) => NODE[id].name + (maxLv(NODE[id]) > 1 ? ' ' + l : '');
 // What a node is now:
 //  'off'    not on the map (what it grows from is not shown, or is still a padlock)
 //  'hidden' a padlock: what it grows from has no level yet (or it is from later in the game)
-//  'locked' FARM STOP before Farm Stop is held
 //  'soon'   shown with its price, not for sale yet
 //  'poor'   for sale, but you cannot pay
 //  'buy'    for sale, and you can pay
@@ -154,10 +143,8 @@ function nodeState(n) {
   if (p && !lv(n.id)) {
     const ps = nodeState(p);
     if (ps === 'off' || ps === 'hidden') return 'off';
-    if (n.station && !stationOpen()) return 'off';
     if (n.later || !needsMet(n)) return 'hidden';
   }
-  if (n.given) return 'locked';
   if (n.soon) return 'soon';
   return canPay(n) ? 'buy' : 'poor';
 }
@@ -245,16 +232,6 @@ function grew(before) {
     }
     if (now === 2) TREE.pop[n.id] = was === 0 ? TREE.born[n.id] + GROW : realT;
   });
-}
-// FARM STOP is given by holding Farm Stop: hand it over (with the buy look) once that has happened.
-function syncGiven() {
-  const n = NODE.farm;
-  if (!stationOpen() || lv(n.id)) return;
-  const before = NODES.map(shownAs);
-  SAVE.nodes[n.id] = 1;
-  saveSave();
-  boughtFx(n, 0);
-  grew(before);
 }
 // Set a node's level (tests): no price, no show.
 function setNode(id, l) {
@@ -644,7 +621,7 @@ function drawTreeNode(n, st) {
   if (pp >= 0 && pp < 0.25) h = Math.max(2, Math.round(h * (0.4 + 0.6 * ease(pp / 0.25) + Math.sin(pp / 0.25 * Math.PI) * 0.2)));
   const s = h * 2, nx = x - h, ny = y - h, hov = TREE.hov === n, buy = st === 'buy', big = !!n.star || n.id === 'root';
   const pulse = 0.5 + 0.5 * Math.sin(realT * 5 + n.x);
-  const lock = st === 'hidden' || st === 'locked';
+  const lock = st === 'hidden';
   // the glow round it
   const ga = lock ? 0 : st === 'max' ? 0.5 : buy ? 0.35 + 0.35 * pulse : l > 0 ? 0.4 : st === 'poor' ? 0.12 : 0.18;
   if (ga > 0 || hov) {
@@ -785,7 +762,6 @@ function drawInfo(n, st, y0, y1) {
   if (n.later) foot = ['', U.faint, null, 'COMING SOON', U.faint];
   else if (lock) foot = [fmt(pr), canPay(n) ? U.dim : U.red, icon, 'NEEDS: ' + nodeLv(p.id, needOf(n)), U.amber];
   else if (st === 'max') foot = ['', U.dim, null, n.id === 'root' || m === 1 ? 'OWNED' : 'MAXED', K.c];
-  else if (st === 'locked') foot = ['', U.dim, null, 'HOLD FARM STOP ONCE TO GET IT.', U.amber];
   else if (st === 'soon') foot = [fmt(pr), U.faint, icon, 'COMING SOON', U.faint];
   else if (st === 'poor') foot = [fmt(pr), U.red, icon, 'NEED ' + fmt(pr - have) + ' MORE', U.red];
   else foot = pr ? [fmt(pr), pcol, icon, 'CLICK TO BUY', U.gold] : ['FREE', U.gold, null, 'CLICK TO TAKE IT', U.gold];

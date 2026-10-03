@@ -194,7 +194,7 @@ const ON_CAR = [0, 0, 0, 0, 0];
 function drawArrows() {
   drawLootUI();
   // (at PRESS E! the view shows the engine's nose and the wall ahead: that is enough of the train)
-  const tr = G.tr, c = G.prompt ? { cx: tr.cars[0].x0, cy: tr.cars[0].y0 } : tr.cars[2];
+  const tr = G.tr, c = tr.cars[2];
   ON_CAR.fill(0);
   let rail = null, rd = 1e9;
   for (const z of G.zombies) {
@@ -264,22 +264,18 @@ function drawWeapons() {
   text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, H - 90, U.faint, { align: 'right' });
 }
 // The Turbo Ram's card: E in gold when it is full, the % while it fills (the bar is the charge),
-// GO! while it runs (the bar is the time left), STOP near a station (grey), and after the first
-// run's taste grey with a padlock and TREE until it is bought. A click on it rams. Over it, for a
-// moment, why it can't ram now.
+// GO! while it runs (the bar is the time left), and STOP near a station (grey). A click on it rams.
+// Over it, for a moment, why it can't ram now.
 const RAMCARD = { x: 0, y: 0, w: 106, h: 26, on: false };
 function drawRamCard(x, y) {
   const r = G.ram, C = RAMCARD, R = CFG.ram;
-  // (just after the first run's taste the card shows it spent, until the boiler cracks)
-  let s = ramState();
-  if (s === 'lock' && r.taste && r.crack < 0) s = 'charge';
+  const s = ramState();
   C.on = s !== 'none';
   if (!C.on) return;
   C.x = x;
   C.y = y;
-  const w = C.w, h = C.h, fl = realT - r.flash, ck = realT - r.crack;
-  // it shakes when the boiler cracks, and hops when it gets full
-  if (ck < 0.45 && !REDUCED) x += Math.round(Math.sin(ck * 60) * 2 * (1 - ck / 0.45));
+  const w = C.w, h = C.h, fl = realT - r.flash;
+  // it hops when it gets full
   if (fl < 0.2) y--;
   let tag, tagc, f, fc, nc = U.ink, icon = ICON.ram;
   if (s === 'on') [tag, tagc, f, fc] = ['GO!', Math.floor(realT * 8) % 2 ? '#ffe39a' : U.amber, 1 - r.t / (r.dur + R.ease), '#ff8a3a'];
@@ -288,26 +284,13 @@ function drawRamCard(x, y) {
   else if (s === 'stop') [tag, tagc, f, fc, nc, icon] = ['STOP', U.faint, ramCharge(), '#3a3e48', U.faint, ICON.ramOff];
   else [tag, tagc, f, fc, nc, icon] = ['TREE', U.dim, 0, '#3a3e48', U.faint, ICON.lock];
   card(x, y, w, h, icon, 'TURBO RAM', tag, tagc, f, fc, nc);
-  // ready: a gold frame; just full: a white and gold flash; PRESS E!: it pulses
+  // ready: a gold frame; just full: a white and gold flash
   if (s === 'ready' || s === 'on') frame(x, y, w, h, s === 'on' ? '#c96a2a' : '#b8862f');
   if (fl < 0.5) {
     ctx.globalAlpha = 1 - fl / 0.5;
     frame(x - 1, y - 1, w + 2, h + 2, '#ffd36a');
     ctx.globalAlpha = 0.35 * (1 - fl / 0.5);
     ctx.fillStyle = '#fff3dc';
-    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
-    ctx.globalAlpha = 1;
-  }
-  if (G.prompt) {
-    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(realT * 14);
-    frame(x - 1, y - 1, w + 2, h + 2, '#ffd36a');
-    frame(x - 2, y - 2, w + 4, h + 4, '#e3b04b');
-    ctx.globalAlpha = 1;
-  }
-  // the boiler cracks: a red flash
-  if (ck < 0.5) {
-    ctx.globalAlpha = 0.5 * (1 - ck / 0.5);
-    ctx.fillStyle = '#ff4a30';
     ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
     ctx.globalAlpha = 1;
   }
@@ -337,20 +320,6 @@ function drawSpeedLines() {
   }
   ctx.globalAlpha = 1;
 }
-// PRESS E!: the first time the train comes up to a Dead Wall with the Ram full. Time runs slow (or
-// stops, with reduced motion) until E or for 3 s. The view swings to show the train and the wall
-// (camLead), and the words sit on the empty rails between the two.
-function drawPrompt() {
-  if (!G.prompt || mode !== 'play') return;
-  ctx.fillStyle = 'rgba(5,6,8,0.2)';
-  ctx.fillRect(0, 19, W, H - 19);
-  const w = G.prompt.w, mid = w ? promptLead(w, PL)[2] : Math.round(H * 0.4) + 28;
-  const y = clamp(mid - 28, 46, H - 118), on = Math.floor(realT * 5) % 2 === 0;
-  text('PRESS E!', W / 2, y, on ? '#ffe39a' : U.gold, { align: 'center', scale: 4, drop: true });
-  text('TURBO RAM SMASHES THROUGH THE DEAD WALL.', W / 2, y + 38, U.ink, { align: 'center' });
-  text(REDUCED ? '(OR CLICK ITS CARD. ANY OTHER KEY: GO ON.)' : '(OR CLICK ITS CARD)', W / 2, y + 49, U.dim, { align: 'center' });
-}
-
 // ---------- the radio
 // A short line from someone up the line (ENGINEER: ...): a small box above the weapon cards with the
 // speaker's name in gold, for 4 s. More lines wait their turn. (The tutorial will add its lines here.)
@@ -587,7 +556,6 @@ function drawUI() {
     // (the arrows under the banners, so a banner is never cut by an arrow's label)
     drawArrows();
     drawBanners();
-    drawPrompt();
     if (mode === 'play' && !paused) drawHeliCursor();
     if (paused) drawPause();
     drawTension();
