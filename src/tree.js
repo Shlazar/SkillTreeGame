@@ -231,6 +231,9 @@ function treeUp(L, up) {
     b52Bombs: UP.b52Bombs(L('b52Bombs')), b52Blast: UP.b52Blast(L('b52Blast')),
     fireBombs: UP.fireBombs(L('fireBombs')),
     hellfireCount: UP.doubleHellfire(L('doubleHellfire')),
+    mgCar: L('mgCar') > 0, mgDamage: UP.mgDamage(L('mgDamage')),
+    mgRate: UP.mgRate(L('mgRate')), mgRange: UP.mgRange(L('mgRange')),
+    mgTurrets: UP.mgTurrets(L('mgTurrets')), apRounds: UP.apRounds(L('apRounds')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
     ramTime: 0, ramCharge: 0, power: false

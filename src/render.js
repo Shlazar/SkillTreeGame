@@ -131,6 +131,7 @@ function drawCar(i) {
     blit(carGlow(t, a), x0, y0);
     ctx.globalAlpha = 1;
   }
+  drawTrainWeapon(i);
   if (i !== 2) return;
   const gun = G.up.gun > 0, R = gun ? RIDERS_GUN : RIDERS;
   if (gun) drawCannon();
@@ -402,6 +403,7 @@ function render() {
   drawRounds();
   drawHeliFx();
   drawCannonFx();
+  drawTrainWeaponFx();
   // Draw the steel plow over the headlights with solid colours.
   ctx.globalCompositeOperation = 'source-over';
   drawPlow();

@@ -214,6 +214,9 @@ Object.assign(window.__sr, {
     const weapons = heliWeaponState(), p = weapons.pods, f = weapons.hellfire, clock = heliWeaponTime();
     const active = G.rounds.filter((r) => r.kind === 'rocket' && r.source === 'pods');
     const missiles = G.rounds.filter((r) => r.kind === 'hellfire');
+    const mg = trainWeaponState().mg;
+    const copyMGShot = (s) => s ? { ...s, muzzle: { ...s.muzzle }, target: { ...s.target },
+      targets: s.targets.map((t) => ({ ...t })) } : null;
     return {
       heli: { count: G.helis.length, damage: G.up.dmg, rate: G.up.rate, range: hRange(), winch: !!G.up.winch },
       rockets: { chance: G.up.rocketChance || 0, enabled: !!G.up.rocketChance },
@@ -236,6 +239,14 @@ Object.assign(window.__sr, {
         active: missiles.map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz, bx: r.bx, by: r.by,
           age: r.age, T: r.T, dmg: r.dmg, R: r.R, priority: r.priority, position: hellfireAt(r),
           targetSnapshot: { ...r.targetSnapshot } })) },
+      mg: { enabled: !!G.up.mgCar, damage: MGC.damage * G.up.mgDamage, rate: G.up.mgRate,
+        range: MGC.range * G.up.mgRange, count: G.up.mgTurrets, pierce: G.up.apRounds,
+        shots: mg.shots, hits: mg.hits, kills: mg.kills, targetsHit: mg.targetsHit, lastShot: copyMGShot(mg.lastShot),
+        turrets: mg.turrets.map((t) => ({ ...t, sx: t.x - G.camX, sy: t.y - t.z - G.camY,
+          cooldown: t.cd, lastShot: copyMGShot(t.lastShot) })),
+        art: { normal: MGART.n.length, hot: MGART.h.length, barrel: MGART.bn.length, hotBarrel: MGART.bh.length,
+          w: MGART.n[0].width, h: MGART.n[0].height,
+          atlas: [...MGART.n, ...MGART.h, ...MGART.bn, ...MGART.bh].every((s) => !!ATL.get(s)) } },
       planes: airSnapshot(), cars: [], gadgets: []
     };
   },
