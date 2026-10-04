@@ -32,7 +32,7 @@ const result = seeded(0xA8B01, () => {
   const g = __sr.G, view = __sr.stats(), initial = __sr.ambushState();
   check(initial?.total === 3 && initial.phase === 'travel' && initial.index === 0, 'Fresh finite intro missing');
   check(g.tr.hp === 80 && g.tr.max === 80, 'Intro did not start at ordinary full health');
-  check(initial.stops.map(s => s.count).join(',') === '16,24,32', 'Intro wave sizes changed');
+  check(initial.stops.map(s => s.count).join(',') === '36,38,45', 'Intro wave sizes changed');
   check(initial.stops.every((s, i) => s.id === 'leg-1-ambush-' + (i + 1) &&
     Math.abs(initial.startS - s.stopS - [60, 160, 260][i]) < 0.01), 'Stop spacing/IDs changed');
   check(Math.abs(initial.startS - initial.goalS - 360) < 0.01, 'Short intro route length changed');
@@ -42,7 +42,7 @@ const result = seeded(0xA8B01, () => {
     if (g.run >= nextCommand) { commands += Number(defend(g, view)); nextCommand = g.run + 0.5; }
     __sr.sim(0.1);
     const a = __sr.ambushState();
-    for (const z of g.zombies) check(z.type === 0 && !z.gold && !z.silver && !z.boom &&
+    for (const z of g.zombies) check((z.type === 0 || z.type === 1 && z.ambushId !== 'leg-1-ambush-1' || z.type === 2 && z.ambushId === 'leg-1-ambush-3') && !z.gold && !z.silver && !z.boom &&
       /^leg-1-ambush-[123]$/.test(z.ambushId), 'Unassigned or advanced enemy entered intro');
     for (const s of a.stops) {
       if (s.startedAt != null && !started.has(s.id)) {
@@ -67,12 +67,12 @@ const result = seeded(0xA8B01, () => {
     for (const f of __sr.loot()) if (f.eventId === 'leg-1-ambush-2-pile') {
       check(f.kind === 'pile' && f.pay === 24, 'Second-hold pile changed'); piles.add(f.eventId);
     }
-    check(g.events.every(e => ['ambush', 'ambushClear', 'pile'].includes(e.kind)), 'Legacy timed encounter ran alongside intro');
+    check(g.events.every(e => ['ambush', 'ambushClear', 'ambushWarning', 'pile'].includes(e.kind)), 'Legacy timed encounter ran alongside intro');
   }
   const final = __sr.ambushState();
   check(g.result === 'won' && g.tr.hp > 0, 'Normal-health intro stalled/lost: ' + JSON.stringify({final, hp: g.tr.hp, t: g.run, result: g.result}));
   check(started.size === 3 && cleared.size === 3 && pauseChecked && piles.size === 1 &&
-    final.phase === 'done' && final.index === 3 && final.spawned === 72 && final.killed === 72 &&
+    final.phase === 'done' && final.index === 3 && final.spawned === 119 && final.killed === 119 &&
     final.remaining === 0 && final.pending === 0, 'Finite intro did not finish all three real waves');
   check(!g.zombies.some(z => z.ambushId && !z.dead), 'Living intro attackers remain after arrival');
   check(__sr.save().leg === 2 && __sr.save().surv === 1, 'Natural Millbrook arrival failed ordinary station progression');

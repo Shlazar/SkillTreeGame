@@ -4,7 +4,26 @@
 // Rail px between stations: about 60 s at the train's 40 px/s cruise. (proposal)
 const LEG_LENGTH = 2400;
 // Intro-only station separation and finite-defense rewards; later stops retain their world positions. (proposal)
-const INTRO_LEG = { length: 420, pile: 24, attackers: [16, 24, 32] };
+const INTRO_LEG = { length: 420, pile: 24,
+  // Encounter-relative seconds, enemy counts/types, car indices and ground offsets in px.
+  // Owner-approved demo exception: scripted runners/brute appear here before their usual legs.
+  encounters: [
+    { name: 'RUSH', hint: 'HOLD THE LEFT SIDE.', groups: [
+      { at: 0, n: 24, type: 0, side: -1, cars: [0, 1], off: 64, gap: 0.08 },
+      { at: 5, n: 12, type: 0, side: -1, cars: [1, 2], off: 76, gap: 0.12 }
+    ] },
+    { name: 'FLANK', hint: 'WATCH THE REAR.', groups: [
+      { at: 0, n: 20, type: 0, side: 1, cars: [0, 1], off: 78, gap: 0.14 },
+      { at: 4.5, n: 10, type: 1, side: -1, cars: [3, 4], off: 110, gap: 0.18 },
+      { at: 8, n: 8, type: 0, side: 1, cars: [1, 2], off: 76, gap: 0.14 }
+    ] },
+    { name: 'LAST STAND', hint: 'FOCUS THE BRUTE. WATCH THE FLANK.', groups: [
+      { at: 0, n: 16, type: 0, side: -1, cars: [0, 1], off: 84, gap: 0.14 },
+      { at: 2.5, n: 1, type: 2, side: -1, cars: [1], off: 54, gap: 0.1 },
+      { at: 4.5, n: 16, type: 0, side: -1, cars: [1, 2], off: 84, gap: 0.14 },
+      { at: 6.5, n: 12, type: 1, side: 1, cars: [3, 4], off: 108, gap: 0.18 }
+    ] }
+  ] };
 // First-pass scrap targets from the final design; ordinary kill shares are tuned with real rides.
 const LEG_SCRAP_TARGETS = [80, 95, 115, 135, 160, 190, 225, 265, 310, 365, 430, 500];
 // Ordinary kill multipliers preserve the large hordes; wall drops remain collectible. (proposal)
@@ -94,7 +113,8 @@ for (let n = 1; n < STOPS.length; n++) {
 // The train still travels continuously to the same destination; legs2..12 do not move.
 DEPOT.km = STOPS[1].km - INTRO_LEG.length / CFG.line.km;
 Object.assign(LEGS[0], { len: INTRO_LEG.length, td: true, events: [],
-  ordinaryPay: (LEG_SCRAP_TARGETS[0] - INTRO_LEG.pile) / INTRO_LEG.attackers.reduce((n, count) => n + count, 0) });
+  ordinaryPay: (LEG_SCRAP_TARGETS[0] - INTRO_LEG.pile) /
+    INTRO_LEG.encounters.reduce((sum, e) => sum + e.groups.reduce((n, g) => n + g.n * CFG.types[g.type].value, 0), 0) });
 const legDef = (n) => LEGS[n - 1] || null;
 // Scenery uses the same complete line on every retry, so cached ground stays consistent.
 const STATIONS = STOPS.slice(1);

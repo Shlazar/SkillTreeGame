@@ -380,10 +380,10 @@ function addStream(n, edge, fast, params = {}) {
   }
   const escort = edge === 0 && leaders ? { leaders: [], members: [], expected: leaders, emitted: 0, active: true, ready: false, x: 0, y: 0 } : null;
   if (escort) ESCORTS.push(escort);
-  STREAMS.push({ sx, sy, n, gap: fast ? rnd(0.05, 0.08) : rnd(0.09, 0.15), t: 0, edge, fast, age: 0,
+  STREAMS.push({ sx, sy, n, gap: params.ambushGap || (fast ? rnd(0.05, 0.08) : rnd(0.09, 0.15)), t: 0, edge, fast, age: 0,
     type: params.type, variant: params.variant, leadType: params.leadType ?? 2, leaders, escort,
     railOff: leaders ? (Math.random() < 0.5 ? -1 : 1) * ESCORTC.railOff : 0,
-    emitted: 0, eventId: params.eventId || '', ambushId: params.ambushId || '',
+    emitted: 0, eventId: params.eventId || '', ambushId: params.ambushId || '', ambushGroup: params.ambushGroup,
     ambushCar: params.ambushCar || 0, ambushCars: params.ambushCars?.slice(),
     ambushLanes: params.ambushLanes?.slice(), ambushOff: params.ambushOff || 0 });
 }
@@ -411,7 +411,7 @@ function updateStreams(dt, want) {
       const mount = s.ambushId ? trainMount(car, along, s.ambushOff) : null;
       const y = mount ? mount.y + jy : G.camY + s.sy + jy - (side ? 0 : back * FORE);
       const x = mount ? mount.x + jx : s.escort ? railX(y) + s.railOff + jx : G.camX + s.sx + jx + (side ? s.edge * back : 0);
-      const z = newDead(x, y, pickSpawnType(false, s, index));
+      const z = s.ambushId ? makeZombie(x, y, ambushSpawnType(s)) : newDead(x, y, pickSpawnType(false, s, index));
       if (s.variant === 'silver') makeSilver(z);
       else if (s.variant === 'boom') makeExplosive(z);
       z.stream = 1;
@@ -425,7 +425,7 @@ function updateStreams(dt, want) {
         z.escortReleaseReason = s.escort.releaseReason;
       }
       if (s.eventId) { z.streamEventId = s.eventId; z.streamIndex = index; z.streamLead = lead; z.streamAt = G.run; z.streamEdge = s.edge; }
-      if (s.ambushId) { z.ambushId = s.ambushId; z.ambushCar = car; z.ambushAlong = along; ambushBorn(z); }
+      if (s.ambushId) { z.ambushId = s.ambushId; z.ambushGroup = s.ambushGroup; z.ambushCar = car; z.ambushAlong = along; ambushBorn(z); }
       G.zombies.push(z);
     }
     if (s.n <= 0) STREAMS.splice(i, 1);

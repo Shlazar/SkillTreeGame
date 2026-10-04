@@ -193,9 +193,11 @@ function nextLabel() {
   const st = G.station, to = legDef(G.leg).to;
   if (G.result === 'won') return ['ARRIVED: ' + to.name, U.green];
   const a = G.ambush;
-  if (a && a.phase !== 'done') return a.phase === 'hold' ?
-    ['AMBUSH ' + (a.index + 1) + '/' + a.total + ': ' + a.remaining + ' LEFT', U.amber] :
-    ['NEXT AMBUSH ' + (a.index + 1) + '/' + a.total, U.blue];
+  if (a && a.phase !== 'done') {
+    const name = a.stops[a.index].name || 'AMBUSH ' + (a.index + 1) + '/' + a.total;
+    const label = name + ': ' + a.remaining + ' LEFT';
+    return a.phase === 'hold' ? [tw(label) <= W - 32 ? label : name, U.amber] : ['NEXT: ' + name, U.blue];
+  }
   const distance = Math.max(0, G.tr.s - (st ? st.stopS : G.goalS));
   return ['NEXT: ' + to.name + ' ' + Math.round(distance / 2 / 10) * 10 + ' M', U.blue];
 }
@@ -253,6 +255,43 @@ function warningLayout(layout) {
 }
 function drawWarnings(layout) {
   for (const r of warningLayout(layout)) text(r.text, r.x, r.y, r.color);
+}
+// Incoming runner/brute groups use their real delayed spawn positions and play-time countdowns.
+// Reserve the banner's y58..98 band even on short screens; other values are screen px. (proposal)
+const AMBUSH_MARKC = { margin: 4, top: 102, lift: 24, bottom: 46, gap: 3, padding: 4 };
+function ambushWarningLayout(layout) {
+  if (mode !== 'play' || G.result || typeof ambushWarnings !== 'function') return [];
+  const warnings = ambushWarnings();
+  if (!warnings.length) return [];
+  const C = AMBUSH_MARKC, rows = [], existing = warningLayout(layout);
+  const top = Math.max(C.top, existing.length ? existing[existing.length - 1].y + 11 : C.top);
+  for (const incoming of warnings) {
+    const S = ZS[incoming.type][0], seconds = Math.max(0, incoming.seconds);
+    const label = incoming.label, caption = label + ' ' + Math.ceil(seconds) + 'S';
+    const w = S.w + tw(caption) + C.padding * 2 + C.gap, h = Math.max(18, S.h + C.padding * 2);
+    const x = Math.round(clamp(incoming.x - G.camX - w / 2, C.margin, W - w - C.margin));
+    const bottom = VH - (x + w > W - 79 ? 83 : C.bottom) - h;
+    let y = Math.round(clamp(incoming.y - G.camY - C.lift, top, Math.max(top, bottom)));
+    // Groups aimed at the same car still get separate readable countdowns.
+    for (let tries = 0; tries < rows.length; tries++) {
+      const overlap = rows.find((r) => x < r.x + r.w && x + w > r.x && y < r.y + r.h && y + h > r.y);
+      if (!overlap) break;
+      y = overlap.y + overlap.h + C.gap <= bottom ? overlap.y + overlap.h + C.gap : overlap.y - h - C.gap;
+      y = Math.max(top, y);
+    }
+    rows.push({ x, y, w, h, label, seconds, type: incoming.type });
+  }
+  return rows;
+}
+function drawAmbushWarnings(layout) {
+  for (const r of ambushWarningLayout(layout)) {
+    const S = ZS[r.type][0], C = AMBUSH_MARKC, color = r.type === 2 ? U.red : U.amber;
+    ctx.fillStyle = 'rgba(10,11,14,0.9)'; ctx.fillRect(r.x, r.y, r.w, r.h);
+    frame(r.x, r.y, r.w, r.h, color);
+    const iy = Math.round(r.y + (r.h - S.h) / 2);
+    blit(S.walk[0].n, r.x + C.padding, iy);
+    text(r.label + ' ' + Math.ceil(r.seconds) + 'S', r.x + C.padding + S.w + C.gap, r.y + Math.round((r.h - 7) / 2), color);
+  }
 }
 // An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
 // with a label just inside it.
@@ -679,6 +718,7 @@ function uiBounds() {
       preview: TREE.infoBounds.preview ? { ...TREE.infoBounds.preview } : null } : null,
     genericTooltip: TIP.bounds ? { ...TIP.bounds } : null } : null;
   return { viewport: { W, H, VH, SCALE, reduced: REDUCED }, hud,
+    ambushWarnings: ambushWarningLayout(layout).map(({ x, y, w, h, label, seconds }) => ({ x, y, w, h, label, seconds })),
     radar: run ? { x: W - 79, y: VH - 79, w: 74, h: 74 } : null,
     ram: run && RAMCARD.on ? { x: RAMCARD.x, y: RAMCARD.y, w: RAMCARD.w, h: RAMCARD.h } : null,
     weapons: run ? HUI.cards.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.ht })) : [],
@@ -713,6 +753,7 @@ function drawUI() {
   drawCoins();
   if (run) {
     drawWarnings(layout);
+    drawAmbushWarnings(layout);
     drawRadar();
     drawWeapons();
     drawRadio();

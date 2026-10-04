@@ -75,7 +75,7 @@ function diagnose(leg, control, seed) {
       for (const z of g.zombies) {
         types.add(z.type);
         for (const key of Object.keys(variants)) variants[key] ||= !!z[key];
-        check((leg >= 2 || z.type === 0) && z.type !== 2 && (leg >= 3 || !z.gold) &&
+        check((leg === 1 ? !!z.ambushId : z.type !== 2) && (leg >= 3 || !z.gold) &&
           (leg >= 4 || !z.silver) && !z.boom, 'Opening placement bypassed an enemy introduction: leg' + leg);
       }
       for (const z of live) {
