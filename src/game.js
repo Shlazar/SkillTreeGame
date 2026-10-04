@@ -133,7 +133,7 @@ function newGame(demo, number, replay) {
   const cars = [];
   for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
-    demo: !!demo, leg: leg ? leg.n : 0, replay: !!replay, events: [], t: 0, run: 0, endT: 0, result: '', up,
+    demo: !!demo, leg: leg ? leg.n : 0, replay: !!replay, eventIndex: 0, events: [], t: 0, run: 0, endT: 0, result: '', up,
     kills: 0, cash: 0, gold: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
     // Legacy debug fields stay zero until the final cleanup; Salvage Crew uses the pay pots below.
     scavAcc: 0, scavPaid: 0,
@@ -1245,6 +1245,7 @@ function step(dt) {
       if (G.endT > 3.4) endGame();
     }
   }
+  updateLegEvents();
   updateAir(dt);
   G.hitT = Math.max(0, G.hitT - dt);
   G.muzzle[0] = Math.max(0, G.muzzle[0] - dt);

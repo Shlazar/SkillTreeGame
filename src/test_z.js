@@ -2,10 +2,10 @@
 Object.assign(window.__sr, {
   // horde() = the spawner now: streams coming in, waves so far, the horde's numbers here
   horde: () => ({ streams: STREAMS.length, waves: G.waves || 0, alive: G.zombies.length, layer: CROWD.list.length,
-    booms: BOOMS.length, hd: G.demo ? null : Object.assign({}, horde(DK())) }),
+    booms: BOOMS.length, hd: G.demo ? null : Object.assign({}, horde()) }),
   // stream(n, edge): a stream of n now (edge -1 left, 1 right, 0 top); wave(): a wave now
   stream: (n, edge) => addStream(n || 20, edge || 0, false),
-  wave: () => { G.waveCd = 0; },
+  wave: () => dispatchLegEvent('wave', { n: Math.round(horde().size * 1.5) }, 'qa-wave'),
   // crowd(n, sx, sy, r, type): n walking zombies round screen pixel (sx, sy) within r px
   crowd: (n, sx, sy, r, type) => {
     for (let i = 0; i < n; i++) {

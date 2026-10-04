@@ -3092,7 +3092,7 @@ function newGame(demo, number, replay) {
   const cars = [];
   for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
-    demo: !!demo, leg: leg ? leg.n : 0, replay: !!replay, events: [], t: 0, run: 0, endT: 0, result: '', up,
+    demo: !!demo, leg: leg ? leg.n : 0, replay: !!replay, eventIndex: 0, events: [], t: 0, run: 0, endT: 0, result: '', up,
     kills: 0, cash: 0, gold: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
     // Legacy debug fields stay zero until the final cleanup; Salvage Crew uses the pay pots below.
     scavAcc: 0, scavPaid: 0,
@@ -4204,6 +4204,7 @@ function step(dt) {
       if (G.endT > 3.4) endGame();
     }
   }
+  updateLegEvents();
   updateAir(dt);
   G.hitT = Math.max(0, G.hitT - dt);
   G.muzzle[0] = Math.max(0, G.muzzle[0] - dt);
@@ -4238,7 +4239,7 @@ function step(dt) {
 // streams and waves from the edges of the screen and flow round each other to the train, and die
 // in a red pop that stays on the ground (a red carpet after a big fight).
 // Inside: the zombie art (pale sickly bodies, a dark outline, a dark head, a red mouth), the
-// horde by distance (HORDE) and the spawner (streams, waves, crowds on the rails), the step of
+// per-leg base horde (HORDE) and the spawner (streams, waves, crowds on the rails), the step of
 // every zombie (updateZombies, with the railway looked up from a cache of rows), the fast pixel
 // layer that draws a crowd of hundreds in one go (gatherHorde, drawHorde), the kill pop, silver
 // zombies (G.up.silver: they shine and pay more), explosive zombies (G.up.boom, G.up.boomR: they
@@ -4506,45 +4507,23 @@ function railLocal(x, y, out) {
   return out;
 }
 
-// ---------- the horde by distance
-// One row per distance from the Depot (km). Between two rows the numbers blend; past the last they
-// stay. [km, most dead alive, stream size (the smallest; up to half again), seconds between two
-// streams, seconds between two waves, streams in a wave, a crowd on the rails every (s, from, to),
-// crowd size, share of runners, share of brutes in streams, share of brutes in rail crowds]
-const HORDE = [
-  [0, 160, 7, 2, 13, 3, 8, 11, 3, 0, 0, 0],
-  [0.3, 260, 10, 1.6, 12, 3, 7, 10, 5, 0.06, 0, 0],
-  [0.6, 400, 13, 1.25, 11, 4, 6, 8.5, 12, 0.12, 0, 0.04],
-  [1, 600, 18, 0.95, 10, 5, 5, 7.5, 16, 0.18, 0.01, 0.08],
-  [1.5, 800, 22, 0.8, 9, 6, 4.5, 7, 19, 0.22, 0.02, 0.12],
-  [2, 1000, 26, 0.65, 8, 7, 4, 6.5, 22, 0.25, 0.03, 0.16]
-];
-const HD = { want: 0, size: 0, gap: 0, wave: 0, waveN: 0, every0: 0, every1: 0, rail: 0, run: 0, brute: 0, railBrute: 0 };
-// The horde's numbers at d km (filled into HD).
-function horde(d) {
-  let i = 0;
-  while (i < HORDE.length - 2 && d > HORDE[i + 1][0]) i++;
-  const a = HORDE[i], b = HORDE[i + 1], t = clamp((d - a[0]) / (b[0] - a[0]), 0, 1), m = (k) => lerp(a[k], b[k], t);
-  HD.want = Math.min(CFG.pop.max, Math.round(m(1)));
-  HD.size = m(2);
-  HD.gap = m(3);
-  HD.wave = m(4);
-  HD.waveN = Math.round(m(5));
-  HD.every0 = m(6);
-  HD.every1 = m(7);
-  HD.rail = Math.floor(m(8));
-  HD.run = d < CFG.pop.runFrom ? 0 : m(9);
-  HD.brute = d < CFG.pop.bruteFrom ? 0 : m(10);
-  HD.railBrute = d < CFG.pop.bruteFrom ? 0 : m(11);
-  return HD;
+// ---------- the small base horde under each leg's event timeline
+// A separate row per leg lets its content grow without using distance from the Depot. The first
+// timeline uses walkers; the remaining leg introductions are filled by the route-content task.
+// Living cap, base stream size and seconds between streams (proposal)
+const HORDE = Array.from({ length: 12 }, () => ({ want: 160, size: 4, gap: 4, run: 0, brute: 0, railBrute: 0 }));
+// The menu battle retains its previous middle-route pace, independently of the selected leg.
+const DEMO_HD = { want: 420, size: 16.75, gap: 1.025, wave: 10.25, waveN: 5, run: 0.1, brute: 0.02 };
+// Older diagnostics may pass km; actual play always reads its selected leg instead.
+function horde() {
+  if (G.demo) return DEMO_HD;
+  return legDef(G.leg)?.base || HORDE[0];
 }
-// the demo behind the menus: a lively middle of the table
-const DEMO_HD = Object.assign({}, HD);
 // 0 walker, 1 runner, 2 brute. rail = for a crowd on the rails.
 function pickType(rail) {
   const r = Math.random();
   if (G.demo) return r < 0.02 ? 2 : r < 0.12 ? 1 : 0;
-  const h = horde(DK()), b = rail ? h.railBrute : h.brute;
+  const h = horde(), b = rail ? h.railBrute : h.brute;
   return r < b ? 2 : r < b + h.run ? 1 : 0;
 }
 // A pack of n standing round (hx, hy) (the start of a run, the demo).
@@ -4593,25 +4572,25 @@ function updateStreams(dt, want) {
       if (G.zombies.length >= want) continue;
       // (a stream from the side comes in a band, one from the top in a line across)
       const jx = s.edge ? rnd(-4, 4) : rnd(-10, 10), jy = s.edge ? rnd(-8, 8) : rnd(-3, 3);
-      const z = newDead(G.camX + s.sx + jx, G.camY + s.sy + jy, G.demo ? pickType(false) : pickType(false));
+      const z = newDead(G.camX + s.sx + jx, G.camY + s.sy + jy, pickType(false));
       z.stream = 1;
       G.zombies.push(z);
     }
     if (s.n <= 0) STREAMS.splice(i, 1);
   }
 }
-// More of the dead come as the train goes: a stream every few seconds, a wave of streams from all
-// sides now and then, and a crowd on the rails ahead. No rail crowds just before a Dead Wall.
+// Real legs have only a small base trickle here; the timeline supplies their waves and rail
+// crowds. The attract battle keeps its independent automatic waves and crowds.
 function spawn(dt) {
-  const h = G.demo ? DEMO_HD : horde(DK());
-  if (G.demo && !h.want) Object.assign(DEMO_HD, horde(0.9), { want: 420, run: 0.1, brute: 0.02 });
-  updateStreams(dt, h.want);
+  const h = horde(), want = Math.min(CFG.pop.max, h.want);
+  updateStreams(dt, want);
   G.spawnCd -= dt;
-  if (G.spawnCd <= 0 && G.zombies.length < h.want) {
+  if (G.spawnCd <= 0 && G.zombies.length < want) {
     const r = Math.random();
     addStream(Math.round(h.size * rnd(1, 1.5)), r < 0.5 ? 0 : r < 0.75 ? -1 : 1, false);
     G.spawnCd = h.gap * rnd(0.8, 1.25);
   }
+  if (!G.demo) return;
   G.waveCd = (G.waveCd == null ? h.wave * 0.6 : G.waveCd) - dt;
   if (G.waveCd <= 0) {
     G.waveCd = h.wave * rnd(0.85, 1.15);
@@ -4620,13 +4599,8 @@ function spawn(dt) {
   }
   G.railCd -= dt;
   if (G.railCd <= 0) {
-    if (G.demo) {
-      railGroup(rndi(6, 10));
-      G.railCd = rnd(6, 9);
-    } else {
-      if (!wallAhead(CFG.wall.warn)) railGroup(rndi(h.rail, h.rail + 4));
-      G.railCd = rnd(h.every0, h.every1);
-    }
+    railGroup(rndi(6, 10));
+    G.railCd = rnd(6, 9);
   }
 }
 // A new run (or the demo) starts with no streams.
@@ -5361,12 +5335,69 @@ for (let n = 1; n < STOPS.length; n++) {
   const from = STOPS[n - 1], to = STOPS[n];
   to.km = from.km + LEG_LENGTH / CFG.line.km;
   to.side = n % 2 ? 1 : -1;
-  LEGS.push({ n, from, to, len: LEG_LENGTH, stars: n >= 3,
-    rescue: [4, 8, 10].includes(n) ? 'rescue-' + n : null, finale: n === 12, events: [] });
+  // A supported starting timeline, replaced with each leg's introductions by the next task.
+  // Event seconds, crowd sizes and pile placement/value (proposal)
+  LEGS.push({ n, from, to, len: LEG_LENGTH, stars: n >= 3, base: HORDE[n - 1],
+    rescue: [4, 8, 10].includes(n) ? 'rescue-' + n : null, finale: n === 12, events: [
+      [3, 'railCrowd', { n: 6 }], [12, 'stream', { edge: -1, n: 12 }],
+      [22, 'pile', { ahead: 120, off: 100, side: 1, pay: 15 }],
+      [32, 'stream', { edge: 1, n: 14 }], [42, 'railCrowd', { n: 8 }], [52, 'wave', { n: 10 }]
+    ] });
 }
 const legDef = (n) => LEGS[n - 1] || null;
 // Scenery uses the same complete line on every retry, so cached ground stays consistent.
 const STATIONS = STOPS.slice(1);
+
+// Brief title-only event notice; streams already have their own edge marks. (proposal)
+const LEG_EVENT_NOTICE = 1.8;
+function legEventNotice(title, color) {
+  const previous = banners[0];
+  banner(title, '', color);
+  if (banners[0] && banners[0] !== previous) banners[0].T = LEG_EVENT_NOTICE;
+}
+
+// Supported events use the existing spawners. Future gold, wall and rescue events are left to
+// their real feature handlers; they never masquerade as another event or earn a fired receipt.
+function dispatchLegEvent(kind, params, id) {
+  const p = params || {}, n = Math.max(0, Math.floor(Number(p.n) || 0));
+  if (kind === 'railCrowd') {
+    const before = G.zombies.length;
+    if (n && !wallAhead(CFG.wall.warn)) railGroup(n);
+    legEventNotice('RAIL CROWD', U.red);
+    return G.zombies.length - before;
+  }
+  if (kind === 'stream') {
+    const edge = p.edge === -1 ? -1 : p.edge === 1 ? 1 : 0;
+    if (n) addStream(n, edge, false);
+    return n;
+  }
+  if (kind === 'wave') {
+    if (n) { addStream(n, -1, true); addStream(n, 1, true); }
+    G.waves++;
+    return n * 2;
+  }
+  if (kind === 'pile' || kind === 'crate') {
+    if (!addLegLoot(kind, p, id)) return null;
+    legEventNotice(kind === 'pile' ? 'SCRAP PILE' : 'SUPPLY CRATE', U.blue);
+    return 1;
+  }
+  return null;
+}
+
+// Game time pauses and slows with play. Consume every due tuple once, including unsupported
+// future kinds, so a deferred feature cannot block the rest of the leg's actual events.
+function updateLegEvents() {
+  if (G.demo || G.result || mode !== 'play') return;
+  const leg = legDef(G.leg);
+  if (!leg) return;
+  while (G.eventIndex < leg.events.length) {
+    const index = G.eventIndex, [at, kind, params] = leg.events[index];
+    if (G.run < at - 1e-9) break;
+    G.eventIndex++;
+    const id = 'leg-' + G.leg + '-event-' + index, n = dispatchLegEvent(kind, params, id);
+    if (n !== null) G.events.push({ id, kind, at, t: G.run, n });
+  }
+}
 // A leg record is made only when progress needs to be stored.
 function legSave(n) {
   return SAVE.legs[n] || (SAVE.legs[n] = { won: false, stars: [false, false, false], paid: {} });
@@ -11938,7 +11969,7 @@ function boot() {
     get SAVE() { return SAVE; },
     FPS,
     CFG,
-    // the horde by distance (rows of HORDE in game.js), for balance tests
+    // Per-leg base horde rows, for balance tests.
     HORDE,
     // the sprites, for a test sheet
     art: () => ({ TRAIN, FOOT, HSPR, ROTOR, STATION, SURV, ZS, ICON, TURRET }),
@@ -12127,29 +12158,26 @@ function boot() {
 }
 boot();
 
-// loot.js - the finds you fly out from the train for: scrap piles on car wrecks, supply crates in
-// burnt farms (kept for the coming leg events), the golden
-// crate (once per save) and the stranded survivor on a bus roof (SOS, once per save, after Farm Stop
-// is held) that the Winch lifts. Any heli that flies over a find (right click it to send one) takes
-// it: it flies up to that heli and pays. G.loot = this run's finds, rolled in newGame().
+// loot.js - timeline finds: scrap piles on wrecks and supply crates in burnt farms. Fly the Viper
+// near a find to collect it; it flies up to the heli and pays. Gold crates and the bus-roof rescue
+// keep their collection mechanics for their later leg events. G.loot resets in newGame().
 
-// pile: one spot every `every` px along the rails (100 m), `fill` of them have a pile (rolled again
-// each run), `near` to `far` px from the rails. crate: its guards, how near the heli wakes them,
+// pile: scrap paid. crate: its guards, how near the heli wakes them,
 // how near the heli its edge arrow shows, how far along the rails ahead of the train its guards are
 // placed. gold / sos: km, px from the rails, side (1 east, -1 west), how near the heli their arrow
 // shows. sos.reach = px the heli must hover within for the Winch. fly = seconds a find takes to fly
-// up to the heli. Past farKm (Farm Stop) piles and crates pay payFar. clear = no pile within this
-// many px along the rails of a stop (so none lies in a station's grid).
+// up to the heli. Leg events supply the position and can override scrap paid.
 const LOOT = {
-  pile: { every: 200, fill: 0.6, near: 80, far: 250, pay: 15, payFar: 30 },
-  crate: { pay: 50, payFar: 100, guards: 8, wake: 120, arrow: 450, place: 500 },
+  pile: { pay: 15 },
+  crate: { pay: 50, guards: 8, wake: 120, arrow: 450, place: 500 },
   gold: { km: 0.32, off: 250, side: -1, pay: 150, arrow: 700 },
   sos: { km: 1.2, off: 220, side: 1, reach: 20, arrow: 700 },
-  fly: 0.3, farKm: 1, clear: 180
+  fly: 0.3
 };
-// the supply crates: [km, px from the rails, side]
-const CRATES = [[0.12, 240, 1], [0.58, 250, -1], [1.30, 250, -1], [1.55, 240, 1], [1.90, 250, -1]];
-// the find sprites (drawn once, on the first run)
+// Event placement distances/margins in world or screen px; widthFrac is a viewport fraction (proposal)
+const LEGLOOTC = { ahead: 120, off: 100, maxAhead: 500, minOff: 24, maxOff: 180, widthFrac: 0.4,
+  goalPad: 40, startPad: 24, viewX: 40, viewTop: 56, viewBottom: 42 };
+// Find art is created and packed once during script initialization, before the first frame.
 const LART = {};
 function lootArt() {
   if (LART.heap) return;
@@ -12178,6 +12206,8 @@ function lootArt() {
     r(12, 1, 6, 2, '#8a5a1c'); r(26, 3, 5, 2, '#6a3a18'); r(5, 11, 3, 2, '#6a3a18');
   }), 10);
 }
+lootArt();
+for (const d of Object.values(LART)) { atl(d.spr); atl(d.sh); }
 
 // A point px from the rails at km k, on side (1 east, -1 west): {x, y, s}
 function lootBeside(k, px, side) {
@@ -12218,23 +12248,32 @@ function addFind(kind, k, px, side, pay) {
   G.loot.push(f);
   return f;
 }
-// Roll this run's finds: the fixed ones, then the piles (from a seed that changes every run).
+// Reset finds for a new leg; its timeline creates the drops as events fire.
 function rollLoot() {
-  lootArt();
   G.loot = [];
   G.lootFly = [];
-  const rng = mulberry(hash32(SAVE.runs * 7919 + 101)), k0 = kmAt(G.tr.startS), k1 = kmAt(G.goalS), c = LOOT.pile;
-  const gate = (k) => k > k0 && k < k1;
-  if (!SAVE.flags.gold && gate(LOOT.gold.km)) addFind('gold', LOOT.gold.km, LOOT.gold.off, LOOT.gold.side, LOOT.gold.pay);
-  if (!SAVE.flags.sos && gate(LOOT.sos.km)) addFind('sos', LOOT.sos.km, LOOT.sos.off, LOOT.sos.side, 0);
-  const stops = [0].concat(STATIONS.map((d) => d.km)), fixed = G.loot.slice();
-  for (let i = Math.floor(k0 * CFG.line.km / c.every) + 1; i * c.every < k1 * CFG.line.km; i++) {
-    const k = i * c.every / CFG.line.km, side = rng() < 0.5 ? -1 : 1, px = Math.round(lerp(c.near, c.far, rng())), on = rng() < c.fill;
-    if (!on || !gate(k) || stops.some((sk) => Math.abs(sk - k) * CFG.line.km < LOOT.clear)) continue;
-    const p = lootBeside(k, px, side);
-    if (fixed.some((f) => Math.hypot(f.x - p.x, f.y - p.y) < 70)) continue;
-    addFind('pile', k, px, side, k > LOOT.farKm ? c.payFar : c.pay);
-  }
+}
+// A timeline drop starts beside the rails, then its whole prop group stays inside the usable view.
+// Defaults for forward distance, side offset and viewport margins are placement proposals.
+function addLegLoot(kind, params = {}, eventId = '') {
+  if (!G || G.demo || G.result || mode !== 'play' || !['pile', 'crate'].includes(kind)) return null;
+  if (!params || typeof params !== 'object') params = {};
+  const num = (key, fallback) => Number.isFinite(params[key]) ? params[key] : fallback;
+  const id = typeof eventId === 'string' && eventId ? eventId : 'leg-' + G.leg + '-' + kind + '-' + G.loot.length;
+  const old = G.loot.find((f) => f.eventId === id);
+  if (old) return old;
+  const c = LEGLOOTC, ahead = clamp(num('ahead', c.ahead), 0, c.maxAhead);
+  const off = clamp(num('off', c.off), c.minOff, Math.min(c.maxOff, W * c.widthFrac));
+  const side = num('side', 1) < 0 ? -1 : 1, s = clamp(G.tr.s - ahead, G.goalS + c.goalPad, G.tr.startS - c.startPad);
+  const pay = Math.max(0, Math.floor(num('pay', LOOT[kind].pay)));
+  const f = addFind(kind, kmAt(s), off, side, pay);
+  const x = Math.round(clamp(f.x, G.camX + c.viewX, G.camX + W - c.viewX));
+  const y = Math.round(clamp(f.y, G.camY + c.viewTop, G.camY + VH - c.viewBottom)), dx = x - f.x, dy = y - f.y;
+  for (const o of f.props) { o.x += dx; o.y += dy; o.k = o.y; }
+  f.x = x; f.y = y; f.eventId = id;
+  const local = trackLocal(x, y, {});
+  f.s = local.a; f.km = kmAt(local.a); f.off = Math.abs(local.u); f.side = local.u < 0 ? -1 : 1;
+  return f;
 }
 // The middle of the view (less the camera's lead): how far the edge arrows reach is counted from it
 const LG = [0, 0];
@@ -12550,7 +12589,8 @@ Object.assign(window.__sr, {
   // loot(): this run's finds. lootGo(i): put the heli's ground point over find i (the radio range
   // still holds it back on the next step). lootTake(i): take find i at once. lootSpawn(kind): a find
   // of that kind (pile, crate, gold, sos) right under the heli.
-  loot: () => (G.loot || []).map((f, i) => ({ i, kind: f.kind, km: f.km, off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, gone: f.gone, seen: f.seen,
+  loot: () => (G.loot || []).map((f, i) => ({ i, kind: f.kind, eventId: f.eventId || null, km: f.km, s: f.s,
+    off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, gone: f.gone, seen: f.seen,
     stage: f.stage, w: f.w, placed: f.placed, awake: f.awake, guards: f.zs ? f.zs.filter((z) => !z.dead).length : 0 })),
   lootGo: (i) => {
     const f = G.loot[i], h = G.helis[0];
@@ -13641,10 +13681,10 @@ Object.assign(window.__sr, {
 Object.assign(window.__sr, {
   // horde() = the spawner now: streams coming in, waves so far, the horde's numbers here
   horde: () => ({ streams: STREAMS.length, waves: G.waves || 0, alive: G.zombies.length, layer: CROWD.list.length,
-    booms: BOOMS.length, hd: G.demo ? null : Object.assign({}, horde(DK())) }),
+    booms: BOOMS.length, hd: G.demo ? null : Object.assign({}, horde()) }),
   // stream(n, edge): a stream of n now (edge -1 left, 1 right, 0 top); wave(): a wave now
   stream: (n, edge) => addStream(n || 20, edge || 0, false),
-  wave: () => { G.waveCd = 0; },
+  wave: () => dispatchLegEvent('wave', { n: Math.round(horde().size * 1.5) }, 'qa-wave'),
   // crowd(n, sx, sy, r, type): n walking zombies round screen pixel (sx, sy) within r px
   crowd: (n, sx, sy, r, type) => {
     for (let i = 0; i < n; i++) {
@@ -14095,7 +14135,8 @@ Object.assign(window.__sr, {
   line: () => ({
     stops: STOPS.map(({ id, name, kind, km, side }) => ({ id, name, kind, km, side })),
     legs: LEGS.map((l) => ({ n: l.n, from: l.from.id, to: l.to.id, len: l.len,
-      stars: l.stars, rescue: l.rescue, finale: l.finale, events: l.events.map((e) => ({ ...e })) }))
+      stars: l.stars, rescue: l.rescue, finale: l.finale, base: { ...l.base },
+      events: l.events.map(([at, kind, params]) => [at, kind, { ...params }]) }))
   }),
   leg: (n, replay) => { startGame(n, replay); return G.leg; },
   win: () => { window.__sr.jump(8); },
@@ -14108,7 +14149,8 @@ Object.assign(window.__sr, {
     return SAVE.leg;
   },
   legState: () => ({ leg: G.leg, t: +G.run.toFixed(2), len: legDef(G.leg)?.len || 0,
-    result: G.result, replay: G.replay, events: G.events.slice(),
+    result: G.result, replay: G.replay, eventIndex: G.eventIndex,
+    events: G.events.map((e) => ({ ...e })), base: { ...legDef(G.leg)?.base },
     stars: (SAVE.legs[G.leg]?.stars || [false, false, false]).slice(),
     gold: G.gold || 0, surv: G.surv, scrap: Math.floor(G.cash), wall: null })
 });

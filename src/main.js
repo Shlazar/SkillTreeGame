@@ -301,7 +301,7 @@ function boot() {
     get SAVE() { return SAVE; },
     FPS,
     CFG,
-    // the horde by distance (rows of HORDE in game.js), for balance tests
+    // Per-leg base horde rows, for balance tests.
     HORDE,
     // the sprites, for a test sheet
     art: () => ({ TRAIN, FOOT, HSPR, ROTOR, STATION, SURV, ZS, ICON, TURRET }),

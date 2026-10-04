@@ -2,7 +2,7 @@
 // streams and waves from the edges of the screen and flow round each other to the train, and die
 // in a red pop that stays on the ground (a red carpet after a big fight).
 // Inside: the zombie art (pale sickly bodies, a dark outline, a dark head, a red mouth), the
-// horde by distance (HORDE) and the spawner (streams, waves, crowds on the rails), the step of
+// per-leg base horde (HORDE) and the spawner (streams, waves, crowds on the rails), the step of
 // every zombie (updateZombies, with the railway looked up from a cache of rows), the fast pixel
 // layer that draws a crowd of hundreds in one go (gatherHorde, drawHorde), the kill pop, silver
 // zombies (G.up.silver: they shine and pay more), explosive zombies (G.up.boom, G.up.boomR: they
@@ -270,45 +270,23 @@ function railLocal(x, y, out) {
   return out;
 }
 
-// ---------- the horde by distance
-// One row per distance from the Depot (km). Between two rows the numbers blend; past the last they
-// stay. [km, most dead alive, stream size (the smallest; up to half again), seconds between two
-// streams, seconds between two waves, streams in a wave, a crowd on the rails every (s, from, to),
-// crowd size, share of runners, share of brutes in streams, share of brutes in rail crowds]
-const HORDE = [
-  [0, 160, 7, 2, 13, 3, 8, 11, 3, 0, 0, 0],
-  [0.3, 260, 10, 1.6, 12, 3, 7, 10, 5, 0.06, 0, 0],
-  [0.6, 400, 13, 1.25, 11, 4, 6, 8.5, 12, 0.12, 0, 0.04],
-  [1, 600, 18, 0.95, 10, 5, 5, 7.5, 16, 0.18, 0.01, 0.08],
-  [1.5, 800, 22, 0.8, 9, 6, 4.5, 7, 19, 0.22, 0.02, 0.12],
-  [2, 1000, 26, 0.65, 8, 7, 4, 6.5, 22, 0.25, 0.03, 0.16]
-];
-const HD = { want: 0, size: 0, gap: 0, wave: 0, waveN: 0, every0: 0, every1: 0, rail: 0, run: 0, brute: 0, railBrute: 0 };
-// The horde's numbers at d km (filled into HD).
-function horde(d) {
-  let i = 0;
-  while (i < HORDE.length - 2 && d > HORDE[i + 1][0]) i++;
-  const a = HORDE[i], b = HORDE[i + 1], t = clamp((d - a[0]) / (b[0] - a[0]), 0, 1), m = (k) => lerp(a[k], b[k], t);
-  HD.want = Math.min(CFG.pop.max, Math.round(m(1)));
-  HD.size = m(2);
-  HD.gap = m(3);
-  HD.wave = m(4);
-  HD.waveN = Math.round(m(5));
-  HD.every0 = m(6);
-  HD.every1 = m(7);
-  HD.rail = Math.floor(m(8));
-  HD.run = d < CFG.pop.runFrom ? 0 : m(9);
-  HD.brute = d < CFG.pop.bruteFrom ? 0 : m(10);
-  HD.railBrute = d < CFG.pop.bruteFrom ? 0 : m(11);
-  return HD;
+// ---------- the small base horde under each leg's event timeline
+// A separate row per leg lets its content grow without using distance from the Depot. The first
+// timeline uses walkers; the remaining leg introductions are filled by the route-content task.
+// Living cap, base stream size and seconds between streams (proposal)
+const HORDE = Array.from({ length: 12 }, () => ({ want: 160, size: 4, gap: 4, run: 0, brute: 0, railBrute: 0 }));
+// The menu battle retains its previous middle-route pace, independently of the selected leg.
+const DEMO_HD = { want: 420, size: 16.75, gap: 1.025, wave: 10.25, waveN: 5, run: 0.1, brute: 0.02 };
+// Older diagnostics may pass km; actual play always reads its selected leg instead.
+function horde() {
+  if (G.demo) return DEMO_HD;
+  return legDef(G.leg)?.base || HORDE[0];
 }
-// the demo behind the menus: a lively middle of the table
-const DEMO_HD = Object.assign({}, HD);
 // 0 walker, 1 runner, 2 brute. rail = for a crowd on the rails.
 function pickType(rail) {
   const r = Math.random();
   if (G.demo) return r < 0.02 ? 2 : r < 0.12 ? 1 : 0;
-  const h = horde(DK()), b = rail ? h.railBrute : h.brute;
+  const h = horde(), b = rail ? h.railBrute : h.brute;
   return r < b ? 2 : r < b + h.run ? 1 : 0;
 }
 // A pack of n standing round (hx, hy) (the start of a run, the demo).
@@ -357,25 +335,25 @@ function updateStreams(dt, want) {
       if (G.zombies.length >= want) continue;
       // (a stream from the side comes in a band, one from the top in a line across)
       const jx = s.edge ? rnd(-4, 4) : rnd(-10, 10), jy = s.edge ? rnd(-8, 8) : rnd(-3, 3);
-      const z = newDead(G.camX + s.sx + jx, G.camY + s.sy + jy, G.demo ? pickType(false) : pickType(false));
+      const z = newDead(G.camX + s.sx + jx, G.camY + s.sy + jy, pickType(false));
       z.stream = 1;
       G.zombies.push(z);
     }
     if (s.n <= 0) STREAMS.splice(i, 1);
   }
 }
-// More of the dead come as the train goes: a stream every few seconds, a wave of streams from all
-// sides now and then, and a crowd on the rails ahead. No rail crowds just before a Dead Wall.
+// Real legs have only a small base trickle here; the timeline supplies their waves and rail
+// crowds. The attract battle keeps its independent automatic waves and crowds.
 function spawn(dt) {
-  const h = G.demo ? DEMO_HD : horde(DK());
-  if (G.demo && !h.want) Object.assign(DEMO_HD, horde(0.9), { want: 420, run: 0.1, brute: 0.02 });
-  updateStreams(dt, h.want);
+  const h = horde(), want = Math.min(CFG.pop.max, h.want);
+  updateStreams(dt, want);
   G.spawnCd -= dt;
-  if (G.spawnCd <= 0 && G.zombies.length < h.want) {
+  if (G.spawnCd <= 0 && G.zombies.length < want) {
     const r = Math.random();
     addStream(Math.round(h.size * rnd(1, 1.5)), r < 0.5 ? 0 : r < 0.75 ? -1 : 1, false);
     G.spawnCd = h.gap * rnd(0.8, 1.25);
   }
+  if (!G.demo) return;
   G.waveCd = (G.waveCd == null ? h.wave * 0.6 : G.waveCd) - dt;
   if (G.waveCd <= 0) {
     G.waveCd = h.wave * rnd(0.85, 1.15);
@@ -384,13 +362,8 @@ function spawn(dt) {
   }
   G.railCd -= dt;
   if (G.railCd <= 0) {
-    if (G.demo) {
-      railGroup(rndi(6, 10));
-      G.railCd = rnd(6, 9);
-    } else {
-      if (!wallAhead(CFG.wall.warn)) railGroup(rndi(h.rail, h.rail + 4));
-      G.railCd = rnd(h.every0, h.every1);
-    }
+    railGroup(rndi(6, 10));
+    G.railCd = rnd(6, 9);
   }
 }
 // A new run (or the demo) starts with no streams.

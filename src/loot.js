@@ -1,26 +1,23 @@
-// loot.js - the finds you fly out from the train for: scrap piles on car wrecks, supply crates in
-// burnt farms (kept for the coming leg events), the golden
-// crate (once per save) and the stranded survivor on a bus roof (SOS, once per save, after Farm Stop
-// is held) that the Winch lifts. Any heli that flies over a find (right click it to send one) takes
-// it: it flies up to that heli and pays. G.loot = this run's finds, rolled in newGame().
+// loot.js - timeline finds: scrap piles on wrecks and supply crates in burnt farms. Fly the Viper
+// near a find to collect it; it flies up to the heli and pays. Gold crates and the bus-roof rescue
+// keep their collection mechanics for their later leg events. G.loot resets in newGame().
 
-// pile: one spot every `every` px along the rails (100 m), `fill` of them have a pile (rolled again
-// each run), `near` to `far` px from the rails. crate: its guards, how near the heli wakes them,
+// pile: scrap paid. crate: its guards, how near the heli wakes them,
 // how near the heli its edge arrow shows, how far along the rails ahead of the train its guards are
 // placed. gold / sos: km, px from the rails, side (1 east, -1 west), how near the heli their arrow
 // shows. sos.reach = px the heli must hover within for the Winch. fly = seconds a find takes to fly
-// up to the heli. Past farKm (Farm Stop) piles and crates pay payFar. clear = no pile within this
-// many px along the rails of a stop (so none lies in a station's grid).
+// up to the heli. Leg events supply the position and can override scrap paid.
 const LOOT = {
-  pile: { every: 200, fill: 0.6, near: 80, far: 250, pay: 15, payFar: 30 },
-  crate: { pay: 50, payFar: 100, guards: 8, wake: 120, arrow: 450, place: 500 },
+  pile: { pay: 15 },
+  crate: { pay: 50, guards: 8, wake: 120, arrow: 450, place: 500 },
   gold: { km: 0.32, off: 250, side: -1, pay: 150, arrow: 700 },
   sos: { km: 1.2, off: 220, side: 1, reach: 20, arrow: 700 },
-  fly: 0.3, farKm: 1, clear: 180
+  fly: 0.3
 };
-// the supply crates: [km, px from the rails, side]
-const CRATES = [[0.12, 240, 1], [0.58, 250, -1], [1.30, 250, -1], [1.55, 240, 1], [1.90, 250, -1]];
-// the find sprites (drawn once, on the first run)
+// Event placement distances/margins in world or screen px; widthFrac is a viewport fraction (proposal)
+const LEGLOOTC = { ahead: 120, off: 100, maxAhead: 500, minOff: 24, maxOff: 180, widthFrac: 0.4,
+  goalPad: 40, startPad: 24, viewX: 40, viewTop: 56, viewBottom: 42 };
+// Find art is created and packed once during script initialization, before the first frame.
 const LART = {};
 function lootArt() {
   if (LART.heap) return;
@@ -49,6 +46,8 @@ function lootArt() {
     r(12, 1, 6, 2, '#8a5a1c'); r(26, 3, 5, 2, '#6a3a18'); r(5, 11, 3, 2, '#6a3a18');
   }), 10);
 }
+lootArt();
+for (const d of Object.values(LART)) { atl(d.spr); atl(d.sh); }
 
 // A point px from the rails at km k, on side (1 east, -1 west): {x, y, s}
 function lootBeside(k, px, side) {
@@ -89,23 +88,32 @@ function addFind(kind, k, px, side, pay) {
   G.loot.push(f);
   return f;
 }
-// Roll this run's finds: the fixed ones, then the piles (from a seed that changes every run).
+// Reset finds for a new leg; its timeline creates the drops as events fire.
 function rollLoot() {
-  lootArt();
   G.loot = [];
   G.lootFly = [];
-  const rng = mulberry(hash32(SAVE.runs * 7919 + 101)), k0 = kmAt(G.tr.startS), k1 = kmAt(G.goalS), c = LOOT.pile;
-  const gate = (k) => k > k0 && k < k1;
-  if (!SAVE.flags.gold && gate(LOOT.gold.km)) addFind('gold', LOOT.gold.km, LOOT.gold.off, LOOT.gold.side, LOOT.gold.pay);
-  if (!SAVE.flags.sos && gate(LOOT.sos.km)) addFind('sos', LOOT.sos.km, LOOT.sos.off, LOOT.sos.side, 0);
-  const stops = [0].concat(STATIONS.map((d) => d.km)), fixed = G.loot.slice();
-  for (let i = Math.floor(k0 * CFG.line.km / c.every) + 1; i * c.every < k1 * CFG.line.km; i++) {
-    const k = i * c.every / CFG.line.km, side = rng() < 0.5 ? -1 : 1, px = Math.round(lerp(c.near, c.far, rng())), on = rng() < c.fill;
-    if (!on || !gate(k) || stops.some((sk) => Math.abs(sk - k) * CFG.line.km < LOOT.clear)) continue;
-    const p = lootBeside(k, px, side);
-    if (fixed.some((f) => Math.hypot(f.x - p.x, f.y - p.y) < 70)) continue;
-    addFind('pile', k, px, side, k > LOOT.farKm ? c.payFar : c.pay);
-  }
+}
+// A timeline drop starts beside the rails, then its whole prop group stays inside the usable view.
+// Defaults for forward distance, side offset and viewport margins are placement proposals.
+function addLegLoot(kind, params = {}, eventId = '') {
+  if (!G || G.demo || G.result || mode !== 'play' || !['pile', 'crate'].includes(kind)) return null;
+  if (!params || typeof params !== 'object') params = {};
+  const num = (key, fallback) => Number.isFinite(params[key]) ? params[key] : fallback;
+  const id = typeof eventId === 'string' && eventId ? eventId : 'leg-' + G.leg + '-' + kind + '-' + G.loot.length;
+  const old = G.loot.find((f) => f.eventId === id);
+  if (old) return old;
+  const c = LEGLOOTC, ahead = clamp(num('ahead', c.ahead), 0, c.maxAhead);
+  const off = clamp(num('off', c.off), c.minOff, Math.min(c.maxOff, W * c.widthFrac));
+  const side = num('side', 1) < 0 ? -1 : 1, s = clamp(G.tr.s - ahead, G.goalS + c.goalPad, G.tr.startS - c.startPad);
+  const pay = Math.max(0, Math.floor(num('pay', LOOT[kind].pay)));
+  const f = addFind(kind, kmAt(s), off, side, pay);
+  const x = Math.round(clamp(f.x, G.camX + c.viewX, G.camX + W - c.viewX));
+  const y = Math.round(clamp(f.y, G.camY + c.viewTop, G.camY + VH - c.viewBottom)), dx = x - f.x, dy = y - f.y;
+  for (const o of f.props) { o.x += dx; o.y += dy; o.k = o.y; }
+  f.x = x; f.y = y; f.eventId = id;
+  const local = trackLocal(x, y, {});
+  f.s = local.a; f.km = kmAt(local.a); f.off = Math.abs(local.u); f.side = local.u < 0 ? -1 : 1;
+  return f;
 }
 // The middle of the view (less the camera's lead): how far the edge arrows reach is counted from it
 const LG = [0, 0];
@@ -421,7 +429,8 @@ Object.assign(window.__sr, {
   // loot(): this run's finds. lootGo(i): put the heli's ground point over find i (the radio range
   // still holds it back on the next step). lootTake(i): take find i at once. lootSpawn(kind): a find
   // of that kind (pile, crate, gold, sos) right under the heli.
-  loot: () => (G.loot || []).map((f, i) => ({ i, kind: f.kind, km: f.km, off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, gone: f.gone, seen: f.seen,
+  loot: () => (G.loot || []).map((f, i) => ({ i, kind: f.kind, eventId: f.eventId || null, km: f.km, s: f.s,
+    off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, gone: f.gone, seen: f.seen,
     stage: f.stage, w: f.w, placed: f.placed, awake: f.awake, guards: f.zs ? f.zs.filter((z) => !z.dead).length : 0 })),
   lootGo: (i) => {
     const f = G.loot[i], h = G.helis[0];
