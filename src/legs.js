@@ -83,7 +83,7 @@ function legEventNotice(title, color) {
   if (banners[0] && banners[0] !== previous) banners[0].T = LEG_EVENT_NOTICE;
 }
 
-// Supported events use the existing spawners. Future rescue/variant events are left to
+// Supported events use the existing spawners. Future variant events are left to
 // their real feature handlers; they never masquerade as another event or earn a fired receipt.
 function dispatchLegEvent(kind, params, id) {
   const p = params || {}, n = Math.max(0, Math.floor(Number(p.n) || 0));
@@ -111,6 +111,7 @@ function dispatchLegEvent(kind, params, id) {
   if (kind === 'deadWall') return addDeadWall(p, id) ? 1 : null;
   if (kind === 'golden') return addGolden(p, id) ? 1 : null;
   if (kind === 'goldCrate') return addLegLoot('goldCrate', p, id) ? 1 : null;
+  if (kind === 'rescue') return addLegRescue(p, id) ? 1 : null;
   return null;
 }
 

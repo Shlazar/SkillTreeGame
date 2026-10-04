@@ -102,8 +102,7 @@ function tutEvent(name, d) {
     pile_taken: () => tutCount('pile'),
     crate_seen: () => task('t_crate', 'GRAB THE SUPPLY CRATE', 1, 'crate'),
     crate_taken: () => tutCount('crate'),
-    sos_seen: () => tip('p_sos', 'A SURVIVOR! FLY OVER THEM TO WINCH THEM UP.', P(d)),
-    sos_near: () => tip('p_lift', 'HOLD YOUR VIPER OVER THEM FOR 2 SECONDS.', P(d)),
+    sos_seen: () => tip('p_sos', 'HOVER OVER HIM TO WINCH HIM UP.', P(d)),
     golden_seen: () => tip('p_golden', 'CATCH THE GOLDEN ZOMBIE!', P(d.z || d))
   }[name];
   if (ev) ev();

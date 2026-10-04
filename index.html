@@ -3336,6 +3336,7 @@ function buildSafeZone() {
 // Arrival wins this leg. The station guards clear the climbers while the short summary opens.
 function arrive() {
   if (G.demo || G.result) return;
+  if (G.leg === 12 && !G.replay) rescueCamp();
   G.result = 'won';
   G.tr.v = 0;
   G.tr.s = G.goalS;
@@ -5566,7 +5567,7 @@ function legEventNotice(title, color) {
   if (banners[0] && banners[0] !== previous) banners[0].T = LEG_EVENT_NOTICE;
 }
 
-// Supported events use the existing spawners. Future rescue/variant events are left to
+// Supported events use the existing spawners. Future variant events are left to
 // their real feature handlers; they never masquerade as another event or earn a fired receipt.
 function dispatchLegEvent(kind, params, id) {
   const p = params || {}, n = Math.max(0, Math.floor(Number(p.n) || 0));
@@ -5594,6 +5595,7 @@ function dispatchLegEvent(kind, params, id) {
   if (kind === 'deadWall') return addDeadWall(p, id) ? 1 : null;
   if (kind === 'golden') return addGolden(p, id) ? 1 : null;
   if (kind === 'goldCrate') return addLegLoot('goldCrate', p, id) ? 1 : null;
+  if (kind === 'rescue') return addLegRescue(p, id) ? 1 : null;
   return null;
 }
 
@@ -12467,25 +12469,27 @@ function boot() {
 boot();
 
 // loot.js - timeline finds: scrap piles on wrecks and supply crates in burnt farms. Fly the Viper
-// near a find to collect it; it flies up to the heli and pays. Golden crates bank at pickup;
-// the bus-roof rescue keeps its collection mechanics for later leg events. G.loot resets in newGame().
+// near a find to collect it; it flies up to the heli and pays. Golden crates bank at pickup.
+// Field rescues bank after a two-second hover and carry forward until saved. G.loot resets per leg.
 
 // pile: scrap paid. crate: its guards, how near the heli wakes them,
 // how near the heli its edge arrow shows, how far along the rails ahead of the train its guards are
-// placed. gold: first gold payment / retry scrap, arrow reach. sos: km, px from the rails, side,
-// (1 east, -1 west), how near the heli its arrow
-// shows. sos.reach = px the heli must hover within for the Winch. fly = seconds a find takes to fly
+// placed. gold: first gold payment / retry scrap, arrow reach. sos: hover reach and arrow reach.
+// sos.reach = px the heli must hover within for the Winch. fly = seconds a find takes to fly
 // up to the heli. Leg events supply the position and can override scrap paid.
 const LOOT = {
   pile: { pay: 15 },
   crate: { pay: 50, guards: 8, wake: 120, arrow: 450, place: 500 },
   gold: { pay: 5, scrap: 25, arrow: 700 },
-  sos: { km: 1.2, off: 220, side: 1, reach: 20, arrow: 700 },
+  sos: { reach: 20, arrow: 700 },
   fly: 0.3
 };
 // Event placement distances/margins in world or screen px; widthFrac is a viewport fraction (proposal)
 const LEGLOOTC = { ahead: 120, off: 100, maxAhead: 500, minOff: 24, maxOff: 180, widthFrac: 0.4,
   goalPad: 40, startPad: 24, viewX: 40, viewTop: 56, viewBottom: 42 };
+const RESCUE_IDS = ['rescue-4', 'rescue-8', 'rescue-10'];
+// Carry placements in world px; rope/lift/icon durations in seconds; ground hand/label height in px. (proposal)
+const RESCUEC = { carryAhead: 80, carryStep: 60, carryOff: 70, rope: 0.45, lift: 1.6, icon: 0.8, hand: 9, label: 22 };
 // Find art is created and packed once during script initialization, before the first frame.
 const LART = {};
 function lootArt() {
@@ -12517,6 +12521,8 @@ function lootArt() {
 }
 lootArt();
 for (const d of Object.values(LART)) { atl(d.spr); atl(d.sh); }
+const RESCUEART = { n: SURV[2].n, h: SURV[2].h, sh: shadowSpr(7), ax: SURV[2].n.width >> 1, ay: SURV[2].n.height - 1 };
+atl(RESCUEART.n); atl(RESCUEART.h); atl(RESCUEART.sh);
 
 // A point px from the rails at km k, on side (1 east, -1 west): {x, y, s}
 function lootBeside(k, px, side) {
@@ -12552,9 +12558,10 @@ function addFind(kind, k, px, side, pay) {
     f.top = put(LART.gold, f.x, f.y);
     f.rewardId = 'gold-crate';
   } else {
-    f.top = put(LART.bus, f.x, f.y);
+    f.ground = true;
     f.stage = 'wait';
-    f.w = 0;
+    f.w = f.u = 0;
+    f.saved = false;
   }
   G.loot.push(f);
   return f;
@@ -12563,12 +12570,13 @@ function addFind(kind, k, px, side, pay) {
 function rollLoot() {
   G.loot = [];
   G.lootFly = [];
+  G.rescueCarryDone = false;
 }
 // A timeline drop starts beside the rails, then its whole prop group stays inside the usable view.
 // Defaults for forward distance, side offset and viewport margins are placement proposals.
 function addLegLoot(kind, params = {}, eventId = '') {
   if (kind === 'goldCrate') kind = 'gold';
-  if (!G || G.demo || G.result || mode !== 'play' || !['pile', 'crate', 'gold'].includes(kind)) return null;
+  if (!G || G.demo || G.result || mode !== 'play' || !['pile', 'crate', 'gold', 'sos'].includes(kind)) return null;
   if (!params || typeof params !== 'object') params = {};
   const num = (key, fallback) => Number.isFinite(params[key]) ? params[key] : fallback;
   const id = typeof eventId === 'string' && eventId ? eventId : 'leg-' + G.leg + '-' + kind + '-' + G.loot.length;
@@ -12577,7 +12585,7 @@ function addLegLoot(kind, params = {}, eventId = '') {
   const c = LEGLOOTC, ahead = clamp(num('ahead', c.ahead), 0, c.maxAhead);
   const off = clamp(num('off', c.off), c.minOff, Math.min(c.maxOff, W * c.widthFrac));
   const side = num('side', 1) < 0 ? -1 : 1, s = clamp(G.tr.s - ahead, G.goalS + c.goalPad, G.tr.startS - c.startPad);
-  const pay = kind === 'gold' ? LOOT.gold.pay : Math.max(0, Math.floor(num('pay', LOOT[kind].pay)));
+  const pay = kind === 'sos' ? 0 : kind === 'gold' ? LOOT.gold.pay : Math.max(0, Math.floor(num('pay', LOOT[kind].pay)));
   const f = addFind(kind, kmAt(s), off, side, pay);
   const x = Math.round(clamp(f.x, G.camX + c.viewX, G.camX + W - c.viewX));
   const y = Math.round(clamp(f.y, G.camY + c.viewTop, G.camY + VH - c.viewBottom)), dx = x - f.x, dy = y - f.y;
@@ -12586,6 +12594,56 @@ function addLegLoot(kind, params = {}, eventId = '') {
   const local = trackLocal(x, y, {});
   f.s = local.a; f.km = kmAt(local.a); f.off = Math.abs(local.u); f.side = local.u < 0 ? -1 : 1;
   return f;
+}
+// Stable rescue receipts are global to the route, unlike per-leg gold receipts. Queue at spawn so
+// a loss or a fast arrival cannot discard somebody; the next live leg positions them after camera setup.
+function addLegRescue(params = {}, eventId = '') {
+  if (!G || G.demo || G.replay || G.result || mode !== 'play') return null;
+  if (!params || typeof params !== 'object') params = {};
+  const id = params.id;
+  if (!RESCUE_IDS.includes(id) || SAVE.rescues.includes(id)) return null;
+  const old = G.loot.find((f) => f.rescueId === id);
+  if (old) return old;
+  const f = addLegLoot('sos', params, eventId);
+  if (!f) return null;
+  f.rescueId = id;
+  f.carried = params.carried === true;
+  if (!SAVE.rescueDue.includes(id)) { SAVE.rescueDue.push(id); saveSave(); }
+  return f;
+}
+function carryRescues() {
+  if (G.rescueCarryDone || G.demo || G.replay || G.result || mode !== 'play') return;
+  G.rescueCarryDone = true;
+  const due = SAVE.rescueDue.slice();
+  let i = 0;
+  for (const id of due) {
+    if (!RESCUE_IDS.includes(id) || SAVE.rescues.includes(id)) continue;
+    addLegRescue({ id, carried: true, ahead: RESCUEC.carryAhead + i * RESCUEC.carryStep,
+      off: RESCUEC.carryOff + i * RESCUEC.carryStep / 2, side: i % 2 ? -1 : 1 }, 'leg-' + G.leg + '-carry-' + id);
+    i++;
+  }
+}
+function claimRescue(id) {
+  if (!G || G.demo || G.replay || G.result || !RESCUE_IDS.includes(id) || SAVE.rescues.includes(id)) return false;
+  SAVE.rescues.push(id);
+  SAVE.rescueDue = SAVE.rescueDue.filter((due) => due !== id);
+  SAVE.flags.sos = true;
+  G.surv++;
+  bankRun();
+  return true;
+}
+// Called only by the actual Terminus arrival, before its won result. This also catches original
+// rescue events skipped by a very fast ride, so all three designed survivors remain attainable.
+function rescueCamp() {
+  if (!G || G.demo || G.replay || G.result || G.leg !== 12 || mode !== 'play') return 0;
+  let n = 0;
+  for (const id of RESCUE_IDS) if (claimRescue(id)) n++;
+  if (n) {
+    const h = G.helis[0];
+    floatText(h.x, h.y - h.alt, '+' + n + ' SURVIVOR' + (n === 1 ? '' : 'S'), U.amber);
+    SFX.saved();
+  }
+  return n;
 }
 // The middle of the view (less the camera's lead): how far the edge arrows reach is counted from it
 const LG = [0, 0];
@@ -12608,13 +12666,14 @@ function lootHeli(f) {
 function updateLoot(dt) {
   if (!G.loot) return;
   const live = mode === 'play' && !G.result;
+  if (live) carryRescues();
   for (const f of G.loot) {
     if (f.gone && f.kind !== 'sos') continue;
     f.t += dt;
     const [h, d] = lootHeli(f);
     if (!f.seen && live && (!offView(f.x, f.y, -12) || (f.kind !== 'pile' && d < (LOOT[f.kind].arrow || 0)))) {
       f.seen = true;
-      lootTut(f.kind === 'gold' ? 'gold_crate_seen' : f.kind + '_seen', f.kind === 'sos' ? { winch: !!G.up.winch } : { x: f.x, y: f.y });
+      lootTut(f.kind === 'gold' ? 'gold_crate_seen' : f.kind + '_seen', { x: f.x, y: f.y, rescueId: f.rescueId });
     }
     if (f.kind === 'crate') crateStep(f, d, dt);
     if (f.kind === 'sos') {
@@ -12635,7 +12694,7 @@ function updateLoot(dt) {
 }
 // A find is taken by heli h: it flies up to it (the pile's heap or the crate leaves the ground).
 function takeLoot(f, h) {
-  if (!f || f.gone) return;
+  if (!f || f.gone || f.kind === 'sos') return;
   f.gone = true;
   // Bank once at real pickup; the following flight is cosmetic even if the run ends meanwhile.
   if (f.kind === 'gold') f.reward = payGold(f.rewardId, LOOT.gold.pay, LOOT.gold.scrap);
@@ -12697,7 +12756,7 @@ function crateStep(f, d, dt) {
   }
 }
 // The stranded survivor: a flare every 6 s. The built-in winch needs about 2 s of hovering
-// (leaving starts it again): the rope drops, they grab it and swing up under that heli: +1 survivor.
+// (leaving starts it again). Bank +1 immediately, then let the rope and lift finish cosmetically.
 function sosStep(f, d, dt, live, h) {
   if (f.stage === 'done') return;
   if (f.stage === 'wait') {
@@ -12705,36 +12764,31 @@ function sosStep(f, d, dt, live, h) {
       f.t = 0;
       if (Math.abs(f.x - G.camX - W / 2) < W * 1.5 && Math.abs(f.y - G.camY - VH / 2) < VH * 1.5) SFX.flare();
     }
-    if (live && !f.near && d < 70) {
-      f.near = true;
-      lootTut('sos_near', { winch: !!G.up.winch });
-    }
-    if (live && G.up.winch && d <= LOOT.sos.reach) {
+    if (live && !G.replay && G.up.winch && h && d <= LOOT.sos.reach) {
+      if (f.h && f.h !== h) f.w = 0;
       f.h = h;
       f.w += dt;
-      if (f.w >= CFG.winch.hover) {
+      if (f.w >= CFG.winch.hover - 1e-9 && claimRescue(f.rescueId)) {
+        f.saved = true;
         f.stage = 'rope';
         f.u = 0;
         SFX.winch();
+        SFX.saved();
+        floatText(h.x, h.y - h.alt, '+1 SURVIVOR', U.amber);
+        lootTut('sos_lifted', { id: f.rescueId, x: f.x, y: f.y });
       }
     } else f.w = 0;
     return;
   }
   f.u += dt;
-  if (f.stage === 'rope' && f.u >= 0.45) {
+  if (f.stage === 'rope' && f.u >= RESCUEC.rope) {
     f.stage = 'lift';
     f.u = 0;
-    SFX.saved();
-  } else if (f.stage === 'lift' && f.u >= 1.6) {
+  } else if (f.stage === 'lift' && f.u >= RESCUEC.lift) {
     f.stage = 'done';
     f.gone = true;
-    G.surv++;
-    SAVE.flags.sos = true;
-    bankRun();
     const q = f.h;
-    G.lootFly.push({ surv: true, x0: q.x - G.camX, y0: q.y - q.alt - G.camY + 8, t: 0, T: 0.8 });
-    floatText(q.x, q.y - q.alt, '+1 SURVIVOR', U.green);
-    lootTut('sos_lifted');
+    G.lootFly.push({ surv: true, x0: q.x - G.camX, y0: q.y - q.alt - G.camY + 8, t: 0, T: RESCUEC.icon });
   }
 }
 
@@ -12784,23 +12838,23 @@ function drawLoot() {
     ctx.globalAlpha = 1;
   }
 }
-// The bus with the survivor waving on its roof, the flare, the label, the Winch circle and the rope.
+// A ground survivor waving in a field, their flare, Winch circle and rope. Art is already cached.
 function drawSOS(f, gx, gy) {
-  const sv = SURV[2], wave = (realT * 4 | 0) % 2;
+  const sv = RESCUEART, wave = (realT * 4 | 0) % 2;
   // the flare: up fast, then it hangs and falls slowly, red and bright
   if (f.stage === 'wait' && f.t < 3.2) {
     const t = f.t, z = t < 0.6 ? t / 0.6 * 80 : 80 - (t - 0.6) * 9, a = t < 2.6 ? 1 : (3.2 - t) / 0.6;
     ctx.globalCompositeOperation = 'lighter';
-    light(f.x + 2, f.y - 14 - z, 26, '#ff4a32', 0.8 * a);
-    light(f.x + 2, f.y - 14 - z, 5, '#fff1c2', 0.9 * a);
+    light(f.x + 2, f.y - RESCUEC.hand - z, 26, '#ff4a32', 0.8 * a);
+    light(f.x + 2, f.y - RESCUEC.hand - z, 5, '#fff1c2', 0.9 * a);
     ctx.fillStyle = '#ff6a4a';
     for (let k = 4; k < Math.min(z, 40); k += 3) {
       ctx.globalAlpha = 0.35 * a * (1 - k / 40);
-      ctx.fillRect(Math.round(f.x + 2), Math.round(f.y - 14 - z + k), 1, 2);
+      ctx.fillRect(Math.round(f.x + 2), Math.round(f.y - RESCUEC.hand - z + k), 1, 2);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
-    if (t < 0.6 && Math.random() < 0.5) part({ x: f.x + 2, y: f.y, z: 14 + z, vx: rnd(-3, 3), vy: 0, vz: 0, g: 0, life: 0.8, max: 0.8, s: 1,
+    if (t < 0.6 && Math.random() < 0.5) part({ x: f.x + 2, y: f.y, z: RESCUEC.hand + z, vx: rnd(-3, 3), vy: 0, vz: 0, g: 0, life: 0.8, max: 0.8, s: 1,
       c: 'rgba(200,190,180,0.5)', grow: 2, drag: 1, smoke: true });
   }
   // the Winch circle on the ground round the survivor: it fills while a heli hovers in it
@@ -12814,28 +12868,31 @@ function drawSOS(f, gx, gy) {
     }
     if (fill > 0) text(Math.round(fill * 100) + '%', f.x, f.y + 12, '#ffffff', { align: 'center' });
   }
-  // the survivor: on the roof, on the rope from the heli's belly, or swinging up under it
-  let sx = f.x + 2, sy = f.y - 14, k = 1;
+  // Their feet stand on the ground until they grab the rope from the heli's belly.
+  let sx = f.x + 2, sy = f.y;
   const lh = f.h || hh, ax = Math.round(lh.x), ay = Math.round(lh.y - lh.alt + 2);
   if (f.stage === 'lift') {
-    const u = ease(f.u / 1.6);
+    const u = ease(f.u / RESCUEC.lift);
     sx = lerp(f.x + 2, ax, u) + Math.sin(f.u * 5) * 10 * (1 - u);
-    sy = lerp(f.y - 14, ay + 9, u);
+    sy = lerp(f.y, ay + sv.ay, u);
   }
+  ctx.globalAlpha = (thermal ? 0.2 : 0.32) * (f.stage === 'lift' ? 1 - clamp(f.u / RESCUEC.lift, 0, 1) : 1);
+  blit(sv.sh, Math.round(f.x + 2 - sv.sh.width / 2), Math.round(f.y - sv.sh.height / 2));
+  ctx.globalAlpha = 1;
   if (f.stage === 'rope' || f.stage === 'lift') {
-    const e = f.stage === 'rope' ? Math.min(1, f.u / 0.45) : 1;
-    pl(ctx, ax, ay, Math.round(lerp(ax, sx, e)), Math.round(lerp(ay, sy - 8 * k, e)), '#d6cdb6');
+    const e = f.stage === 'rope' ? Math.min(1, f.u / RESCUEC.rope) : 1;
+    pl(ctx, ax, ay, Math.round(lerp(ax, sx, e)), Math.round(lerp(ay, sy - sv.ay, e)), '#d6cdb6');
     ctx.fillStyle = '#8b919c';
     ctx.fillRect(ax - 1, ay - 1, 3, 2);
   }
-  blit(thermal ? sv.h : sv.n, Math.round(sx - 2 * k), Math.round(sy - 7 * k), 4 * k, 7 * k);
+  blit(thermal ? sv.h : sv.n, Math.round(sx - sv.ax), Math.round(sy - sv.ay));
   // an arm waving (or holding the rope)
   ctx.fillStyle = '#d8cfb6';
-  if (f.stage === 'wait') ctx.fillRect(Math.round(sx - 3), Math.round(sy - 9 + wave), 1, 3);
-  else ctx.fillRect(Math.round(sx), Math.round(sy - 9 * k), k, 2 * k);
+  if (f.stage === 'wait') ctx.fillRect(Math.round(sx - 3), Math.round(sy - RESCUEC.hand + wave), 1, 3);
+  else ctx.fillRect(Math.round(sx), Math.round(sy - RESCUEC.hand), 1, 2);
   if (f.stage === 'wait') {
     const blink = (realT * 2 | 0) % 2 === 0;
-    text('SOS', f.x + 2, f.y - 36, blink ? '#ffffff' : U.red, { align: 'center' });
+    text('SOS', f.x + 2, f.y - RESCUEC.label, blink ? '#ffffff' : U.red, { align: 'center' });
     if (near < 90 && f.w <= 0) text('HOVER HERE', f.x + 2, f.y + 14, '#ffffff', { align: 'center' });
   }
 }
@@ -12845,7 +12902,7 @@ function lootRadar(dot) {
   if (!G.loot) return;
   const blink = (realT * 3 | 0) % 2 === 0;
   for (const f of G.loot) {
-    if (f.gone) continue;
+    if (f.gone || f.saved) continue;
     if (f.kind === 'pile') dot(f.x, f.y, '#7a6330', 1);
     else if (f.kind === 'crate') dot(f.x - 1, f.y - 1, '#5fd16a', 2);
     else if (f.kind === 'gold') { if (blink) dot(f.x - 1, f.y - 1, '#ffd84a', 2); }
@@ -12856,7 +12913,7 @@ function drawLootUI() {
   if (!G.loot) return;
   const [gx, gy] = heliGround();
   if (!G.result) for (const f of G.loot) {
-    if (f.gone) continue;
+    if (f.gone || f.saved) continue;
     const d = Math.hypot(f.x - gx, f.y - gy);
     if (f.kind === 'crate' && d < LOOT.crate.arrow) edgeArrow(f.x, f.y - 4, '#7fe07f', 'CRATE ' + Math.round(d / 2 / 10) * 10 + 'M');
     else if (f.kind === 'gold' && d < LOOT.gold.arrow) edgeArrow(f.x, f.y - 4, '#ffd36a', 'GOLD');
@@ -12866,7 +12923,8 @@ function drawLootUI() {
   for (const q of G.lootFly) {
     if (!q.surv) continue;
     const u = ease(q.t / q.T);
-    blit(ICON.surv, Math.round(lerp(q.x0, 58, u)), Math.round(lerp(q.y0, 5, u) - Math.sin(u * Math.PI) * 24));
+    const target = currencyX('surv');
+    if (target !== null) blit(ICON.surv, Math.round(lerp(q.x0, target - ICON.surv.width / 2, u)), Math.round(lerp(q.y0, 5, u) - Math.sin(u * Math.PI) * 24));
   }
 }
 
@@ -12909,7 +12967,8 @@ Object.assign(window.__sr, {
   loot: () => (G.loot || []).map((f, i) => ({ i, kind: f.kind, eventId: f.eventId || null, km: f.km, s: f.s,
     off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, rewardId: f.rewardId || null,
     reward: f.reward ? { ...f.reward } : null, gone: f.gone, seen: f.seen,
-    stage: f.stage, w: f.w, placed: f.placed, awake: f.awake, guards: f.zs ? f.zs.filter((z) => !z.dead).length : 0 })),
+    stage: f.stage, w: f.w, u: f.u, rescueId: f.rescueId || null, saved: f.saved === true, carried: f.carried === true, ground: f.ground === true,
+    placed: f.placed, awake: f.awake, guards: f.zs ? f.zs.filter((z) => !z.dead).length : 0 })),
   lootGo: (i) => {
     const f = G.loot[i], h = G.helis[0];
     h.x = f.x;
@@ -12919,16 +12978,20 @@ Object.assign(window.__sr, {
   },
   lootTake: (i) => takeLoot(G.loot[i]),
   lootSpawn: (kind) => {
-    const gx = G.helis[0].x, gy = G.helis[0].y, f = addFind(kind, 0, 0, 1, kind === 'gold' ? LOOT.gold.pay : kind === 'crate' ? LOOT.crate.pay : LOOT.pile.pay);
+    const gx = G.helis[0].x, gy = G.helis[0].y;
+    const f = kind === 'sos' ? addLegRescue({ id: RESCUE_IDS.find((id) => !SAVE.rescues.includes(id)) }, 'debug-rescue-' + G.loot.length) :
+      addFind(kind, 0, 0, 1, kind === 'gold' ? LOOT.gold.pay : kind === 'crate' ? LOOT.crate.pay : LOOT.pile.pay);
+    if (!f) return -1;
     const dx = gx + 30 - f.x, dy = gy - f.y;
     for (const o of f.props) { o.x += dx; o.y += dy; o.k = o.y; }
     f.x += dx;
     f.y += dy;
     f.s = G.tr.s;
     f.km = DK();
-    return G.loot.length - 1;
+    return G.loot.indexOf(f);
   },
-  lootStats: () => ({ loot: G.pay.loot, cash: Math.floor(G.cash), surv: G.surv, pickup: G.up.pickup, fly: G.up.fly, winch: G.up.winch })
+  lootStats: () => ({ loot: G.pay.loot, cash: Math.floor(G.cash), surv: G.surv, pickup: G.up.pickup, fly: G.up.fly, winch: G.up.winch,
+    rescues: SAVE.rescues.slice(), due: SAVE.rescueDue.slice() })
 });
 
 // tut.js - the teaching layer and the frame polish: the tutorial prompts, the pause menu, the fades
@@ -13035,8 +13098,7 @@ function tutEvent(name, d) {
     pile_taken: () => tutCount('pile'),
     crate_seen: () => task('t_crate', 'GRAB THE SUPPLY CRATE', 1, 'crate'),
     crate_taken: () => tutCount('crate'),
-    sos_seen: () => tip('p_sos', 'A SURVIVOR! FLY OVER THEM TO WINCH THEM UP.', P(d)),
-    sos_near: () => tip('p_lift', 'HOLD YOUR VIPER OVER THEM FOR 2 SECONDS.', P(d)),
+    sos_seen: () => tip('p_sos', 'HOVER OVER HIM TO WINCH HIM UP.', P(d)),
     golden_seen: () => tip('p_golden', 'CATCH THE GOLDEN ZOMBIE!', P(d.z || d))
   }[name];
   if (ev) ev();

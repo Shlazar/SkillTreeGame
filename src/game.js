@@ -343,6 +343,7 @@ function buildSafeZone() {
 // Arrival wins this leg. The station guards clear the climbers while the short summary opens.
 function arrive() {
   if (G.demo || G.result) return;
+  if (G.leg === 12 && !G.replay) rescueCamp();
   G.result = 'won';
   G.tr.v = 0;
   G.tr.s = G.goalS;

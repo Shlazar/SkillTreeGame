@@ -306,6 +306,7 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 - `lootTake(i)`: take find i at once (`takeLoot`).
 - `lootSpawn(kind)`: a find of kind `'pile'`, `'crate'`, `'gold'` or `'sos'` right next to heli 0. Returns its index.
 - `lootStats()`: `{loot, cash, surv, pickup, fly, winch}`.
+- Rescue finds also copy `rescueId`, `saved` and `carried`. The IDs `rescue-4`, `rescue-8` and `rescue-10` stay the same across rides. Two seconds of continuous hovering saves the survivor immediately; the rope and lift then finish visually. Missed rescues return on the next non-replay ride, and the final Terminus camp saves any remaining survivors.
 
 ### 5.14 Legs and rewards (src/test_f.js)
 
