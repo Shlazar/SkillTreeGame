@@ -7,6 +7,26 @@ Object.assign(window.__sr, {
   planeAim: () => airAimSnapshot(),
   strike: (key, sx, sy, ang) => airStrike(key, sx, sy, ang),
   smart: (key) => airSmart(key),
+  // Copied strike-show geometry keeps the flight, marker and shadow testable after each step.
+  planeShow: () => {
+    if (!G) return null;
+    srSync();
+    return {
+      marks: STRAF.marks.map((m) => ({ x: m.x, y: m.y, age: m.age, T: m.T, radius: m.radius })),
+      jets: STRAF.jets.map((j) => {
+        const [x, y] = jetGround(j), sprite = JET.n[jetIdx(j)];
+        const shadowX = x + j.alt * SUNX, shadowY = y + j.alt * SUNY;
+        return { x, y, screenX: x - G.camX, screenY: y - j.alt - G.camY,
+          shadowX, shadowY, shadowScreenX: shadowX - G.camX, shadowScreenY: shadowY - G.camY,
+          spriteW: sprite.width, spriteH: sprite.height, alt: j.alt, delay: j.delay, age: j.age,
+          shadowSeen: j.shadowSeen, shadowAge: j.shadowAge, bodyReady: j.bodyReady,
+          bodyVisible: j.bodyReady && jetBodyInView(j), shadowVisible: j.delay <= 0 && jetShadowInView(j),
+          roared: j.roared, fired: j.fired, s: j.s, end: j.end, ux: j.ux, uy: j.uy, dmg: j.dmg, half: j.half };
+      }),
+      bombs: STRAF.bombs.length, embers: STRAF.embers.length, roars: STRAF.roars,
+      art: { jet: { w: JET.n[0].width, h: JET.n[0].height }, heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
+    };
+  },
   // Report only implemented unit systems; later weapons stay neutral until their own tasks.
   units: () => {
     if (!G) return null;

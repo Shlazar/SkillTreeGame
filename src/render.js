@@ -299,6 +299,7 @@ function render() {
   }
   drawGroundLife();
   drawShellMarks();
+  drawPlaneMarks();
   drawHorde(sx, sy);
   // shadows of the dead, and of bodies in the air
   ctx.globalAlpha = thermal ? 0.2 : 0.32;

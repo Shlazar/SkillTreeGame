@@ -7,6 +7,9 @@ const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: 
 // Ready swoosh: gate ms, burst/note seconds, volumes and rising filter/note frequencies (proposal)
 const PLANE_READY_SFX = { gap: 90, life: 0.22, volume: 0.065, from: 500, to: 2300,
   q: 0.7, note: 380, noteEnd: 740, noteLife: 0.16, noteVolume: 0.012 };
+// Flyover roar: simultaneous voices, seconds, volumes and falling filter/note frequencies (proposal)
+const PLANE_ROAR_SFX = { voices: 2, life: 1.2, volume: 0.12, from: 2200, to: 160,
+  q: 0.8, note: 180, noteEnd: 50, noteVolume: 0.03 };
 
 function audioInit() {
   if (Au.ctx) {
@@ -220,6 +223,12 @@ const SFX = {
     if (!gap('planeReady', c.gap)) return;
     nz(c.life, c.volume, 'bandpass', c.from, c.q, c.to);
     tone(c.note, c.noteLife, 'triangle', c.noteVolume, c.noteEnd);
+  },
+  planeRoar() {
+    const c = PLANE_ROAR_SFX;
+    if (!voice('planeRoar', c.voices, c.life)) return;
+    nz(c.life, c.volume, 'lowpass', c.from, c.q, c.to);
+    tone(c.note, c.life, 'sawtooth', c.noteVolume, c.noteEnd);
   },
   overheat() {
     tone(900, 0.35, 'square', 0.02, 300);

@@ -6,7 +6,9 @@
 // ground it strafes, lead = px ahead of the jet its rounds land, step = px between two hits you see
 // (a puff of fire every 3rd, a big blast every 8th), half / dmg = the band and the damage before upgrades, bombR = px
 // a bomb kills round it
-const JETC = { speed: 320, alt: 46, dive: 12, len: 230, lead: 44, step: 4, half: 13, dmg: 3, bombR: 34, N: 32 };
+const JETC = { speed: 320, alt: 46, dive: 12, len: 230, lead: 44, step: 4, half: 13, dmg: 3, bombR: 34, N: 32,
+  // Seconds of ground-marker anticipation, then shadow entry before the body appears (proposal)
+  showDelay: 0.3, shadowLead: 0.1 };
 
 // ---------- the jet
 // A twin-engine attack jet seen from right above, its nose up: straight wings with bombs under
@@ -75,14 +77,26 @@ function jetRaw() {
     r(34, 32, 2, 2, D);
   });
 }
+// Cache opaque bounds at startup so an entry uses the picture, rather than its transparent padding.
+function jetSpriteBounds(c) {
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  const b = { left: c.width, top: c.height, right: 0, bottom: 0 };
+  for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+    if (!d[(y * c.width + x) * 4 + 3]) continue;
+    b.left = Math.min(b.left, x); b.top = Math.min(b.top, y);
+    b.right = Math.max(b.right, x + 1); b.bottom = Math.max(b.bottom, y + 1);
+  }
+  c.planeBounds = b;
+  return c;
+}
 // Build the jet at JETC.N headings (0 = nose up, clockwise), its shadow and its card icon. At startup.
 function bakeJet() {
   const raw = jetRaw();
   JET.n.length = JET.sh.length = 0;
   for (let i = 0; i < JETC.N; i++) {
     const r = rotA(raw, i / JETC.N * TAU);
-    JET.n.push(selOut(r));
-    JET.sh.push(tint(r, '#000', 1, 'source-in'));
+    JET.n.push(jetSpriteBounds(selOut(r)));
+    JET.sh.push(jetSpriteBounds(tint(r, '#000', 1, 'source-in')));
   }
   JET.bomb = outline(pix(3, 6, (r) => {
     r(0, 0, 3, 5, '#565c46');
@@ -95,11 +109,12 @@ bakeJet();
 
 // ---------- this run's flights
 // STRAF holds transport effects only. Charges and input belong to AIR.
-const STRAF = { g: null, jets: [], bombs: [], embers: [], demoT: 6 };
+const STRAF = { g: null, jets: [], bombs: [], embers: [], marks: [], roars: 0, demoT: 6 };
 function srSync() {
   if (STRAF.g === G) return;
   STRAF.g = G;
-  STRAF.jets.length = STRAF.bombs.length = STRAF.embers.length = 0;
+  STRAF.jets.length = STRAF.bombs.length = STRAF.embers.length = STRAF.marks.length = 0;
+  STRAF.roars = 0;
   STRAF.demoT = 6;
 }
 // The way the jet flies for a press at (ax, ay) let go at (bx, by): the drag, or the train's way.
@@ -124,9 +139,15 @@ function callStrafe(px, py, ux, uy) {
   // it comes in from just off the screen, and flies on until it is off the other side
   const half = G.up.strafeW || JETC.half, offs = G.up.twin ? [-(half + 2), half + 2] : [0];
   const back = Math.max(jetEdge(px, py, -ux, -uy) + 40, JETC.len / 2 + JETC.lead + 20), on = jetEdge(px, py, ux, uy) + 60;
-  offs.forEach((o, i) => STRAF.jets.push({ px, py, ux, uy, o, s: -back - i * 26, end: Math.max(on, JETC.len / 2 + 40),
-    front: -Infinity, half, dmg: G.up.strafeD || JETC.dmg, bomb: !!G.up.strafeBomb, dropped: false, fired: false, step: 0, blast: 0,
-    smoke: 0, alt: JETC.alt }));
+  offs.forEach((o, i) => {
+    const j = { px, py, ux, uy, o, s: -back - i * 26, end: Math.max(on, JETC.len / 2 + 40),
+      front: -Infinity, half, dmg: G.up.strafeD || JETC.dmg, bomb: !!G.up.strafeBomb, dropped: false, fired: false, step: 0, blast: 0,
+      smoke: 0, alt: JETC.alt, delay: JETC.showDelay, age: 0, roared: false,
+      shadowSeen: false, shadowAge: 0, bodyReady: false };
+    STRAF.jets.push(j);
+    STRAF.marks.push({ x: px - uy * o, y: py + ux * o, age: 0,
+      T: JETC.showDelay + Math.max(0, (back + i * 26 - JETC.lead - JETC.len / 2) / JETC.speed), radius: half, jet: j });
+  });
   return true;
 }
 
@@ -163,21 +184,43 @@ function updatePlanes(dt) {
   }
   for (let i = STRAF.jets.length - 1; i >= 0; i--) {
     const j = STRAF.jets[i];
-    j.s += JETC.speed * dt;
+    j.age += dt;
+    let flightDt = dt;
+    if (j.delay > 0) {
+      const wait = Math.min(j.delay, dt);
+      j.delay = Math.max(0, j.delay - wait);
+      if (j.delay < 1e-9) j.delay = 0;
+      flightDt -= wait;
+      if (flightDt <= 1e-9) continue;
+    }
+    j.s += JETC.speed * flightDt;
     // lower while it fires
     const mid = Math.abs(j.s + JETC.lead - 0) / (JETC.len * 0.75);
     j.alt = JETC.alt - JETC.dive * Math.max(0, 1 - mid * mid);
+    if (!j.shadowSeen && jetShadowInView(j)) j.shadowSeen = true;
+    else if (j.shadowSeen) j.shadowAge += flightDt;
+    if (j.shadowSeen && j.shadowAge >= JETC.shadowLead - 1e-9) j.bodyReady = true;
+    if (j.bodyReady && !j.roared && jetBodyInView(j)) {
+      j.roared = true;
+      // Count actual player-flight requests; the audio helper caps overlapping voices.
+      if (!G.demo) { STRAF.roars++; SFX.planeRoar(); }
+    }
     strafeFire(j);
     if (j.bomb && !j.dropped && j.s + JETC.lead >= JETC.len / 2) dropBombs(j);
     // a thin trail from the engines
-    j.smoke -= dt;
-    if (j.smoke <= 0) {
+    if (j.bodyReady) j.smoke -= flightDt;
+    if (j.bodyReady && j.smoke <= 0) {
       j.smoke = 0.05;
       const [gx, gy] = jetGround(j);
       for (const sx of [-8, 8]) part({ x: gx - j.ux * 10 - j.uy * sx, y: gy - j.uy * 10 + j.ux * sx, z: j.alt + 2, vx: 0, vy: 0, vz: 0, g: 0,
         life: 0.5, max: 0.5, s: 1, c: 'rgba(210,214,220,0.35)', grow: 3, drag: 1, smoke: true });
     }
     if (j.s > j.end) STRAF.jets.splice(i, 1);
+  }
+  for (let i = STRAF.marks.length - 1; i >= 0; i--) {
+    const m = STRAF.marks[i];
+    m.age = m.jet.age;
+    if (m.jet.fired || m.jet.s > m.jet.end) STRAF.marks.splice(i, 1);
   }
   for (let i = STRAF.bombs.length - 1; i >= 0; i--) {
     const b = STRAF.bombs[i];
@@ -197,6 +240,20 @@ function updatePlanes(dt) {
 // Where jet j is over the ground.
 function jetGround(j) {
   return [j.px + j.ux * j.s - j.uy * j.o, j.py + j.uy * j.s + j.ux * j.o];
+}
+// These same bounds serve the presentation gate and its copied diagnostics, below the opaque HUD.
+function jetSpriteInView(c, x, y) {
+  const b = c.planeBounds, ox = Math.round(x - c.width / 2), oy = Math.round(y - c.height / 2);
+  return ox + b.right > G.camX && ox + b.left < G.camX + W &&
+    oy + b.bottom > G.camY + 19 && oy + b.top < G.camY + VH;
+}
+function jetShadowInView(j) {
+  const [x, y] = jetGround(j);
+  return j.delay <= 0 && jetSpriteInView(JET.sh[jetIdx(j)], x + j.alt * SUNX, y + j.alt * SUNY);
+}
+function jetBodyInView(j) {
+  const [x, y] = jetGround(j);
+  return j.delay <= 0 && jetSpriteInView(JET.n[jetIdx(j)], x, y - j.alt);
 }
 // The gun: its rounds land JETC.lead px ahead of the jet. Every zombie in the band the hits swept over
 // since the last step takes the hit; a hit flashes every JETC.step px, a blast every JETC.blast px.
@@ -294,12 +351,28 @@ function bombHit(x, y) {
 }
 
 // ---------- drawing (world layer)
+// A red ground ring closes on the strike point, then vanishes when the actual firing begins.
+function drawPlaneMarks() {
+  if (STRAF.g !== G) return;
+  for (const m of STRAF.marks) {
+    if (offView(m.x, m.y, m.radius * 1.5)) continue;
+    const rr = lerp(m.radius * 1.5, m.radius, ease(clamp(m.age / m.T, 0, 1)));
+    const col = thermal ? '#ffffff' : '#ff2a1a';
+    ctx.globalAlpha = 0.35 + 0.3 * (Math.sin(realT * 22) > 0 ? 1 : 0);
+    pell(m.x, m.y, rr, rr * FORE, col);
+    ctx.fillStyle = col;
+    ctx.fillRect(Math.round(m.x) - 1, Math.round(m.y), 3, 1);
+    ctx.fillRect(Math.round(m.x), Math.round(m.y) - 1, 1, 3);
+  }
+  ctx.globalAlpha = 1;
+}
 // The shadows on the ground (under everything standing), south-east of each jet by its height.
 function drawPlaneShadows() {
   if (STRAF.g !== G) return;
   drawEmbers();
   ctx.globalAlpha = thermal ? 0.2 : 0.3;
   for (const j of STRAF.jets) {
+    if (j.delay > 0) continue;
     const [gx, gy] = jetGround(j), i = jetIdx(j), sh = JET.sh[i];
     blit(sh, Math.round(gx + j.alt * SUNX - sh.width / 2), Math.round(gy + j.alt * SUNY - sh.height / 2));
   }
@@ -335,12 +408,14 @@ function drawPlanes() {
     blit(JET.bomb, Math.round(x - 2), Math.round(y - zz - 3));
   }
   for (const j of STRAF.jets) {
+    if (!j.bodyReady) continue;
     const [gx, gy] = jetGround(j), spr = JET.n[jetIdx(j)];
     blit(spr, Math.round(gx - spr.width / 2), Math.round(gy - j.alt - spr.height / 2));
   }
   // the gun: a big flickering flash at the nose, tracers down to where the rounds land
   ctx.globalCompositeOperation = 'lighter';
   for (const j of STRAF.jets) {
+    if (!j.bodyReady) continue;
     const firing = j.s + JETC.lead > -JETC.len / 2 && j.s + JETC.lead < JETC.len / 2;
     if (!firing) continue;
     const [gx, gy] = jetGround(j), nx = gx + j.ux * 28, ny = gy + j.uy * 28 - j.alt;
@@ -356,6 +431,7 @@ function drawPlanes() {
   }
   // (one tracer a jet: its newest hit)
   for (const j of STRAF.jets) {
+    if (!j.bodyReady) continue;
     const h = j.last;
     if (!h || h.t > 0.06) continue;
     const [gx, gy] = jetGround(j);
