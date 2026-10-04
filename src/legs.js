@@ -18,19 +18,58 @@ const STOPS = [
   { id: 'grain', name: 'GRAIN ELEVATOR', kind: 'big' },
   { id: 'terminus', name: 'FARMLANDS TERMINUS', kind: 'end' }
 ];
+// Actual run eligibility also applies to old-leg replays after buying Hunt upgrades.
+const LEG_INTRO = { runner: 2, gold: 3, silver: 4, brute: 6, boom: 7 };
+const legAllows = (kind) => !G.demo && G.leg >= LEG_INTRO[kind];
+
+// Living caps, base stream sizes/cadence and type shares; final scrap tuning is separate. (proposal)
+// [want, size, gap, runner share, brute share, rail brute share]
+const LEG_BASE_ROWS = [
+  [160, 4, 4, 0, 0, 0], [180, 4, 3.9, 0.08, 0, 0], [210, 5, 3.8, 0.12, 0, 0],
+  [240, 5, 3.7, 0.14, 0, 0], [280, 6, 3.6, 0.16, 0, 0], [340, 7, 3.5, 0.18, 0.02, 0.05],
+  [400, 8, 3.4, 0.20, 0.03, 0.06], [470, 9, 3.3, 0.22, 0.04, 0.07], [540, 10, 3.2, 0.23, 0.05, 0.08],
+  [620, 11, 3.1, 0.25, 0.07, 0.10], [700, 12, 3, 0.27, 0.09, 0.12], [800, 14, 2.9, 0.30, 0.12, 0.15]
+];
+// Event clocks, crowd sizes and scrap placements/value; special tuples stay deferred until their
+// real handlers exist. Leg 9's two events at 27 s deliberately overlap. (proposal)
+const legPile = (pay) => ({ ahead: 120, off: 100, side: 1, pay });
+const LEG_EVENT_ROWS = [
+  [[3, 'railCrowd', { n: 6 }], [12, 'stream', { edge: -1, n: 12 }], [22, 'pile', legPile(15)],
+    [32, 'stream', { edge: 1, n: 14 }], [42, 'railCrowd', { n: 8 }], [52, 'wave', { n: 10 }]],
+  [[3, 'railCrowd', { n: 10 }], [12, 'stream', { edge: -1, n: 18, type: 1 }], [22, 'pile', legPile(15)],
+    [32, 'stream', { edge: 1, n: 20 }], [42, 'railCrowd', { n: 12 }], [52, 'wave', { n: 12 }]],
+  [[3, 'railCrowd', { n: 12 }], [11, 'stream', { edge: -1, n: 22 }], [19, 'golden', { edge: -1 }],
+    [27, 'pile', legPile(20)], [35, 'stream', { edge: 1, n: 24 }], [43, 'railCrowd', { n: 16 }], [51, 'wave', { n: 14 }]],
+  [[3, 'railCrowd', { n: 14 }], [11, 'stream', { edge: -1, n: 24 }], [19, 'golden', { edge: 1 }],
+    [27, 'rescue', { id: 'rescue-4' }], [35, 'pile', legPile(25)], [43, 'silverGroup', { n: 3, edge: 1 }], [51, 'wave', { n: 16 }]],
+  [[3, 'railCrowd', { n: 18 }], [11, 'stream', { edge: -1, n: 26 }], [19, 'golden', { edge: -1 }],
+    [27, 'deadWall', {}], [35, 'pile', legPile(30)], [43, 'stream', { edge: 1, n: 28 }], [51, 'wave', { n: 18 }]],
+  [[3, 'railCrowd', { n: 20, leaders: 1, leadType: 2 }], [11, 'stream', { edge: -1, n: 30 }], [19, 'golden', { edge: 1 }],
+    [27, 'goldCrate', {}], [35, 'pile', legPile(35)], [43, 'stream', { edge: 1, n: 32 }], [51, 'wave', { n: 20 }]],
+  [[3, 'explosiveStream', { edge: -1, n: 8 }], [11, 'stream', { edge: 1, n: 34 }], [19, 'golden', { edge: -1 }],
+    [27, 'crate', legPile(50)], [35, 'pile', legPile(40)], [43, 'railCrowd', { n: 24 }], [51, 'wave', { n: 24 }]],
+  [[3, 'railCrowd', { n: 26 }], [11, 'golden', { edge: 1 }], [19, 'rescue', { id: 'rescue-8' }],
+    [27, 'pile', legPile(45)], [35, 'goldCrate', {}], [43, 'silverGroup', { n: 4, edge: 1 }], [51, 'wave', { n: 40, big: true }]],
+  [[3, 'railCrowd', { n: 30 }], [11, 'stream', { edge: -1, n: 40 }], [19, 'golden', { edge: -1 }],
+    [27, 'stream', { edge: 1, n: 40 }], [27, 'deadWall', {}], [35, 'pile', legPile(50)], [43, 'goldCrate', {}], [51, 'wave', { n: 44, big: true }]],
+  [[3, 'stream', { edge: 0, n: 26, leaders: 2, leadType: 2, type: 1 }], [11, 'railCrowd', { n: 34 }], [19, 'golden', { edge: 1 }],
+    [27, 'rescue', { id: 'rescue-10' }], [35, 'pile', legPile(55)],
+    [43, 'stream', { edge: 0, n: 30, leaders: 3, leadType: 2, type: 1 }], [51, 'wave', { n: 48, big: true }]],
+  [[3, 'railCrowd', { n: 40 }], [11, 'stream', { edge: -1, n: 50 }], [19, 'golden', { edge: -1 }],
+    [27, 'goldCrate', {}], [35, 'pile', legPile(60)],
+    [43, 'stream', { edge: 0, n: 50, leaders: 4, leadType: 2, type: 1 }], [51, 'wave', { n: 65, big: true }]],
+  [[3, 'wave', { n: 65, big: true }], [11, 'stream', { edge: -1, n: 60 }], [19, 'golden', { edge: 1 }],
+    [27, 'goldCrate', {}], [35, 'pile', legPile(70)], [43, 'railCrowd', { n: 50 }], [51, 'wave', { n: 75, big: true }]]
+];
 const LEGS = [];
 for (let n = 1; n < STOPS.length; n++) {
   const from = STOPS[n - 1], to = STOPS[n];
   to.km = from.km + LEG_LENGTH / CFG.line.km;
   to.side = n % 2 ? 1 : -1;
-  // A supported starting timeline, replaced with each leg's introductions by the next task.
-  // Event seconds, crowd sizes and pile placement/value (proposal)
+  const b = LEG_BASE_ROWS[n - 1], base = HORDE[n - 1];
+  Object.assign(base, { want: b[0], size: b[1], gap: b[2], run: b[3], brute: b[4], railBrute: b[5] });
   LEGS.push({ n, from, to, len: LEG_LENGTH, stars: n >= 3, base: HORDE[n - 1],
-    rescue: [4, 8, 10].includes(n) ? 'rescue-' + n : null, finale: n === 12, events: [
-      [3, 'railCrowd', { n: 6 }], [12, 'stream', { edge: -1, n: 12 }],
-      [22, 'pile', { ahead: 120, off: 100, side: 1, pay: 15 }],
-      [32, 'stream', { edge: 1, n: 14 }], [42, 'railCrowd', { n: 8 }], [52, 'wave', { n: 10 }]
-    ] });
+    rescue: [4, 8, 10].includes(n) ? 'rescue-' + n : null, finale: n === 12, events: LEG_EVENT_ROWS[n - 1] });
 }
 const legDef = (n) => LEGS[n - 1] || null;
 // Scenery uses the same complete line on every retry, so cached ground stays consistent.
@@ -50,17 +89,17 @@ function dispatchLegEvent(kind, params, id) {
   const p = params || {}, n = Math.max(0, Math.floor(Number(p.n) || 0));
   if (kind === 'railCrowd') {
     const before = G.zombies.length;
-    if (n && !wallAhead(CFG.wall.warn)) railGroup(n);
+    if (n && !wallAhead(CFG.wall.warn)) railGroup(n, p);
     legEventNotice('RAIL CROWD', U.red);
     return G.zombies.length - before;
   }
   if (kind === 'stream') {
     const edge = p.edge === -1 ? -1 : p.edge === 1 ? 1 : 0;
-    if (n) addStream(n, edge, false);
+    if (n) addStream(n, edge, false, { ...p, eventId: id });
     return n;
   }
   if (kind === 'wave') {
-    if (n) { addStream(n, -1, true); addStream(n, 1, true); }
+    if (n) { addStream(n, -1, true, { ...p, eventId: id }); addStream(n, 1, true, { ...p, eventId: id }); }
     G.waves++;
     return n * 2;
   }

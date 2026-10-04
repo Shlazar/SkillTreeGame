@@ -66,7 +66,7 @@ function drawPlow() {
 // ---------- GOLDEN ZOMBIES
 // A new zombie z is golden 1 time in G.up.gold (never a brute, never in the demo). Returns z.
 function goldRoll(z) {
-  if (G.demo || !G.up.gold || z.big || Math.random() * G.up.gold >= 1) return z;
+  if (!legAllows('gold') || !G.up.gold || z.big || Math.random() * G.up.gold >= 1) return z;
   return makeGold(z);
 }
 // Turn zombie z golden. Returns z.

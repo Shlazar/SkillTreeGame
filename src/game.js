@@ -18,9 +18,8 @@ const CFG = {
   // 105mm: reload, flight time, kill radius, hurt radius (a hurt walker dies too, a brute may not),
   // and how close to the train a blast hurts the train too
   he: { reload: 2.4, travel: 0.7, kill: 34, hurt: 56, close: 28 },
-  // the horde: the most dead alive at once, and from how many km runners come and brutes stand on
-  // the rails (how many come at each km is in HORDE, horde.js)
-  pop: { max: 1100, runFrom: 0.3, bruteFrom: 0.6 },
+  // The global living limit. Individual leg populations and enemy introductions are in legs.js.
+  pop: { max: 1100 },
   // a station stop: survivors waiting on a later visit (a first visit has the station's own number),
   // seconds between two setting off, their speed, the shortest stop, how long a zombie holds a
   // survivor before it is too late, how near the door the dead keep the survivors in (and for how
@@ -398,7 +397,7 @@ function makeZombie(x, y, type) {
     st: 0, rx: rnd(-3, 3), side: 0, car: 0, al: 0, ox: 0, bang: 0, dmg: 0
   });
 }
-// The horde by distance (HORDE), the streams and waves that bring the dead in (spawn) and their
+// The per-leg horde (HORDE), the streams and waves that bring the dead in (spawn) and their
 // step (updateZombies) are in horde.js.
 // true when (x, y) is out of the camera's view by more than m px
 const offView = (x, y, m) => x < G.camX - m || x > G.camX + W + m || y < G.camY - m || y > G.camY + VH + m;
@@ -411,13 +410,13 @@ function railZombie(s, u, type) {
   return z;
 }
 // A crowd standing on the rails ahead of the train, out of view (never in a Dead Wall's last 150 m).
-function railGroup(n) {
+function railGroup(n, params = {}) {
   for (let i = 0; i < 4; i++) {
     const s = G.tr.s - rnd(230, 380) - i * 90, y = yAtS(s, G.tr.fy + (s - G.tr.s));
     if (y < G.goalY + 60) return;
     if (!offView(trackX(y), y, 16) || wallZone(s)) continue;
     for (let k = 0; k < n; k++) {
-      const yy = y - k * rnd(2.5, 6), z = newDead(trackX(yy) + rnd(-4, 4), yy, pickType(true));
+      const yy = y - k * rnd(2.5, 6), z = newDead(trackX(yy) + rnd(-4, 4), yy, pickSpawnType(true, params, k));
       z.st = 1;
       z.rx = z.x - trackX(yy);
       G.zombies.push(z);

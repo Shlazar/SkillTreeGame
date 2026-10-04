@@ -271,9 +271,8 @@ function railLocal(x, y, out) {
 }
 
 // ---------- the small base horde under each leg's event timeline
-// A separate row per leg lets its content grow without using distance from the Depot. The first
-// timeline uses walkers; the remaining leg introductions are filled by the route-content task.
-// Living cap, base stream size and seconds between streams (proposal)
+// legs.js fills each row with its own population, cadence and type shares. There is no km blend.
+// Fallback living cap, base stream size and seconds between streams (proposal)
 const HORDE = Array.from({ length: 12 }, () => ({ want: 160, size: 4, gap: 4, run: 0, brute: 0, railBrute: 0 }));
 // The menu battle retains its previous middle-route pace, independently of the selected leg.
 const DEMO_HD = { want: 420, size: 16.75, gap: 1.025, wave: 10.25, waveN: 5, run: 0.1, brute: 0.02 };
@@ -286,8 +285,19 @@ function horde() {
 function pickType(rail) {
   const r = Math.random();
   if (G.demo) return r < 0.02 ? 2 : r < 0.12 ? 1 : 0;
-  const h = horde(), b = rail ? h.railBrute : h.brute;
-  return r < b ? 2 : r < b + h.run ? 1 : 0;
+  const h = horde(), b = legAllows('brute') ? (rail ? h.railBrute : h.brute) : 0;
+  const run = legAllows('runner') ? h.run : 0;
+  return r < b ? 2 : r < b + run ? 1 : 0;
+}
+// Real spawners obey the selected leg, including explicit leaders and old-leg replays.
+function legSpawnType(type) {
+  const t = Number.isInteger(type) && type >= 0 && type <= 2 ? type : 0;
+  if (G.demo) return t;
+  return t === 1 && !legAllows('runner') || t === 2 && !legAllows('brute') ? 0 : t;
+}
+function pickSpawnType(rail, params = {}, index = 0) {
+  const type = index < (params.leaders || 0) ? (params.leadType ?? 2) : params.type;
+  return type == null ? pickType(rail) : legSpawnType(type);
 }
 // A pack of n standing round (hx, hy) (the start of a run, the demo).
 function pack(n, hx, hy) {
@@ -298,7 +308,7 @@ function pack(n, hx, hy) {
 }
 // A new zombie of a type, rolled golden or silver.
 function newDead(x, y, type) {
-  const z = makeZombie(x, y, type);
+  const z = makeZombie(x, y, legSpawnType(type));
   return z.silver ? z : goldRoll(z);
 }
 
@@ -307,21 +317,32 @@ function newDead(x, y, type) {
 // in screen px, so it stays at the edge while the view moves on). n = how many are still to come,
 // gap = seconds between two, t = time to the next, edge = -1 left, 1 right, 0 top.
 const STREAMS = [];
+// Escort followers begin farther outside the edge, behind the first emitted brutes. (proposal)
+const STREAM_ESCORT_BACK = 72;
+const ESCORTS = [];
+// Rail-centred entry and a short following gap let slow brute escorts intercept the train. (proposal)
+const ESCORTC = { railOff: 8, gap: 14, release: 30, approach: 2, lane: 4 };
 // A new stream of n at the edge; fast = a wave's (they come quicker).
-function addStream(n, edge, fast) {
+function addStream(n, edge, fast, params = {}) {
   const tr = G.tr, nose = tr.cars[0];
+  const leaders = Math.min(n, Math.max(0, Math.floor(params.leaders || 0)));
   let sx, sy;
   if (edge === 0) {
     // over the top edge, to one side of the rails ahead
     sy = -10;
     const rx = railX(G.camY + 10) - G.camX, s = Math.random() < 0.5 ? -1 : 1;
-    sx = clamp(rx + s * rnd(40, 190), 8, W - 8);
+    sx = clamp(rx + s * (leaders ? ESCORTC.railOff : rnd(40, 190)), 8, W - 8);
   } else {
     // in from a side, level with the ground ahead of the engine (or beside it)
     sx = edge < 0 ? -10 : W + 10;
     sy = clamp(nose.y0 - G.camY - rnd(-30, 150), 14, VH * 0.7);
   }
-  STREAMS.push({ sx, sy, n, gap: fast ? rnd(0.05, 0.08) : rnd(0.09, 0.15), t: 0, edge, fast, age: 0 });
+  const escort = edge === 0 && leaders ? { leaders: [], members: [], expected: leaders, emitted: 0, active: true, ready: false, x: 0, y: 0 } : null;
+  if (escort) ESCORTS.push(escort);
+  STREAMS.push({ sx, sy, n, gap: fast ? rnd(0.05, 0.08) : rnd(0.09, 0.15), t: 0, edge, fast, age: 0,
+    type: params.type, leadType: params.leadType ?? 2, leaders, escort,
+    railOff: leaders ? (Math.random() < 0.5 ? -1 : 1) * ESCORTC.railOff : 0,
+    emitted: 0, eventId: params.eventId || '' });
 }
 // Each step: the streams let out their dead (none past the most the horde wants).
 function updateStreams(dt, want) {
@@ -332,11 +353,27 @@ function updateStreams(dt, want) {
     while (s.t <= 0 && s.n > 0) {
       s.t += s.gap;
       s.n--;
+      const index = s.emitted++;
+      const lead = index < s.leaders;
+      if (lead && s.escort) s.escort.emitted++;
       if (G.zombies.length >= want) continue;
       // (a stream from the side comes in a band, one from the top in a line across)
-      const jx = s.edge ? rnd(-4, 4) : rnd(-10, 10), jy = s.edge ? rnd(-8, 8) : rnd(-3, 3);
-      const z = newDead(G.camX + s.sx + jx, G.camY + s.sy + jy, pickType(false));
+      const jx = s.edge ? rnd(-4, 4) : s.escort ? rnd(-2, 2) : rnd(-10, 10), jy = s.edge ? rnd(-8, 8) : rnd(-3, 3);
+      const back = s.leaders && !lead ? STREAM_ESCORT_BACK : 0;
+      const y = G.camY + s.sy + jy - (s.edge ? 0 : back * FORE);
+      const x = s.escort ? railX(y) + s.railOff + jx : G.camX + s.sx + jx + (s.edge ? s.edge * back : 0);
+      const z = newDead(x, y, pickSpawnType(false, s, index));
       z.stream = 1;
+      if (s.escort) { z.streamLead = lead; z.streamIndex = index; }
+      if (s.escort && s.escort.active) {
+        z.escort = s.escort;
+        s.escort.members.push(z);
+        if (lead) s.escort.leaders.push(z);
+      } else if (s.escort) {
+        z.escortReleased = true; z.escortReleaseAt = s.escort.releasedAt;
+        z.escortReleaseReason = s.escort.releaseReason;
+      }
+      if (s.eventId) { z.streamEventId = s.eventId; z.streamIndex = index; z.streamLead = lead; z.streamAt = G.run; }
       G.zombies.push(z);
     }
     if (s.n <= 0) STREAMS.splice(i, 1);
@@ -369,7 +406,42 @@ function spawn(dt) {
 // A new run (or the demo) starts with no streams.
 function clearStreams() {
   STREAMS.length = 0;
+  ESCORTS.length = 0;
   BOOMS.length = 0;
+}
+
+function updateEscorts() {
+  for (let i = ESCORTS.length - 1; i >= 0; i--) {
+    const e = ESCORTS[i];
+    let n = 0, x = 0, y = Infinity, near = false;
+    for (const z of e.leaders) if (!z.dead && !z.gone) {
+      n++; x += z.x; y = Math.min(y, z.y);
+      if (z.st === 2 || trainDist(z.x, z.y) <= ESCORTC.release) near = true;
+    }
+    if (near || !n && e.emitted >= e.expected) {
+      e.active = false;
+      e.releasedAt = G.run; e.releaseReason = near ? 'nearTrain' : 'leadersGone';
+      for (const z of e.members) {
+        z.escort = null; z.escortReleased = true; z.escortReleaseAt = G.run;
+        z.escortReleaseReason = e.releaseReason;
+      }
+      e.members.length = 0; e.leaders.length = 0;
+      ESCORTS.splice(i, 1);
+    } else {
+      e.ready = n > 0;
+      if (n) { e.x = x / n; e.y = y - ESCORTC.gap * FORE; }
+    }
+  }
+}
+
+function constrainEscorts() {
+  let moved = false;
+  for (const e of ESCORTS) if (e.ready) {
+    for (const z of e.members) if (!z.streamLead && !z.dead && !z.gone && z.st !== 2 && z.y > e.y) {
+      z.y = e.y; z.k = z.y; moved = true;
+    }
+  }
+  return moved;
 }
 
 // ---------- each step of the dead
@@ -377,6 +449,7 @@ const ZL = { u: 0, a: 0, c: 1, x: 0 };
 function updateZombies(dt) {
   const zs = G.zombies, tr = G.tr, hw = CAR.half, safe = G.result === 'won';
   if (!G.result) spawn(dt);
+  updateEscorts();
   updateBooms(dt);
   updateHits(dt);
   silverShine();
@@ -417,8 +490,12 @@ function updateZombies(dt) {
     // where to walk: after a survivor, down the rails, onto the rails ahead, to the train's side,
     // or after the train (runners hunt survivors from further away; golden zombies only run)
     let tx, ty;
+    const escort = z.escort && z.escort.active && z.escort.ready && !z.streamLead ? z.escort : null;
     const prey = hunt && z.st === 0 && !z.gold ? preyNear(z, z.run ? 120 : 70) : null;
-    if (z.gold) {
+    if (escort) {
+      tx = escort.x + ((z.streamIndex % 3) - 1) * ESCORTC.lane;
+      ty = escort.y;
+    } else if (z.gold) {
       const g = goldFlee(z);
       tx = g[0];
       ty = g[1];
@@ -436,7 +513,8 @@ function updateZombies(dt) {
     const w = z.st === 1 ? 0 : Math.sin(z.wob) * (z.run ? 0.25 : 0.4), cw = Math.cos(w), sw = Math.sin(w);
     const ux = (dx * cw - dy * sw) / d, uy = (dx * sw + dy * cw) / d;
     // (the dead of a Dead Wall stand still until the train is near; a hit one staggers)
-    const sp = z.still ? 0 : z.sp * (z.st === 1 ? 0.7 : 1) * (z.flash > 0 ? 0.3 : 1);
+    let sp = z.still ? 0 : z.sp * (z.st === 1 ? 0.7 : 1) * (z.flash > 0 ? 0.3 : 1);
+    if (escort) sp = Math.min(sp, d * ESCORTC.approach);
     z.vx = ux * sp + z.kbx;
     z.vy = uy * sp * FORE + z.kby;
     z.x += z.vx * dt;
@@ -485,12 +563,13 @@ function updateZombies(dt) {
   }
   gridBuild();
   spread(dt);
+  updateEscorts();
+  let moved = constrainEscorts();
   // Neighbours can push after walking, so enforce the wall once more before weapons query the grid.
   if (BURNWALL.length) {
-    let moved = false;
     for (const z of zs) if (!z.dead && z.st !== 2) moved = blockBurnWall(z, z.fireX, z.fireY) || moved;
-    if (moved) gridBuild();
   }
+  if (moved) gridBuild();
   // drop the dead and the lost
   let j = 0;
   for (let i = 0; i < zs.length; i++) if (!zs[i].dead && !zs[i].gone) zs[j++] = zs[i];
@@ -754,7 +833,7 @@ function popKill(z, cause) {
 const SILVER_PAY = 15;
 // Called by makeZombie: roll silver (never in the demo, never a brute).
 function silverRoll(z) {
-  const c = G && !G.demo && G.up ? G.up.silver || 0 : 0;
+  const c = G && G.up && legAllows('silver') ? G.up.silver || 0 : 0;
   if (c > 0 && !z.big && Math.random() < c) {
     z.silver = true;
     z.S = silverSet(z.S);
@@ -789,7 +868,7 @@ function silverShine() {
 const BOOMS = [], BOOM_STEP = 6;
 // Called by kill(): 1 in G.up.boom of the dead blow up a moment after they fall.
 function boomRoll(z) {
-  const c = G.up.boom || 0;
+  const c = legAllows('boom') ? G.up.boom || 0 : 0;
   if (c > 0 && Math.random() < c && BOOMS.length < 80) BOOMS.push({ x: z.x, y: z.y, t: rnd(0.06, 0.12) });
 }
 function updateBooms(dt) {
