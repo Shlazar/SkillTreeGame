@@ -93,7 +93,7 @@ const UP = {
 function runUp(demo) {
   const L = demo ? () => 0 : lv;
   // (tree.js adds the newer nodes' numbers: treeUp)
-  return treeUp(L, {
+  const up = treeUp(L, {
     hp: UP.hp(L('armor')), rate: CFG.mg.rate, heat: CFG.mg.heatPer, dmg: 1,
     he: false, reload: CFG.he.reload, fly: CFG.heli.speed, pickup: UP.pickup(L('magnet')),
     helis: 1,
@@ -101,6 +101,8 @@ function runUp(demo) {
     // Full-game plow and legacy gold spawns stay disabled; armor still dresses the engine.
     cow: false, gold: 0, armor: L('armor')
   });
+  if (demo) Object.assign(up, { rocketChance: UP.rockets(1), mgCar: true });
+  return up;
 }
 // The train's full health.
 function maxHP() {

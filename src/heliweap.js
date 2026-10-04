@@ -199,7 +199,7 @@ function hellfireImpact(r) {
 }
 // Called for every nose-gun shot. True means a rocket replaced the ordinary bullet.
 function heliRocketShot(h, z) {
-  const state = heliWeaponState(), chance = G.up.rocketChance || 0, now = G.run;
+  const state = heliWeaponState(), chance = G.up.rocketChance || 0, now = heliWeaponTime();
   state.shots++;
   if (chance <= 0) return false;
   const rolled = Math.random() < chance;

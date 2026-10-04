@@ -112,7 +112,9 @@ bakeJet();
 
 // ---------- this run's flights
 // STRAF holds transport effects only. Charges and input belong to AIR.
-const STRAF = { g: null, jets: [], bombs: [], embers: [], marks: [], roars: 0, demoT: 6,
+// Attract-mode first pass/interval seconds and crowd radius px (proposal).
+const DEMOPLANEC = { first: 6, interval: 16, crowdRadius: 40 };
+const STRAF = { g: null, jets: [], bombs: [], embers: [], marks: [], roars: 0, demoT: DEMOPLANEC.first,
   stats: { b52: { launched: 0, dropped: 0, impacts: 0, lastDrop: null, lastImpact: null },
     b2: { launched: 0, dropped: 0, impacts: 0, kills: 0, lastDrop: null, lastImpact: null } } };
 function srSync() {
@@ -120,7 +122,7 @@ function srSync() {
   STRAF.g = G;
   STRAF.jets.length = STRAF.bombs.length = STRAF.embers.length = STRAF.marks.length = 0;
   STRAF.roars = 0;
-  STRAF.demoT = 6;
+  STRAF.demoT = DEMOPLANEC.first;
   Object.assign(STRAF.stats.b52, { launched: 0, dropped: 0, impacts: 0, lastDrop: null, lastImpact: null });
   Object.assign(STRAF.stats.b2, { launched: 0, dropped: 0, impacts: 0, kills: 0, lastDrop: null, lastImpact: null });
 }
@@ -186,17 +188,17 @@ function jetEdge(x, y, ux, uy) {
 // ---------- each step
 function updatePlanes(dt) {
   srSync();
-  // the demo behind the title shows it off now and then, through a crowd near the train
-  if (G.demo && mode === 'title') {
-    STRAF.demoT = (STRAF.demoT ?? 6) - dt;
+  // Menus share the same quiet demo; flights use transport without ownership or charge writes.
+  if (G.demo && (mode === 'title' || mode === 'depot')) {
+    STRAF.demoT = (STRAF.demoT ?? DEMOPLANEC.first) - dt;
     if (STRAF.demoT <= 0 && !STRAF.jets.length) {
-      STRAF.demoT = 16;
+      STRAF.demoT = DEMOPLANEC.interval;
       // the thickest crowd on the right of the screen (the title box is on the left)
       let z = null, best = 0;
       for (const q of G.zombies) {
         if (q.dead || offView(q.x, q.y, -40) || q.x - G.camX < W * 0.6) continue;
         let n = 0;
-        queryEll(q.x, q.y, 40, () => n++);
+        queryEll(q.x, q.y, DEMOPLANEC.crowdRadius, () => n++);
         if (n >= best) [z, best] = [q, n];
       }
       if (z) {
