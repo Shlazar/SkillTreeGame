@@ -33,8 +33,7 @@ function startFinale(reset = true, replay = false) {
     for (const [id, level] of Object.entries(FINALE_BUILD)) check(__sr.node(id, level), 'Missing finale node: ' + id);
     __sr.setLeg(12); // Route fixture grants no currency or rescue rewards.
   }
-  for (const key of ['p_auto', 'p_brute', 'p_pile', 'p_golden', 'p_sos', 'p_boom', 't_attack',
-    'currency_scrap', 'currency_surv', 'currency_gold']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom']) __sr.SAVE.seen[key] = true;
   const prior = __sr.save(); finaleBefore = {leg: prior.leg, surv: prior.surv, rescues: prior.rescues.slice()};
   __sr.leg(12, replay); __sr.hp(9999); __sr.bot(true); __sr.rightUp(4, 70);
   __sr.planes(); // Normalize the two genuine Q/W slots before the ownership baseline.

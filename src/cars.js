@@ -125,7 +125,7 @@ function mgShot(t, target, p) {
   part({ x: t.x + rx * 2, y: t.y + ry * 2, z: muzzle.z, vx: rx * rnd(18, 34) + c.dx * G.tr.v * 0.6,
     vy: ry * rnd(18, 34) + c.dy * G.tr.v * 0.6, vz: rnd(4, 18), g: 200,
     life: 0.9, max: 0.9, s: 1, c: pick(['#e3b04b', '#c9952f', '#f0c85a']), land: 1 });
-  if (!G.demo) { G.shots++; G.hits += hit; if (hit) G.hitT = 0.12; SFX.mgCar(); }
+  if (!G.demo) { G.shots++; G.hits += hit; SFX.mgCar(); }
 }
 function updateTrainWeapons(dt) {
   const state = trainWeaponState();
@@ -258,7 +258,7 @@ function katyushaImpact(r, state) {
   else state.rocketImpacts++;
   if (hits && !r.group.hit) {
     r.group.hit = true; state.hits++;
-    if (!G.demo) { G.hits++; G.hitT = 0.12; }
+    if (!G.demo) G.hits++;
   }
   state.lastImpact = { x, y, t: heliWeaponTime(), damage: r.dmg, radius: r.R, source: r.source,
     hits, kills, salvo: r.salvo, index: r.index };

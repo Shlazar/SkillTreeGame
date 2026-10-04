@@ -27,8 +27,7 @@ const TRACKS = {
 };
 
 // ---------- node values
-// These are the demo's numbers at level l. New weapons read them when their systems are added;
-// treeUp below bridges only the weapons that are already active.
+// These are the demo's numbers at level l; treeUp snapshots them for every active system.
 Object.assign(UP, {
   hdmg: (l) => 1 + 0.2 * l,
   hrate: (l) => 1 + 0.12 * l,
@@ -69,6 +68,7 @@ Object.assign(UP, {
   fireLength: (l) => 1 + 0.2 * l,
   fireDuration: (l) => 4 + l,
   fireWall: (l) => l ? 12 : 4,
+  fireBurn: (lengthLevel, wallLevel) => wallLevel > 0 ? UP.fireWall(wallLevel) : UP.fireDuration(lengthLevel),
   f4Charge: (l) => 1 + l,
   b52Bombs: (l) => 8 + 2 * l,
   b52Cooldown: (l) => 45 - 5 * l,
@@ -155,8 +155,8 @@ const NODES = [
   unlockNode('f4', 'F-4', 'a10', -1.5, 1.5, 'LAY A LINE OF NAPALM FIRE.', ['COOLDOWN', (l) => l ? '30 S' : 'NONE'], ['BURN', (l) => l ? '4 S' : 'NONE']),
   scrapNode('fireDamage', 'FIRE DAMAGE', 'f4', -3, 3, 'D', 4, 'NAPALM HITS 25% HARDER.', ['DAMAGE', (l) => pctS(UP.fireDamage(l))]),
   scrapNode('f4Cooldown', 'F-4 COOLDOWN', 'fireDamage', -3, 4.5, 'D', 5, 'CALL THE NEXT FIRE LINE SOONER.', ['COOLDOWN', (l) => secs(UP.f4Cooldown(l))]),
-  scrapNode('fireLength', 'LONGER FIRE', 'f4Cooldown', -3, 6, 'E', 3, 'ADD 20% LENGTH AND ONE SECOND.', ['LENGTH', (l) => pctS(UP.fireLength(l))], ['BURN', (l) => secs(UP.fireDuration(l))]),
-  goldNode('fireWall', 'FIRE WALL', 'fireLength', -3, 7.5, [15], 'FIRE BURNS LONGER AND BLOCKS DEAD.', ['BURN', (l) => secs(UP.fireWall(l))]),
+  scrapNode('fireLength', 'LONGER FIRE', 'f4Cooldown', -3, 6, 'E', 3, 'ADD 20% LENGTH AND ONE SECOND.', ['LENGTH', (l) => pctS(UP.fireLength(l))], ['BURN', (l) => secs(UP.fireBurn(l, lv('fireWall')))]),
+  goldNode('fireWall', 'FIRE WALL', 'fireLength', -3, 7.5, [15], 'FIRE BURNS LONGER AND BLOCKS DEAD.', ['BURN', (l) => secs(UP.fireBurn(lv('fireLength'), l))]),
   goldNode('f4Charge', 'F-4 +1 CHARGE', 'f4Cooldown', -4.5, 4.5, [18], 'HOLD TWO FIRE STRIKES READY.', ['CHARGES', UP.f4Charge], true),
   unlockNode('b52', 'B-52', 'f4Cooldown', -6, 6, 'DROP EIGHT BOMBS ALONG A LANE.', ['COOLDOWN', (l) => l ? '45 S' : 'NONE'], ['BOMBS', (l) => l ? 8 : 0]),
   scrapNode('b52Bombs', 'MORE BOMBS', 'b52', -6, 7.5, 'E', 4, 'ADD TWO BOMBS TO EACH RUN.', ['BOMBS', UP.b52Bombs]),
@@ -208,13 +208,11 @@ function nodeState(n) {
 const shownAs = (n) => ({ off: 0, tease: 1 })[nodeState(n)] ?? 2;
 
 // ---------- into a run
-// The active Viper upgrades are folded into the current gun. Weapons added in phases 3-5 use
-// the new UP values above; their old runtime fields stay neutral until then.
+// The Viper upgrades fold into its gun; all other weapons use their own snapshots below.
 function treeUp(L, up) {
   const hd = UP.hdmg(L('hdmg')), hr = UP.hrate(L('hrate'));
   up.dmg *= hd;
   up.rate *= hr;
-  up.heat /= hr;
   return Object.assign(up, {
     heliDmg: hd, heliRate: hr, heliRange: UP.hrange(L('hrange')), rocketChance: UP.rockets(L('rockets')),
     pods: L('rocketPods') > 0, podDamage: UP.podDamage(L('podDamage')),
@@ -227,7 +225,7 @@ function treeUp(L, up) {
     planeCharges: { a10: UP.a10Charge(L('a10Charge')), f4: UP.f4Charge(L('f4Charge')), b52: UP.b52Charge(L('b52Charge')) },
     a10Damage: UP.a10Damage(L('a10Damage')), a10Lines: UP.a10Lines(L('a10Lines')), bombRun: UP.bombRun(L('bombRun')),
     fireDamage: UP.fireDamage(L('fireDamage')), fireLength: UP.fireLength(L('fireLength')),
-    fireDuration: L('fireWall') > 0 ? UP.fireWall(L('fireWall')) : UP.fireDuration(L('fireLength')),
+    fireDuration: UP.fireBurn(L('fireLength'), L('fireWall')),
     fireWall: L('fireWall') > 0,
     b52Bombs: UP.b52Bombs(L('b52Bombs')), b52Blast: UP.b52Blast(L('b52Blast')),
     fireBombs: UP.fireBombs(L('fireBombs')),

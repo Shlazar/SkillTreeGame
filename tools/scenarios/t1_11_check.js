@@ -1,4 +1,4 @@
-// Run mode: naturally ride legs 1-3, print each complete save, and render every Phase 1 shot.
+// Run mode: naturally ride legs 1-3, reconcile banked currencies, and render the early-route shots.
 // Natural rides use small game steps and a few full frames to age banners and tips.
 function ride(leg) {
   for (let i = 0; i < 480 && __sr.G.run < 120 && !__sr.G.result; i++) {
@@ -72,9 +72,8 @@ saves.push(save1);
 rides.push({leg: 1, seconds: +__sr.G.run.toFixed(2), kills: __sr.G.kills, scrap: __sr.G.sum.scrap});
 savedMoney(save1, {scrap: __sr.G.sum.scrap, surv: 1, gold: 0, chest: 0}, 'Leg 1');
 depot();
-// This earned-scrap old-tree build lets the bot use Ram against the legacy distance-based horde.
-// Phase 2 replaces this tree, and Phase 6 verifies the final per-leg balance.
-for (const id of ['root', 'hdmg', 'armor', 'ram']) {
+// Spend only earned first-leg scrap on the first gun and health upgrades.
+for (const id of ['hdmg', 'armor']) {
   if (!__sr.buy(id)) throw new Error('Natural first-leg scrap could not buy ' + id);
 }
 __sr.frames(120);
@@ -91,7 +90,7 @@ currencies({scrap: true, surv: true, gold: false}, 'Locked Cornfield chest');
 depot();
 start(3);
 __sr.sim(8);
-// Explicit counter/chest fixture: natural gold events arrive in Phase 6.
+// Explicit one-gold fixture isolates counter reveal and chest opening from golden-chase mechanics.
 const fixture = __sr.payGold('t1_11:gold', 1, 10);
 if (fixture.gold !== 1 || fixture.scrap !== 0) throw new Error('Explicit gold fixture failed');
 savedMoney(__sr.save(), {surv: 1, gold: 7, chest: 2}, 'Gold fixture opens the chest');
@@ -110,7 +109,13 @@ if (__sr.G.stationReward?.kind !== 'surv') throw new Error('Natural Red Barn arr
 const save3 = finish(3);
 saves.push(save3);
 rides.push({leg: 3, seconds: +__sr.G.run.toFixed(2), kills: __sr.G.kills, scrap: __sr.G.sum.scrap});
-savedMoney(save3, {scrap: save2.scrap + __sr.G.sum.scrap, surv: 2, gold: 7, chest: 2}, 'Leg 3');
+const leg3 = save3.legs[3], primaryGold = leg3.paid['golden-primary'] === true ? 1 : 0;
+const catchStarGold = leg3.paid['star-3'] === true ? 3 : 0;
+if (!leg3.stars[0] || !leg3.stars[1] || leg3.stars[2] !== (catchStarGold === 3) ||
+    !!primaryGold !== !!catchStarGold) throw new Error('Natural leg-3 star/catch receipts do not reconcile');
+// Fixture1 + opened chest6 + two arrival stars6; a natural primary catch adds1 and star3 adds3.
+savedMoney(save3, {scrap: save2.scrap + __sr.G.sum.scrap, surv: 2,
+  gold: 13 + primaryGold + catchStarGold, chest: 2}, 'Leg 3 fixture/chest/stars and actual primary catch');
 if (!save3.legs[3].paid['t1_11:gold']) throw new Error('Gold fixture receipt missing');
 if (rides.some(r => r.kills <= 0 || r.scrap <= 0)) throw new Error('A natural ride had no earned scrap');
 depot();
@@ -119,12 +124,12 @@ __sr.frames(180);
 const map = __sr.depotRoute();
 if (map.selected !== 4 || map.replay || !map.startLabel.includes('SILO JUNCTION')) throw new Error('Depot map did not offer leg 4');
 if (map.legs.filter(l => l.won).length !== 3 || map.legs.filter(l => l.selectable).length !== 4) throw new Error('Depot map progression is wrong');
-currencies({scrap: true, surv: true, gold: true}, 'Phase 1 Depot');
+currencies({scrap: true, surv: true, gold: true}, 'Early-route Depot');
 for (const save of saves) {
   for (const key of ['reached', 'held', 'best', 'start', 'towers', 'house']) {
     if (Object.prototype.hasOwnProperty.call(save, key)) throw new Error('Old save field returned: ' + key);
   }
 }
 __sr.frames(30);
-QA_DONE({rides, saves, goldFixture: {id: 't1_11:gold', purpose: 'counter and chest only; actual gold events are Phase 6', paid: fixture},
+QA_DONE({rides, saves, goldFixture: {id: 't1_11:gold', purpose: 'counter and chest only; actual chase tested separately', paid: fixture},
   hud, depot: {selected: map.selected, startLabel: map.startLabel}, rewardShot: true, hudShot: true, depotShot: true, perf});

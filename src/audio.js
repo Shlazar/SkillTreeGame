@@ -300,21 +300,12 @@ const SFX = {
     nz(c.life, c.volume, 'lowpass', c.from, c.q, c.to);
     tone(c.note, c.life, 'sawtooth', c.noteVolume, c.noteEnd);
   },
-  overheat() {
-    tone(900, 0.35, 'square', 0.02, 300);
-    nz(0.45, 0.04, 'highpass', 4000, 0.7, 1500);
-  },
   ui() {
     tone(620, 0.035, 'square', 0.022);
   },
   banner() {
     tone(392, 0.14, 'triangle', 0.045);
     tone(587, 0.22, 'triangle', 0.045, null, 0.1);
-  },
-  fanfare() {
-    tone(523, 0.1, 'triangle', 0.04);
-    tone(659, 0.1, 'triangle', 0.04, null, 0.08);
-    tone(784, 0.22, 'triangle', 0.045, null, 0.16);
   },
   warn() {
     // the train is nearly lost: two low, urgent notes
@@ -424,18 +415,6 @@ const SFX = {
     tone(784, 0.07, 'square', 0.02);
     tone(1175, 0.1, 'square', 0.02, null, 0.08);
     tone(2349, 0.16, 'sine', 0.018, null, 0.17);
-  },
-  crack() {
-    // the boiler cracks: a clank of metal, then steam
-    tone(196, 0.3, 'square', 0.04, 82);
-    nz(0.35, 0.09, 'bandpass', 1400, 3, 380);
-    tone(1480, 0.12, 'triangle', 0.02, 1100, 0.04);
-    nz(1.2, 0.05, 'highpass', 3600, 0.7, 1500, 0.15);
-  },
-  slow() {
-    // time slows down (PRESS E!)
-    tone(330, 0.7, 'sine', 0.06, 82);
-    nz(0.6, 0.05, 'lowpass', 900, 0.7, 110);
   },
   rank(n) {
     // the Ram's rank: SMASH, RAMPAGE, UNSTOPPABLE (one more note for each)

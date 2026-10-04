@@ -1,4 +1,4 @@
-// Shot mode: third natural ride with all currencies; gold is an explicit Phase 1 fixture.
+// Shot mode: third natural ride with all currencies; gold is an explicit counter/chest fixture.
 // Natural rides use small game steps and a few full frames to age banners and tips.
 function ride(leg) {
   for (let i = 0; i < 480 && __sr.G.run < 120 && !__sr.G.result; i++) {
@@ -43,9 +43,8 @@ __sr.frames(30);
 __sr.hold(false);
 finish(1);
 depot();
-// This earned-scrap old-tree build lets the bot use Ram against the legacy distance-based horde.
-// Phase 2 replaces this tree, and Phase 6 verifies the final per-leg balance.
-for (const id of ['root', 'hdmg', 'armor', 'ram']) {
+// Spend only earned first-leg scrap on the first gun and health upgrades.
+for (const id of ['hdmg', 'armor']) {
   if (!__sr.buy(id)) throw new Error('Natural first-leg scrap could not buy ' + id);
 }
 __sr.frames(120);
@@ -55,7 +54,7 @@ finish(2);
 depot();
 start(3);
 __sr.sim(8);
-// Explicit counter/chest fixture: natural gold events arrive in Phase 6.
+// Explicit one-gold fixture isolates counter reveal and chest opening from golden-chase mechanics.
 __sr.payGold('t1_11:gold', 1, 10);
 __sr.frames(240);
 __sr.frames(30);

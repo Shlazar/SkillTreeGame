@@ -48,8 +48,13 @@ for (const key of ['leg', 'legs', 'rescues', 'rescueDue', 'chest', 'hangar', 'fl
 }
 const loaded = reload(persisted);
 if (!loaded.found) throw new Error('Valid v2 save was rejected');
+// Rendering the revealed currencies durably queues their unseen lessons, even on the title.
+const roundTrip = {...fixture, flags: {...fixture.flags, 'tipDue:currency_surv': true, 'tipDue:currency_gold': true}};
 for (const key of ['scrap', 'surv', 'gold', 'leg', 'legs', 'rescues', 'rescueDue', 'chest', 'hangar', 'flags', 'nodes']) {
-  same(loaded.save[key], fixture[key], 'Round-trip ' + key);
+  same(loaded.save[key], roundTrip[key], 'Round-trip ' + key);
+}
+for (const key of ['currency_surv', 'currency_gold']) {
+  if (loaded.save.seen[key] === true) throw new Error('Title promoted an ineligible currency lesson: ' + key);
 }
 const legacyV2 = reload({...persisted, reached: ['millbrook'], held: ['millbrook'], best: 5,
   start: 'millbrook', towers: {millbrook: []}, house: {millbrook: 3}});

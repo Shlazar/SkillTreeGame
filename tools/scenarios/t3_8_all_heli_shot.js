@@ -6,7 +6,7 @@ const HELI_MAX = {hdmg: 8, hrate: 6, hrange: 4, rockets: 5, rocketPods: 1,
 function freshAll(quiet = false) {
   __sr.hold(false); __sr.reset();
   for (const [id, level] of Object.entries(HELI_MAX)) check(__sr.node(id, level), 'Missing heli node ' + id);
-  for (const key of ['p_auto', 't_attack', 'p_brute', 'currency_scrap']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.start(); __sr.rightUp(4, 70);
   const u = __sr.units();
   check(u.heli.count === 1 && u.rockets.chance === 0.18 && u.pods.salvo === 7 &&
@@ -16,7 +16,7 @@ function freshAll(quiet = false) {
   __sr.bot(false);
   const g = __sr.G, h = g.helis[0];
   g.zombies.length = g.rounds.length = g.timers.length = g.loot.length = g.lootFly.length = 0;
-  g.spawnCd = g.railCd = g.waveCd = 1000000; g.station = null; g.walls.length = 0;
+  g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length; g.station = null; g.walls.length = 0;
   h.tgt = null; h.vx = h.vy = 0; h.order = {kind: 'move', x: h.x, y: h.y};
 }
 function allWeaponsShot() {

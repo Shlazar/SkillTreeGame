@@ -1,5 +1,5 @@
 // Run mode: full-game weapons cannot fire in play or the demo, and their tree nodes are removed.
-const removedIds = ['he', 'reload', 'gun', 'gunspd', 'power', 'cow', 'horn', 'autoram'];
+const removedIds = ['he', 'reload', 'gun', 'gunspd', 'power', 'cow', 'horn', 'autoram', 'ramtime', 'charge'];
 const nodes = __sr.treeNodes();
 const ids = new Set(nodes.map((node) => node.id));
 const removed = nodes.filter((node) => removedIds.includes(node.id)).map((node) => node.id);
@@ -9,7 +9,7 @@ if (nodes.some((node) => !Object.prototype.hasOwnProperty.call(node, 'p'))) {
 }
 const orphans = nodes.filter((node) => node.p && !ids.has(node.p)).map((node) => node.id);
 if (orphans.length) throw new Error('Nodes have missing parents: ' + orphans.join(', '));
-for (const [id, parent] of [['ram', 'armor'], ['ramtime', 'ram'], ['charge', 'ram']]) {
+for (const [id, parent] of [['ram', 'armor'], ['ramPower', 'ram'], ['ramCooldown', 'ramPower'], ['ramDuration', 'ramCooldown']]) {
   const node = nodes.find((candidate) => candidate.id === id);
   if (!node || node.p !== parent) throw new Error(id + ' must grow from ' + parent);
 }
@@ -34,7 +34,7 @@ function fireState() {
     heliReload: state.helis.map((heli) => heli.heR),
     heReload: state.heReload,
     gunShots: state.gun ? state.gun.shots : null,
-    ram: {on: state.ram.on, uses: state.ram.uses, left: state.ram.left, t: state.ram.t}
+    ram: {on: state.ram.on, uses: state.ram.uses, cd: state.ram.cd, t: state.ram.t}
   });
 }
 

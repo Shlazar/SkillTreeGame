@@ -94,7 +94,6 @@ cv.addEventListener('pointercancel', () => {
   M.down = M.right = false;
   airCancel();
   hangarCancel();
-  if (G) G.trigger = false;
 });
 cv.addEventListener('lostpointercapture', () => {
   M.right = false;
@@ -159,19 +158,17 @@ addEventListener('keydown', (e) => {
   }
 });
 addEventListener('keyup', (e) => { KEYS[keyName(e)] = false; });
-// Pause a run or go on: the trigger is let go. The Turbo Ram's roar stops on pause and comes back
+// Pause a run or go on. The Turbo Ram's roar stops on pause and comes back
 // (for the time the Ram has left) on going on.
 function setPaused(p) {
   if (p === paused) return;
   paused = p;
-  if (G) G.trigger = false;
   if (p) SFX.ramStop(0.15);
   else if (G && G.ram.on && !G.demo && mode === 'play') SFX.roar(G.ram.dur + CFG.ram.ease - G.ram.t, false);
 }
-// pause when the window loses focus or the tab is hidden; let go of every key and the trigger
+// Pause when the window loses focus or the tab is hidden; release held keys and pointer actions.
 function lostFocus() {
   for (const k in KEYS) KEYS[k] = false;
-  if (G) G.trigger = false;
   M.down = M.right = false;
   airCancel();
   hangarCancel();
@@ -323,7 +320,6 @@ function boot() {
       M.y = y;
       M.inside = true;
     },
-    trigger: (on) => { G.trigger = !!on && mode === 'play'; },
     he: () => tryHE(),
     thermal: (k) => setThermal(k),
     // hp(v): set health. jump(px): move to px before this leg's goal; leave the dead behind.
@@ -395,7 +391,7 @@ function boot() {
     // sound: roar = the Ram's roar is playing (or set to play), ctx = the audio is on
     sound: () => ({ ctx: !!Au.ctx, roar: !!Au.roar, muted: Au.muted }),
     // bot(on): the autopilot handles the Ram and smart plane strikes; the Viper fires by itself.
-    bot: (on) => { G.bot = !!on; if (!on) G.trigger = false; },
+    bot: (on) => { G.bot = !!on; },
     pause: (p) => setPaused(!!p),
     hold: (h) => { hold = !!h; },
     // the save: give(scrap, surv, gold) adds money,
@@ -474,12 +470,12 @@ function boot() {
       scrap: SAVE.scrap, survivors: SAVE.surv, gold: SAVE.gold, leg: G.leg, runs: SAVE.runs,
       pay: Object.assign({}, G.pay), hp: Math.round(G.tr.hp), max: G.tr.max, speed: +G.tr.v.toFixed(1),
       onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length, up: Object.assign({}, G.up),
-      shots: G.shots, scavPaid: G.scavPaid, overheat: G.overheat, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),
+      shots: G.shots, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),
       station: G.station ? G.station.id + ' ' + G.station.state : '-',
       walls: G.walls.map((w) => w.km + ' ' + w.state),
       helis: G.helis.map((h) => [Math.round(h.x - G.tr.fx), Math.round(h.y - G.tr.fy)]),
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
-      W, H, VH, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),
+      W, H, VH, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000),
       gun: { rate: G.up.gun, shots: G.gun.shots, kills: G.gun.kills, ang: +G.gun.ang.toFixed(2), tgt: G.gun.tgt ? G.gun.tgt.st : -1 },
       ram: { state: ramState(), on: G.ram.on, t: +G.ram.t.toFixed(2), cd: +G.ram.cd.toFixed(3), cooldown: G.ram.cooldown,
         duration: G.ram.dur, band: G.ram.band, damage: G.ram.damage, progress: +ramProgress().toFixed(3), kills: G.ram.kills, pay: G.ram.pay,

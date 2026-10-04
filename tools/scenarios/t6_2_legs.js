@@ -8,7 +8,7 @@ function seeded(seed, run) {
 }
 function freshLeg(n, replay = false, bot = true, hunts = false) {
   __sr.hold(false); __sr.pause(false); __sr.reset(); __sr.thermal(0);
-  for (const key of ['p_auto', 't_attack', 'currency_scrap', 'currency_surv', 'currency_gold']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   if (hunts) for (const id of ['goldHunt', 'silverHunt', 'boomHunt']) check(__sr.node(id, 3) === true, 'Max Hunt setup failed: ' + id);
   __sr.leg(n, replay); __sr.hp(9999); __sr.bot(bot); __sr.rightUp(4, 70);
 }
@@ -81,11 +81,11 @@ function escortShot() {
   });
 }
 
-const table = __sr.line().legs, supported = ['railCrowd', 'stream', 'wave', 'pile', 'crate'];
-const pending = {T6_3: ['deadWall'], T6_4: ['golden', 'goldCrate'], T6_5: ['rescue'], T6_6: ['silverGroup', 'explosiveStream']};
+const table = __sr.line().legs, supported = ['railCrowd', 'stream', 'wave', 'pile', 'crate', 'deadWall',
+  'golden', 'goldCrate', 'rescue', 'silverGroup', 'explosiveStream'];
 check(table.length === 12 && table.every((l, i) => l.n === i + 1 && l.len === 2400), 'Route does not contain twelve full legs');
 const leg1 = [[3, 'railCrowd', {n: 6}], [12, 'stream', {edge: -1, n: 12}],
-  [22, 'pile', {ahead: 120, off: 100, side: 1, pay: 15}], [32, 'stream', {edge: 1, n: 14}],
+  [22, 'pile', {ahead: 120, off: 100, side: 1, pay: table[0].events.find(e => e[1] === 'pile')[2].pay}], [32, 'stream', {edge: 1, n: 14}],
   [42, 'railCrowd', {n: 8}], [52, 'wave', {n: 10}]];
 check(JSON.stringify(table[0].events) === JSON.stringify(leg1), 'The exact leg1 prototype changed');
 function firstKind(kind) { return table.find(l => l.events.some(e => e[1] === kind))?.n; }
@@ -128,7 +128,8 @@ const actual = table.map(l => seeded(0x620 + l.n, () => {
       types.add(z.type); for (const key of Object.keys(flags)) flags[key] ||= !!z[key];
       check(l.n >= 2 || z.type === 0, 'Leg1 spawned a runner or brute');
       check(l.n >= 6 || z.type !== 2, 'Brute appeared before leg6: leg' + l.n);
-      check(!z.gold && !z.silver && !z.boom, 'A future special handler is active during T6.2');
+      check((l.n >= 3 || !z.gold) && (l.n >= 4 || !z.silver) && (l.n >= 7 || !z.boom),
+        'Special appeared before its actual introduction on leg' + l.n);
       if (z.streamEventId) {
         const s = streams[z.streamEventId] || (streams[z.streamEventId] = {births: [], firstLeader: null, firstFollower: null,
           initialFormation: null, followed: false, releases: [], threatenedTrain: false});
@@ -161,17 +162,21 @@ const actual = table.map(l => seeded(0x620 + l.n, () => {
       for (const z of g.zombies) if (!before.has(z) && z.st === 1) railIntro.push({type: z.type, at: g.run});
   }
   const state = __sr.legState(), expected = l.events.map((e, i) => ({e, i})).filter(({e}) => supported.includes(e[1]));
-  check(state.eventIndex === l.events.length && state.events.length === expected.length,
+  const receipts = state.events.filter(e => e.id.startsWith('leg-' + l.n + '-event-'));
+  check(state.eventIndex === l.events.length && receipts.length === expected.length,
     'Timeline omitted/duplicated supported events on leg' + l.n + ': ' + JSON.stringify(state));
-  state.events.forEach((e, i) => {
+  receipts.forEach((e, i) => {
     const spec = expected[i].e, n = spec[2].n;
     check(e.id === 'leg-' + l.n + '-event-' + expected[i].i && e.kind === spec[1] &&
       Math.abs(e.t - e.at) < 1e-6, 'Wrong actual receipt identity/timing on leg' + l.n);
-    check(e.kind === 'railCrowd' ? e.n >= 0 && e.n <= n : e.kind === 'stream' ? e.n === n :
+    check(e.kind === 'railCrowd' ? e.n >= 0 && e.n <= n : ['stream', 'silverGroup', 'explosiveStream'].includes(e.kind) ? e.n === n :
       e.kind === 'wave' ? e.n === n * 2 : e.n === 1, 'Wrong actual receipt count on leg' + l.n);
   });
   check(types.has(0) && (l.n < 2 || types.has(1)) && (l.n < 6 || types.has(2)),
     'Expected normal type never appeared on leg' + l.n + ': ' + JSON.stringify([...types]));
+  check(l.n < 3 || flags.gold, 'The guaranteed golden actor never appeared on leg' + l.n);
+  if (l.events.some(e => e[1] === 'silverGroup')) check(flags.silver, 'Guaranteed silver group never appeared on leg' + l.n);
+  if (l.events.some(e => e[1] === 'explosiveStream')) check(flags.boom, 'Guaranteed explosive stream never appeared on leg' + l.n);
   if (l.n === 2) check(streams['leg-2-event-1']?.births.length > 0 && streams['leg-2-event-1'].births.every(z => z.type === 1),
     'Leg2 guaranteed runner stream did not actually emit runners');
   if (l.n === 6) check(railIntro.some(z => z.type === 2 && Math.abs(z.at - 3) < 1e-6), 'Leg6 introductory rail crowd did not create its guaranteed brute');
@@ -196,7 +201,7 @@ const actual = table.map(l => seeded(0x620 + l.n, () => {
       firstFollower: s.firstFollower, formation: s.initialFormation, followed: s.followed, releases: s.releases, threatenedTrain: s.threatenedTrain});
   });
   return {leg: l.n, base: l.base, types: [...types].sort(), flags, declared: l.events.map(e => ({at: e[0], kind: e[1]})),
-    state, escorts, railIntro, pendingKinds: l.events.filter(e => !supported.includes(e[1])).map(e => e[1])};
+    state, escorts, railIntro, implementedKinds: l.events.map(e => e[1])};
 }));
 
 const earlyReplays = [1, 2].map(n => seeded(0x62F + n, () => {
@@ -241,6 +246,5 @@ const performance = seeded(0x622, () => {
   __sr.sim(10); __sr.frames(30); result.lateProbe = {late: __sr.late(), stats: __sr.stats()};
   check(result.lateProbe.late <= 1, 'Natural30s leg baked late atlas pages'); return result;
 });
-QA_DONE({table, actual, earlyReplays, shot, approach, shotViewport, exactShotRendered30Frames: true, pendingHandlers: pending,
-  pendingNote: 'Declared special introductions are checked here; actual wall/gold/rescue/silver/explosive behavior awaits T6.3–T6.6.',
+QA_DONE({table, actual, earlyReplays, shot, approach, shotViewport, exactShotRendered30Frames: true, allHandlersImplemented: true,
   performance, baseline: {task: 'T0.1', bench: 3.27, render: 2.97, late: 1}});

@@ -43,9 +43,8 @@ __sr.frames(30);
 __sr.hold(false);
 finish(1);
 depot();
-// This earned-scrap old-tree build lets the bot use Ram against the legacy distance-based horde.
-// Phase 2 replaces this tree, and Phase 6 verifies the final per-leg balance.
-for (const id of ['root', 'hdmg', 'armor', 'ram']) {
+// Spend only earned first-leg scrap on the first gun and health upgrades.
+for (const id of ['hdmg', 'armor']) {
   if (!__sr.buy(id)) throw new Error('Natural first-leg scrap could not buy ' + id);
 }
 __sr.frames(120);
@@ -55,7 +54,7 @@ finish(2);
 depot();
 start(3);
 __sr.sim(8);
-// Explicit counter/chest fixture: natural gold events arrive in Phase 6.
+// Explicit one-gold fixture isolates counter reveal and chest opening from golden-chase mechanics.
 __sr.payGold('t1_11:gold', 1, 10);
 __sr.frames(240);
 __sr.frames(30);
@@ -63,6 +62,13 @@ __sr.hold(true);
 __sr.frames(30);
 __sr.hold(false);
 ride(3);
-finish(3);
+const save3 = finish(3), leg3 = save3.legs[3];
+const primaryGold = leg3.paid['golden-primary'] === true ? 1 : 0;
+const catchStarGold = leg3.paid['star-3'] === true ? 3 : 0;
+if (!leg3.stars[0] || !leg3.stars[1] || leg3.stars[2] !== (catchStarGold === 3) ||
+    !!primaryGold !== !!catchStarGold) throw new Error('Natural leg-3 star/catch receipts do not reconcile');
+// Same accounting as t1_11_check: fixture1 + chest6 + arrival6, plus actual catch1/star3.
+if (save3.gold !== 13 + primaryGold + catchStarGold || save3.chest !== 2 ||
+    JSON.parse(localStorage.getItem('sky-reaper-save-1')).gold !== save3.gold) throw new Error('Depot shot gold receipts do not reconcile');
 depot();
 __sr.frames(180);

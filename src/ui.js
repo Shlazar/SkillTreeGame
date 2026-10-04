@@ -134,9 +134,10 @@ function fitText(s, width) {
 // row when it cannot fit beside money and health; its full station name and metres stay readable.
 function hudLayout() {
   const counters = currencyLayout(), kills = fmt(G.kills), hp = String(Math.ceil(G.tr.hp)), kx = counters.end;
-  const hx = kx + 10 + tw(kills) + 24, hw = Math.max(20,
-    Math.min(clamp(Math.round(W * 0.16), 44, 100), W - 32 - hx - tw(hp) - 4));
-  const x0 = hx + hw + 10 + tw(hp), x1 = W - 28, stars = starLayout();
+  const killsW = tw(kills), hpW = tw(hp), muteW = Au.muted ? tw('MUTE') : 0;
+  const hx = kx + 10 + killsW + 24, hw = Math.max(20,
+    Math.min(clamp(Math.round(W * 0.16), 44, 100), W - 32 - hx - hpW - 4));
+  const x0 = hx + hw + 10 + hpW, x1 = W - 28, stars = starLayout();
   let route = null;
   if (!G.demo) {
     const [label, color] = nextLabel(), lw = tw(label), secondary = x1 - x0 < lw + 8;
@@ -145,12 +146,12 @@ function hudLayout() {
     route = { label: { x: left, y, w: lw, h: 7, text: label, color }, secondary,
       line: !secondary && lineW >= 40 ? { x: x0, y: 5, w: lineW + 10, h: 9 } : null };
   }
-  return { counters, kills: { x: kx, y: 5, w: 10 + tw(kills), h: 8, text: kills },
+  return { counters, kills: { x: kx, y: 5, w: 10 + killsW, h: 8, text: kills },
     health: { icon: { x: hx - 12, y: 5, w: ICON.train.width, h: ICON.train.height },
-      bar: { x: hx, y: 6, w: hw, h: 6 }, label: { x: hx + hw + 4, y: 6, w: tw(hp), h: 7, text: hp } },
+      bar: { x: hx, y: 6, w: hw, h: 6 }, label: { x: hx + hw + 4, y: 6, w: hpW, h: 7, text: hp } },
     route, pause: mode === 'play' ? { x: W - 23, y: 1, w: 21, h: 16 } : null,
     stars: stars.visible ? stars : null,
-    mute: Au.muted ? { x: W - 4 - tw('MUTE'), y: stars.visible ? 34 : 22, w: tw('MUTE'), h: 7 } : null,
+    mute: Au.muted ? { x: W - 4 - muteW, y: stars.visible ? 34 : 22, w: muteW, h: 7 } : null,
     warningY: route?.secondary ? 34 : 24 };
 }
 function drawHUD() {
@@ -176,9 +177,10 @@ function drawHUD() {
   text(Math.ceil(tr.hp), hx + hw + 4, 6, f < 0.35 ? U.red : f < 0.65 ? U.amber : U.dim);
   if (layout.route) drawRoute(layout.route);
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
-  const stars = starLayout();
-  if (stars.visible) for (const star of stars.stars) drawLegStar(star.x, star.y, star.earned, star.pop);
-  if (Au.muted) text('MUTE', W - 4, stars.visible ? 34 : 22, U.faint, { align: 'right' });
+  const stars = layout.stars;
+  if (stars) for (const star of stars.stars) drawLegStar(star.x, star.y, star.earned, star.pop);
+  if (Au.muted) text('MUTE', W - 4, stars ? 34 : 22, U.faint, { align: 'right' });
+  return layout;
 }
 // The destination for this leg, with metres left to the train's actual stopping point.
 function nextLabel() {
@@ -225,20 +227,22 @@ function drawRoute(layout) {
   ctx.fillRect(tx - 1, y - 2, 3, 5);
 }
 // Warnings under the top bar: the dead on the track or on the train.
-function warningLayout() {
+function warningLayout(layout) {
   if (G.result) return [];
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', L = [];
   if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (SPACE RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
+  if (!L.length) return [];
   // Wrap long warnings below the HUD, leaving its right-hand stars and mute control clear.
-  const wx = W / 2, wy = hudLayout().warningY, room = W - 80, rows = [];
+  const wx = W / 2, wy = (layout || hudLayout()).warningY, room = W - 80, rows = [];
   for (const [t, c] of L) for (const line of wrap(t, room)) {
-    rows.push({ x: Math.round(wx - tw(line) / 2), y: wy + rows.length * 10, w: tw(line), h: 7, text: line, color: c });
+    const w = tw(line);
+    rows.push({ x: Math.round(wx - w / 2), y: wy + rows.length * 10, w, h: 7, text: line, color: c });
   }
   return rows;
 }
-function drawWarnings() {
-  for (const r of warningLayout()) text(r.text, r.x, r.y, r.color);
+function drawWarnings(layout) {
+  for (const r of warningLayout(layout)) text(r.text, r.x, r.y, r.color);
 }
 // An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
 // with a label just inside it.
@@ -656,7 +660,7 @@ function uiBounds() {
     route: layout.route ? { label: { ...layout.route.label }, line: layout.route.line ? { ...layout.route.line } : null,
       secondary: layout.route.secondary } : null,
     pause: layout.pause ? { ...layout.pause } : null, stars: layout.stars,
-    mute: layout.mute ? { ...layout.mute } : null, warnings: warningLayout() } : null;
+    mute: layout.mute ? { ...layout.mute } : null, warnings: warningLayout(layout) } : null;
   const depot = mode === 'depot' ? { counters: currencyBounds(currencyLayout(SHOWN)), tabs: depotTabRects(),
     route: depotRouteLayout(), bottom: depotBottomLayout(),
     treeArea: depotTab === 'tree' ? { x: 0, y: TREE.y0, w: W, h: TREE.y1 - TREE.y0 } : null,
@@ -693,10 +697,10 @@ function drawUI() {
     ctx.clip();
     drawSpeedLines();
   }
-  drawHUD();
+  const layout = drawHUD();
   drawCoins();
   if (run) {
-    drawWarnings();
+    drawWarnings(layout);
     drawRadar();
     drawWeapons();
     drawRadio();

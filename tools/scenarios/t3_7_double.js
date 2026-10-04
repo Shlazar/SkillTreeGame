@@ -3,11 +3,11 @@ function check(ok, message) { if (!ok) throw new Error(message); }
 function freshDouble(owned = true) {
   __sr.hold(false); __sr.reset();
   check(__sr.node('hellfire', 1) && __sr.node('doubleHellfire', owned ? 1 : 0), 'Hellfire nodes missing');
-  for (const key of ['p_auto', 't_attack', 'p_brute', 'currency_scrap']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.start(); __sr.bot(false); __sr.rightUp(4, 70);
   const g = __sr.G, h = g.helis[0];
   g.zombies.length = g.rounds.length = g.timers.length = g.loot.length = g.lootFly.length = 0;
-  g.spawnCd = g.railCd = g.waveCd = 1000000; g.station = null; g.walls.length = 0;
+  g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length; g.station = null; g.walls.length = 0;
   h.cd = h.look = 1000000; h.tgt = null;
   h.order = {kind: 'move', x: h.x, y: h.y};
 }

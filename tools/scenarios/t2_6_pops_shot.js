@@ -13,7 +13,7 @@ function isolate() {
   g.timers.length = 0;
   g.loot.length = 0;
   g.lootFly.length = 0;
-  g.spawnCd = g.railCd = g.waveCd = 1000000;
+  g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length;
   h.vx = h.vy = 0;
   h.order = {kind: 'move', x: h.x, y: h.y};
   h.tgt = null;

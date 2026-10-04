@@ -6,7 +6,7 @@ const SK = {
   gold: { reward: 1, scrap: 10, speed: 60, edge: 18, lane: 0.2, laneTop: 48, laneBottom: 42,
     follow: 180, ahead: 80, huntGap: 8 }
 };
-// A tutorial moment for part D's prompts (nothing happens when they are not there).
+// Report the golden runner's actual tutorial moments.
 function skillEvent(name, data) {
   if (typeof tutEvent === 'function') tutEvent(name, data || {});
 }

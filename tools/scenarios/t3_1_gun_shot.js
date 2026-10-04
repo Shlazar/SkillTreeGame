@@ -6,7 +6,7 @@ __sr.bot(false);
 const g = __sr.G;
 g.zombies.length = g.rounds.length = g.timers.length = 0;
 g.loot.length = g.lootFly.length = 0;
-g.spawnCd = g.railCd = g.waveCd = 1000000;
+g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length;
 g.helis[0].cd = 1000000;
 __sr.sim(8);
 __sr.frames(240);

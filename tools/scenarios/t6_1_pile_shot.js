@@ -9,7 +9,7 @@ function seeded(seed, run) {
 }
 function freshTimeline(replay = false, bot = true) {
   __sr.hold(false); __sr.pause(false); __sr.reset(); __sr.thermal(0);
-  for (const key of ['p_auto', 't_attack', 'currency_scrap', 'currency_surv', 'currency_gold']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.leg(1, replay); __sr.hp(9999); __sr.bot(bot); __sr.rightUp(4, 70);
   check(__sr.legState().eventIndex === 0 && __sr.legState().events.length === 0 && __sr.loot().length === 0,
     'A new leg inherited event receipts or km-rolled finds');

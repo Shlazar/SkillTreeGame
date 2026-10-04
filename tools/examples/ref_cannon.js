@@ -1,13 +1,13 @@
 // Reference shot (docs/style/cannon.png): the rail cannon a few frames after a shot - the white beam,
 // the row of blasts along the line, bodies thrown off it, the muzzle blast and the burnt groove.
-// (The rail cannon moves to the full game, but its shot is the gold standard of a juicy effect.)
-__sr.node('gun', 1);
+// (The rail cannon is retained for the full game; this fixture enables only its runtime effect.)
 __sr.start();
 __sr.sim(2);
 __sr.lose();
 __sr.sim(6);
 __sr.depot('tree');
 __sr.start();
+__sr.up('gun', __sr.CFG.gun.reload); // Retained full-game artwork fixture, outside the demo tree.
 __sr.bot(true);
 __sr.sim(6);
 __sr.crowd(60, 430, 160, 45);

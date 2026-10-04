@@ -9,7 +9,7 @@
     background: var(--bg); outline: none; touch-action: none; }
   #c:focus-visible { box-shadow: inset 0 0 0 2px #b8862f; }
 </style>
-<canvas id="c" width="640" height="360" tabindex="0" role="application" aria-label="Sky Reaper. A pixel-art gunship game over an endless field full of zombies. Aim with the mouse, hold left click for the 25mm gun, right click or Space for the 105mm cannon, WASD to move, T for the thermal camera."></canvas>
+<canvas id="c" width="640" height="360" tabindex="0" role="application" aria-label="Sky Reaper. Protect a train through twelve station legs. Right click to move your Viper or focus an enemy. Q or W arms an equipped plane; left click confirms, drag to turn, and right click cancels. Press a plane key twice for a smart strike. Space uses an owned Turbo Ram. T changes the thermal camera, M toggles sound, and Escape or P pauses. Enter starts or continues from menus. The Depot holds upgrades and plane assignments."></canvas>
 <script>
 (() => {
 'use strict';
@@ -2863,21 +2863,12 @@ const SFX = {
     nz(c.life, c.volume, 'lowpass', c.from, c.q, c.to);
     tone(c.note, c.life, 'sawtooth', c.noteVolume, c.noteEnd);
   },
-  overheat() {
-    tone(900, 0.35, 'square', 0.02, 300);
-    nz(0.45, 0.04, 'highpass', 4000, 0.7, 1500);
-  },
   ui() {
     tone(620, 0.035, 'square', 0.022);
   },
   banner() {
     tone(392, 0.14, 'triangle', 0.045);
     tone(587, 0.22, 'triangle', 0.045, null, 0.1);
-  },
-  fanfare() {
-    tone(523, 0.1, 'triangle', 0.04);
-    tone(659, 0.1, 'triangle', 0.04, null, 0.08);
-    tone(784, 0.22, 'triangle', 0.045, null, 0.16);
   },
   warn() {
     // the train is nearly lost: two low, urgent notes
@@ -2987,18 +2978,6 @@ const SFX = {
     tone(784, 0.07, 'square', 0.02);
     tone(1175, 0.1, 'square', 0.02, null, 0.08);
     tone(2349, 0.16, 'sine', 0.018, null, 0.17);
-  },
-  crack() {
-    // the boiler cracks: a clank of metal, then steam
-    tone(196, 0.3, 'square', 0.04, 82);
-    nz(0.35, 0.09, 'bandpass', 1400, 3, 380);
-    tone(1480, 0.12, 'triangle', 0.02, 1100, 0.04);
-    nz(1.2, 0.05, 'highpass', 3600, 0.7, 1500, 0.15);
-  },
-  slow() {
-    // time slows down (PRESS E!)
-    tone(330, 0.7, 'sine', 0.06, 82);
-    nz(0.6, 0.05, 'lowpass', 900, 0.7, 110);
   },
   rank(n) {
     // the Ram's rank: SMASH, RAMPAGE, UNSTOPPABLE (one more note for each)
@@ -3129,18 +3108,15 @@ const CFG = {
   // a helicopter: its top speed, how fast it gets there, how near loot must be to pick it up
   heli: { speed: 170, accel: 3.2, pickup: 14 },
   // 25mm: 4 rounds/s, flight seconds, spread px, burst radius px and most victims. (proposal)
-  // The Viper fires continuously without overheating; legacy heat values stay zero.
-  mg: { rate: 4, travel: 0.07, spread: 5, splash: 7, victims: 4, heatPer: 0, cool: 0.55 },
+  // The Viper fires continuously.
+  mg: { rate: 4, travel: 0.07, spread: 5, splash: 7, victims: 4 },
   // 105mm: reload, flight time, kill radius, hurt radius (a hurt walker dies too, a brute may not),
   // and how close to the train a blast hurts the train too
   he: { reload: 2.4, travel: 0.7, kill: 34, hurt: 56, close: 28 },
   // The global living limit. Individual leg populations and enemy introductions are in legs.js.
   pop: { max: 1100 },
-  // a station stop: survivors waiting on a later visit (a first visit has the station's own number),
-  // seconds between two setting off, their speed, the shortest stop, how long a zombie holds a
-  // survivor before it is too late, how near the door the dead keep the survivors in (and for how
-  // long, at most)
-  station: { again: 3, gap: 1.1, run: 24, minStop: 12, grab: 1.4, clear: 34, wait: 8 },
+  // Seconds before a grabbed survivor is lost, for the retained full-game survivor helpers.
+  station: { grab: 1.4 },
   // Share of each zombie's scrap value paid now; fractions wait in the kill pot. (proposal)
   pay: { kill: 1 },
   // Dead Wall health, rail placement/standoff, collectible scrap, warning/clearance and crash bodies. (proposal)
@@ -3160,11 +3136,6 @@ const CFG = {
   },
   // Seconds the built-in winch needs over a survivor: about 2 s. (proposal)
   winch: { hover: 2 },
-  // what one level of a skill tree node adds: train HP (ARMOR), the 25mm's heat per round is
-  // multiplied (COOLING), 25mm rounds per second (FAST FEED), 25mm damage (HEAVY ROUNDS), 105mm
-  // reload seconds taken off (FAST RELOAD), heli px/s (FAST ROTORS), px of pickup reach
-  // (MAGNET), share of kill scrap (SCAVENGER), rounds per second (GUN SPEED)
-  up: { armor: 10, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, rotor: 25, magnet: 10, scav: 0.1, gun: 1 },
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 2, speed: [15, 20], value: 1, dps: 0.25 },               // walker: 2 base gun hits (proposal)
@@ -3189,8 +3160,6 @@ const sAtKm = (k) => DEPOT_S - k * CFG.line.km;
 const kmAt = (s) => (DEPOT_S - s) / CFG.line.km;
 // DK() = how far the engine's nose is from the Depot, in km
 const DK = () => kmAt(G.tr.s);
-// km2(k) = k km cut down to the whole 10 m, the way every screen and the save show km (0.659 -> 0.65)
-const km2 = (k) => Math.floor(k * 100 + 1e-6) / 100;
 // The y on the ground where the distance along the rails is s, from any distance away.
 const yOfS = (s) => yAtS(s, yAtS(s, s / 1.0354));
 
@@ -3202,7 +3171,7 @@ const UP = {
   pickup: (l) => CFG.heli.pickup * (1 + 0.25 * l)
 };
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
-// menus uses the plain numbers and shows off the Turbo Ram for now.
+// menus uses base upgrades with Rockets, the MG Car and Turbo Ram enabled for its battle.
 // The winch is built in. he and ram are weapons; gun is the rail cannon's reload (0 = none).
 // One Viper flies, including in the demo.
 // salvage is the extra share of every scrap reward; treeUp reads the crew's level.
@@ -3210,19 +3179,15 @@ function runUp(demo) {
   const L = demo ? () => 0 : lv;
   // (tree.js adds the newer nodes' numbers: treeUp)
   const up = treeUp(L, {
-    hp: UP.hp(L('armor')), rate: CFG.mg.rate, heat: CFG.mg.heatPer, dmg: 1,
+    hp: UP.hp(L('armor')), rate: CFG.mg.rate, dmg: 1,
     he: false, reload: CFG.he.reload, fly: CFG.heli.speed, pickup: UP.pickup(L('magnet')),
     helis: 1,
-    scav: 0, winch: true, gun: 0, ram: demo || L('ram') > 0,
-    // Full-game plow and legacy gold spawns stay disabled; armor still dresses the engine.
-    cow: false, gold: 0, armor: L('armor')
+    winch: true, gun: 0, ram: demo || L('ram') > 0,
+    // The full-game plow stays disabled; armor still dresses the engine.
+    cow: false, armor: L('armor')
   });
   if (demo) Object.assign(up, { rocketChance: UP.rockets(1), mgCar: true });
   return up;
-}
-// The train's full health.
-function maxHP() {
-  return UP.hp(lv('armor'));
 }
 // Finds and gold alternatives share lootAcc; wall piles use their own pot for exact source totals.
 // Apply Salvage Crew once here; bankRun only stores the whole scrap already paid.
@@ -3263,9 +3228,7 @@ function newGame(demo, number, replay) {
     earnedBase: { ordinary: 0, silver: 0, loot: 0, wall: 0 },
     earnedCounts: { ordinaryKills: 0, silverKills: 0, ramKills: 0, loot: 0, wall: 0 },
     kills: 0, cash: 0, gold: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
-    // Legacy debug fields stay zero until the final cleanup; Salvage Crew uses the pay pots below.
-    scavAcc: 0, scavPaid: 0,
-    trigger: false, mgCd: 0, heat: 0, overheat: false, heReload: 0, heQueue: false, hitT: 0, muzzle: [0, 0],
+    heReload: 0, heQueue: false,
     // the train: s = distance along the rails of the engine's nose (it falls as the train runs north),
     // v = speed, hp / max = its health now and when whole, hit[k] = car k flashes red, fx / fy = the
     // nose on the ground
@@ -3278,14 +3241,12 @@ function newGame(demo, number, replay) {
     // train goes to next (or stands at), and the Dead Walls ahead
     stops: [], stations: [], station: null, walls: [], wall: null, safeZone: false, finale: null,
     camX: 0, camY: 0, aimSX: W / 2, aimSY: VH / 2,
-    lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
     // Each source carries its own fraction, so silver and wall rewards never inherit ordinary pay.
     spawnCd: 0, waveCd: null, waves: 0, killAcc: 0, silverAcc: 0, lootAcc: 0, wallAcc: 0,
     railCd: rnd(4, 6), onTrain: 0, blocked: false, decalT: 0, sum: null,
-    // this run's scrap by where it came from (the summary lists them), the survivors aboard, the px
-    // the train has ridden, the furthest km, and what is already in the save
-    pay: { kills: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0, gold: 0 },
+    // this run's scrap sources, survivors aboard, furthest km and money already banked
+    pay: { kills: 0, loot: 0 }, surv: 0, maxKm: 0, banked: { scrap: 0, surv: 0, gold: 0 },
     bot: false, botT: 0, botZ: null, hurt: { crush: 0, claw: 0, shell: 0 },
     // the rail cannon on the flatcar (cannon.js)
     gun: newCannon(),
@@ -3359,7 +3320,6 @@ function bankRun() {
 function endGame() {
   mode = 'summary';
   sumStart = realT;
-  G.trigger = false;
   // a mouse press from the run must not click TO THE DEPOT when it is let go
   M.px = M.py = -1e4;
   // where the run ended (the train may roll on a little after it is lost; that does not count)
@@ -3527,8 +3487,6 @@ function arrive() {
   }
   mode = 'ending';
   G.endT = 0;
-  G.trigger = false;
-  G.lock = null;
   banner('LEG WON!', G.station.name, U.gold, 3);
   SFX.horn();
   for (const z of G.zombies) if (z.st === 2) later(rnd(0.2, 1.4), () => {
@@ -3542,8 +3500,6 @@ function lose() {
   G.result = 'lost';
   mode = 'ending';
   G.endT = 0;
-  G.trigger = false;
-  G.lock = null;
   banner('TRAIN LOST', 'YOU KEEP ALL YOUR SCRAP. RETRY THIS LEG.', U.red, 9);
   const blast = (k, big) => () => {
     const c = G.tr.cars[k], x = c.cx + rnd(-3, 3), y = c.cy;
@@ -4224,7 +4180,6 @@ function mgImpact(r) {
   JUICE.from = null;
   if (hits && r.player) {
     G.hits++;
-    G.hitT = 0.12;
   }
   if (r.player) roundKills(KILLED);
   // the round lands: a spark of light, a few sparks and a little dust (no mark: the ground stays
@@ -4395,13 +4350,6 @@ function botPlay(dt) {
   }
 }
 
-// ---------- the ride
-// Distance is only route bookkeeping. Riding alone never creates scrap.
-function ride(d) {
-  G.ride += d;
-  G.maxKm = Math.max(G.maxKm, DK());
-}
-
 // ---------- one step of the game (STEP seconds)
 function step(dt) {
   G.t += dt;
@@ -4435,7 +4383,8 @@ function step(dt) {
   updateRam(dt);
   tr.s -= tr.v * dt;
   layoutTrain();
-  if (!G.demo && !G.result) ride(tr.v * dt);
+  // Distance is only route bookkeeping. Riding alone never creates scrap.
+  if (!G.demo && !G.result) G.maxKm = Math.max(G.maxKm, DK());
   for (let k = 0; k < CAR.n; k++) if (tr.hit[k] > 0) tr.hit[k] -= dt;
   tr.hpShown = Math.max(tr.hp, tr.hpShown - dt * 12);
   // the little fires it runs over go out
@@ -4484,9 +4433,6 @@ function step(dt) {
   updateLegEvents();
   updateFinale();
   updateAir(dt);
-  G.hitT = Math.max(0, G.hitT - dt);
-  G.muzzle[0] = Math.max(0, G.muzzle[0] - dt);
-  G.muzzle[1] = Math.max(0, G.muzzle[1] - dt);
   G.killBump = Math.max(0, G.killBump - dt * 6);
   G.cashPulse = Math.max(0, G.cashPulse - dt * 3);
   updateStation(dt);
@@ -5689,7 +5635,6 @@ function trainStops(st) {
   G.tr.v = 0;
   layoutTrain();
   st.state = 'done';
-  G.stopNames.push(st.name);
   stationReward(st);
   arrive();
 }
@@ -5991,7 +5936,7 @@ const SK = {
   gold: { reward: 1, scrap: 10, speed: 60, edge: 18, lane: 0.2, laneTop: 48, laneBottom: 42,
     follow: 180, ahead: 80, huntGap: 8 }
 };
-// A tutorial moment for part D's prompts (nothing happens when they are not there).
+// Report the golden runner's actual tutorial moments.
 function skillEvent(name, data) {
   if (typeof tutEvent === 'function') tutEvent(name, data || {});
 }
@@ -6362,7 +6307,7 @@ function makeHelis() {
   for (let i = 0; i < G.up.helis; i++) {
     const [x, y] = escortAt(i);
     G.helis.push({ i, name: HC.names[i] || 'VIPER ' + (i + 1), x, y, vx: 0, vy: 0, hd: G.tr.cars[0].ang, alt: HC.alt, ph: rnd(TAU),
-      heat: 0, hot: false, firing: false, cd: rnd(0.15), tgt: null, look: 0, order: null, sel: G.up.helis === 1, flash: 0, heR: 0, kick: 0,
+      firing: false, cd: rnd(0.15), tgt: null, look: 0, order: null, sel: G.up.helis === 1, flash: 0, heR: 0, kick: 0,
       cmdT: -9, spin: rnd(8), dust: 0, smoke: rnd(0.2), lean: 0, podFlash: [0, 0] });
   }
 }
@@ -6394,9 +6339,6 @@ function updateHelis(dt) {
   selectSingleHeli();
   let rel = 0, readyNow = false;
   for (const h of hs) {
-    // Retain safe zero values for the existing debug stats; heat no longer gates the gun.
-    h.heat = 0;
-    h.hot = false;
     let o = h.order;
     if (o && o.kind === 'attack' && (o.z.dead || o.z.gone)) o = h.order = null;
     // where it wants to be: its slot over the train, its spot, or in reach of its target
@@ -6474,9 +6416,7 @@ function updateHelis(dt) {
     rel = Math.max(rel, h.heR);
     heliDust(h, dt);
   }
-  // Legacy heat stats stay zero; the dormant 105 keeps its reload stat.
-  G.heat = 0;
-  G.overheat = false;
+  // The dormant 105 keeps its reload and queued-shot state.
   G.heReload = rel;
   if (!G.up.he) G.heQueue = false;
   if (G.up.he && readyNow) {
@@ -7209,7 +7149,7 @@ function hellfireImpact(r) {
   state.impacts++;
   state.kills += killed;
   state.lastImpact = { x, y, radius: r.R, damage: r.dmg, hits, kills: killed, t: heliWeaponTime() };
-  if (hits && r.player && !G.demo) { G.hits++; G.hitT = 0.12; }
+  if (hits && r.player && !G.demo) G.hits++;
   // STYLE's big-blast recipe supplies the hot core, dust ring, chunks, smoke column and crater.
   juiceBoom(x, y, false);
   addBoom(x, y - 2, 24, 8, 0.9, 11);
@@ -7311,7 +7251,6 @@ function rocketImpact(r) {
   state.lastImpact = { x, y, radius: r.R, damage: r.dmg, hits, kills: killed, t: heliWeaponTime() };
   if (hits && r.player && !G.demo) {
     G.hits++;
-    G.hitT = 0.12;
   }
   rocketBlast(x, y);
   if (r.source === 'pods' && r.burnTime > 0) addBurn(x, y, r.R, r.burnTime, r.burnDamage, 'napalm');
@@ -7452,7 +7391,7 @@ function drawBurnFx() {
 // the shot and a small knock back, torn bits (gibs) that tumble, leave a trail and stay on the
 // ground, pools of blood that spread under the dead, the 105's full blast (a hot core, a shock ring
 // of dust, smoking debris, a column of smoke with embers, a crater with rays), the Turbo Ram's bow
-// wave, coins that pop out and bounce, the golden zombie's glints and a short flash of the screen.
+// wave, coins that pop out and bounce, and a short flash of the screen.
 // Hooks: juiceHit (hitZombie), juiceKill (kill), bloodPool (stampCorpse), juiceBoom (boomFx),
 // juiceRamFx (ramFx), juiceGold (goldKill), juicePop / coinPop (loot), updateJuice (step),
 // drawJuice (render, after the flying bodies) and drawJuiceTop (render, over the glows).
@@ -7798,12 +7737,6 @@ function updateJuice(dt) {
       c.b++;
       if (c.b <= 2) lights.push({ x: c.x, y: c.y, z: 1, r: 4, c: '#ffd24a', life: 0.08, max: 0.08, a: 0.7 });
     }
-  }
-  // golden zombies glint: a spark now and then rises off them
-  if (G.up.gold) for (const z of G.zombies) {
-    if (!z.gold || z.dead || Math.random() > dt * 9 || offView(z.x, z.y, 0)) continue;
-    part({ x: z.x + rnd(-4, 4), y: z.y, z: rnd(2, z.S.h), vx: 0, vy: 0, vz: rnd(8, 16), g: 0, life: 0.5, max: 0.5, s: 1,
-      c: pick(['#fff6c0', '#ffd24a']), add: true });
   }
 }
 // the pixel step of a gib turned to angle a (it lies along it)
@@ -8577,9 +8510,6 @@ function drawRounds() {
     ctx.fillRect(Math.round(hx - (s >> 1)), Math.round(hy - (s >> 1)), s, s);
     light(hx, hy, he ? 10 : 5, he ? '#ffd27a' : '#ffb347', he ? 0.7 : 0.45);
   }
-  // the gun flashes below the screen edge
-  if (G.muzzle[0] > 0) light(muzzleX(1), muzzleY(1) - 10, 46, '#ffc27a', G.muzzle[0] / 0.05 * 0.5);
-  if (G.muzzle[1] > 0) light(muzzleX(-1), muzzleY(-1) - 14, 80, '#ffb060', G.muzzle[1] / 0.12 * 0.8);
   ctx.globalAlpha = 1;
 }
 // While the Turbo Ram runs: its kills so far beside the engine's nose (white for a moment at each one;
@@ -8927,9 +8857,10 @@ function fitText(s, width) {
 // row when it cannot fit beside money and health; its full station name and metres stay readable.
 function hudLayout() {
   const counters = currencyLayout(), kills = fmt(G.kills), hp = String(Math.ceil(G.tr.hp)), kx = counters.end;
-  const hx = kx + 10 + tw(kills) + 24, hw = Math.max(20,
-    Math.min(clamp(Math.round(W * 0.16), 44, 100), W - 32 - hx - tw(hp) - 4));
-  const x0 = hx + hw + 10 + tw(hp), x1 = W - 28, stars = starLayout();
+  const killsW = tw(kills), hpW = tw(hp), muteW = Au.muted ? tw('MUTE') : 0;
+  const hx = kx + 10 + killsW + 24, hw = Math.max(20,
+    Math.min(clamp(Math.round(W * 0.16), 44, 100), W - 32 - hx - hpW - 4));
+  const x0 = hx + hw + 10 + hpW, x1 = W - 28, stars = starLayout();
   let route = null;
   if (!G.demo) {
     const [label, color] = nextLabel(), lw = tw(label), secondary = x1 - x0 < lw + 8;
@@ -8938,12 +8869,12 @@ function hudLayout() {
     route = { label: { x: left, y, w: lw, h: 7, text: label, color }, secondary,
       line: !secondary && lineW >= 40 ? { x: x0, y: 5, w: lineW + 10, h: 9 } : null };
   }
-  return { counters, kills: { x: kx, y: 5, w: 10 + tw(kills), h: 8, text: kills },
+  return { counters, kills: { x: kx, y: 5, w: 10 + killsW, h: 8, text: kills },
     health: { icon: { x: hx - 12, y: 5, w: ICON.train.width, h: ICON.train.height },
-      bar: { x: hx, y: 6, w: hw, h: 6 }, label: { x: hx + hw + 4, y: 6, w: tw(hp), h: 7, text: hp } },
+      bar: { x: hx, y: 6, w: hw, h: 6 }, label: { x: hx + hw + 4, y: 6, w: hpW, h: 7, text: hp } },
     route, pause: mode === 'play' ? { x: W - 23, y: 1, w: 21, h: 16 } : null,
     stars: stars.visible ? stars : null,
-    mute: Au.muted ? { x: W - 4 - tw('MUTE'), y: stars.visible ? 34 : 22, w: tw('MUTE'), h: 7 } : null,
+    mute: Au.muted ? { x: W - 4 - muteW, y: stars.visible ? 34 : 22, w: muteW, h: 7 } : null,
     warningY: route?.secondary ? 34 : 24 };
 }
 function drawHUD() {
@@ -8969,9 +8900,10 @@ function drawHUD() {
   text(Math.ceil(tr.hp), hx + hw + 4, 6, f < 0.35 ? U.red : f < 0.65 ? U.amber : U.dim);
   if (layout.route) drawRoute(layout.route);
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
-  const stars = starLayout();
-  if (stars.visible) for (const star of stars.stars) drawLegStar(star.x, star.y, star.earned, star.pop);
-  if (Au.muted) text('MUTE', W - 4, stars.visible ? 34 : 22, U.faint, { align: 'right' });
+  const stars = layout.stars;
+  if (stars) for (const star of stars.stars) drawLegStar(star.x, star.y, star.earned, star.pop);
+  if (Au.muted) text('MUTE', W - 4, stars ? 34 : 22, U.faint, { align: 'right' });
+  return layout;
 }
 // The destination for this leg, with metres left to the train's actual stopping point.
 function nextLabel() {
@@ -9018,20 +8950,22 @@ function drawRoute(layout) {
   ctx.fillRect(tx - 1, y - 2, 3, 5);
 }
 // Warnings under the top bar: the dead on the track or on the train.
-function warningLayout() {
+function warningLayout(layout) {
   if (G.result) return [];
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', L = [];
   if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (SPACE RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
+  if (!L.length) return [];
   // Wrap long warnings below the HUD, leaving its right-hand stars and mute control clear.
-  const wx = W / 2, wy = hudLayout().warningY, room = W - 80, rows = [];
+  const wx = W / 2, wy = (layout || hudLayout()).warningY, room = W - 80, rows = [];
   for (const [t, c] of L) for (const line of wrap(t, room)) {
-    rows.push({ x: Math.round(wx - tw(line) / 2), y: wy + rows.length * 10, w: tw(line), h: 7, text: line, color: c });
+    const w = tw(line);
+    rows.push({ x: Math.round(wx - w / 2), y: wy + rows.length * 10, w, h: 7, text: line, color: c });
   }
   return rows;
 }
-function drawWarnings() {
-  for (const r of warningLayout()) text(r.text, r.x, r.y, r.color);
+function drawWarnings(layout) {
+  for (const r of warningLayout(layout)) text(r.text, r.x, r.y, r.color);
 }
 // An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
 // with a label just inside it.
@@ -9449,7 +9383,7 @@ function uiBounds() {
     route: layout.route ? { label: { ...layout.route.label }, line: layout.route.line ? { ...layout.route.line } : null,
       secondary: layout.route.secondary } : null,
     pause: layout.pause ? { ...layout.pause } : null, stars: layout.stars,
-    mute: layout.mute ? { ...layout.mute } : null, warnings: warningLayout() } : null;
+    mute: layout.mute ? { ...layout.mute } : null, warnings: warningLayout(layout) } : null;
   const depot = mode === 'depot' ? { counters: currencyBounds(currencyLayout(SHOWN)), tabs: depotTabRects(),
     route: depotRouteLayout(), bottom: depotBottomLayout(),
     treeArea: depotTab === 'tree' ? { x: 0, y: TREE.y0, w: W, h: TREE.y1 - TREE.y0 } : null,
@@ -9486,10 +9420,10 @@ function drawUI() {
     ctx.clip();
     drawSpeedLines();
   }
-  drawHUD();
+  const layout = drawHUD();
   drawCoins();
   if (run) {
-    drawWarnings();
+    drawWarnings(layout);
     drawRadar();
     drawWeapons();
     drawRadio();
@@ -9886,8 +9820,7 @@ const TRACKS = {
 };
 
 // ---------- node values
-// These are the demo's numbers at level l. New weapons read them when their systems are added;
-// treeUp below bridges only the weapons that are already active.
+// These are the demo's numbers at level l; treeUp snapshots them for every active system.
 Object.assign(UP, {
   hdmg: (l) => 1 + 0.2 * l,
   hrate: (l) => 1 + 0.12 * l,
@@ -9928,6 +9861,7 @@ Object.assign(UP, {
   fireLength: (l) => 1 + 0.2 * l,
   fireDuration: (l) => 4 + l,
   fireWall: (l) => l ? 12 : 4,
+  fireBurn: (lengthLevel, wallLevel) => wallLevel > 0 ? UP.fireWall(wallLevel) : UP.fireDuration(lengthLevel),
   f4Charge: (l) => 1 + l,
   b52Bombs: (l) => 8 + 2 * l,
   b52Cooldown: (l) => 45 - 5 * l,
@@ -10014,8 +9948,8 @@ const NODES = [
   unlockNode('f4', 'F-4', 'a10', -1.5, 1.5, 'LAY A LINE OF NAPALM FIRE.', ['COOLDOWN', (l) => l ? '30 S' : 'NONE'], ['BURN', (l) => l ? '4 S' : 'NONE']),
   scrapNode('fireDamage', 'FIRE DAMAGE', 'f4', -3, 3, 'D', 4, 'NAPALM HITS 25% HARDER.', ['DAMAGE', (l) => pctS(UP.fireDamage(l))]),
   scrapNode('f4Cooldown', 'F-4 COOLDOWN', 'fireDamage', -3, 4.5, 'D', 5, 'CALL THE NEXT FIRE LINE SOONER.', ['COOLDOWN', (l) => secs(UP.f4Cooldown(l))]),
-  scrapNode('fireLength', 'LONGER FIRE', 'f4Cooldown', -3, 6, 'E', 3, 'ADD 20% LENGTH AND ONE SECOND.', ['LENGTH', (l) => pctS(UP.fireLength(l))], ['BURN', (l) => secs(UP.fireDuration(l))]),
-  goldNode('fireWall', 'FIRE WALL', 'fireLength', -3, 7.5, [15], 'FIRE BURNS LONGER AND BLOCKS DEAD.', ['BURN', (l) => secs(UP.fireWall(l))]),
+  scrapNode('fireLength', 'LONGER FIRE', 'f4Cooldown', -3, 6, 'E', 3, 'ADD 20% LENGTH AND ONE SECOND.', ['LENGTH', (l) => pctS(UP.fireLength(l))], ['BURN', (l) => secs(UP.fireBurn(l, lv('fireWall')))]),
+  goldNode('fireWall', 'FIRE WALL', 'fireLength', -3, 7.5, [15], 'FIRE BURNS LONGER AND BLOCKS DEAD.', ['BURN', (l) => secs(UP.fireBurn(lv('fireLength'), l))]),
   goldNode('f4Charge', 'F-4 +1 CHARGE', 'f4Cooldown', -4.5, 4.5, [18], 'HOLD TWO FIRE STRIKES READY.', ['CHARGES', UP.f4Charge], true),
   unlockNode('b52', 'B-52', 'f4Cooldown', -6, 6, 'DROP EIGHT BOMBS ALONG A LANE.', ['COOLDOWN', (l) => l ? '45 S' : 'NONE'], ['BOMBS', (l) => l ? 8 : 0]),
   scrapNode('b52Bombs', 'MORE BOMBS', 'b52', -6, 7.5, 'E', 4, 'ADD TWO BOMBS TO EACH RUN.', ['BOMBS', UP.b52Bombs]),
@@ -10067,13 +10001,11 @@ function nodeState(n) {
 const shownAs = (n) => ({ off: 0, tease: 1 })[nodeState(n)] ?? 2;
 
 // ---------- into a run
-// The active Viper upgrades are folded into the current gun. Weapons added in phases 3-5 use
-// the new UP values above; their old runtime fields stay neutral until then.
+// The Viper upgrades fold into its gun; all other weapons use their own snapshots below.
 function treeUp(L, up) {
   const hd = UP.hdmg(L('hdmg')), hr = UP.hrate(L('hrate'));
   up.dmg *= hd;
   up.rate *= hr;
-  up.heat /= hr;
   return Object.assign(up, {
     heliDmg: hd, heliRate: hr, heliRange: UP.hrange(L('hrange')), rocketChance: UP.rockets(L('rockets')),
     pods: L('rocketPods') > 0, podDamage: UP.podDamage(L('podDamage')),
@@ -10086,7 +10018,7 @@ function treeUp(L, up) {
     planeCharges: { a10: UP.a10Charge(L('a10Charge')), f4: UP.f4Charge(L('f4Charge')), b52: UP.b52Charge(L('b52Charge')) },
     a10Damage: UP.a10Damage(L('a10Damage')), a10Lines: UP.a10Lines(L('a10Lines')), bombRun: UP.bombRun(L('bombRun')),
     fireDamage: UP.fireDamage(L('fireDamage')), fireLength: UP.fireLength(L('fireLength')),
-    fireDuration: L('fireWall') > 0 ? UP.fireWall(L('fireWall')) : UP.fireDuration(L('fireLength')),
+    fireDuration: UP.fireBurn(L('fireLength'), L('fireWall')),
     fireWall: L('fireWall') > 0,
     b52Bombs: UP.b52Bombs(L('b52Bombs')), b52Blast: UP.b52Blast(L('b52Blast')),
     fireBombs: UP.fireBombs(L('fireBombs')),
@@ -12116,7 +12048,7 @@ function mgShot(t, target, p) {
   part({ x: t.x + rx * 2, y: t.y + ry * 2, z: muzzle.z, vx: rx * rnd(18, 34) + c.dx * G.tr.v * 0.6,
     vy: ry * rnd(18, 34) + c.dy * G.tr.v * 0.6, vz: rnd(4, 18), g: 200,
     life: 0.9, max: 0.9, s: 1, c: pick(['#e3b04b', '#c9952f', '#f0c85a']), land: 1 });
-  if (!G.demo) { G.shots++; G.hits += hit; if (hit) G.hitT = 0.12; SFX.mgCar(); }
+  if (!G.demo) { G.shots++; G.hits += hit; SFX.mgCar(); }
 }
 function updateTrainWeapons(dt) {
   const state = trainWeaponState();
@@ -12249,7 +12181,7 @@ function katyushaImpact(r, state) {
   else state.rocketImpacts++;
   if (hits && !r.group.hit) {
     r.group.hit = true; state.hits++;
-    if (!G.demo) { G.hits++; G.hitT = 0.12; }
+    if (!G.demo) G.hits++;
   }
   state.lastImpact = { x, y, t: heliWeaponTime(), damage: r.dmg, radius: r.R, source: r.source,
     hits, kills, salvo: r.salvo, index: r.index };
@@ -12548,7 +12480,6 @@ cv.addEventListener('pointercancel', () => {
   M.down = M.right = false;
   airCancel();
   hangarCancel();
-  if (G) G.trigger = false;
 });
 cv.addEventListener('lostpointercapture', () => {
   M.right = false;
@@ -12613,19 +12544,17 @@ addEventListener('keydown', (e) => {
   }
 });
 addEventListener('keyup', (e) => { KEYS[keyName(e)] = false; });
-// Pause a run or go on: the trigger is let go. The Turbo Ram's roar stops on pause and comes back
+// Pause a run or go on. The Turbo Ram's roar stops on pause and comes back
 // (for the time the Ram has left) on going on.
 function setPaused(p) {
   if (p === paused) return;
   paused = p;
-  if (G) G.trigger = false;
   if (p) SFX.ramStop(0.15);
   else if (G && G.ram.on && !G.demo && mode === 'play') SFX.roar(G.ram.dur + CFG.ram.ease - G.ram.t, false);
 }
-// pause when the window loses focus or the tab is hidden; let go of every key and the trigger
+// Pause when the window loses focus or the tab is hidden; release held keys and pointer actions.
 function lostFocus() {
   for (const k in KEYS) KEYS[k] = false;
-  if (G) G.trigger = false;
   M.down = M.right = false;
   airCancel();
   hangarCancel();
@@ -12777,7 +12706,6 @@ function boot() {
       M.y = y;
       M.inside = true;
     },
-    trigger: (on) => { G.trigger = !!on && mode === 'play'; },
     he: () => tryHE(),
     thermal: (k) => setThermal(k),
     // hp(v): set health. jump(px): move to px before this leg's goal; leave the dead behind.
@@ -12849,7 +12777,7 @@ function boot() {
     // sound: roar = the Ram's roar is playing (or set to play), ctx = the audio is on
     sound: () => ({ ctx: !!Au.ctx, roar: !!Au.roar, muted: Au.muted }),
     // bot(on): the autopilot handles the Ram and smart plane strikes; the Viper fires by itself.
-    bot: (on) => { G.bot = !!on; if (!on) G.trigger = false; },
+    bot: (on) => { G.bot = !!on; },
     pause: (p) => setPaused(!!p),
     hold: (h) => { hold = !!h; },
     // the save: give(scrap, surv, gold) adds money,
@@ -12928,12 +12856,12 @@ function boot() {
       scrap: SAVE.scrap, survivors: SAVE.surv, gold: SAVE.gold, leg: G.leg, runs: SAVE.runs,
       pay: Object.assign({}, G.pay), hp: Math.round(G.tr.hp), max: G.tr.max, speed: +G.tr.v.toFixed(1),
       onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length, up: Object.assign({}, G.up),
-      shots: G.shots, scavPaid: G.scavPaid, overheat: G.overheat, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),
+      shots: G.shots, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),
       station: G.station ? G.station.id + ' ' + G.station.state : '-',
       walls: G.walls.map((w) => w.km + ' ' + w.state),
       helis: G.helis.map((h) => [Math.round(h.x - G.tr.fx), Math.round(h.y - G.tr.fy)]),
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
-      W, H, VH, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),
+      W, H, VH, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000),
       gun: { rate: G.up.gun, shots: G.gun.shots, kills: G.gun.kills, ang: +G.gun.ang.toFixed(2), tgt: G.gun.tgt ? G.gun.tgt.st : -1 },
       ram: { state: ramState(), on: G.ram.on, t: +G.ram.t.toFixed(2), cd: +G.ram.cd.toFixed(3), cooldown: G.ram.cooldown,
         duration: G.ram.dur, band: G.ram.band, damage: G.ram.damage, progress: +ramProgress().toFixed(3), kills: G.ram.kills, pay: G.ram.pay,
@@ -12988,15 +12916,6 @@ function lootArt() {
   });
   LART.crate = prop(outline(crate('#2a3320', '#46552f', '#63743f', '#d8dcc8'), P.out), 4);
   LART.gold = prop(outline(crate('#7a5a1c', '#c9952f', '#f0c85a', '#fff1c2'), P.out), 4);
-  // a school bus seen from above and the side, rusty, its windows dark
-  LART.bus = prop(pix(40, 16, (r) => {
-    r(4, 12, 5, 4, '#101012'); r(30, 12, 5, 4, '#101012');
-    r(0, 5, 40, 9, '#b88a22'); r(0, 5, 40, 1, '#e3b04b'); r(0, 13, 40, 1, '#5e4410'); r(0, 5, 1, 9, '#e3b04b');
-    r(1, 0, 38, 6, '#d9a636'); r(1, 0, 38, 1, '#f0c85a'); r(38, 1, 1, 5, '#8a6418');
-    for (let x = 3; x < 37; x += 5) r(x, 7, 3, 3, '#1a1c20');
-    r(0, 10, 40, 1, '#2a2420'); r(37, 7, 2, 3, '#d8cfb6');
-    r(12, 1, 6, 2, '#8a5a1c'); r(26, 3, 5, 2, '#6a3a18'); r(5, 11, 3, 2, '#6a3a18');
-  }), 10);
 }
 lootArt();
 for (const d of Object.values(LART)) { atl(d.spr); atl(d.sh); }
@@ -13466,7 +13385,7 @@ const TIP_DEFS = {
   p_b2: { msg: 'A B-2 JOINS YOU, ONCE! PRESS E TWICE TO STRIKE.', where: 'play' }
 };
 const TUT = { tip: null, tipQ: [], anchors: {}, save: null, g: null, mode: '', fade: 1, fadeK: 1,
-  card: null, sum: [] };
+  card: null };
 const seen = (k) => !!SAVE.seen[k];
 // Mark prompt k as shown. True the first time.
 function see(k) {
@@ -13573,7 +13492,6 @@ function tutFrame(dt) {
   if (m !== TUT.mode) {
     TUT.fade = TUT.fadeK = m === 'summary' ? 0.5 : 1;
     if (m === 'play') tutNewRun();
-    if (m === 'summary') tutSumOpen();
     TUT.tip = null;
     TUT.mode = m;
   }
@@ -13626,7 +13544,6 @@ function tutLook() {
 // ---------- drawing in the run
 // Keep the tip and radio above the Ram card and the plane band.
 const cardsTop = () => Math.min(VH - 30, RAMCARD.on ? RAMCARD.y : VH - 30);
-const warnAt = () => [W / 2, 24];
 const tipRoom = () => {
   const layout = TUT.tip && mode === 'play' ? tutTipLayout() : null;
   return layout ? layout.lines.length * 10 + 4 + layout.rise : 0;
@@ -13762,7 +13679,6 @@ function quitRun() {
   if (mode !== 'play' || !G || G.demo || G.result) return;
   paused = false;
   G.result = 'quit';
-  G.lock = null;
   banners.length = 0;
   SFX.ramStop(0.1);
   endGame();
@@ -13801,15 +13717,6 @@ function drawEndCard() {
   if (button(b.x, b.y, b.w, b.h, 'TO THE DEPOT', { primary: true })) summaryContinue();
   text('ENTER', b.x + b.w + 6, b.y + 7, U.faint, { outline: false });
 }
-// The summary's lines for a lesson from this run, worked out as
-// the summary opens.
-function tutSumLines() {
-  return TUT.sum;
-}
-function tutSumOpen() {
-  TUT.sum = [];
-}
-
 // ---------- the fade between screens
 function drawFade() {
   if (TUT.fade <= 0) return;
@@ -14324,12 +14231,13 @@ Object.assign(window.__sr, {
   }
 });
 
-// test_a.js - test calls for part A (skills.js), added to window.__sr once the game has booted.
-// skills() = what the first ring does in this run; gold(sx, sy) = a golden zombie at screen pixel (sx, sy).
+// test_a.js - current armor/Hunt diagnostics and a controlled golden-zombie fixture.
+// gold(sx, sy) converts a zombie through the production path; it does not assign a route reward id.
 Object.assign(window.__sr, {
-  skills: () => ({ cow: G.up.cow, gold: G.up.gold, armor: G.up.armor,
+  skills: () => ({ cow: G.up.cow, armor: G.up.armor, goldHunt: G.up.goldHunt,
+    silver: G.up.silver, boom: G.up.boom,
     golden: G.zombies.filter((z) => z.gold && !z.dead).length, goldSeen: !!G.goldSeen,
-    lockWait: G.lockWait, kills: G.kills, cash: G.cash, hp: G.tr.hp, v: +G.tr.v.toFixed(1) }),
+    kills: G.kills, cash: G.cash, hp: G.tr.hp, v: +G.tr.v.toFixed(1) }),
   gold: (sx, sy) => {
     const z = makeGold(makeZombie(G.camX + sx, G.camY + sy, 0));
     G.zombies.push(z);
@@ -14339,10 +14247,10 @@ Object.assign(window.__sr, {
 
 // test_h.js - test calls for the helicopters (helis.js) and mouse input, added to window.__sr after start-up.
 Object.assign(window.__sr, {
-  // helis(): each heli's place (from the engine's nose), order, target, heat and 105 reload
+  // helis(): the Viper's place (from the engine's nose), order, target and retained 105 reload.
   helis: () => G.helis.map((h) => ({ name: h.name, x: Math.round(h.x), y: Math.round(h.y), dx: Math.round(h.x - G.tr.fx), dy: Math.round(h.y - G.tr.fy),
     hd: +h.hd.toFixed(2), alt: Math.round(h.alt), sel: h.sel, order: h.order ? h.order.kind : 'escort', tgt: h.tgt ? h.tgt.st : -1,
-    heat: +h.heat.toFixed(2), hot: h.hot, heR: +h.heR.toFixed(2), sx: Math.round(h.x - G.camX), sy: Math.round(h.y - h.alt - G.camY) })),
+    heR: +h.heR.toFixed(2), sx: Math.round(h.x - G.camX), sy: Math.round(h.y - h.alt - G.camY) })),
   // the mouse as a player uses it, in game px: lclick(x, y) / drag(x0, y0, x1, y1) / rclick(x, y)
   lclick: (x, y, shift) => {
     M.x = x; M.y = y; M.inside = true; M.down = true;
@@ -14360,15 +14268,13 @@ Object.assign(window.__sr, {
   rclickH: (x, y) => heliRight(x, y),
   // A right click in game px, with one frame drawn.
   rclick: (x, y) => {
-    M.x = x;
-    M.y = y;
-    M.inside = true;
-    M.rpressed = true;
+    window.__sr.rightDown(x, y);
+    window.__sr.rightUp(x, y);
     render();
     drawUI();
     M.rpressed = false;
   },
-  // sel(i...): select these helis (none = let them all go); heliKey(k) as a key press
+  // Selection injection is retained to test that ordinary right clicks always command the Viper.
   sel: (...ids) => { for (const h of G.helis) h.sel = ids.includes(h.i); },
   heliKey: (k) => heliKey(k),
   // order(i, kind, a, b): give heli i an order: 'attack' (a = zombie), 'move' (a, b = world px), 'escort'
@@ -14483,7 +14389,7 @@ Object.assign(window.__sr, {
   blast: (sx, sy) => zombieBlast(G.camX + sx, G.camY + sy)
 });
 
-// test_t.js - test calls for the skill tree and the Strafing Run (tree.js, planes.js).
+// test_t.js - skill-tree diagnostics and direct plane transport fixtures.
 Object.assign(window.__sr, {
   // hoverNode(id) / clickNode(id): as in main.js, but the view first moves so the node is on the panel
   hoverNode: (id) => {
@@ -14511,8 +14417,8 @@ Object.assign(window.__sr, {
     return Object.assign({}, TREE.cam);
   },
   treeZoom: (d) => treeZoom(d),
-  // strafe(sx, sy, ux, uy): call the jet through screen pixel (sx, sy) (along the rails without a
-  // way); strafeState() = the A-10's current charges and what is in the air
+  // strafe is a direct A-10 transport fixture, without consuming AIR charges. Real input tests
+  // use plane keys/pointer helpers. strafeState copies current AIR charges and airborne objects.
   strafe: (sx, sy, ux, uy) => {
     srSync();
     const [a, b] = ux != null ? [ux, uy] : strafeDir(sx, sy, sx, sy), l = Math.hypot(a, b) || 1;
@@ -14854,7 +14760,7 @@ Object.assign(window.__sr, {
         heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
     };
   },
-  // Report only implemented unit systems; later weapons stay neutral until their own tasks.
+  // Copy all demo weapon systems without exposing live projectiles or mutable target objects.
   units: () => {
     if (!G) return null;
     const weapons = heliWeaponState(), p = weapons.pods, f = weapons.hellfire, clock = heliWeaponTime();

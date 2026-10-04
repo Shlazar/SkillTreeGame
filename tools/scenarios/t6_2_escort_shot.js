@@ -8,7 +8,7 @@ function seeded(seed, run) {
 }
 function freshLeg(n, replay = false, bot = true, hunts = false) {
   __sr.hold(false); __sr.pause(false); __sr.reset(); __sr.thermal(0);
-  for (const key of ['p_auto', 't_attack', 'currency_scrap', 'currency_surv', 'currency_gold']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   if (hunts) for (const id of ['goldHunt', 'silverHunt', 'boomHunt']) check(__sr.node(id, 3) === true, 'Max Hunt setup failed: ' + id);
   __sr.leg(n, replay); __sr.hp(9999); __sr.bot(bot); __sr.rightUp(4, 70);
 }

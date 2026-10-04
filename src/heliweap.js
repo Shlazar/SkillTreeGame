@@ -191,7 +191,7 @@ function hellfireImpact(r) {
   state.impacts++;
   state.kills += killed;
   state.lastImpact = { x, y, radius: r.R, damage: r.dmg, hits, kills: killed, t: heliWeaponTime() };
-  if (hits && r.player && !G.demo) { G.hits++; G.hitT = 0.12; }
+  if (hits && r.player && !G.demo) G.hits++;
   // STYLE's big-blast recipe supplies the hot core, dust ring, chunks, smoke column and crater.
   juiceBoom(x, y, false);
   addBoom(x, y - 2, 24, 8, 0.9, 11);
@@ -293,7 +293,6 @@ function rocketImpact(r) {
   state.lastImpact = { x, y, radius: r.R, damage: r.dmg, hits, kills: killed, t: heliWeaponTime() };
   if (hits && r.player && !G.demo) {
     G.hits++;
-    G.hitT = 0.12;
   }
   rocketBlast(x, y);
   if (r.source === 'pods' && r.burnTime > 0) addBurn(x, y, r.R, r.burnTime, r.burnDamage, 'napalm');

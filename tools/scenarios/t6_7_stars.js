@@ -9,7 +9,7 @@ function seeded(seed, run) {
 function startStars(n = 3, reset = true, replay = false, armor = 0) {
   __sr.hold(false); __sr.pause(false); if (reset) __sr.reset(); __sr.thermal(0);
   check(__sr.node('armor', armor) === true, 'Armor threshold setup failed');
-  for (const key of ['p_auto', 't_attack', 'p_golden', 'p_sos', 'currency_scrap', 'currency_surv', 'currency_gold']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.leg(n, replay); __sr.hp(9999); __sr.bot(false); __sr.rightUp(4, 70); silenceGun();
 }
 function silenceGun() { const h = __sr.G.helis[0]; h.cd = h.look = 1000000; h.order = null; }

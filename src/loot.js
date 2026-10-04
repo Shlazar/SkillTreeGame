@@ -39,15 +39,6 @@ function lootArt() {
   });
   LART.crate = prop(outline(crate('#2a3320', '#46552f', '#63743f', '#d8dcc8'), P.out), 4);
   LART.gold = prop(outline(crate('#7a5a1c', '#c9952f', '#f0c85a', '#fff1c2'), P.out), 4);
-  // a school bus seen from above and the side, rusty, its windows dark
-  LART.bus = prop(pix(40, 16, (r) => {
-    r(4, 12, 5, 4, '#101012'); r(30, 12, 5, 4, '#101012');
-    r(0, 5, 40, 9, '#b88a22'); r(0, 5, 40, 1, '#e3b04b'); r(0, 13, 40, 1, '#5e4410'); r(0, 5, 1, 9, '#e3b04b');
-    r(1, 0, 38, 6, '#d9a636'); r(1, 0, 38, 1, '#f0c85a'); r(38, 1, 1, 5, '#8a6418');
-    for (let x = 3; x < 37; x += 5) r(x, 7, 3, 3, '#1a1c20');
-    r(0, 10, 40, 1, '#2a2420'); r(37, 7, 2, 3, '#d8cfb6');
-    r(12, 1, 6, 2, '#8a5a1c'); r(26, 3, 5, 2, '#6a3a18'); r(5, 11, 3, 2, '#6a3a18');
-  }), 10);
 }
 lootArt();
 for (const d of Object.values(LART)) { atl(d.spr); atl(d.sh); }

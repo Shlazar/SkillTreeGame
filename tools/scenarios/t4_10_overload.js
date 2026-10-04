@@ -21,12 +21,12 @@ function pointer(type, x, y, buttons = 1) {
 function fresh(quiet = true) {
   __sr.hold(false); pointer('pointercancel', 4, 70, 0); __sr.reset();
   for (const [id, level] of Object.entries(PLANE_MAX)) check(__sr.node(id, level), 'Missing max plane node ' + id);
-  for (const key of ['p_auto', 't_attack', 'currency_scrap', 'currency_surv', 'currency_gold']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.start(); __sr.hp(9999); __sr.bot(false); __sr.rightUp(4, 70); __sr.planes();
   if (!quiet) return;
   const g = __sr.G, h = g.helis[0];
   g.zombies.length = g.rounds.length = g.timers.length = g.loot.length = g.lootFly.length = 0;
-  g.spawnCd = g.railCd = g.waveCd = 1000000; g.station = null; g.walls.length = 0;
+  g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length; g.station = null; g.walls.length = 0;
   h.cd = h.look = 1000000; h.tgt = null; h.order = {kind: 'move', x: h.x, y: h.y};
   __sr.sim(8); __sr.frames(240);
 }
@@ -57,6 +57,15 @@ function dragAim(f, id, standalone = true) {
     (!standalone || __sr.planeShow().jets.length === 0), 'Held drag launched instead of previewing ' + id);
   return {before, aim, charges: p.charges};
 }
+function sameSaveExceptPlaneLessons(before) {
+  const prior = JSON.parse(before), actual = __sr.save();
+  for (const key of ['planeStrike1', 'planeStrike2', 'tipDue:p_plane_double']) {
+    const was = prior.flags[key], now = actual.flags[key];
+    check(now === was || was === undefined && now === true, 'Invalid plane lesson receipt mutation: ' + key);
+    delete prior.flags[key]; delete actual.flags[key];
+  }
+  return JSON.stringify(actual) === JSON.stringify(prior);
+}
 function release(f, id, aim) {
   pointer('pointerup', f.target.x + 55, f.target.y + 55, 0);
   const p = __sr.planes().find(p => p.id === id), j = __sr.planeShow().jets.filter(j => j.id === id).slice(-1)[0];
@@ -64,7 +73,7 @@ function release(f, id, aim) {
     'Actual pointer release did not consume one charge and launch ' + id);
   check(Math.abs(j.ux - Math.SQRT1_2) < 1e-6 && Math.abs(j.uy - Math.SQRT1_2) < 1e-6,
     'Real drag direction was not used');
-  check(JSON.stringify(__sr.save()) === aim.before, 'Temporary plane launch changed save');
+  check(sameSaveExceptPlaneLessons(aim.before), 'Temporary plane launch changed save');
   return {p, j};
 }
 function planeShot(id, kind) {
@@ -116,7 +125,7 @@ function planePerformance(overload = false) {
       const aim = dragAim(f, id, false), launched = release(f, id, aim);
       launches.push({id, resources: launched.p, payload: launched.j});
     }
-    check(JSON.stringify(__sr.save()) === saveBefore && __sr.save().hangar.length === 2,
+    check(sameSaveExceptPlaneLessons(saveBefore) && __sr.save().hangar.length === 2,
       'Combined runtime fixtures changed the saved two-slot Hangar');
     let peak = {booms: 0, rings: 0, parts: 0, fires: 0, bombs: 0, jets: 0};
     const risingSamples = []; let measuredBooms = 0;
@@ -154,7 +163,7 @@ function planePerformance(overload = false) {
       targetMs: 8, late: Math.max(...samples.map(s => s.late))};
     check(performance.late <= 1, 'Combined plane effects created late sprite pages');
     __sr.clearPlaneFixture();
-    check(JSON.stringify(__sr.save()) === saveBefore && !__sr.planes().some(p => p.id === 'b2'),
+    check(sameSaveExceptPlaneLessons(saveBefore) && !__sr.planes().some(p => p.id === 'b2'),
       'Cleared fixtures left B-2 production ownership/resources');
     return performance;
   });

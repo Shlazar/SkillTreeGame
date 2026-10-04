@@ -6,13 +6,13 @@ function freshF4(maximum = false, wall = false, quiet = true) {
   __sr.hold(false); __sr.reset();
   for (const [id, level] of [['f4', 1], ['fireDamage', maximum ? 4 : 0], ['f4Cooldown', maximum ? 5 : 0],
     ['fireLength', maximum ? 3 : 0], ['fireWall', wall ? 1 : 0], ['f4Charge', maximum ? 1 : 0]]) check(__sr.node(id, level), 'Missing F-4 node ' + id);
-  for (const key of ['p_auto', 't_attack', 'currency_scrap']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.start(); __sr.hp(9999); __sr.rightUp(4, 70);
   if (!quiet) { __sr.bot(true); return; }
   __sr.bot(false);
   const g = __sr.G, h = g.helis[0];
   g.zombies.length = g.rounds.length = g.timers.length = g.loot.length = g.lootFly.length = 0;
-  g.spawnCd = g.railCd = g.waveCd = 1000000; g.station = null; g.walls.length = 0;
+  g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length; g.station = null; g.walls.length = 0;
   h.cd = h.look = 1000000; h.tgt = null; h.order = {kind: 'move', x: h.x, y: h.y};
 }
 function field() {
@@ -57,6 +57,26 @@ function f4Shot(kind) {
   check(show.art.f4.w * show.art.f4.h > show.art.heli.w * show.art.heli.h, 'F-4 sprite is not bigger than heli');
   __sr.hp(80); __sr.hold(true); __sr.frames(1);
   return {show, fires, heli: __sr.helis()[0], hits: __sr.fireStats().hits};
+}
+
+// Tooltip NOW values share the runtime duration, including purchased Fire Wall overrides.
+const burnTooltips = [];
+for (const wall of [false, true]) for (let level = 0; level <= 3; level++) {
+  freshF4(false, wall);
+  check(__sr.node('fireLength', level), 'Missing Longer Fire tooltip fixture');
+  __sr.start();
+  const duration = wall ? 12 : 4 + level;
+  const row = (id) => __sr.treeStats(id).find(segments => segments[0][0] === 'BURN');
+  const longer = row('fireLength'), special = row('fireWall');
+  near(__sr.G.up.fireDuration, duration, 'Shared runtime burn duration');
+  check(longer && special && longer[1][0] === duration + ' S' && special[1][0] === duration + ' S',
+    'F-4 burn tooltip NOW differs from runtime');
+  if (wall) check(longer.length === 2 && special.length === 2, 'Owned Fire Wall invented a shorter burn NEXT');
+  else {
+    check(special[3][0] === '12 S', 'Unowned Fire Wall omitted its12s NEXT');
+    if (level < 3) check(longer[3][0] === 5 + level + ' S', 'Longer Fire burn NEXT is wrong');
+  }
+  burnTooltips.push({level, wall, duration, longer, special});
 }
 
 const payloads = [];
@@ -122,14 +142,14 @@ check(afterCrossings > 0, 'Stream did not cross after extinction');
 
 const pass = f4Shot('pass'); __sr.frames(30);
 const fire = f4Shot('fire'); __sr.frames(30);
-freshF4(true, true, false); __sr.give(3000, 30); __sr.sim(20); __sr.frames(30);
+freshF4(true, true, false); __sr.give(3000, 30); __sr.sim(20); __sr.frames(30); __sr.bot(false);
 const s = __sr.stats(); __sr.crowd(80, s.W * 0.7, s.VH * 0.5, 70, 0);
 check(__sr.strike(f4().key, s.W * 0.7, s.VH * 0.5, 0), 'Busy F-4 strike failed');
 __sr.frames(150);
 const performance = {bench: +__sr.bench(60).toFixed(2), cost: __sr.cost(20), late: __sr.late(), stats: __sr.stats(),
   fires: __sr.fires().filter(p => p.source === 'f4').length, fx: __sr.fx()};
 check(performance.fires > 0 && performance.stats.kills > 0 && performance.stats.zombies > 0 && performance.stats.hp > 0 && performance.late <= 1, 'F-4 busy fixture failed');
-QA_DONE({payloads, wall: {duration: 12, attemptedSeconds, walkers: stream.length, crossings,
+QA_DONE({burnTooltips, payloads, wall: {duration: 12, attemptedSeconds, walkers: stream.length, crossings,
   afterExtinction: afterCrossings, protectedDuringOrdinaryChurn: true},
   shots: {pass: {heli: pass.heli, fires: pass.fires.length, show: pass.show}, fire: {heli: fire.heli, fires: fire.fires.length}},
   bothShotsRendered: true, performance, baseline: {bench: 3.27, render: 2.97, late: 1}});

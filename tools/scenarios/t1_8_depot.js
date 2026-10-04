@@ -14,7 +14,7 @@ function routeFixture() {
   __sr.SAVE.flags.survShown = true;
   __sr.SAVE.flags.goldShown = true;
   __sr.give(245, 2, 7);
-  for (const [id, level] of [['root', 1], ['hdmg', 2], ['armor', 1], ['bonus', 1]]) {
+  for (const [id, level] of [['hdmg', 2], ['armor', 1]]) {
     if (!__sr.node(id, level)) throw new Error('Unknown route shot upgrade: ' + id);
   }
   __sr.depot('tree');

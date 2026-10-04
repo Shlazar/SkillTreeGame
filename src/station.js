@@ -99,7 +99,6 @@ function trainStops(st) {
   G.tr.v = 0;
   layoutTrain();
   st.state = 'done';
-  G.stopNames.push(st.name);
   stationReward(st);
   arrive();
 }

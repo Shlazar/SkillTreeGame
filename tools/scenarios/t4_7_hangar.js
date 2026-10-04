@@ -9,7 +9,7 @@ function expectSlots(ids, label) {
 function freshOwned(ids, tab = 'tree') {
   __sr.hold(false); __sr.reset();
   for (const id of ids) check(__sr.node(id, 1), 'Missing plane node ' + id);
-  for (const key of ['currency_scrap', 'currency_surv', 'currency_gold']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.SAVE.flags.survShown = __sr.SAVE.flags.goldShown = true;
   __sr.depot(tab); __sr.frames(90);
 }

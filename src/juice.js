@@ -2,7 +2,7 @@
 // the shot and a small knock back, torn bits (gibs) that tumble, leave a trail and stay on the
 // ground, pools of blood that spread under the dead, the 105's full blast (a hot core, a shock ring
 // of dust, smoking debris, a column of smoke with embers, a crater with rays), the Turbo Ram's bow
-// wave, coins that pop out and bounce, the golden zombie's glints and a short flash of the screen.
+// wave, coins that pop out and bounce, and a short flash of the screen.
 // Hooks: juiceHit (hitZombie), juiceKill (kill), bloodPool (stampCorpse), juiceBoom (boomFx),
 // juiceRamFx (ramFx), juiceGold (goldKill), juicePop / coinPop (loot), updateJuice (step),
 // drawJuice (render, after the flying bodies) and drawJuiceTop (render, over the glows).
@@ -348,12 +348,6 @@ function updateJuice(dt) {
       c.b++;
       if (c.b <= 2) lights.push({ x: c.x, y: c.y, z: 1, r: 4, c: '#ffd24a', life: 0.08, max: 0.08, a: 0.7 });
     }
-  }
-  // golden zombies glint: a spark now and then rises off them
-  if (G.up.gold) for (const z of G.zombies) {
-    if (!z.gold || z.dead || Math.random() > dt * 9 || offView(z.x, z.y, 0)) continue;
-    part({ x: z.x + rnd(-4, 4), y: z.y, z: rnd(2, z.S.h), vx: 0, vy: 0, vz: rnd(8, 16), g: 0, life: 0.5, max: 0.5, s: 1,
-      c: pick(['#fff6c0', '#ffd24a']), add: true });
   }
 }
 // the pixel step of a gib turned to angle a (it lies along it)

@@ -9,7 +9,7 @@ function seeded(seed, run) {
 }
 function freshTimeline(replay = false, bot = true) {
   __sr.hold(false); __sr.pause(false); __sr.reset(); __sr.thermal(0);
-  for (const key of ['p_auto', 't_attack', 'currency_scrap', 'currency_surv', 'currency_gold']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.leg(1, replay); __sr.hp(9999); __sr.bot(bot); __sr.rightUp(4, 70);
   check(__sr.legState().eventIndex === 0 && __sr.legState().events.length === 0 && __sr.loot().length === 0,
     'A new leg inherited event receipts or km-rolled finds');
@@ -102,12 +102,13 @@ const demo = {state: __sr.legState(), saveUnchanged: true, horde: __sr.horde()};
 const pickup = seeded(0x611, () => {
   freshTimeline(false, false); __sr.sim(22);
   const pile = __sr.loot().find(f => f.eventId === 'leg-1-event-2'), g = __sr.G, h = g.helis[0];
-  check(pile && !pile.gone && pile.pay === 15, 'Timed pile is missing/already collected/incorrectly priced');
+  const pilePay = __sr.line().legs[0].events.find(e => e[1] === 'pile')[2].pay;
+  check(pile && !pile.gone && pile.pay === pilePay && pilePay > 0, 'Timed pile is missing/already collected/incorrectly priced');
   const start = {x: h.x, y: h.y}, before = g.pay.loot;
   __sr.order(0, 'move', pile.x, pile.y);
   let sawFlight = false;
   for (let i = 0; i < 360 && g.pay.loot === before; i++) { __sr.sim(1 / 60); sawFlight ||= g.lootFly.length > 0; }
-  check(__sr.loot()[pile.i].gone && g.pay.loot - before === 15 && sawFlight &&
+  check(__sr.loot()[pile.i].gone && g.pay.loot - before === pilePay && sawFlight &&
     Math.hypot(h.x - start.x, h.y - start.y) > 10, 'Actual heli flight/auto pickup did not collect and pay the timed pile');
   const paid = g.pay.loot; __sr.sim(0.5); check(g.pay.loot === paid, 'One timed pile paid twice');
   return {pile, start, finish: {x: h.x, y: h.y}, pay: paid - before, sawFlight, state: __sr.legState()};

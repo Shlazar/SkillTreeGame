@@ -2,11 +2,11 @@
 function check(ok, message) { if (!ok) throw new Error(message); }
 function freshShow(crowd = true) {
   __sr.hold(false); __sr.reset(); check(__sr.node('a10', 1), 'A-10 node missing');
-  for (const key of ['p_auto', 't_attack', 'currency_scrap']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.start(); __sr.hp(9999); __sr.bot(false); __sr.rightUp(4, 70);
   const g = __sr.G, h = g.helis[0];
   g.zombies.length = g.rounds.length = g.timers.length = g.loot.length = g.lootFly.length = 0;
-  g.spawnCd = g.railCd = g.waveCd = 1000000; g.station = null; g.walls.length = 0;
+  g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length; g.station = null; g.walls.length = 0;
   h.cd = h.look = 1000000; h.tgt = null; h.order = {kind: 'move', x: h.x, y: h.y};
   __sr.sim(8); __sr.frames(240);
   const s = __sr.stats(), f = {g, s: g.tr.s, anchors: [], target: {x: s.W * 0.7, y: s.VH * 0.65}};
@@ -100,7 +100,8 @@ check(f.g.tr.hp === hp && JSON.stringify(f.g.hurt) === hurt, 'Friendly plane str
 check(__sr.planeShow().roars === 1, 'One actual player strike emitted multiple roar requests');
 
 __sr.hold(false); __sr.reset(); __sr.node('a10', 1); __sr.give(3000, 30);
-__sr.start(); __sr.hp(9999); __sr.bot(true); __sr.sim(20); __sr.frames(30);
+// The Viper fights during warmup; reserve the plane's real charge for this manual strike.
+__sr.start(); __sr.hp(9999); __sr.bot(false); __sr.sim(20); __sr.frames(30);
 const s = __sr.stats();
 check(__sr.strike('q', s.W / 2, s.VH * 0.4, 0), 'Busy strike failed');
 __sr.frames(90);

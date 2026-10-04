@@ -3,7 +3,7 @@ function check(ok, message) { if (!ok) throw new Error(message); }
 function freshBand(owned) {
   __sr.hold(false); __sr.reset();
   if (owned) check(__sr.node('a10', 1), 'A-10 ownership fixture failed');
-  for (const key of ['p_auto', 't_attack', 'currency_scrap']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.start(); __sr.hp(9999); __sr.bot(true); __sr.rightUp(4, 70);
 }
 function checkBand(owned) {
@@ -17,8 +17,8 @@ function bandShot(owned) {
   freshBand(owned); __sr.sim(10); __sr.frames(240);
   __sr.hold(true); __sr.frames(30);
   const {W, VH} = __sr.stats();
-  // A dense visible crowd straddles the new world edge, exercising the horde raster path.
-  __sr.crowd(100, W * 0.46, VH - 3, 42, 0);
+  // Exceed the260-survivor native fallback and160-per-layer raster thresholds at the world edge.
+  __sr.crowd(400, W * 0.46, VH - 3, 42, 0);
   __sr.frames(1);
   return {band: checkBand(owned), stats: __sr.stats(), heli: __sr.helis()[0]};
 }
@@ -88,4 +88,3 @@ QA_DONE({natural, performance, baseline: {bench: 3.27, render: 2.97, late: 1},
   bandInput: {left: 'order unchanged', right: 'order unchanged'},
   raster: {calls: writes.length, worldHeight: withPlane.band.worldHeight, maxImageHeight: Math.max(...writes.map(w => w.height))},
   resizes, restoredViewport: {W: __sr.stats().W, H: __sr.stats().H, VH: __sr.stats().VH}});
-

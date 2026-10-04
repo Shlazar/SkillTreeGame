@@ -279,9 +279,6 @@ function drawRounds() {
     ctx.fillRect(Math.round(hx - (s >> 1)), Math.round(hy - (s >> 1)), s, s);
     light(hx, hy, he ? 10 : 5, he ? '#ffd27a' : '#ffb347', he ? 0.7 : 0.45);
   }
-  // the gun flashes below the screen edge
-  if (G.muzzle[0] > 0) light(muzzleX(1), muzzleY(1) - 10, 46, '#ffc27a', G.muzzle[0] / 0.05 * 0.5);
-  if (G.muzzle[1] > 0) light(muzzleX(-1), muzzleY(-1) - 14, 80, '#ffb060', G.muzzle[1] / 0.12 * 0.8);
   ctx.globalAlpha = 1;
 }
 // While the Turbo Ram runs: its kills so far beside the engine's nose (white for a moment at each one;

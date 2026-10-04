@@ -42,22 +42,23 @@ arrivals.push(arrive(2, true));
 expectMoney({surv: 1, gold: 0, chest: 1}, 'Cornfield replay');
 __sr.sim(6);
 
+// Completed star rules add6 gold per full-health arrival from leg3; the first actual gold also opens the6-gold chest.
 arrivals.push(arrive(3, false));
-expectMoney({surv: 2, gold: 0, chest: 1}, 'Second big station');
+expectMoney({surv: 2, gold: 12, chest: 2}, 'Second big station');
 __sr.sim(6);
-expectMoney({surv: 2, gold: 0, chest: 1}, 'Second big station after banking');
+expectMoney({surv: 2, gold: 12, chest: 2}, 'Second big station after banking');
 arrivals.push(arrive(3, true));
-expectMoney({surv: 2, gold: 0, chest: 1}, 'Second big station replay');
+expectMoney({surv: 2, gold: 12, chest: 2}, 'Second big station replay');
 __sr.sim(6);
 
 arrivals.push(arrive(4, false));
-expectMoney({surv: 2, gold: 6, chest: 1}, 'Small station gold');
+expectMoney({surv: 2, gold: 24, chest: 2}, 'Small station gold');
 __sr.sim(6);
-expectMoney({surv: 2, gold: 6, chest: 1}, 'Small station after banking');
+expectMoney({surv: 2, gold: 24, chest: 2}, 'Small station after banking');
 arrivals.push(arrive(4, true));
-expectMoney({surv: 2, gold: 6, chest: 1}, 'Small station replay');
+expectMoney({surv: 2, gold: 24, chest: 2}, 'Small station replay');
 __sr.sim(6);
-expectMoney({surv: 2, gold: 6, chest: 1}, 'Small station replay after banking');
+expectMoney({surv: 2, gold: 24, chest: 2}, 'Small station replay after banking');
 
 // Camp sprites must be ready before drawing: the normal 30-second run keeps the baseline atlas count.
 __sr.reset();
@@ -91,7 +92,7 @@ __sr.win();
 __sr.frames(50);
 __sr.hold(true);
 if (__sr.G.result !== 'won' || !__sr.G.stationReward) throw new Error('Small station shot has no live reward');
-expectMoney({surv: 0, gold: 6, chest: 0}, 'Small station shot');
+expectMoney({surv: 0, gold: 12, chest: 0}, 'Small station shot');
 __sr.hold(false);
 // Keep this setup identical to t1_4_chest_shot.js.
 __sr.reset(); __sr.setLeg(2); __sr.start(); __sr.hp(9999); __sr.bot(true);

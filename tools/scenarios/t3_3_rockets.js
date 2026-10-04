@@ -5,7 +5,7 @@ function freshRocket(level, quiet = true) {
   __sr.reset();
   check(__sr.node('hrate', 1) && __sr.node('hrange', 1), 'Rocket purchase parents missing');
   __sr.SAVE.flags.goldShown = true;
-  for (const key of ['p_auto', 't_attack', 'currency_scrap', 'currency_gold']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.give(0, 0, 100);
   __sr.depot('tree');
   for (let i = 0; i < level; i++) check(__sr.buy('rockets'), 'Actual Rockets purchase failed at level ' + (i + 1));
@@ -19,7 +19,7 @@ function isolate() {
   __sr.bot(false);
   g.zombies.length = g.rounds.length = g.timers.length = 0;
   g.loot.length = g.lootFly.length = 0;
-  g.spawnCd = g.railCd = g.waveCd = 1000000;
+  g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length;
   // Pin only this test's route, so real weapon time can reach 60 seconds without an arrival.
   g.station = null;
   g.walls.length = 0;
@@ -112,7 +112,9 @@ function seededSample(level, seed) {
 
 freshRocket(1);
 check(__sr.units().rockets.enabled && __sr.units().rockets.chance === 0.05, 'Level 1 rocket chance bridge');
-check(__sr.units().heli.count === 1 && __sr.units().pods === null && __sr.units().hellfire === null, 'Unimplemented weapons appeared active');
+const unowned = __sr.units();
+check(unowned.heli.count === 1 && !unowned.pods.enabled && unowned.pods.shots === 0 && unowned.pods.inFlight === 0 &&
+  !unowned.hellfire.enabled && unowned.hellfire.shots === 0 && unowned.hellfire.inFlight === 0, 'Unowned weapons appeared active');
 const level1 = seededSample(1, 101);
 level1.ratio = +(level1.rockets / level1.shots).toFixed(5);
 check(level1.ratio >= 0.04 && level1.ratio <= 0.12, 'Level 1 rocket ratio: ' + JSON.stringify(level1));

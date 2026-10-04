@@ -9,7 +9,7 @@ __sr.frames(50);
 __sr.sim(6);
 __sr.depot('tree');
 __sr.give(80, 0, 0);
-if (!__sr.buy('root') || !__sr.buy('hdmg')) throw new Error('Shot currency unlock failed');
+if (!__sr.buy('hdmg')) throw new Error('Shot currency unlock failed');
 __sr.leg(2, false);
 __sr.hp(9999);
 __sr.bot(true);

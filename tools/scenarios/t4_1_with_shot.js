@@ -3,7 +3,7 @@ function check(ok, message) { if (!ok) throw new Error(message); }
 function freshBand(owned) {
   __sr.hold(false); __sr.reset();
   if (owned) check(__sr.node('a10', 1), 'A-10 ownership fixture failed');
-  for (const key of ['p_auto', 't_attack', 'currency_scrap']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.start(); __sr.hp(9999); __sr.bot(true); __sr.rightUp(4, 70);
 }
 function checkBand(owned) {

@@ -8,7 +8,7 @@ function fresh() {
   const g = __sr.G;
   g.zombies.length = g.rounds.length = g.timers.length = 0;
   g.loot.length = g.lootFly.length = 0;
-  g.spawnCd = g.railCd = g.waveCd = 1000000;
+  g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length;
 }
 function target(hp) {
   const g = __sr.G, h = g.helis[0], {W, H} = __sr.stats();
@@ -48,7 +48,7 @@ function gunShot() {
 
 fresh();
 check(__sr.G.helis.length === 1 && __sr.G.helis[0].sel, 'Fresh VIPER must be the selected single heli');
-check(__sr.CFG.mg.rate === 4 && __sr.stats().up.heat === 0, 'Wrong base fire rate or heat per round');
+check(__sr.CFG.mg.rate === 4, 'Wrong base fire rate');
 check(__sr.CFG.winch.hover === 2 && __sr.lootStats().winch === true, 'Built-in two-second winch missing');
 const walker = target();
 check(walker.hp === 2, 'Fresh walker is not two HP');
@@ -71,13 +71,15 @@ check(startingHp.length === 20 && startingHp.every(hp => hp === 2), 'Twenty fres
 fresh();
 const durable = target(9999);
 __sr.sim(1);
-const before = __sr.G.shots, t0 = __sr.G.run;
+const before = __sr.G.shots, t0 = __sr.G.run, perSecond = [];
 for (let i = 0; i < 10; i++) {
+  const previous = __sr.G.shots;
   __sr.sim(1);
   check(!durable.dead && __sr.G.helis[0].order?.z === durable, 'Sustained gun lost its locked target');
-  check(__sr.G.heat === 0 && !__sr.G.overheat && __sr.G.helis[0].heat === 0 && !__sr.G.helis[0].hot, 'Continuous gun overheated');
+  perSecond.push(__sr.G.shots - previous);
+  check(perSecond[i] >= 3 && perSecond[i] <= 5, 'Continuous gun interrupted its four-shot cadence: ' + JSON.stringify(perSecond));
 }
-const continuous = {shots: __sr.G.shots - before, seconds: +(__sr.G.run - t0).toFixed(3), targetHp: durable.hp};
+const continuous = {shots: __sr.G.shots - before, seconds: +(__sr.G.run - t0).toFixed(3), targetHp: durable.hp, perSecond};
 continuous.rate = +(continuous.shots / continuous.seconds).toFixed(3);
 check(continuous.rate >= 3.5 && continuous.rate <= 4.5, 'Base sustained fire is not about four shots/s: ' + JSON.stringify(continuous));
 
@@ -109,7 +111,7 @@ __sr.bot(true);
 __sr.sim(30);
 __sr.frames(30);
 const battle = __sr.stats(), performance = {bench: +__sr.bench(60).toFixed(2), cost: __sr.cost(20), late: __sr.late()};
-check(battle.kills > 0 && battle.km > 0.03 && battle.hp > 0 && !battle.overheat && battle.heat === 0, 'Thirty-second base fight is not sane');
+check(battle.kills > 0 && battle.km > 0.03 && battle.hp > 0, 'Thirty-second base fight is not sane');
 check(battle.up.winch === true && battle.helis.length === 1, 'Normal battle base heli/winch changed');
 check(!__sr.tutState().tasks.some(text => /CLICK YOUR HELI|SELECT.*HELI/.test(text)) && !__sr.seen().includes('p_hot'), 'Selection/overheat lesson remains');
 check(performance.late <= 1, 'Base gun created extra late atlas pages');
@@ -118,5 +120,5 @@ const shot = gunShot();
 __sr.frames(30);
 QA_DONE({firstHit, secondHit, twentyWalkerHp: startingHp, continuous, controls: {alwaysSelected: true, groundMove: true, targetFocus: true},
   winch: {builtIn: true, seconds: __sr.CFG.winch.hover, demo: true},
-  battle: {kills: battle.kills, shots: battle.shots, km: battle.km, hp: battle.hp, heat: battle.heat, parts: battle.parts},
+  battle: {kills: battle.kills, shots: battle.shots, km: battle.km, hp: battle.hp, parts: battle.parts},
   performance, shot, shotRendered: true});

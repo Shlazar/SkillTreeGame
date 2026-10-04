@@ -7,7 +7,7 @@ function freshNapalm(on, maximum = false, quiet = true) {
     ['podDamage', maximum ? 4 : 0], ['podReload', maximum ? 4 : 0], ['podSalvo', maximum ? 3 : 0]]) {
     check(__sr.node(id, level), 'Missing Napalm/pod node ' + id);
   }
-  for (const key of ['p_auto', 't_attack', 'currency_scrap']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.start();
   __sr.rightUp(4, 70);
   check(__sr.fires().length === 0, 'A fresh run retained old burning ground');
@@ -16,7 +16,7 @@ function freshNapalm(on, maximum = false, quiet = true) {
   const g = __sr.G, h = g.helis[0];
   g.zombies.length = g.rounds.length = g.timers.length = 0;
   g.loot.length = g.lootFly.length = 0;
-  g.spawnCd = g.railCd = g.waveCd = 1000000;
+  g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length;
   g.station = null;
   g.walls.length = 0;
   h.vx = h.vy = 0;

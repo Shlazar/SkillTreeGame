@@ -1,4 +1,4 @@
-// test_t.js - test calls for the skill tree and the Strafing Run (tree.js, planes.js).
+// test_t.js - skill-tree diagnostics and direct plane transport fixtures.
 Object.assign(window.__sr, {
   // hoverNode(id) / clickNode(id): as in main.js, but the view first moves so the node is on the panel
   hoverNode: (id) => {
@@ -26,8 +26,8 @@ Object.assign(window.__sr, {
     return Object.assign({}, TREE.cam);
   },
   treeZoom: (d) => treeZoom(d),
-  // strafe(sx, sy, ux, uy): call the jet through screen pixel (sx, sy) (along the rails without a
-  // way); strafeState() = the A-10's current charges and what is in the air
+  // strafe is a direct A-10 transport fixture, without consuming AIR charges. Real input tests
+  // use plane keys/pointer helpers. strafeState copies current AIR charges and airborne objects.
   strafe: (sx, sy, ux, uy) => {
     srSync();
     const [a, b] = ux != null ? [ux, uy] : strafeDir(sx, sy, sx, sy), l = Math.hypot(a, b) || 1;

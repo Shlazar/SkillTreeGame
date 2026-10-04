@@ -25,16 +25,12 @@ function wonSetup() {
   __sr.hold(false);
   __sr.reset();
   __sr.setLeg(3);
-  if (!__sr.node('root', 1) || !__sr.node('bonus', 1)) throw new Error('Won summary bonus setup failed');
   __sr.start();
   __sr.hp(9999);
   __sr.bot(true);
   __sr.sim(8);
   __sr.payGold('golden:0', 1, 10);
   __sr.payGold('golden:0', 1, 10);
-  // The star evaluator arrives in T6.7; this fixture verifies the saved-star summary now.
-  __sr.SAVE.legs[3].stars = [true, false, true];
-  __sr.give(0, 0, 0);
   __sr.win();
   __sr.frames(50);
   __sr.sim(6);
@@ -63,13 +59,13 @@ function lostSetup() {
 // Keep this setup identical to t1_9_won_shot.js, including the frames that reveal all rows.
 wonSetup();
 const wonView = assertSummary('Won shot'), won = summarySnapshot();
-if (won.result !== 'won' || won.near || won.surv !== 1 || won.gold !== 1 || won.kills <= 0 || won.pay.kills <= 0 || won.pay.loot !== 10 || won.pay.bonus !== 10) {
+if (won.result !== 'won' || won.near || won.surv !== 1 || won.gold !== 7 || won.kills <= 0 || won.pay.kills <= 0 || won.pay.loot !== 10) {
   throw new Error('Won summary omitted earned sources/rewards: ' + JSON.stringify(won));
 }
-if (JSON.stringify(won.stars) !== '[true,false,true]') throw new Error('Won summary lost its fixture stars');
-if (won.scrap !== Math.floor(won.pay.kills + won.pay.loot + won.pay.bonus)) throw new Error('Won scrap total does not match source rows');
+if (JSON.stringify(won.stars) !== '[true,true,false]') throw new Error('Won summary lost its earned arrival stars');
+if (won.scrap !== Math.floor(Object.values(won.pay).reduce((n, value) => n + value, 0))) throw new Error('Won scrap total does not match source rows');
 const bankedWon = __sr.save();
-if (bankedWon.leg !== 4 || bankedWon.scrap !== won.scrap || bankedWon.surv !== 1 || bankedWon.gold !== 1) throw new Error('Won summary rewards were not banked');
+if (bankedWon.leg !== 4 || bankedWon.scrap !== won.scrap || bankedWon.surv !== 1 || bankedWon.gold !== won.gold) throw new Error('Won summary rewards were not banked');
 const sourceStars = __sr.SAVE.legs[3].stars.slice(), sourceLoot = __sr.G.pay.loot;
 __sr.SAVE.legs[3].stars = [false, true, false];
 __sr.G.pay.loot += 999;

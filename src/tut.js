@@ -22,7 +22,7 @@ const TIP_DEFS = {
   p_b2: { msg: 'A B-2 JOINS YOU, ONCE! PRESS E TWICE TO STRIKE.', where: 'play' }
 };
 const TUT = { tip: null, tipQ: [], anchors: {}, save: null, g: null, mode: '', fade: 1, fadeK: 1,
-  card: null, sum: [] };
+  card: null };
 const seen = (k) => !!SAVE.seen[k];
 // Mark prompt k as shown. True the first time.
 function see(k) {
@@ -129,7 +129,6 @@ function tutFrame(dt) {
   if (m !== TUT.mode) {
     TUT.fade = TUT.fadeK = m === 'summary' ? 0.5 : 1;
     if (m === 'play') tutNewRun();
-    if (m === 'summary') tutSumOpen();
     TUT.tip = null;
     TUT.mode = m;
   }
@@ -182,7 +181,6 @@ function tutLook() {
 // ---------- drawing in the run
 // Keep the tip and radio above the Ram card and the plane band.
 const cardsTop = () => Math.min(VH - 30, RAMCARD.on ? RAMCARD.y : VH - 30);
-const warnAt = () => [W / 2, 24];
 const tipRoom = () => {
   const layout = TUT.tip && mode === 'play' ? tutTipLayout() : null;
   return layout ? layout.lines.length * 10 + 4 + layout.rise : 0;
@@ -318,7 +316,6 @@ function quitRun() {
   if (mode !== 'play' || !G || G.demo || G.result) return;
   paused = false;
   G.result = 'quit';
-  G.lock = null;
   banners.length = 0;
   SFX.ramStop(0.1);
   endGame();
@@ -357,15 +354,6 @@ function drawEndCard() {
   if (button(b.x, b.y, b.w, b.h, 'TO THE DEPOT', { primary: true })) summaryContinue();
   text('ENTER', b.x + b.w + 6, b.y + 7, U.faint, { outline: false });
 }
-// The summary's lines for a lesson from this run, worked out as
-// the summary opens.
-function tutSumLines() {
-  return TUT.sum;
-}
-function tutSumOpen() {
-  TUT.sum = [];
-}
-
 // ---------- the fade between screens
 function drawFade() {
   if (TUT.fade <= 0) return;

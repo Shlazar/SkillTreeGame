@@ -6,13 +6,13 @@ function freshB52(maximum = false, fire = false, quiet = true) {
   __sr.hold(false); __sr.reset();
   for (const [id, level] of [['b52', 1], ['b52Bombs', maximum ? 4 : 0], ['b52Cooldown', maximum ? 4 : 0],
     ['b52Blast', maximum ? 3 : 0], ['fireBombs', fire ? 1 : 0], ['b52Charge', maximum ? 1 : 0]]) check(__sr.node(id, level), 'Missing B-52 node ' + id);
-  for (const key of ['p_auto', 't_attack', 'currency_scrap']) __sr.SAVE.seen[key] = true;
+  for (const key of ['p_move', 'currency_scrap', 'currency_surv', 'currency_gold', 'p_plane', 'p_plane_double', 'p_ram', 'p_charge', 'p_hangar', 'p_golden', 'p_sos', 'p_wall', 'p_brute_focus', 'p_boom', 'p_b2']) __sr.SAVE.seen[key] = true;
   __sr.start(); __sr.hp(9999); __sr.rightUp(4, 70);
   if (!quiet) { __sr.bot(true); return; }
   __sr.bot(false);
   const g = __sr.G, h = g.helis[0];
   g.zombies.length = g.rounds.length = g.timers.length = g.loot.length = g.lootFly.length = 0;
-  g.spawnCd = g.railCd = g.waveCd = 1000000; g.station = null; g.walls.length = 0;
+  g.spawnCd = g.railCd = g.waveCd = 1000000; g.eventIndex = __sr.line().legs[g.leg - 1].events.length; g.station = null; g.walls.length = 0;
   h.cd = h.look = 1000000; h.tgt = null; h.order = {kind: 'move', x: h.x, y: h.y};
 }
 function field() {
@@ -117,7 +117,8 @@ check(victims.every(z => z.dead) && sf.g.tr.hp === hp && JSON.stringify(sf.g.hur
 const mid = b52Shot('mid'); __sr.frames(30);
 const after = b52Shot('after'); __sr.frames(30);
 const craters = b52Shot('craters'); __sr.frames(30);
-freshB52(true, true, false); __sr.give(3000, 30); __sr.sim(20); __sr.frames(30);
+// Keep the natural fight, with the Viper active, without spending the bomber's charges in warmup.
+freshB52(true, true, false); __sr.bot(false); __sr.give(3000, 30); __sr.sim(20); __sr.frames(30);
 const s = __sr.stats(); __sr.crowd(80, s.W * 0.7, s.VH * 0.55, 100, 0);
 check(__sr.strike(b52().key, s.W * 0.7, s.VH * 0.55, Math.PI / 4), 'Busy B-52 strike failed');
 for (let i = 0; i < 300 && __sr.planeShow().stats.b52.impacts < 8; i++) __sr.frames(1);

@@ -13,18 +13,15 @@ const CFG = {
   // a helicopter: its top speed, how fast it gets there, how near loot must be to pick it up
   heli: { speed: 170, accel: 3.2, pickup: 14 },
   // 25mm: 4 rounds/s, flight seconds, spread px, burst radius px and most victims. (proposal)
-  // The Viper fires continuously without overheating; legacy heat values stay zero.
-  mg: { rate: 4, travel: 0.07, spread: 5, splash: 7, victims: 4, heatPer: 0, cool: 0.55 },
+  // The Viper fires continuously.
+  mg: { rate: 4, travel: 0.07, spread: 5, splash: 7, victims: 4 },
   // 105mm: reload, flight time, kill radius, hurt radius (a hurt walker dies too, a brute may not),
   // and how close to the train a blast hurts the train too
   he: { reload: 2.4, travel: 0.7, kill: 34, hurt: 56, close: 28 },
   // The global living limit. Individual leg populations and enemy introductions are in legs.js.
   pop: { max: 1100 },
-  // a station stop: survivors waiting on a later visit (a first visit has the station's own number),
-  // seconds between two setting off, their speed, the shortest stop, how long a zombie holds a
-  // survivor before it is too late, how near the door the dead keep the survivors in (and for how
-  // long, at most)
-  station: { again: 3, gap: 1.1, run: 24, minStop: 12, grab: 1.4, clear: 34, wait: 8 },
+  // Seconds before a grabbed survivor is lost, for the retained full-game survivor helpers.
+  station: { grab: 1.4 },
   // Share of each zombie's scrap value paid now; fractions wait in the kill pot. (proposal)
   pay: { kill: 1 },
   // Dead Wall health, rail placement/standoff, collectible scrap, warning/clearance and crash bodies. (proposal)
@@ -44,11 +41,6 @@ const CFG = {
   },
   // Seconds the built-in winch needs over a survivor: about 2 s. (proposal)
   winch: { hover: 2 },
-  // what one level of a skill tree node adds: train HP (ARMOR), the 25mm's heat per round is
-  // multiplied (COOLING), 25mm rounds per second (FAST FEED), 25mm damage (HEAVY ROUNDS), 105mm
-  // reload seconds taken off (FAST RELOAD), heli px/s (FAST ROTORS), px of pickup reach
-  // (MAGNET), share of kill scrap (SCAVENGER), rounds per second (GUN SPEED)
-  up: { armor: 10, cool: 0.8, feed: 1, heavy: 1, reload: 0.3, rotor: 25, magnet: 10, scav: 0.1, gun: 1 },
   // dps = damage to the train each second while it holds on
   types: [
     { hp: 2, speed: [15, 20], value: 1, dps: 0.25 },               // walker: 2 base gun hits (proposal)
@@ -73,8 +65,6 @@ const sAtKm = (k) => DEPOT_S - k * CFG.line.km;
 const kmAt = (s) => (DEPOT_S - s) / CFG.line.km;
 // DK() = how far the engine's nose is from the Depot, in km
 const DK = () => kmAt(G.tr.s);
-// km2(k) = k km cut down to the whole 10 m, the way every screen and the save show km (0.659 -> 0.65)
-const km2 = (k) => Math.floor(k * 100 + 1e-6) / 100;
 // The y on the ground where the distance along the rails is s, from any distance away.
 const yOfS = (s) => yAtS(s, yAtS(s, s / 1.0354));
 
@@ -86,7 +76,7 @@ const UP = {
   pickup: (l) => CFG.heli.pickup * (1 + 0.25 * l)
 };
 // This run's numbers from the skill tree (they cannot change during a run). The demo behind the
-// menus uses the plain numbers and shows off the Turbo Ram for now.
+// menus uses base upgrades with Rockets, the MG Car and Turbo Ram enabled for its battle.
 // The winch is built in. he and ram are weapons; gun is the rail cannon's reload (0 = none).
 // One Viper flies, including in the demo.
 // salvage is the extra share of every scrap reward; treeUp reads the crew's level.
@@ -94,19 +84,15 @@ function runUp(demo) {
   const L = demo ? () => 0 : lv;
   // (tree.js adds the newer nodes' numbers: treeUp)
   const up = treeUp(L, {
-    hp: UP.hp(L('armor')), rate: CFG.mg.rate, heat: CFG.mg.heatPer, dmg: 1,
+    hp: UP.hp(L('armor')), rate: CFG.mg.rate, dmg: 1,
     he: false, reload: CFG.he.reload, fly: CFG.heli.speed, pickup: UP.pickup(L('magnet')),
     helis: 1,
-    scav: 0, winch: true, gun: 0, ram: demo || L('ram') > 0,
-    // Full-game plow and legacy gold spawns stay disabled; armor still dresses the engine.
-    cow: false, gold: 0, armor: L('armor')
+    winch: true, gun: 0, ram: demo || L('ram') > 0,
+    // The full-game plow stays disabled; armor still dresses the engine.
+    cow: false, armor: L('armor')
   });
   if (demo) Object.assign(up, { rocketChance: UP.rockets(1), mgCar: true });
   return up;
-}
-// The train's full health.
-function maxHP() {
-  return UP.hp(lv('armor'));
 }
 // Finds and gold alternatives share lootAcc; wall piles use their own pot for exact source totals.
 // Apply Salvage Crew once here; bankRun only stores the whole scrap already paid.
@@ -147,9 +133,7 @@ function newGame(demo, number, replay) {
     earnedBase: { ordinary: 0, silver: 0, loot: 0, wall: 0 },
     earnedCounts: { ordinaryKills: 0, silverKills: 0, ramKills: 0, loot: 0, wall: 0 },
     kills: 0, cash: 0, gold: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
-    // Legacy debug fields stay zero until the final cleanup; Salvage Crew uses the pay pots below.
-    scavAcc: 0, scavPaid: 0,
-    trigger: false, mgCd: 0, heat: 0, overheat: false, heReload: 0, heQueue: false, hitT: 0, muzzle: [0, 0],
+    heReload: 0, heQueue: false,
     // the train: s = distance along the rails of the engine's nose (it falls as the train runs north),
     // v = speed, hp / max = its health now and when whole, hit[k] = car k flashes red, fx / fy = the
     // nose on the ground
@@ -162,14 +146,12 @@ function newGame(demo, number, replay) {
     // train goes to next (or stands at), and the Dead Walls ahead
     stops: [], stations: [], station: null, walls: [], wall: null, safeZone: false, finale: null,
     camX: 0, camY: 0, aimSX: W / 2, aimSY: VH / 2,
-    lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
     // Each source carries its own fraction, so silver and wall rewards never inherit ordinary pay.
     spawnCd: 0, waveCd: null, waves: 0, killAcc: 0, silverAcc: 0, lootAcc: 0, wallAcc: 0,
     railCd: rnd(4, 6), onTrain: 0, blocked: false, decalT: 0, sum: null,
-    // this run's scrap by where it came from (the summary lists them), the survivors aboard, the px
-    // the train has ridden, the furthest km, and what is already in the save
-    pay: { kills: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0, gold: 0 },
+    // this run's scrap sources, survivors aboard, furthest km and money already banked
+    pay: { kills: 0, loot: 0 }, surv: 0, maxKm: 0, banked: { scrap: 0, surv: 0, gold: 0 },
     bot: false, botT: 0, botZ: null, hurt: { crush: 0, claw: 0, shell: 0 },
     // the rail cannon on the flatcar (cannon.js)
     gun: newCannon(),
@@ -243,7 +225,6 @@ function bankRun() {
 function endGame() {
   mode = 'summary';
   sumStart = realT;
-  G.trigger = false;
   // a mouse press from the run must not click TO THE DEPOT when it is let go
   M.px = M.py = -1e4;
   // where the run ended (the train may roll on a little after it is lost; that does not count)
@@ -411,8 +392,6 @@ function arrive() {
   }
   mode = 'ending';
   G.endT = 0;
-  G.trigger = false;
-  G.lock = null;
   banner('LEG WON!', G.station.name, U.gold, 3);
   SFX.horn();
   for (const z of G.zombies) if (z.st === 2) later(rnd(0.2, 1.4), () => {
@@ -426,8 +405,6 @@ function lose() {
   G.result = 'lost';
   mode = 'ending';
   G.endT = 0;
-  G.trigger = false;
-  G.lock = null;
   banner('TRAIN LOST', 'YOU KEEP ALL YOUR SCRAP. RETRY THIS LEG.', U.red, 9);
   const blast = (k, big) => () => {
     const c = G.tr.cars[k], x = c.cx + rnd(-3, 3), y = c.cy;
@@ -1108,7 +1085,6 @@ function mgImpact(r) {
   JUICE.from = null;
   if (hits && r.player) {
     G.hits++;
-    G.hitT = 0.12;
   }
   if (r.player) roundKills(KILLED);
   // the round lands: a spark of light, a few sparks and a little dust (no mark: the ground stays
@@ -1279,13 +1255,6 @@ function botPlay(dt) {
   }
 }
 
-// ---------- the ride
-// Distance is only route bookkeeping. Riding alone never creates scrap.
-function ride(d) {
-  G.ride += d;
-  G.maxKm = Math.max(G.maxKm, DK());
-}
-
 // ---------- one step of the game (STEP seconds)
 function step(dt) {
   G.t += dt;
@@ -1319,7 +1288,8 @@ function step(dt) {
   updateRam(dt);
   tr.s -= tr.v * dt;
   layoutTrain();
-  if (!G.demo && !G.result) ride(tr.v * dt);
+  // Distance is only route bookkeeping. Riding alone never creates scrap.
+  if (!G.demo && !G.result) G.maxKm = Math.max(G.maxKm, DK());
   for (let k = 0; k < CAR.n; k++) if (tr.hit[k] > 0) tr.hit[k] -= dt;
   tr.hpShown = Math.max(tr.hp, tr.hpShown - dt * 12);
   // the little fires it runs over go out
@@ -1368,9 +1338,6 @@ function step(dt) {
   updateLegEvents();
   updateFinale();
   updateAir(dt);
-  G.hitT = Math.max(0, G.hitT - dt);
-  G.muzzle[0] = Math.max(0, G.muzzle[0] - dt);
-  G.muzzle[1] = Math.max(0, G.muzzle[1] - dt);
   G.killBump = Math.max(0, G.killBump - dt * 6);
   G.cashPulse = Math.max(0, G.cashPulse - dt * 3);
   updateStation(dt);

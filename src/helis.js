@@ -177,7 +177,7 @@ function makeHelis() {
   for (let i = 0; i < G.up.helis; i++) {
     const [x, y] = escortAt(i);
     G.helis.push({ i, name: HC.names[i] || 'VIPER ' + (i + 1), x, y, vx: 0, vy: 0, hd: G.tr.cars[0].ang, alt: HC.alt, ph: rnd(TAU),
-      heat: 0, hot: false, firing: false, cd: rnd(0.15), tgt: null, look: 0, order: null, sel: G.up.helis === 1, flash: 0, heR: 0, kick: 0,
+      firing: false, cd: rnd(0.15), tgt: null, look: 0, order: null, sel: G.up.helis === 1, flash: 0, heR: 0, kick: 0,
       cmdT: -9, spin: rnd(8), dust: 0, smoke: rnd(0.2), lean: 0, podFlash: [0, 0] });
   }
 }
@@ -209,9 +209,6 @@ function updateHelis(dt) {
   selectSingleHeli();
   let rel = 0, readyNow = false;
   for (const h of hs) {
-    // Retain safe zero values for the existing debug stats; heat no longer gates the gun.
-    h.heat = 0;
-    h.hot = false;
     let o = h.order;
     if (o && o.kind === 'attack' && (o.z.dead || o.z.gone)) o = h.order = null;
     // where it wants to be: its slot over the train, its spot, or in reach of its target
@@ -289,9 +286,7 @@ function updateHelis(dt) {
     rel = Math.max(rel, h.heR);
     heliDust(h, dt);
   }
-  // Legacy heat stats stay zero; the dormant 105 keeps its reload stat.
-  G.heat = 0;
-  G.overheat = false;
+  // The dormant 105 keeps its reload and queued-shot state.
   G.heReload = rel;
   if (!G.up.he) G.heQueue = false;
   if (G.up.he && readyNow) {

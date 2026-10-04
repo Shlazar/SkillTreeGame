@@ -24,7 +24,8 @@ Files:
 |---|---|
 | `tools/qa.js` | The test runner (run and shot modes). |
 | `tools/examples/*.js` | Reference example scenarios, including the `ref_*.js` files that made `docs/style/`. Copy one when you write your own. |
-| `tools/scenarios/*.js` | Your own scenarios, one file per task (see BUILD_PLAN.md). Create the folder when you need it. |
+| `tools/scenarios/*.js` | Feature checks and their matching frozen screenshot setups, named by BUILD_PLAN task. |
+| `tools/check_all.py` | Runs all saved scenarios sequentially and records a live JSON summary. |
 | `tools/crop.py` | Cuts a box out of a screenshot and enlarges it, so you can see the pixels. |
 | `tools/out/` | All outputs: screenshots, temp pages, the Chrome profile. Git ignores it (`.gitignore`: `tools/out/`). |
 
@@ -60,17 +61,26 @@ What it does, in order:
 3. Runs Chrome headless with `--dump-dom` and `--virtual-time-budget=budgetMs` (default 5000), then reads the result.
 4. Prints one JSON line: `{"result": <what you passed to QA_DONE>, "qaErrors": [...]}`.
 
-Example (verified):
+Example:
 
 ```
 node tools/qa.js run tools/examples/run_loop.js
-{"result":["title","depot","play","summary","depot"],"qaErrors":[]}
+{"result":["title","play","summary","depot"],"qaErrors":[]}
 ```
 
 - `qaErrors` collects every page error (`window` error events and every `console.error`), including errors during boot. **It must be `[]`.**
 - If the scenario throws, the error goes into `qaErrors` as `"SCENARIO: <message>\n<stack>"`, `result` is `null`, and the exit code is still 0. Always read `qaErrors`.
 - If the scenario never calls `QA_DONE`, it prints `{"error":"no QA_DONE output (scenario did not finish or page crashed)", ...}` and exits with code 3.
 - **The view is smaller in run mode than in shot mode.** At 1280x720 today, `__sr.stats()` in run mode gives `W 632`, `H 313`, `SCALE 2`. Screen-pixel arguments that suit 640x360 (for example `sy = 340`) are off screen in run mode. Read `__sr.stats().W` / `.H` and keep `sx < W` and `sy < H` in run scenarios.
+
+### Run the complete saved suite
+
+```
+python tools/check_all.py
+python tools/check_all.py --match "^t1_(7|8|9|11)_" --name early_route
+```
+
+The harness runs one scenario at a time, never overlapping Chrome profiles. A shot-only setup is wrapped with thirty full frames and `QA_DONE`, so drawing errors also fail its run check. It enables Chrome's real reduced-motion preference only for `t8_3_reduced.js`. The live summary is `tools/out/t8_5_all.json` by default, with individual raw results in `tools/out/t8_5_all/`; `--name` changes both output names. A failed check makes the harness exit with code 1.
 
 ### shot mode: save a screenshot
 
@@ -136,7 +146,7 @@ A scenario is a plain browser JS file. It is not a module, and it has no `requir
 - Use a short budget (for example `1500`) with `hold(true)`. Use the default 3000 for a live scene.
 - The Depot skill tree stops game time by itself (`treeCovers()` in `src/main.js`).
 
-Example: a 105 blast frozen in the frame (verified on the current build; BUILD_PLAN T0.5 turns the 105 off, but `__sr.boom` still calls `explode` directly):
+Example: the retained full-game 105 effect frozen through a debug fixture. The demo has no 105 control or purchase; `__sr.boom` calls its effect directly:
 
 ```js
 // shot mode: a 105 blast frozen in the frame
@@ -153,8 +163,10 @@ node tools/qa.js shot tools/scenarios/my_boom.js tools/out/boom.png 1500
 ### sim() and frames(): which one to use
 
 - `__sr.sim(sec)`: only the game steps (`step(STEP)` and `camLead`, `STEP = 1/60`). There is no drawing, no tutorial frame, no fade and no click handling. It is fast. Use it to move a run forward. Banners do not age during `sim`.
-- `__sr.frames(n, dt)`: n full frames, the same as the main loop (`oneFrame()`): the clock, hit-stop, the PRESS E slow-motion (removed in BUILD_PLAN T0.6), the game steps, the camera, `tutFrame`, `render`, `drawUI`, `drawFade`, then the mouse clicks are used up. Use it when the thing you test lives in the frame: tutorial prompts, banners, fades, camera moves, UI, or anything that needs `render()` to have run.
+- `__sr.frames(n, dt)`: n full frames, the same as the main loop (`oneFrame()`): the clock, hit-stop, plane-aim slowdown, game steps, camera, `tutFrame`, `render`, `drawUI`, `drawFade`, then mouse clicks are used up. Use it for tutorial prompts, banners, fades, camera moves and UI. A frame runs at most eight fixed game steps; large dt is suitable for held UI timing, not fast-forwarding a battle.
 - A common pattern: `sim(20)` to get into the fight, then `frames(30)` so the picture and the UI are up to date.
+
+Some procedural draws consume random numbers. Keep seeded income/balance rides separate from `bench`, `cost` and repeated rendering; freeze a scene before comparing painter costs. Held frames still advance UI time. Play tips wait until the departure banner finishes, and survivor/gold lessons promote only in the Depot.
 
 ---
 
@@ -167,7 +179,7 @@ node tools/qa.js shot tools/scenarios/my_boom.js tools/out/boom.png 1500
 | `tools/examples/run_smoke.js` | run | Starts a run, the bot plays 30 s, returns `__sr.stats()`. Check `qaErrors: []`, that `mode` is still `play` or a sane result, and that `kills`, `km`, `hp`, `zombies`, `parts` look normal. |
 | `tools/examples/shot_fight.js` | shot | Gives 3000 scrap and 30 survivors, starts a run, the bot plays 20 s, then the screenshot shows the live fight (HUD, train, heli, horde, blood). |
 | `tools/examples/shot_tree.js` | shot | Gives 400 scrap and 6 survivors and opens the Depot skill tree tab. |
-| `tools/examples/ref_*.js` | shot | The scenarios that made the reference pictures in `docs/style/` (see STYLE_GUIDE.md section 0). They only work on the baseline build: after BUILD_PLAN T0.4 they use deleted node ids. **Never use them to overwrite `docs/style/`.** |
+| `tools/examples/ref_*.js` | shot | Current-build fixtures based on the reference pictures in `docs/style/` (STYLE_GUIDE section 0). Their upgrade IDs follow the current tree; the cannon remains an explicit full-game runtime fixture. Composition can differ from the original pictures. **Never use them to overwrite `docs/style/`.** |
 
 Keep your own scenarios in `tools/scenarios/` (one file per task, named after it, for example `t3_3_rockets.js`), with a first-line comment that says the mode and what the file checks, like the existing ones. `tools/examples/` holds the reference examples; add a file there only when a task says so (for example `run_leg.js` in BUILD_PLAN T1.10).
 
@@ -177,7 +189,7 @@ Keep your own scenarios in `tools/scenarios/` (one file per task, named after it
 
 All of these are defined in `src/main.js` (`boot()`, `window.__sr = {...}`) or added with `Object.assign(window.__sr, {...})` in the files named below. "Screen pixel (sx, sy)" means game pixels in the view, from the top-left of the canvas. It is converted to world position with `G.camX/G.camY`. "Game px (x, y)" for the mouse is the same view space.
 
-This list follows the current build. Tasks remove old calls and add new ones in `src/test_f.js` (see the "Test helpers you will add" table in BUILD_PLAN.md). Keep this section up to date when you change them.
+This list follows the current build. Most feature diagnostics are copied by `src/test_f.js`; `G` and `SAVE` are explicitly live objects for fixture setup. Use actual key/pointer input and `buy()` when checking player behavior; direct state setters bypass those paths.
 
 ### 5.1 State (src/main.js)
 
@@ -186,14 +198,14 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 - `__sr.SAVE`: getter for the live v2 save (scrap, surv, gold, leg, legs, rescues, rescueDue, chest, hangar, nodes, flags, seen...).
 - `__sr.FPS`: the frame stats object `{n, sum, worst, t, avg, lastWorst}`. Not useful headless; use `bench`.
 - `__sr.CFG`: the tuning config object.
-- `__sr.HORDE`: the horde-by-distance table from horde.js (for balance tests).
+- `__sr.HORDE`: the per-leg population and stream tuning table from horde.js (for balance tests).
 - `art()`: returns the sprite sets `{TRAIN, FOOT, HSPR, ROTOR, STATION, SURV, ZS, ICON, TURRET}` (for a test sheet).
-- `stats()`: one big snapshot of the run: `mode, result, km, kills, cash, runSurv, scrap, survivors, gold, leg, runs, pay, hp, max, speed, onTrain, t, zombies, bodies, up, shots, scavPaid, overheat, heReload, hurt, station, walls, helis, rounds, parts, texts, chunks, decals, W, H, SCALE, fps, worstMs, heat, gun{...}, ram{...}`. `fps` and `worstMs` are always 0 headless: only the real `loop()` updates them, and `frames()` does not. Do not use them for checks.
+- `stats()`: run snapshot: `mode, result, km, kills, cash, runSurv, scrap, survivors, gold, leg, runs, pay, hp, max, speed, onTrain, t, zombies, bodies, up, shots, heReload, hurt, station, walls, helis, rounds, parts, texts, chunks, decals, W, H, VH, SCALE, fps, worstMs, gun{...}, ram{...}`. `km` remains an internal position diagnostic; the player follows legs. `gun` describes the retained full-game cannon. Ram reports cooldown/duration/progress rather than a kill charge. `fps` and `worstMs` are always 0 headless: only the real `loop()` updates them, and `frames()` does not. Do not use them for checks.
 
 ### 5.2 Screens and flow (src/main.js, src/tut.js)
 
 - `title()`: go to the title screen (`toTitle`).
-- `depot(tab)`: go to the Depot with its `'tree'` tab open (`toDepot`).
+- `depot(tab)`: open `'tree'`, or `'hangar'` when all three ordinary planes are owned (`toDepot`). A hidden Hangar request falls back to the tree.
 - `start(n)`: start leg n (1–12), or the next saved leg when omitted. A won leg is automatically a replay.
 - `lose()`: the train breaks now, in play only. The summary follows about 3.4 s later (sim 6 s to be safe).
 - `quit()`: quit the run as the pause menu does (`quitRun`, src/tut.js).
@@ -211,16 +223,15 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 - `hp(v)`: set the train's health (and its shown bar) to v.
 - `jump(px)`: move the train to px before this leg's nose stopping point. Zombies are removed; the train still brakes and arrives through normal game logic.
 - `km(x)`: move within the current leg to x km along the whole line, without paying. Does nothing on the title demo.
-- `bot(on)`: the test autopilot handles the Ram and smart-strikes each ready equipped plane when at least 15 zombies form a visible crowd. It checks planes every 0.5 s; the Viper still fires automatically. `bot(false)` also lets go of the trigger.
+- `bot(on)`: toggle the test autopilot. It handles Ram and smart-strikes each ready equipped plane when at least 15 zombies form a visible crowd, checking planes every 0.5 s. `bot(false)` only disables this autopilot; the Viper still fires automatically.
 
 ### 5.5 Input (src/main.js, src/test_h.js)
 
 - `aim(x, y)`: put the mouse at game px (x, y).
-- `trigger(on)`: hold or release the fire trigger (play only).
-- `he()`: fire the HE shell as the key does (`tryHE`).
+- `he()`: invoke the retained full-game 105 fire path (`tryHE`); it is unavailable in an ordinary demo run and has no demo keyboard binding.
 - `thermal(k)`: set the camera mode k: 0 COLOUR, 1 WHITE HOT, 2 BLACK HOT (`setThermal`, `CAMS` in game.js).
 - `keys(k, on)`: set `KEYS[k]` down or up (held keys).
-- `press(k)`: dispatch a keydown and a keyup for k (`'Enter'`, `'Tab'`, `'Escape'`, `'e'`...).
+- `press(k)`: dispatch a keydown and a keyup for k (`'Enter'`, `'Tab'`, `'Escape'`, `'q'`, `'w'`, `' '`...). E belongs to the temporary finale B-2, not Ram.
 - `hover(x, y)`: the mouse over game px (x, y). Clears `hoverNode`.
 - `click(x, y)`: a full left click at game px (x, y). It draws one frame so the button there acts at once, and skips the summary animation if in summary.
 
@@ -229,12 +240,12 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 - `spawn(type, sx, sy)`: a zombie standing still at screen pixel (sx, sy): 0 walker, 1 runner, 2 brute. Returns it.
 - `hit(z, dmg, cause)`: zombie z takes dmg (default 1) from cause `'mg'` (default) or `'gun'` (the flatcar gun).
 - `gold(sx, sy)`: a golden zombie at screen pixel (sx, sy). Returns it (test_a.js).
-- `skills()`: first-ring skill state: `{cow, gold, armor, golden, goldSeen, lockWait, kills, cash, hp, v}` (test_a.js).
-- `horde()`: the spawner now: `{streams, waves, alive, layer, booms, hd}`, where `hd` is `horde(DK())` here (test_z.js).
+- `skills()`: current `{cow, armor, goldHunt, silver, boom, golden, goldSeen, kills, cash, hp, v}`. `cow` is a disabled full-game plow flag; use `goldState()` for actual route reward identities (test_a.js).
+- `horde()`: the spawner now: `{streams, waves, alive, layer, booms, hd}`; `hd` copies this leg's horde tuning, or is null in the menu demo (test_z.js).
 - `stream(n, edge)`: a stream of n zombies (default 20) now from edge -1 left, 1 right, 0 top (default) (test_z.js).
-- `wave()`: a wave now (sets `G.waveCd = 0`) (test_z.js).
+- `wave()`: dispatch a wave now through the leg-event path (test_z.js).
 - `crowd(n, sx, sy, r, type)`: n walking zombies around screen pixel (sx, sy) within r px (default 40). Random types if `type` is left out. Returns the zombie count (test_z.js).
-- `up(k, v)`: set a run upgrade number `G.up[k] = v` (e.g. `'boom'`, `'silver'`, `'strafe'`, `'gun'`). Returns it (test_z.js).
+- `up(k, v)`: set a runtime upgrade `G.up[k] = v` (e.g. `'boom'`, `'silver'`, `'rocketChance'`, `'a10Damage'`). Returns it. This changes no ownership or save and bypasses purchase validation; `'gun'` can enable the retained cannon fixture (test_z.js).
 - `blast(sx, sy)`: an explosive zombie blows up at screen pixel (sx, sy) (`zombieBlast`, test_z.js).
 - `cost(n)`: ms per call of the crowd layer parts: `{gather, draw, render, renderNoDead, layer, single, onTrain, allA, allOne}` (test_z.js; see section 6).
 
@@ -248,19 +259,18 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 
 ### 5.8 Helicopters (src/test_h.js, src/test_f.js)
 
-- `rclick(x, y)`: a right click at game px (x, y), with one frame drawn.
+- `rclick(x, y)`: real right-button pointer down/up at game px (x, y), then render/UI. It exercises plane cancel and ordinary Viper ordering without advancing game time.
 - `rightDown(x, y)`: dispatch a right-button pointer press at game px (defaults to screen centre). It gives the normal heli order and keeps the physical-button state held; returns `true`.
 - `rightUp(x, y)`: dispatch the right-button release (defaults to the current pointer position), clearing the held state; returns `false`. These calls do not draw or advance a frame.
-- `helis()`: each heli: `{name, x, y, dx, dy, hd, alt, sel, order, tgt, heat, hot, heR, sx, sy}` (dx/dy from the engine's nose, sx/sy on screen).
-- `lclick(x, y, shift)`: a left click at game px as a player does for heli control (`heliDown`/`heliUp`).
-- `drag(x0, y0, x1, y1)`: a left drag (selection box) from (x0, y0) to (x1, y1).
+- `helis()`: the Viper snapshot `{name, x, y, dx, dy, hd, alt, sel, order, tgt, heR, sx, sy}` (dx/dy from the engine's nose, sx/sy on screen). `sel` and 105 reload are retained diagnostics; ordinary orders always command the one Viper.
+- `lclick(x, y, shift)` / `drag(x0, y0, x1, y1)`: retained direct calls to the disabled heli-selection path. They do not test real plane aiming or Hangar dragging; use canvas PointerEvents for those.
 - `rclickH(x, y)`: a right click for heli orders (`heliRight`).
-- `sel(...ids)`: select the helis with these index numbers; no ids = select none.
-- `heliKey(k)`: a heli key: `'a'` selects all, `'1'`..`'9'` select one.
+- `sel(...ids)`: QA-only selection injection for proving that right clicks still order the Viper.
+- `heliKey(k)`: retained disabled selection-key path; A and number keys do not select demo helicopters.
 - `order(i, kind, a, b)`: give heli i an order: `'attack'` (a = zombie), `'move'` (a, b = world px), `'escort'`.
 - `heFire(x, y)`: fire the 105 at screen pixel (x, y) (`heFire`).
 - `heArm(on)`: arm or disarm the retained 105 aim when owned; returns the state (always false in this demo).
-- `boxFrom(x, y)`: the left button is held from (x, y), so a drag box shows to the mouse.
+- `boxFrom(x, y)`: inject the retained drag-box state; ordinary demo controls do not start selection boxes.
 - `heliMarks()`: how many order marks are on the ground.
 
 ### 5.9 Flatcar cannon (src/cannon.js)
@@ -272,7 +282,7 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 ### 5.10 Effects, land and scenery (src/test_j.js, src/test_e.js, src/test_t.js)
 
 - `juice()`: live counts `{gibs, debris, pools, coins, emit, birds, flying, parts}` (test_j.js).
-- `boom(sx, sy)`: a 105 blast at screen pixel (sx, sy), as the player's shell makes it (`explode`) (test_j.js).
+- `boom(sx, sy)`: retained full-game 105 blast fixture at screen pixel (sx, sy), through `explode` (test_j.js).
 - `flock(sx, sy)`: crows land at screen pixel (sx, sy) (test_j.js).
 - `coins(sx, sy, n)`: a coin pop of n coins (default 12) at screen pixel (sx, sy) (test_j.js).
 - `groundAt(sx, sy)`: the baked ground pixel `g`, the decal pixel `d` (RGBA arrays) and nearby static props under screen pixel (sx, sy) (test_j.js).
@@ -303,20 +313,20 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 - `treeState()`: `{drag, M, tab, mode}`: tree drag, mouse, Depot tab (test_t.js).
 - `infoFit()`: info box lines that do not fit: `{bad, widest, inner}`. `bad` must be `[]`.
 
-Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'hrate'`, `'cool'`, `'farm'`). Use `__sr.treeNodes()` to list them all. The root keeps the id `'root'` in the new tree too.
+Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'hrate'`, `'armor'`, `'rockets'`, `'a10'`). Use `__sr.treeNodes()` to list all 73 nodes. The root is always owned on a fresh save; buying it returns false. Blue upgrades level up, survivor units unlock once, gold nodes buy specials, and full-game teases cannot be bought.
 
-### 5.12 Strafing Run (src/test_t.js)
+### 5.12 A-10 transport fixtures (src/test_t.js)
 
-- `strafe(sx, sy, ux, uy)`: call the jet through screen pixel (sx, sy). The direction is (ux, uy) if given, otherwise along the rails (`callStrafe`).
-- `strafeState()`: `{left, arm, jets, bombs, up}`: runs left and what is in the air.
+- `strafe(sx, sy, ux, uy)`: call the actual A-10 transport through screen pixel (sx, sy), without consuming a charge. Direction is (ux, uy), otherwise along the rails (`callStrafe`). Use `strike()` or real input to test resource behavior.
+- `strafeState()`: `{left, arm, jets, bombs, up}`: current A-10 charges, any active aim, active flight/bomb counts and max charges. It derives resources from AIR rather than a separate legacy run counter.
 
 ### 5.13 Loot (src/loot.js)
 
-- `loot()`: this run's finds: `[{i, kind, km, off, x, y, pay, gone, seen, stage, w, placed, awake, guards}]`.
+- `loot()`: copied finds `[{i, kind, eventId, km, s, off, x, y, pay, scrapSource, rewardId, reward, gone, seen, stage, w, u, rescueId, saved, carried, ground, placed, awake, guards}]`. `eventId` is the timeline receipt; gold crates use the stable per-leg `rewardId` `gold-crate`. `w` is continuous hover time and `u` is cosmetic lift time.
 - `lootGo(i)`: put heli 0 over find i (with a move order).
-- `lootTake(i)`: take find i at once (`takeLoot`).
+- `lootTake(i)`: directly take a collectible (`takeLoot`); it cannot bypass the two-second rescue hover. Use real Viper movement/proximity for pickup behavior tests.
 - `lootSpawn(kind)`: a find of kind `'pile'`, `'crate'`, `'gold'` or `'sos'` right next to heli 0. Returns its index.
-- `lootStats()`: `{loot, cash, surv, pickup, fly, winch}`.
+- `lootStats()`: `{loot, cash, surv, pickup, fly, winch, rescues, due}`.
 - Rescue finds also copy `rescueId`, `saved` and `carried`. The IDs `rescue-4`, `rescue-8` and `rescue-10` stay the same across rides. Two seconds of continuous hovering saves the survivor immediately; the rope and lift then finish visually. Missed rescues return on the next non-replay ride, and the final Terminus camp saves any remaining survivors.
 
 ### 5.14 Legs and rewards (src/test_f.js)
@@ -345,12 +355,12 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 - `gunVisual()`: read-only `{range: {radius, visible}, hits: [{x, y, scale, age}]}`. Radius and hit positions are world px, age is seconds, and scale is the fired heli bullet's damage multiplier.
 - `treeStats(id)`: read-only stat segment arrays used by the current node tooltip, including NOW/NEXT values and colours; returns `[]` for an unknown node.
 - `planeBand()`: read-only band rectangle `{visible, x, y, w, h, worldHeight, fullHeight, slots}` in game px. A real play/ending leg with a plane owned reserves 18 px below `worldHeight`; title, menus and legs without a plane use the full height. Test world-click exclusion with actual pointer events, since `click()` only draws UI.
-- `units()`: the active heli's `{count, damage, rate, range, winch}`, Rockets `{chance, enabled}`, Pods and Hellfire. Pods reports `{enabled, range, damage, reload, salvo, napalmDuration, salvos, shots, queued, inFlight, cooldown, ready, impacts, kills, lastTarget, lastImpact, active}`. Pod cooldown and Napalm duration are seconds; shots count launched pod rockets. `lastTarget` copies `{x, y, count, t}`, including the chosen crowd size and salvo time. `lastImpact` copies `{x, y, radius, damage, hits, kills, t}`. Each active pod rocket copies `{sx, sy, sz, bx, by, age, T, dmg, R, burnTime, burnDamage, position}` with `position` as `[worldX, worldY, height]`; burn damage is per second. Planes copy the same snapshots as planes(); unimplemented car/gadget slots remain empty until their tasks. Returns `null` without a game; its snapshots do not expose mutable target or projectile objects.
+- `units()`: heli `{count, damage, rate, range, winch}`, Rockets `{chance, enabled}`, Pods, Hellfire, MG, Katyusha and Planes. Pods reports `{enabled, range, damage, reload, salvo, napalmDuration, salvos, shots, queued, inFlight, cooldown, ready, impacts, kills, lastTarget, lastImpact, active}`. Pod cooldown and Napalm duration are seconds; shots count launched pod rockets. `lastTarget` copies `{x, y, count, t}`, including crowd size and salvo time. `lastImpact` copies `{x, y, radius, damage, hits, kills, t}`. Active pod rockets copy `{sx, sy, sz, bx, by, age, T, dmg, R, burnTime, burnDamage, position}`; position is `[worldX, worldY, height]` and burn damage is per second. Planes copy `planes()`; use `steam()` for the train cloud and `ramInfo()` for Ram. Unimplemented full-game units remain neutral. Returns null without a game and exposes no mutable target/projectile objects.
 - `units().mg`: copied automatic boxcar turret state `{enabled, damage, rate, range, wallRange, count, pierce, shots, hits, kills, targetsHit, lastShot, turrets, art}`. Base damage 1 and range 100 ground px are proposals; base rate is 2 shots/s. When no ordinary target is available, a blocking wall has a finite 200-ground-px fallback range from the rear boxcar. AP includes this actual wall face without expanding its range against ordinary enemies. Each turret copies its curved-track mount, screen position, aim, cooldown, flash, recoil and counters. Shot copies include the muzzle, selected target and every hit's before/after HP. `art` reports the four cached 32-heading sets and atlas readiness. No live target or turret objects are exposed.
 - `units().katyusha`: copied flatcar rocket state with `enabled`, `range`, `damage`, `blastRadius`, `reload`, `salvo`, `clusterCount`, seconds of `cooldown`, `ready`, salvo/shot/hit/kill and impact counters, split/bomblet counters, `queued`, `inFlight`, launch/target/impact snapshots, the last 64 impacts, active arcs, rack mount and cached artwork. Base damage 8, radius 24, range 300 and 0.8-second flight are proposals. Clusters split into three damage-4, radius-12 bombs; blast upgrades scale both radii. `shots` counts parent rockets and `hits` counts parents that hit anything, at most once per parent. `rocketImpacts` and `clusterImpacts` count actual blasts. It uses its own projectile list and cannot alter helicopter counters.
 - `steam()`: copied Steam Vent state `{enabled, damage, interval, reach, cloudReach, hotCloud, cooldown, bursts, hits, kills, cloudHits, cloudKills, lastBurst, cloud, envelope}`. First burst is after 5 seconds, falling to 2.5 with Vent Speed. Proposed damage is 2 times Steam Damage; each Reach level adds 6 world px outside the train. Without Reach, bursts hit climbers. Steam also reaches a blocking wall face within 24 ground px of the train; its cloud shares the same one-hit receipt. Hot Cloud follows the curved train for 2 seconds, extends another 6 px, and hits each entrant once; burst victims are not hit twice. `hits`/`kills` include the cloud subset. `cloud` copies remaining `time`, `age`, duration, reach and damage. The envelope uses the actual car segments, half-width 8 and y scale 0.72. White smoke uses the existing particle limits.
 - `units().hellfire`: `{enabled, range, count, damage, reload, blastRadius, salvos, shots, inFlight, cooldown, ready, impacts, kills, lastTargets, lastImpact, active}`. Range/blast radius are world px and reload/cooldown are seconds. `lastTargets` copies launch snapshots `{x, y, hp, type, priority, t}`; priority is `brute`, `gold`, or `hp`. Active missiles copy `{sx, sy, sz, bx, by, age, T, dmg, R, priority, position, targetSnapshot}`; position is `[worldX, worldY, height]`, bx/by follows the live target, and targetSnapshot stays fixed at launch. `lastImpact` uses the same copied fields as Pods. Count is 1, or 2 with Double Hellfire; it never sends two missiles at the same target. If only one eligible target exists, it fires one missile.
-- `rockets()`: nose-gun rocket diagnostics `{shots, rockets, first, last, maxGap, forced, impacts, kills, lastImpact, active}`. Shots count all nose-gun shots; timing is run seconds, and `first` is `null` before the first rocket. `forced` records whether the first-rocket guarantee is still due. Each active nose-gun rocket copies `{sx, sy, sz, bx, by, age, T, dmg, R, position}`; `position` is `[worldX, worldY, height]`. Pod rockets are reported by `units().pods.active`. Returns `null` without a game and does not advance time.
+- `rockets()`: nose-gun diagnostics `{shots, rockets, first, last, maxGap, forced, impacts, kills, lastImpact, active}`. Shots count all nose-gun shots; timing is run seconds in a ride and demo seconds in the attract battle. `first` is null before a rocket; `forced` means the real first-rocket guarantee is still due (never in the demo). Active rockets copy `{sx, sy, sz, bx, by, age, T, dmg, R, position}` with position `[worldX, worldY, height]`. Pod rockets are in `units().pods.active`. Returns null without a game and does not advance time.
 - `fires()`: copied active burning-ground patches `{x, y, R, time, age, duration, dps, tick, source, wall}`. Positions and radius are world px; time, age, duration and tick are seconds, and dps is damage per second. `wall` marks an active Fire Wall patch that blocks zombies. Returns `[]` without a game.
 - `railX(worldY)`: read-only world X of the railway centre at a finite world Y (or null for invalid input); useful for controlled moving-stream scenarios.
 - `fireStats()`: read-only run counters `{kills, ticks, hits, created}` for actual fire damage and patch creation. Returns `null` without a game.
@@ -400,7 +410,7 @@ QA_DONE(Object.keys(window.__sr).sort());
 
 ### Adding a new test call
 
-Do not put test code in game files. Add it to a `test_*.js` file in `src/` with `Object.assign(window.__sr, {...})` and a one-line comment for each call, like the existing ones. For the FINAL_DESIGN work, use `src/test_f.js` (BUILD_PLAN.md says when it is created). A test file must come after `main.js` in `ORDER` in `build.py` (put it at the end), because `window.__sr` exists only after `boot()`. Do not reuse the name of an existing call (for example `ram` already exists). Then add a line for it to section 5 of this file.
+Add test code to a `test_*.js` file using `Object.assign(window.__sr, {...})`, with a one-line comment for each call. Use `src/test_f.js` for feature diagnostics. A test file must follow `main.js` in build.py's `ORDER`, because `window.__sr` exists only after boot. Do not reuse an existing call's name (for example `ram`); add its contract to section 5 here. Keep copied diagnostics separate from clearly labelled runtime fixture mutations.
 
 ---
 
@@ -471,7 +481,7 @@ At the default 1280x720, a game pixel (gx, gy) is at screenshot pixel (2*gx, 2*g
 Do all of these before you call a change done:
 
 1. **Build**: `python build.py` prints `index.html <size> KB` with no error. `index.html` is tracked in git, so commit the rebuilt file with your `src/` change.
-2. **The loop**: `node tools/qa.js run tools/examples/run_loop.js` must print exactly `{"result":["title","depot","play","summary","depot"],"qaErrors":[]}`. (If a BUILD_PLAN task changes this flow on purpose, update `run_loop.js` in the same task.)
+2. **The loop**: `node tools/qa.js run tools/examples/run_loop.js` must print exactly `{"result":["title","play","summary","depot"],"qaErrors":[]}`.
 3. **A 30 s bot run**: `node tools/qa.js run tools/examples/run_smoke.js` must give `qaErrors: []` and sane numbers (kills > 0, km grows, hp > 0, no runaway `parts`/`zombies`).
 4. **Your own check**: a run scenario in `tools/scenarios/` that sets up your feature and returns the numbers that prove it works (with `qaErrors: []`).
 5. **A screenshot of what you changed**: a shot scenario that shows your feature on screen. Run its setup in run mode first and check `qaErrors` (shot mode prints no errors). Delete the old PNG first. Use `hold(true)` for a short effect. Zoom in with `tools/crop.py`. Look at it yourself.

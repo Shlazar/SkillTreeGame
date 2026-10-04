@@ -318,7 +318,7 @@ Object.assign(window.__sr, {
         heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
     };
   },
-  // Report only implemented unit systems; later weapons stay neutral until their own tasks.
+  // Copy all demo weapon systems without exposing live projectiles or mutable target objects.
   units: () => {
     if (!G) return null;
     const weapons = heliWeaponState(), p = weapons.pods, f = weapons.hellfire, clock = heliWeaponTime();
