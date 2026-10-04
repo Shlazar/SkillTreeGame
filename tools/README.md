@@ -309,6 +309,7 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 
 ### 5.14 Legs and rewards (src/test_f.js)
 
+- `goldState()`: copies the golden event queue/receipts and active chase positions, plus the number of Hunt gold rewards already paid and cached gold-art readiness. Primary identities stay `golden-primary` per leg; Hunt extras use `golden-hunt-1..3`. A primary catch pays 1 gold and the third star (3 gold); retries/replays pay 10 base scrap. Hunt extras can pay at most five one-time gold rewards across the demo. Golden crates use `gold-crate`, pay 5 gold at actual proximity pickup, and pay 25 base scrap on retry/replay.
 - `wallState()`: copies every wall with its identity, world/screen position, hp/max, state, stop point, spawn/stop/break times, Ram flag, train health before/after and dropped loot id. No live target or sprite objects are exposed.
 - `wallFixture({ahead, hp, id})`: QA-only placement through the real wall event handler during a live leg; returns a copied wall or false. Production values are 180 rail px ahead and 75 HP. This fixture does not grant rewards or ownership.
 - `line()`: copies the thirteen stops and twelve leg definitions, including each leg's events.

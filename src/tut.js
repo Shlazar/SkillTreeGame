@@ -104,14 +104,9 @@ function tutEvent(name, d) {
     crate_taken: () => tutCount('crate'),
     sos_seen: () => tip('p_sos', 'A SURVIVOR! FLY OVER THEM TO WINCH THEM UP.', P(d)),
     sos_near: () => tip('p_lift', 'HOLD YOUR VIPER OVER THEM FOR 2 SECONDS.', P(d)),
-    golden_seen: () => tip('p_golden', 'GOLDEN ZOMBIE! CATCH IT FOR ' + goldenPay(d) + ' SCRAP.', P(d.z || d))
+    golden_seen: () => tip('p_golden', 'CATCH THE GOLDEN ZOMBIE!', P(d.z || d))
   }[name];
   if (ev) ev();
-}
-// what a golden zombie pays (from the event, else from the game's numbers)
-function goldenPay(d) {
-  const g = CFG.golden || (CFG.types && CFG.types.find((t) => t.golden));
-  return d.value || d.pay || (g && (g.value || g.pay)) || 25;
 }
 // A zombie dies (called from kill()): the tasks that count shots.
 function tutKill(z, cause, free) {

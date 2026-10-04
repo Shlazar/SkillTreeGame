@@ -175,7 +175,7 @@ const NODES = [
   scrapNode('salvageCrew', 'SALVAGE CREW', 'magnet', -3, 0, 'D', 4, 'EARN 8% MORE SCRAP FROM EVERYTHING.', ['SCRAP', (l) => pctS(1 + UP.salvageCrew(l))]),
   scrapNode('silverHunt', 'SILVER HUNT', 'salvageCrew', -4.5, -1.5, 'E', 3, 'FIND MORE SILVER ZOMBIES.', ['HUNT LEVEL', UP.silverHunt]),
   scrapNode('boomHunt', 'BOOM HUNT', 'salvageCrew', -4.5, 1.5, 'E', 3, 'FIND MORE EXPLOSIVE ZOMBIES.', ['HUNT LEVEL', UP.boomHunt]),
-  scrapNode('goldHunt', 'GOLD HUNT', 'silverHunt', -6, -1.5, 'F', 3, 'FIND MORE GOLDEN ZOMBIES.', ['EXTRA GOLDEN', UP.goldHunt])
+  scrapNode('goldHunt', 'GOLD HUNT', 'silverHunt', -6, -1.5, 'F', 3, 'MORE GOLDEN ZOMBIES, UP TO 5 EXTRA GOLD IN THIS DEMO.', ['EXTRA GOLDEN', UP.goldHunt])
 ];
 const NODE = {};
 for (const n of NODES) NODE[n.id] = n;
@@ -243,6 +243,7 @@ function treeUp(L, up) {
     steamSpeed: UP.steamSpeed(L('steamSpeed')), steamReach: UP.steamReach(L('steamReach')),
     hotCloud: UP.hotCloud(L('hotCloud')),
     salvage: UP.salvageCrew(L('salvageCrew')),
+    goldHunt: UP.goldHunt(L('goldHunt')),
     boom: 0, boomR: 18, silver: 0,
     power: false
   });

@@ -83,7 +83,7 @@ function legEventNotice(title, color) {
   if (banners[0] && banners[0] !== previous) banners[0].T = LEG_EVENT_NOTICE;
 }
 
-// Supported events use the existing spawners. Future gold and rescue events are left to
+// Supported events use the existing spawners. Future rescue/variant events are left to
 // their real feature handlers; they never masquerade as another event or earn a fired receipt.
 function dispatchLegEvent(kind, params, id) {
   const p = params || {}, n = Math.max(0, Math.floor(Number(p.n) || 0));
@@ -109,6 +109,8 @@ function dispatchLegEvent(kind, params, id) {
     return 1;
   }
   if (kind === 'deadWall') return addDeadWall(p, id) ? 1 : null;
+  if (kind === 'golden') return addGolden(p, id) ? 1 : null;
+  if (kind === 'goldCrate') return addLegLoot('goldCrate', p, id) ? 1 : null;
   return null;
 }
 
@@ -125,6 +127,7 @@ function updateLegEvents() {
     const id = 'leg-' + G.leg + '-event-' + index, n = dispatchLegEvent(kind, params, id);
     if (n !== null) G.events.push({ id, kind, at, t: G.run, n });
   }
+  updateGoldenEvents();
 }
 // A leg record is made only when progress needs to be stored.
 function legSave(n) {
@@ -133,7 +136,7 @@ function legSave(n) {
 
 // Every gold source has a stable id within its leg. Retries keep the receipt; replays pay only
 // the supplied scrap alternative. Paying immediately protects rewards even if the train is lost.
-function payGold(itemId, amount, scrapIfNot) {
+function payGold(itemId, amount, scrapIfNot, options = {}) {
   const out = { gold: 0, scrap: 0 };
   if (!G || G.demo || G.result || typeof itemId !== 'string' || !itemId) return out;
   amount = Number(amount);
@@ -142,7 +145,7 @@ function payGold(itemId, amount, scrapIfNot) {
   amount = Math.max(0, Math.floor(amount));
   scrapIfNot = Math.max(0, Math.floor(scrapIfNot));
   const record = legSave(G.leg);
-  if (G.replay || record.won || Object.prototype.hasOwnProperty.call(record.paid, itemId)) {
+  if (G.replay || record.won || Object.prototype.hasOwnProperty.call(record.paid, itemId) || options.hunt && goldHuntPaid() >= 5) {
     out.scrap = payLootScrap(scrapIfNot);
   } else if (amount) {
     Object.defineProperty(record.paid, itemId, { value: true, enumerable: true, writable: true, configurable: true });
@@ -162,4 +165,20 @@ function payGold(itemId, amount, scrapIfNot) {
   }
   bankRun();
   return out;
+}
+// Only receipts that actually paid extra Hunt gold count toward the approved five-gold demo cap.
+function goldHuntPaid() {
+  let n = 0;
+  for (const record of Object.values(SAVE.legs)) for (const id of Object.keys(record?.paid || {})) if (id.startsWith('golden-hunt-') && record.paid[id] === true) n++;
+  return n;
+}
+// Zero-based star index. Catch awards star3 now; station stars are connected in T6.7.
+function earnLegStar(index) {
+  if (G.demo || G.leg < 3 || G.replay || G.result || index < 0 || index > 2 || !Number.isInteger(index)) return 0;
+  const record = legSave(G.leg);
+  if (record.won || record.stars[index]) return 0;
+  record.stars[index] = true;
+  const paid = payGold('star-' + (index + 1), 3, 0);
+  if (paid.gold) floatText(G.helis[0].x, G.helis[0].y - G.helis[0].alt - 20, 'STAR ' + (index + 1) + ': +3 GOLD', U.gold);
+  return paid.gold;
 }

@@ -1,11 +1,10 @@
-// skills.js - the COW CATCHER (a steel plow that throws walkers and runners aside), GOLDEN ZOMBIES
-// (rare gold ones that run away and pay big), and the ARMOR plates on the engine.
+// skills.js - scheduled golden runners and their rewards, the dormant cow catcher, and armor.
 // Also the 25mm's kill feel: a short hit-stop when one round kills 3 or more.
 
-// GOLDEN ZOMBIES: 1 in every[l] new zombies is golden at level l, the scrap one pays, its speed
-// (px/s), and how near the heli or the train (px) it starts to run away.
 const SK = {
-  gold: { every: [0, 60, 40, 25], value: 25, speed: [26, 31], fear: 190 }
+  // Gold payout/replay scrap, crossing speed/edge margin, screen lane, bounded tracking and Hunt gaps. (proposal)
+  gold: { reward: 1, scrap: 10, speed: 60, edge: 18, lane: 0.2, laneTop: 48, laneBottom: 42,
+    follow: 180, ahead: 80, huntGap: 8 }
 };
 // A tutorial moment for part D's prompts (nothing happens when they are not there).
 function skillEvent(name, data) {
@@ -64,37 +63,53 @@ function drawPlow() {
 }
 
 // ---------- GOLDEN ZOMBIES
-// A new zombie z is golden 1 time in G.up.gold (never a brute, never in the demo). Returns z.
-function goldRoll(z) {
-  if (!legAllows('gold') || !G.up.gold || z.big || Math.random() * G.up.gold >= 1) return z;
-  return makeGold(z);
-}
 // Turn zombie z golden. Returns z.
 function makeGold(z) {
   z.gold = true;
-  z.value = SK.gold.value;
+  z.silver = z.boom = false;
+  z.type = 1; z.S = pick(ZS[1]); z.big = false; z.st = 0; z.still = false;
+  z.value = 0;
   z.run = true;
   z.hp = z.max = 1;
-  z.sp = rnd(SK.gold.speed[0], SK.gold.speed[1]);
+  z.sp = SK.gold.speed;
   return z;
 }
-// Where a golden zombie runs: away from the nearest heli and from the rails, when either is near;
-// else it strolls out into the field. [x, y] on the ground.
+// One run's scheduled Hunt extras and actual spawn/catch/escape receipts, without saved counters.
+function goldState() {
+  return G.golden || (G.golden = { queue: [], events: [] });
+}
+function addGolden(params = {}, eventId = '', primary = true, itemId = 'golden-primary') {
+  if (!legAllows('gold') || G.result || mode !== 'play') return null;
+  const state = goldState(), old = state.events.find((e) => e.itemId === itemId);
+  if (old) return null;
+  const c = SK.gold, edge = params.edge === 1 ? 1 : -1;
+  const sy = clamp(VH * c.lane, c.laneTop, VH - c.laneBottom), x = G.camX + (edge < 0 ? -c.edge : W + c.edge), y = G.camY + sy;
+  const z = makeGold(makeZombie(x, y, 1));
+  const record = { itemId, primary, eventId, edge, spawnT: G.run, caughtAt: null, escapedAt: null,
+    gold: 0, scrap: 0, starGold: 0 };
+  z.goldItemId = itemId; z.goldPrimary = primary; z.goldDir = -edge; z.goldSY = sy; z.goldRecord = record;
+  z.left = edge > 0;
+  state.events.push(record); G.zombies.push(z);
+  if (primary) {
+    const n = clamp(Math.floor(G.up.goldHunt || 0), 0, 3);
+    for (let i = 1; i <= n; i++) state.queue.push({ at: G.run + i * c.huntGap,
+      edge: i & 1 ? -edge : edge, itemId: 'golden-hunt-' + i });
+  }
+  return z;
+}
+function updateGoldenEvents() {
+  if (!legAllows('gold') || G.result || mode !== 'play') return;
+  const state = goldState();
+  while (state.queue.length && state.queue[0].at <= G.run + 1e-9) {
+    const q = state.queue.shift(), id = 'leg-' + G.leg + '-' + q.itemId;
+    if (addGolden(q, id, false, q.itemId)) G.events.push({ id, kind: 'golden', at: q.at, t: G.run, n: 1 });
+  }
+}
+// A straight crossing tracks a visible lane; horde.js applies bounded movement toward it.
 const GF = [0, 0];
 function goldFlee(z) {
-  let hx = 1e9, hy = 1e9;
-  for (const h of G.helis) if (Math.hypot(h.x - z.x, h.y - z.y) < Math.hypot(hx - z.x, hy - z.y)) [hx, hy] = [h.x, h.y];
-  const F = SK.gold.fear;
-  const ax = z.x - hx, ay = (z.y - hy) / FORE, ad = Math.hypot(ax, ay) || 1, side = z.x < trackX(z.y) ? -1 : 1;
-  const rd = Math.abs(z.x - trackX(z.y));
-  let vx = side * (rd < F ? 1.2 * (1 - rd / F) + 0.2 : 0.15), vy = -0.15;
-  if (ad < F) {
-    const w = 1.6 * (1 - ad / F) + 0.3;
-    vx += ax / ad * w;
-    vy += ay / ad * w;
-  }
-  GF[0] = z.x + vx * 60;
-  GF[1] = z.y + vy * 60 * FORE;
+  GF[0] = z.x + (z.goldDir || (z.left ? -1 : 1)) * SK.gold.ahead;
+  GF[1] = G.camY + (z.goldSY ?? VH * SK.gold.lane);
   return GF;
 }
 // A golden zombie dies: a gold ring, a burst of gold, a shower of coins to the counter and a chime.
@@ -108,6 +123,15 @@ function goldKill(z, sc) {
       max: 0.8, s: 1, c: pick(['#fff6c0', '#ffd24a', '#e3b04b']), add: true, drag: 1.5 });
   }
   if (!sc) return;
+  if (z.goldItemId) {
+    const paid = payGold(z.goldItemId, SK.gold.reward, SK.gold.scrap, { hunt: !z.goldPrimary });
+    const starGold = z.goldPrimary ? earnLegStar(2) : 0;
+    if (z.goldRecord) Object.assign(z.goldRecord, { caughtAt: G.run, gold: paid.gold, scrap: paid.scrap, starGold });
+    if (z.goldPrimary) G.goldenCaught = true;
+    z.paid += paid.scrap;
+    if (paid.gold) { floatText(z.x, z.y - z.S.h - 4, '+1 GOLD', U.gold); currencyCoins('gold', z.x, z.y, 1); }
+    if (paid.scrap) addTotal(z.x, z.y - z.S.h, paid.scrap, U.blue, scrapPopScale(false));
+  }
   for (let k = 0; k < 10 && coins.length < 60; k++) coins.push({ x0: z.x - G.camX + rnd(-5, 5), y0: z.y - G.camY - 8 + rnd(-4, 4), t: -k * 0.04, T: rnd(0.55, 0.8) });
   SFX.gold();
 }
@@ -133,7 +157,7 @@ function goldSpr(src) {
 function drawGold(z) {
   if (z.flash > 0 || thermal) return false;
   const S = z.S, f = (z.anim | 0) & 3;
-  if (!S.gold) S.gold = S.walk.map((fr) => [goldSpr(fr.n), goldSpr(fr.nf)]);
+  if (!S.gold) return false;
   blit(S.gold[f][z.left ? 1 : 0], Math.round(z.x - S.ax), Math.round(z.y - S.ay));
   // two sparkles that blink round it
   for (let i = 0; i < 2; i++) {
@@ -152,16 +176,22 @@ function drawGold(z) {
 
 // ---------- each step
 function updateSkills(dt) {
-  if (!G.up.gold) return;
   for (const z of G.zombies) {
-    if (!z.gold || z.dead || offView(z.x, z.y, 0)) continue;
+    if (!z.gold || z.dead) continue;
+    const sx = z.x - G.camX;
+    if (z.goldItemId && (z.gone || z.goldDir > 0 && sx > W + SK.gold.edge || z.goldDir < 0 && sx < -SK.gold.edge)) {
+      z.gone = true;
+      if (z.goldRecord && z.goldRecord.escapedAt == null) z.goldRecord.escapedAt = G.run;
+      continue;
+    }
+    if (offView(z.x, z.y, 0)) continue;
     // a soft gold glow
     lights.push({ x: z.x, y: z.y, z: 6, r: 12, c: '#ffd24a', life: 0.03, max: 0.03, a: 0.35 });
     if (!G.goldSeen && !offView(z.x, z.y, -24)) {
       G.goldSeen = true;
-      floatText(z.x, z.y - z.S.h - 4, 'GOLD! ' + SK.gold.value + ' SCRAP', U.gold);
+      floatText(z.x, z.y - z.S.h - 4, 'CATCH THE GOLDEN ZOMBIE!', U.gold);
       SFX.coin();
-      skillEvent('golden_seen', { z, value: SK.gold.value });
+      skillEvent('golden_seen', { z, value: SK.gold.reward });
     }
   }
 }

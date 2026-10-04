@@ -23,6 +23,18 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  // Golden event receipts and live chase positions, copied independently of actors and sprites.
+  goldState: () => {
+    if (!G) return null;
+    const s = goldState(), sets = ZS.flat(), frames = sets.flatMap((S) => S.gold ? S.gold.flat() : []);
+    return { events: s.events.map((e) => ({ ...e })), queue: s.queue.map((q) => ({ ...q })),
+      active: G.zombies.filter((z) => z.gold && !z.dead && !z.gone).map((z) => ({
+        itemId: z.goldItemId, primary: !!z.goldPrimary, x: z.x, y: z.y, sx: z.x - G.camX,
+        sy: z.y - G.camY, hp: z.hp, dir: z.goldDir, lane: z.goldSY, type: z.type })),
+      huntGoldPaid: Object.values(SAVE.legs).reduce((n, l) => n + Object.keys(l.paid || {}).filter((id) =>
+        id.startsWith('golden-hunt-') && l.paid[id] === true).length, 0),
+      art: { sets: sets.length, frames: frames.length, atlas: frames.length > 0 && frames.every((f) => !!ATL.get(f)) } };
+  },
   // Actual wall state, with no live target or sprite references.
   wallState: () => G ? G.walls.map(testWallView) : [],
   // QA-only wall placement through the real event handler; does not change rewards or ownership.

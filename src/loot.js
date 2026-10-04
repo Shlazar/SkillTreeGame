@@ -1,16 +1,17 @@
 // loot.js - timeline finds: scrap piles on wrecks and supply crates in burnt farms. Fly the Viper
-// near a find to collect it; it flies up to the heli and pays. Gold crates and the bus-roof rescue
-// keep their collection mechanics for their later leg events. G.loot resets in newGame().
+// near a find to collect it; it flies up to the heli and pays. Golden crates bank at pickup;
+// the bus-roof rescue keeps its collection mechanics for later leg events. G.loot resets in newGame().
 
 // pile: scrap paid. crate: its guards, how near the heli wakes them,
 // how near the heli its edge arrow shows, how far along the rails ahead of the train its guards are
-// placed. gold / sos: km, px from the rails, side (1 east, -1 west), how near the heli their arrow
+// placed. gold: first gold payment / retry scrap, arrow reach. sos: km, px from the rails, side,
+// (1 east, -1 west), how near the heli its arrow
 // shows. sos.reach = px the heli must hover within for the Winch. fly = seconds a find takes to fly
 // up to the heli. Leg events supply the position and can override scrap paid.
 const LOOT = {
   pile: { pay: 15 },
   crate: { pay: 50, guards: 8, wake: 120, arrow: 450, place: 500 },
-  gold: { km: 0.32, off: 250, side: -1, pay: 150, arrow: 700 },
+  gold: { pay: 5, scrap: 25, arrow: 700 },
   sos: { km: 1.2, off: 220, side: 1, reach: 20, arrow: 700 },
   fly: 0.3
 };
@@ -79,8 +80,10 @@ function addFind(kind, k, px, side, pay) {
     put(PROPS.barrel[0], f.x + 12, f.y - 6);
     f.top = put(LART.crate, f.x, f.y);
     f.zs = [];
-  } else if (kind === 'gold') f.top = put(LART.gold, f.x, f.y);
-  else {
+  } else if (kind === 'gold') {
+    f.top = put(LART.gold, f.x, f.y);
+    f.rewardId = 'gold-crate';
+  } else {
     f.top = put(LART.bus, f.x, f.y);
     f.stage = 'wait';
     f.w = 0;
@@ -96,7 +99,8 @@ function rollLoot() {
 // A timeline drop starts beside the rails, then its whole prop group stays inside the usable view.
 // Defaults for forward distance, side offset and viewport margins are placement proposals.
 function addLegLoot(kind, params = {}, eventId = '') {
-  if (!G || G.demo || G.result || mode !== 'play' || !['pile', 'crate'].includes(kind)) return null;
+  if (kind === 'goldCrate') kind = 'gold';
+  if (!G || G.demo || G.result || mode !== 'play' || !['pile', 'crate', 'gold'].includes(kind)) return null;
   if (!params || typeof params !== 'object') params = {};
   const num = (key, fallback) => Number.isFinite(params[key]) ? params[key] : fallback;
   const id = typeof eventId === 'string' && eventId ? eventId : 'leg-' + G.leg + '-' + kind + '-' + G.loot.length;
@@ -105,7 +109,7 @@ function addLegLoot(kind, params = {}, eventId = '') {
   const c = LEGLOOTC, ahead = clamp(num('ahead', c.ahead), 0, c.maxAhead);
   const off = clamp(num('off', c.off), c.minOff, Math.min(c.maxOff, W * c.widthFrac));
   const side = num('side', 1) < 0 ? -1 : 1, s = clamp(G.tr.s - ahead, G.goalS + c.goalPad, G.tr.startS - c.startPad);
-  const pay = Math.max(0, Math.floor(num('pay', LOOT[kind].pay)));
+  const pay = kind === 'gold' ? LOOT.gold.pay : Math.max(0, Math.floor(num('pay', LOOT[kind].pay)));
   const f = addFind(kind, kmAt(s), off, side, pay);
   const x = Math.round(clamp(f.x, G.camX + c.viewX, G.camX + W - c.viewX));
   const y = Math.round(clamp(f.y, G.camY + c.viewTop, G.camY + VH - c.viewBottom)), dx = x - f.x, dy = y - f.y;
@@ -142,7 +146,7 @@ function updateLoot(dt) {
     const [h, d] = lootHeli(f);
     if (!f.seen && live && (!offView(f.x, f.y, -12) || (f.kind !== 'pile' && d < (LOOT[f.kind].arrow || 0)))) {
       f.seen = true;
-      lootTut(f.kind + '_seen', f.kind === 'sos' ? { winch: !!G.up.winch } : { x: f.x, y: f.y });
+      lootTut(f.kind === 'gold' ? 'gold_crate_seen' : f.kind + '_seen', f.kind === 'sos' ? { winch: !!G.up.winch } : { x: f.x, y: f.y });
     }
     if (f.kind === 'crate') crateStep(f, d, dt);
     if (f.kind === 'sos') {
@@ -151,7 +155,7 @@ function updateLoot(dt) {
     }
     if (live && d <= G.up.pickup) takeLoot(f, h);
   }
-  // finds flying up to the heli; they pay when they get there
+  // Finds finish their pickup flight; golden crates already banked their reward at pickup.
   for (let i = G.lootFly.length - 1; i >= 0; i--) {
     const q = G.lootFly[i];
     q.t += dt;
@@ -163,31 +167,36 @@ function updateLoot(dt) {
 }
 // A find is taken by heli h: it flies up to it (the pile's heap or the crate leaves the ground).
 function takeLoot(f, h) {
+  if (!f || f.gone) return;
   f.gone = true;
+  // Bank once at real pickup; the following flight is cosmetic even if the run ends meanwhile.
+  if (f.kind === 'gold') f.reward = payGold(f.rewardId, LOOT.gold.pay, LOOT.gold.scrap);
   const i = G.statics.indexOf(f.top);
   if (i >= 0) G.statics.splice(i, 1);
   G.lootFly.push({ f, h: h || G.helis[0], spr: f.top.d, x0: f.x, y0: f.y, t: 0, T: LOOT.fly });
   juicePop(f.x, f.y, f.kind !== 'pile');
   SFX.lootUp();
 }
-// It reached heli h: the pay, a chime, coins to the counter.
+// It reached heli h: pay scrap or display the banked gold receipt, a chime and counter coins.
 function lootPaid(f, h) {
   const gx = h.x, gy = h.y - h.alt + 14, big = f.kind !== 'pile';
-  const pay = payLootScrap(f.pay);
+  const reward = f.kind === 'gold' ? f.reward || { gold: 0, scrap: 0 } : null;
+  const pay = reward ? reward.scrap : payLootScrap(f.pay);
   if (pay > 0) addTotal(gx, gy - 14, pay, U.blue, scrapPopScale(big));
+  if (reward?.gold > 0) addTotal(gx, gy - 14, reward.gold, U.gold, 2);
   coinPop(gx, gy, f.kind === 'gold' ? 16 : big ? 8 : 4);
   const n = f.kind === 'gold' ? 14 : big ? 7 : 4;
-  currencyCoins('scrap', gx, gy, n);
+  if (reward?.gold > 0) currencyCoins('gold', gx, gy, n);
+  else if (pay > 0) currencyCoins('scrap', gx, gy, n);
   if (f.kind === 'gold') {
     SFX.golden();
     for (let k = 0; k < 26; k++) part({ x: gx, y: gy, z: 12, vx: rnd(-50, 50), vy: rnd(-30, 30), vz: rnd(30, 90), g: 160, life: rnd(0.6, 1.1), max: 1.1, s: 1,
       c: pick(['#ffd36a', '#fff1c2', '#e3b04b']), add: true, drag: 1 });
     rings.push({ x: gx, y: gy, r0: 4, r1: 40, t: 0, T: 0.45, c: '#ffd36a', w: 2 });
-    SAVE.flags.gold = true;
-    bankRun();
   } else if (f.kind === 'crate') SFX.crate();
   else SFX.coin();
-  lootTut(f.kind + '_taken', { pay });
+  lootTut(f.kind === 'gold' ? 'gold_crate_taken' : f.kind + '_taken',
+    reward ? { id: f.rewardId, eventId: f.eventId, gold: reward.gold, scrap: pay, pay } : { pay });
 }
 // The guards: placed when the train comes near, standing still until the heli is close (or one of
 // them is shot).
@@ -430,7 +439,8 @@ Object.assign(window.__sr, {
   // still holds it back on the next step). lootTake(i): take find i at once. lootSpawn(kind): a find
   // of that kind (pile, crate, gold, sos) right under the heli.
   loot: () => (G.loot || []).map((f, i) => ({ i, kind: f.kind, eventId: f.eventId || null, km: f.km, s: f.s,
-    off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, gone: f.gone, seen: f.seen,
+    off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, rewardId: f.rewardId || null,
+    reward: f.reward ? { ...f.reward } : null, gone: f.gone, seen: f.seen,
     stage: f.stage, w: f.w, placed: f.placed, awake: f.awake, guards: f.zs ? f.zs.filter((z) => !z.dead).length : 0 })),
   lootGo: (i) => {
     const f = G.loot[i], h = G.helis[0];

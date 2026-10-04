@@ -306,10 +306,9 @@ function pack(n, hx, hy) {
     G.zombies.push(newDead(hx + Math.cos(b) * r, hy + Math.sin(b) * r * FORE, pickType(false)));
   }
 }
-// A new zombie of a type, rolled golden or silver.
+// A normal leg zombie; golden runners are explicit timeline events, never a random variant.
 function newDead(x, y, type) {
-  const z = makeZombie(x, y, legSpawnType(type));
-  return z.silver ? z : goldRoll(z);
+  return makeZombie(x, y, legSpawnType(type));
 }
 
 // ---------- streams and waves
@@ -517,6 +516,10 @@ function updateZombies(dt) {
     if (escort) sp = Math.min(sp, d * ESCORTC.approach);
     z.vx = ux * sp + z.kbx;
     z.vy = uy * sp * FORE + z.kby;
+    if (z.gold) {
+      z.vx = (z.goldDir || (z.left ? -1 : 1)) * sp + z.kbx;
+      z.vy = clamp((ty - z.y) / dt, -SK.gold.follow * FORE, SK.gold.follow * FORE) + z.kby;
+    }
     z.x += z.vx * dt;
     z.y += z.vy * dt;
     const fireBlocked = BURNWALL.length && blockBurnWall(z, z.fireX, z.fireY);

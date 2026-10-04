@@ -466,6 +466,13 @@ function prop(spr, block, extra) {
   return Object.assign({ spr, sh: castShadow(spr), ax: spr.width >> 1, ay: spr.height - 1, block: block || 0 }, extra || {});
 }
 const PROPS = { pine: [], oak: [], fall: [], dead: [], bush: [], rock: [], big: [], stump: [], wreck: [], burnt: [], barrel: [], crate: [], wall: [], pole: [] };
+// Golden runners reuse the same outlines and poses; all colors are cached before the first frame.
+function bakeGoldenHorde() {
+  for (const group of ZS) for (const S of group) {
+    S.gold = S.walk.map((fr) => [goldSpr(fr.n), goldSpr(fr.nf)]);
+    for (const frames of S.gold) for (const frame of frames) atl(frame);
+  }
+}
 // Composite footprint/face anchor in px; wreck thermal brightness stays below living bodies (proposal)
 const DEADWALLART = { n: null, h: null, sh: null, flash: null, w: 80, height: 48, ax: 40, ay: 46, d: null };
 function bakeDeadWall() {
@@ -671,6 +678,7 @@ function initSprites() {
   // the dead: 8 walkers, 4 runners and 3 brutes, each in its own clothes
   // (the horde's own look is in horde.js)
   makeHordeSprites();
+  bakeGoldenHorde();
   // trees and scenery
   const PINE = [['#142018', '#1d2b20', '#2f4229'], ['#101a14', '#18241b', '#283a26'], ['#1a261c', '#243323', '#35492d']];
   for (let k = 0; k < 10; k++) PROPS.pine.push(prop(pineSpr(24 + ((rng() * 16) | 0), rng, PINE[k % 3]), 3, { tree: true }));
