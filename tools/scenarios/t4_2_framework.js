@@ -35,6 +35,8 @@ function clickWorld(x, y, button = 0) {
 }
 function planeShot(kind) {
   const f = freshPlane(kind === 'two' ? 2 : 1, false);
+  // Keep natural crowds, but reserve the plane's charges for this controlled band state.
+  __sr.bot(false);
   __sr.sim(8); __sr.frames(240);
   if (kind === 'used') {
     const s = __sr.stats();

@@ -15,7 +15,7 @@ const JETC = { speed: 320, alt: 46, dive: 12, len: 230, lead: 44, step: 4, half:
 // ---------- the jet
 // A twin-engine attack jet seen from right above, its nose up: straight wings with bombs under
 // them, engines on the back of the body, a wide tail with a fin at each end.
-const JET = { n: [], sh: [], icon: null, bomb: null };
+const JET = { n: [], sh: [], hot: [], icon: null, bomb: null };
 function jetRaw() {
   return pix(62, 54, (r) => {
     const L = '#c3cad0', A = '#a1a9b1', B = '#848d96', D = '#636b74', E = '#454b53', K = '#18191c';
@@ -94,18 +94,19 @@ function jetSpriteBounds(c) {
 // Build the jet at JETC.N headings (0 = nose up, clockwise), its shadow and its card icon. At startup.
 function bakeJet() {
   const raw = jetRaw();
-  JET.n.length = JET.sh.length = 0;
+  JET.n.length = JET.sh.length = JET.hot.length = 0;
   for (let i = 0; i < JETC.N; i++) {
     const r = rotA(raw, i / JETC.N * TAU);
-    JET.n.push(jetSpriteBounds(selOut(r)));
+    JET.n.push(jetSpriteBounds(selOut(rimLight(r, '#e8e2cc', 0.2))));
     JET.sh.push(jetSpriteBounds(tint(r, '#000', 1, 'source-in')));
+    JET.hot.push(jetSpriteBounds(outline(hotSpr(r, 150), '#161616')));
   }
   JET.bomb = outline(pix(3, 6, (r) => {
     r(0, 0, 3, 5, '#565c46');
     r(0, 0, 1, 5, '#7a8262');
     r(0, 5, 3, 1, '#2d3036');
   }), P.out);
-  for (const c of [...JET.n, ...JET.sh, JET.bomb]) atl(c);
+  for (const c of [...JET.n, ...JET.sh, ...JET.hot, JET.bomb]) atl(c);
 }
 bakeJet();
 

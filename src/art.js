@@ -257,17 +257,16 @@ const TXC = new Map();
 function text(s, x, y, col, o) {
   o = o || {};
   s = String(s).toUpperCase();
-  const sc = o.scale || 1, w = tw(s, sc);
-  if (o.align === 'center') x -= w / 2;
-  else if (o.align === 'right') x -= w;
-  x = Math.round(x); y = Math.round(y);
+  const sc = o.scale || 1;
   const ol = o.outline === false ? '' : (o.outline || '#07080a');
   const key = s + '|' + (col || '') + '|' + sc + '|' + ol + (o.drop ? '|d' : '');
   let c = TXC.get(key);
   if (!c) {
     if (TXC.size > 700) TXC.clear();
+    const w = tw(s, sc);
     let g;
     [c, g] = mk(w + sc * 2, 7 * sc + sc * (o.drop ? 3 : 2));
+    c.textWidth = w;
     if (ol) {
       const a = fontT(ol);
       dstrG(g, a, s, 0, sc, sc); dstrG(g, a, s, sc * 2, sc, sc); dstrG(g, a, s, sc, 0, sc); dstrG(g, a, s, sc, sc * 2, sc);
@@ -276,6 +275,11 @@ function text(s, x, y, col, o) {
     dstrG(g, fontT(col || '#e8dfc8'), s, sc, sc, sc);
     TXC.set(key, c);
   }
+  // The cached image keeps its exact measured width, including non-integer text scales.
+  const w = c.textWidth;
+  if (o.align === 'center') x -= w / 2;
+  else if (o.align === 'right') x -= w;
+  x = Math.round(x); y = Math.round(y);
   ctx.drawImage(c, x - sc, y - sc);
   return w;
 }
@@ -309,16 +313,21 @@ function light(x, y, rad, col, a) {
   // (big glows cost the most and wash out the bright ground: none is wider than 76 px)
   if (rad > 38) rad = 38 + (rad - 38) * 0.5;
   ctx.globalAlpha = clamp(a == null ? 1 : a, 0, 1);
-  blit(glow(col), Math.round(x - rad), Math.round(y - rad), Math.round(rad * 2), Math.round(rad * 2));
+  const x0 = Math.round(x - rad), y0 = Math.round(y - rad), diameter = Math.round(rad * 2);
+  // All callers draw in world space. The maximum rounded shake/kick is eight pixels per axis.
+  // Keep the alpha assignment above: callers can use that drawing state after an invisible glow.
+  if (G && (x0 + diameter <= G.camX - 8 || x0 >= G.camX + W + 8 ||
+    y0 + diameter <= G.camY - 8 || y0 >= G.camY + VH + 8)) return;
+  blit(glow(col), x0, y0, diameter, diameter);
 }
-// Filled pixel circle. From radius 3 up it is drawn once into a small canvas (kept per colour and
+// Filled pixel circle. From radius 1 up it is drawn once into a small canvas (kept per colour and
 // radius) and copied from there: a blast or a cloud of smoke is many of them every frame.
 const PCIRC = new Map();
 function pcirc(x, y, r, col) {
   if (r < 0.5) return;
   x = Math.round(x); y = Math.round(y);
   const R = Math.round(r);
-  if (R >= 3 && R <= 24) {
+  if (R >= 1 && R <= 24) {
     const key = col + R;
     let c = PCIRC.get(key);
     if (!c) {
@@ -338,25 +347,56 @@ function pcirc(x, y, r, col) {
     ctx.fillRect(x - w, y + dy, w * 2 + 1, 1);
   }
 }
-// Pixel ellipse outline, drawn as dots. Each size and colour is drawn once into a small canvas
-// (kept) and copied from there: a blast's rings are hundreds of dots every frame.
-const PELL = new Map();
+// Pixel ellipse outlines retain the original angular samples. Horizontal runs share geometry
+// across colours; bounded bitmap caches keep every repeated draw to one native image copy.
+const PELL = new Map(), PELL_SHAPES = new Map();
+function pellShape(RX, RY) {
+  const key = RX + '|' + RY;
+  let shape = PELL_SHAPES.get(key);
+  if (shape) {
+    PELL_SHAPES.delete(key);
+    PELL_SHAPES.set(key, shape);
+    return shape;
+  }
+  const rows = Array.from({ length: RY * 2 + 1 }, () => new Map());
+  const n = Math.max(16, Math.ceil((RX + RY) * 1.7));
+  for (let i = 0; i < n; i++) {
+    const a = i / n * TAU, x = Math.round(RX + Math.cos(a) * RX), y = Math.round(RY + Math.sin(a) * RY);
+    rows[y].set(x, (rows[y].get(x) || 0) + 1);
+  }
+  const runs = [];
+  for (let y = 0; y < rows.length; y++) {
+    const pixels = [...rows[y]].sort((a, b) => a[0] - b[0]);
+    for (let i = 0; i < pixels.length;) {
+      const [x, count] = pixels[i];
+      let w = 1;
+      while (i + w < pixels.length && pixels[i + w][0] === x + w && pixels[i + w][1] === count) w++;
+      runs.push([x, y, w, count]);
+      i += w;
+    }
+  }
+  shape = { runs };
+  if (PELL_SHAPES.size >= 512) PELL_SHAPES.delete(PELL_SHAPES.keys().next().value);
+  PELL_SHAPES.set(key, shape);
+  return shape;
+}
 function pell(x, y, rx, ry, col) {
-  const RX = Math.max(1, Math.round(rx)), RY = Math.max(1, Math.round(ry)), key = col + RX + '|' + RY;
+  const RX = Math.max(1, Math.round(rx)), RY = Math.max(1, Math.round(ry));
+  const px = Math.round(x) - RX, py = Math.round(y) - RY;
+  // Repeated-sample alpha builds inside the cached image before the caller's globalAlpha.
+  // Runs with equal sample counts batch identical pixels during the first colour bake.
+  const key = col + RX + '|' + RY;
   let c = PELL.get(key);
   if (!c) {
-    if (PELL.size > 500) PELL.clear();
+    const shape = pellShape(RX, RY);
     let g;
     [c, g] = mk(RX * 2 + 1, RY * 2 + 1);
     g.fillStyle = col;
-    const n = Math.max(16, Math.ceil((RX + RY) * 1.7));
-    for (let i = 0; i < n; i++) {
-      const a = i / n * TAU;
-      g.fillRect(Math.round(RX + Math.cos(a) * RX), Math.round(RY + Math.sin(a) * RY), 1, 1);
-    }
-    PELL.set(key, c);
-  }
-  ctx.drawImage(c, Math.round(x) - RX, Math.round(y) - RY);
+    for (const [x, y, w, count] of shape.runs) for (let i = 0; i < count; i++) g.fillRect(x, y, w, 1);
+    if (PELL.size >= 512) PELL.delete(PELL.keys().next().value);
+  } else PELL.delete(key);
+  PELL.set(key, c);
+  ctx.drawImage(c, px, py);
 }
 // 1-pixel rectangle outline without the corner pixels.
 function frame(x, y, w, h, col) {

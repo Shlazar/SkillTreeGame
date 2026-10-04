@@ -4,7 +4,7 @@ const F4C = {
   // Base fire-line length, DPS, patch radius/spacing and filled-preview opacity (proposal)
   length: 230, damage: 2, radius: 14, step: 18, previewAlpha: 0.16
 };
-const F4 = { n: [], sh: [] };
+const F4 = { n: [], sh: [], hot: [] };
 function f4Raw() {
   return pix(62, 64, (r) => {
     const L = '#c3cad0', A = '#a1a9b1', B = '#848d96', D = '#636b74', E = '#454b53', K = '#18191c';
@@ -50,10 +50,11 @@ function bakeF4() {
   const raw = f4Raw();
   for (let i = 0; i < JETC.N; i++) {
     const r = rotA(raw, i / JETC.N * TAU);
-    F4.n.push(jetSpriteBounds(selOut(r)));
+    F4.n.push(jetSpriteBounds(selOut(rimLight(r, '#e8e2cc', 0.2))));
     F4.sh.push(jetSpriteBounds(tint(r, '#000', 1, 'source-in')));
+    F4.hot.push(jetSpriteBounds(outline(hotSpr(r, 150), '#161616')));
   }
-  for (const c of [...F4.n, ...F4.sh]) atl(c);
+  for (const c of [...F4.n, ...F4.sh, ...F4.hot]) atl(c);
 }
 bakeF4();
 

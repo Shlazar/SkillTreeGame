@@ -23,7 +23,8 @@
 // SCALE = screen pixels per game pixel.
 const STEP = 1 / 60, TAU = Math.PI * 2, FORE = 0.72;
 const cv = document.getElementById('c');
-const ctx = cv.getContext('2d', { alpha: false });
+// Horde and effects layers read pixels every frame; keep their destination in CPU memory.
+const ctx = cv.getContext('2d', { alpha: false, willReadFrequently: true });
 ctx.imageSmoothingEnabled = false;
 const REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 let W = 640, H = 360, VH = 360, SCALE = 2, zoomStep = 0;
@@ -449,17 +450,16 @@ const TXC = new Map();
 function text(s, x, y, col, o) {
   o = o || {};
   s = String(s).toUpperCase();
-  const sc = o.scale || 1, w = tw(s, sc);
-  if (o.align === 'center') x -= w / 2;
-  else if (o.align === 'right') x -= w;
-  x = Math.round(x); y = Math.round(y);
+  const sc = o.scale || 1;
   const ol = o.outline === false ? '' : (o.outline || '#07080a');
   const key = s + '|' + (col || '') + '|' + sc + '|' + ol + (o.drop ? '|d' : '');
   let c = TXC.get(key);
   if (!c) {
     if (TXC.size > 700) TXC.clear();
+    const w = tw(s, sc);
     let g;
     [c, g] = mk(w + sc * 2, 7 * sc + sc * (o.drop ? 3 : 2));
+    c.textWidth = w;
     if (ol) {
       const a = fontT(ol);
       dstrG(g, a, s, 0, sc, sc); dstrG(g, a, s, sc * 2, sc, sc); dstrG(g, a, s, sc, 0, sc); dstrG(g, a, s, sc, sc * 2, sc);
@@ -468,6 +468,11 @@ function text(s, x, y, col, o) {
     dstrG(g, fontT(col || '#e8dfc8'), s, sc, sc, sc);
     TXC.set(key, c);
   }
+  // The cached image keeps its exact measured width, including non-integer text scales.
+  const w = c.textWidth;
+  if (o.align === 'center') x -= w / 2;
+  else if (o.align === 'right') x -= w;
+  x = Math.round(x); y = Math.round(y);
   ctx.drawImage(c, x - sc, y - sc);
   return w;
 }
@@ -501,16 +506,21 @@ function light(x, y, rad, col, a) {
   // (big glows cost the most and wash out the bright ground: none is wider than 76 px)
   if (rad > 38) rad = 38 + (rad - 38) * 0.5;
   ctx.globalAlpha = clamp(a == null ? 1 : a, 0, 1);
-  blit(glow(col), Math.round(x - rad), Math.round(y - rad), Math.round(rad * 2), Math.round(rad * 2));
+  const x0 = Math.round(x - rad), y0 = Math.round(y - rad), diameter = Math.round(rad * 2);
+  // All callers draw in world space. The maximum rounded shake/kick is eight pixels per axis.
+  // Keep the alpha assignment above: callers can use that drawing state after an invisible glow.
+  if (G && (x0 + diameter <= G.camX - 8 || x0 >= G.camX + W + 8 ||
+    y0 + diameter <= G.camY - 8 || y0 >= G.camY + VH + 8)) return;
+  blit(glow(col), x0, y0, diameter, diameter);
 }
-// Filled pixel circle. From radius 3 up it is drawn once into a small canvas (kept per colour and
+// Filled pixel circle. From radius 1 up it is drawn once into a small canvas (kept per colour and
 // radius) and copied from there: a blast or a cloud of smoke is many of them every frame.
 const PCIRC = new Map();
 function pcirc(x, y, r, col) {
   if (r < 0.5) return;
   x = Math.round(x); y = Math.round(y);
   const R = Math.round(r);
-  if (R >= 3 && R <= 24) {
+  if (R >= 1 && R <= 24) {
     const key = col + R;
     let c = PCIRC.get(key);
     if (!c) {
@@ -530,25 +540,56 @@ function pcirc(x, y, r, col) {
     ctx.fillRect(x - w, y + dy, w * 2 + 1, 1);
   }
 }
-// Pixel ellipse outline, drawn as dots. Each size and colour is drawn once into a small canvas
-// (kept) and copied from there: a blast's rings are hundreds of dots every frame.
-const PELL = new Map();
+// Pixel ellipse outlines retain the original angular samples. Horizontal runs share geometry
+// across colours; bounded bitmap caches keep every repeated draw to one native image copy.
+const PELL = new Map(), PELL_SHAPES = new Map();
+function pellShape(RX, RY) {
+  const key = RX + '|' + RY;
+  let shape = PELL_SHAPES.get(key);
+  if (shape) {
+    PELL_SHAPES.delete(key);
+    PELL_SHAPES.set(key, shape);
+    return shape;
+  }
+  const rows = Array.from({ length: RY * 2 + 1 }, () => new Map());
+  const n = Math.max(16, Math.ceil((RX + RY) * 1.7));
+  for (let i = 0; i < n; i++) {
+    const a = i / n * TAU, x = Math.round(RX + Math.cos(a) * RX), y = Math.round(RY + Math.sin(a) * RY);
+    rows[y].set(x, (rows[y].get(x) || 0) + 1);
+  }
+  const runs = [];
+  for (let y = 0; y < rows.length; y++) {
+    const pixels = [...rows[y]].sort((a, b) => a[0] - b[0]);
+    for (let i = 0; i < pixels.length;) {
+      const [x, count] = pixels[i];
+      let w = 1;
+      while (i + w < pixels.length && pixels[i + w][0] === x + w && pixels[i + w][1] === count) w++;
+      runs.push([x, y, w, count]);
+      i += w;
+    }
+  }
+  shape = { runs };
+  if (PELL_SHAPES.size >= 512) PELL_SHAPES.delete(PELL_SHAPES.keys().next().value);
+  PELL_SHAPES.set(key, shape);
+  return shape;
+}
 function pell(x, y, rx, ry, col) {
-  const RX = Math.max(1, Math.round(rx)), RY = Math.max(1, Math.round(ry)), key = col + RX + '|' + RY;
+  const RX = Math.max(1, Math.round(rx)), RY = Math.max(1, Math.round(ry));
+  const px = Math.round(x) - RX, py = Math.round(y) - RY;
+  // Repeated-sample alpha builds inside the cached image before the caller's globalAlpha.
+  // Runs with equal sample counts batch identical pixels during the first colour bake.
+  const key = col + RX + '|' + RY;
   let c = PELL.get(key);
   if (!c) {
-    if (PELL.size > 500) PELL.clear();
+    const shape = pellShape(RX, RY);
     let g;
     [c, g] = mk(RX * 2 + 1, RY * 2 + 1);
     g.fillStyle = col;
-    const n = Math.max(16, Math.ceil((RX + RY) * 1.7));
-    for (let i = 0; i < n; i++) {
-      const a = i / n * TAU;
-      g.fillRect(Math.round(RX + Math.cos(a) * RX), Math.round(RY + Math.sin(a) * RY), 1, 1);
-    }
-    PELL.set(key, c);
-  }
-  ctx.drawImage(c, Math.round(x) - RX, Math.round(y) - RY);
+    for (const [x, y, w, count] of shape.runs) for (let i = 0; i < count; i++) g.fillRect(x, y, w, 1);
+    if (PELL.size >= 512) PELL.delete(PELL.keys().next().value);
+  } else PELL.delete(key);
+  PELL.set(key, c);
+  ctx.drawImage(c, px, py);
 }
 // 1-pixel rectangle outline without the corner pixels.
 function frame(x, y, w, h, col) {
@@ -2158,7 +2199,8 @@ function stampCorpse(S, x, y) {
 const BC = ['#ffffff', '#fff3b0', '#ffd25a', '#ffa23a', '#f0702a', '#8f8a83', '#aca79f', '#cac5bd'];
 
 // Particles. add = true: only the glowing ones (drawn with 'lighter'), false: only the others.
-function drawParts(add) {
+function drawParts(add, pixels = false) {
+  const g = pixels ? FXPIX : ctx, circle = pixels ? fxPixelCircle : pcirc;
   // (the alpha in eighths, and the colour and alpha only set when they change: most are drops of
   // blood and dirt at full alpha, so a thousand of them cost little)
   let la = -1, lc = '';
@@ -2167,18 +2209,19 @@ function drawParts(add) {
     // Strikes throw effects beyond the field. Keep a margin for smoke growth and camera shake.
     if (offView(p.x, p.y - p.z, p.s + 12)) continue;
     const a = add || p.smoke ? clamp(Math.ceil((p.smoke ? Math.min(1, p.life / p.max * 1.5) : p.life / p.max) * 8) / 8, 0, 1) : 1;
-    if (a !== la) { ctx.globalAlpha = la = a; }
-    if (p.c !== lc) { ctx.fillStyle = lc = p.c; }
+    if (a !== la) { g.globalAlpha = la = a; }
+    if (p.c !== lc) { g.fillStyle = lc = p.c; }
     const s = Math.max(1, Math.round(p.s));
     // (a big puff of smoke is round)
-    if (p.smoke && s >= 5) pcirc(p.x, p.y - p.z, s / 2, p.c);
-    else ctx.fillRect(Math.round(p.x - s / 2), Math.round(p.y - p.z - s / 2), s, s);
+    if (p.smoke && s >= 5) circle(p.x, p.y - p.z, s / 2, p.c);
+    else g.fillRect(Math.round(p.x - s / 2), Math.round(p.y - p.z - s / 2), s, s);
   }
-  ctx.globalAlpha = 1;
+  g.globalAlpha = 1;
 }
 // Fire explosions: a white flash with a yellow edge, then fat puffs (white hot in the middle,
 // yellow and orange outside) that swell, rise and cool into grey smoke.
-function drawBooms() {
+function drawBooms(pixels = false) {
+  const g = pixels ? FXPIX : ctx, circle = pixels ? fxPixelCircle : pcirc;
   const many = booms.length > 10;
   for (const b of booms) {
     if (b.t < 0) continue;
@@ -2186,8 +2229,8 @@ function drawBooms() {
     const u = b.t / b.T, e = 1 - Math.pow(1 - u, 3);
     if (u < 0.06) {
       const r = Math.min(b.cap, b.r * 0.45);
-      pcirc(b.x, b.y - 3, r + 1, '#ffd25a');
-      pcirc(b.x, b.y - 3, r, '#ffffff');
+      circle(b.x, b.y - 3, r + 1, '#ffd25a');
+      circle(b.x, b.y - 3, r, '#ffffff');
       continue;
     }
     const fade = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
@@ -2200,30 +2243,31 @@ function drawBooms() {
       p.px = b.x + p.ca * b.r * p.d * k;
       p.py = b.y - 3 + p.sa * b.r * p.d * k * FORE - b.r * p.up * e;
       p.pr = Math.min(b.cap, b.r * p.s * sizeK) * fadeK;
+      p.visible = !offView(p.px, p.py, p.pr + 12);
     }
     // three passes, so the puffs read as one ball: a deep orange rim under the fire (a soft grey
     // one under the smoke), the puffs (the outer ones cool first), then their lit tops with a
     // white-hot heart while it is young
     for (let pass = 0; pass < 3; pass++) for (let i = 0; i < n; i++) {
       const p = b.pf[i], px = p.px, py = p.py, pr = p.pr, ci = p.ci;
-      if (pr < 1) continue;
+      if (pr < 1 || !p.visible) continue;
       const fire = ci < 5;
       if (pass === 0) {
-        ctx.globalAlpha = fire ? 1 : 0.3 * fade;
-        pcirc(px + 1, py + 1, pr + 1, fire ? '#c2401a' : '#5e5a55');
+        g.globalAlpha = fire ? 1 : 0.3 * fade;
+        circle(px + 1, py + 1, pr + 1, fire ? '#c2401a' : '#5e5a55');
       } else if (pass === 1) {
-        ctx.globalAlpha = fire ? 1 : 0.7 * fade;
-        pcirc(px, py, pr, BC[ci]);
+        g.globalAlpha = fire ? 1 : 0.7 * fade;
+        circle(px, py, pr, BC[ci]);
       } else if (fire) {
-        ctx.globalAlpha = 1;
-        pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.55, BC[Math.max(0, ci - 1)]);
-        if (ci < 3) pcirc(px - pr * 0.36, py - pr * 0.42, pr * 0.25, '#ffffff');
+        g.globalAlpha = 1;
+        circle(px - pr * 0.3, py - pr * 0.35, pr * 0.55, BC[Math.max(0, ci - 1)]);
+        if (ci < 3) circle(px - pr * 0.36, py - pr * 0.42, pr * 0.25, '#ffffff');
       } else {
-        ctx.globalAlpha = 0.5 * fade;
-        pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.5, BC[7]);
+        g.globalAlpha = 0.5 * fade;
+        circle(px - pr * 0.3, py - pr * 0.35, pr * 0.5, BC[7]);
       }
     }
-    ctx.globalAlpha = 1;
+    g.globalAlpha = 1;
   }
 }
 // Rings that grow on the ground and fade (draw with 'lighter').
@@ -2253,38 +2297,67 @@ function drawTexts() {
   }
   ctx.globalAlpha = 1;
 }
+// The same rectangle recipe paints both startup sprites and translucent flames.
+function flamePixels(target, x, y, big, f, g) {
+  if (big) {
+    target.fillStyle = '#c9772f';
+    target.fillRect(x - 4, y - 1, 9, 1);
+    target.fillStyle = '#e2552f';
+    target.fillRect(x - 3, y - 5, 7, 4);
+    target.fillStyle = '#ff8a3a';
+    target.fillRect(x - 2, y - 7 - (f > 0 ? 1 : 0), 5, 6);
+    target.fillStyle = '#ffcf6a';
+    target.fillRect(x - 1, y - 5, 3, 4);
+    target.fillStyle = '#fff1c2';
+    target.fillRect(x, y - 3, 1, 2);
+    target.fillStyle = '#ff8a3a';
+    target.fillRect(x - 1 + (f > 0.2 ? 1 : 0), y - 10 - (g > 0 ? 1 : 0), 2, 3);
+    target.fillStyle = '#e2552f';
+    target.fillRect(x + (f < -0.2 ? -2 : 2), y - 12 - (g > 0.5 ? 1 : 0), 1, 2);
+    target.fillRect(x + (g < 0 ? -3 : 3), y - 8, 1, 1);
+  } else {
+    target.fillStyle = '#c9772f';
+    target.fillRect(x - 2, y - 1, 5, 1);
+    target.fillStyle = '#ffcf6a';
+    target.fillRect(x - 1, y - 3, 3, 2);
+    target.fillStyle = '#ff8a3a';
+    target.fillRect(x - 1 + (f > 0.2 ? 1 : 0), y - 5 - (f > 0 ? 1 : 0), 2, 2);
+    target.fillStyle = '#e2552f';
+    target.fillRect(x + (f < -0.2 ? -1 : 1), y - 7, 1, 1);
+  }
+}
+// Four f threshold states and four g states cover every possible rectangle arrangement.
+// These twenty small images are baked and atlased before boot, with no runtime sprite creation.
+const FLAME_SPR = { small: [], big: [] };
+function bakeFlames() {
+  const fs = [-0.5, -0.1, 0.1, 0.5], gs = [-1, 0, 0.25, 1];
+  for (const big of [false, true]) for (let f = 0; f < fs.length; f++) {
+    for (let g = 0; g < (big ? gs.length : 1); g++) {
+      const ox = big ? 4 : 2, oy = big ? 13 : 7;
+      const [c, target] = mk(ox * 2 + 1, oy);
+      flamePixels(target, ox, oy, big, fs[f], gs[g]);
+      c.ox = ox;
+      c.oy = oy;
+      FLAME_SPR[big ? 'big' : 'small'].push(c);
+      atl(c);
+    }
+  }
+}
+bakeFlames();
 // A small fire: a flickering flame of a few pixels (big = a burning wreck).
-function drawFlame(x, y, big, seed) {
+function drawFlame(x, y, big, seed, pixels = false) {
   const f = Math.sin(realT * 19 + seed) * 0.5 + Math.sin(realT * 31 + seed * 1.7) * 0.5;
   const g = Math.sin(realT * 23 + seed * 3.1);
   x = Math.round(x);
   y = Math.round(y);
-  if (big) {
-    ctx.fillStyle = '#c9772f';
-    ctx.fillRect(x - 4, y - 1, 9, 1);
+  if (pixels) { flamePixels(FXPIX, x, y, big, f, g); return; }
+  if (ctx.globalAlpha === 1 && ctx.globalCompositeOperation === 'source-over') {
+    const fi = f < -0.2 ? 0 : f > 0.2 ? 3 : f > 0 ? 2 : 1;
+    const gi = g < 0 ? 0 : g > 0.5 ? 3 : g > 0 ? 2 : 1;
+    const c = big ? FLAME_SPR.big[fi * 4 + gi] : FLAME_SPR.small[fi];
+    blit(c, x - c.ox, y - c.oy);
     ctx.fillStyle = '#e2552f';
-    ctx.fillRect(x - 3, y - 5, 7, 4);
-    ctx.fillStyle = '#ff8a3a';
-    ctx.fillRect(x - 2, y - 7 - (f > 0 ? 1 : 0), 5, 6);
-    ctx.fillStyle = '#ffcf6a';
-    ctx.fillRect(x - 1, y - 5, 3, 4);
-    ctx.fillStyle = '#fff1c2';
-    ctx.fillRect(x, y - 3, 1, 2);
-    ctx.fillStyle = '#ff8a3a';
-    ctx.fillRect(x - 1 + (f > 0.2 ? 1 : 0), y - 10 - (g > 0 ? 1 : 0), 2, 3);
-    ctx.fillStyle = '#e2552f';
-    ctx.fillRect(x + (f < -0.2 ? -2 : 2), y - 12 - (g > 0.5 ? 1 : 0), 1, 2);
-    ctx.fillRect(x + (g < 0 ? -3 : 3), y - 8, 1, 1);
-  } else {
-    ctx.fillStyle = '#c9772f';
-    ctx.fillRect(x - 2, y - 1, 5, 1);
-    ctx.fillStyle = '#ffcf6a';
-    ctx.fillRect(x - 1, y - 3, 3, 2);
-    ctx.fillStyle = '#ff8a3a';
-    ctx.fillRect(x - 1 + (f > 0.2 ? 1 : 0), y - 5 - (f > 0 ? 1 : 0), 2, 2);
-    ctx.fillStyle = '#e2552f';
-    ctx.fillRect(x + (f < -0.2 ? -1 : 1), y - 7, 1, 1);
-  }
+  } else flamePixels(ctx, x, y, big, f, g);
 }
 
 // ---------- drawing (screen layer)
@@ -2294,9 +2367,12 @@ function currencyCoins(cur, x, y, n) {
 }
 // Coins on a curve from where the zombie fell to the cash counter (top left).
 function drawCoins() {
+  if (!coins.length) return;
+  // Every flying reward shares the same counters for this frame.
+  const targets = currencyLayout();
   for (const c of coins) {
     if (c.t < 0) continue;
-    const cur = c.cur || 'scrap', target = currencyX(cur);
+    const cur = c.cur || 'scrap', target = targets[cur];
     if (target == null) continue;
     const u = ease(c.t / c.T);
     const x = lerp(c.x0, target, u) + Math.sin(u * Math.PI) * -20, y = lerp(c.y0, 8, u) - Math.sin(u * Math.PI) * 30;
@@ -2332,6 +2408,120 @@ function drawBanners() {
     if (b.b) text(b.b, W / 2, y + 26, U.dim, { align: 'center' });
   }
   ctx.globalAlpha = 1;
+}
+
+// fx_pixels.js - paint a crowded particle/blast layer once, with the same pixel shapes and order.
+// Like the horde buffer, this avoids thousands of tiny canvas calls during overlapping strikes.
+// The ordinary drawing path remains cheaper for a quiet field.
+const FXPIX = { force: null, im: null, words: null, w: 0, h: 0,
+  x: 0, y: 0, globalAlpha: 1, fillStyle: '#ffffff', colors: new Map(), rows: new Map(),
+  fillRect: (x, y, w, h) => fxPixelRect(x, y, w, h) };
+const FXCOLOR = mk(1, 1, true)[1];
+// Each entry is an immutable byte-to-byte blend operation, independent of frame or position.
+const FXBLENDS = { entries: new Array(1024), next: 0, size: 0 };
+function fxPixelColor(col) {
+  let c = FXPIX.colors.get(col);
+  if (!c) {
+    FXCOLOR.clearRect(0, 0, 1, 1);
+    FXCOLOR.fillStyle = col;
+    FXCOLOR.fillRect(0, 0, 1, 1);
+    const d = FXCOLOR.getImageData(0, 0, 1, 1).data;
+    c = { r: d[0], g: d[1], b: d[2], a: d[3], word: new Uint32Array(d.buffer)[0], blends: new Map() };
+    if (FXPIX.colors.size >= 256) FXPIX.colors.delete(FXPIX.colors.keys().next().value);
+    FXPIX.colors.set(col, c);
+  }
+  return c;
+}
+function fxPixelBlend(c, a) {
+  let blend = c.blends.get(a);
+  if (blend) return blend;
+  const inv = (255 - a) / 255, k = a / 255;
+  const red = c.r * k, green = c.g * k, blue = c.b * k;
+  blend = { r: new Uint8ClampedArray(256), g: new Uint8ClampedArray(256), b: new Uint8ClampedArray(256) };
+  for (let i = 0; i < 256; i++) {
+    blend.r[i] = red + i * inv;
+    blend.g[i] = green + i * inv;
+    blend.b[i] = blue + i * inv;
+  }
+  const cache = FXBLENDS;
+  if (cache.size === cache.entries.length) {
+    const old = cache.entries[cache.next];
+    old.c.blends.delete(old.a);
+  } else cache.size++;
+  cache.entries[cache.next] = { c, a };
+  cache.next = (cache.next + 1) % cache.entries.length;
+  c.blends.set(a, blend);
+  return blend;
+}
+function fxPixelRect(x, y, w, h) {
+  const p = FXPIX, c = fxPixelColor(p.fillStyle), a = Math.round(c.a * p.globalAlpha);
+  fxPixelRectColor(p, c, a, x, y, w, h);
+}
+function fxPixelRectColor(p, c, a, x, y, w, h) {
+  if (!a) return;
+  const x0 = Math.max(0, x - p.x), y0 = Math.max(0, y - p.y);
+  const x1 = Math.min(p.w, x - p.x + w), y1 = Math.min(p.h, y - p.y + h);
+  if (x0 >= x1 || y0 >= y1) return;
+  const blend = a === 255 ? null : fxPixelBlend(c, a);
+  for (let yy = y0; yy < y1; yy++) fxPixelSpan(p, c, blend, x0, yy, x1);
+}
+function fxPixelSpan(p, c, blend, x0, y, x1) {
+  const start = y * p.w + x0, end = y * p.w + x1;
+  if (!blend) {
+    for (let i = start; i < end; i++) p.words[i] = c.word;
+    return;
+  }
+  const d = p.im.data, r = blend.r, g = blend.g, b = blend.b;
+  for (let i = start * 4, limit = end * 4; i < limit; i += 4) {
+    d[i] = r[d[i]];
+    d[i + 1] = g[d[i + 1]];
+    d[i + 2] = b[d[i + 2]];
+  }
+}
+function fxPixelCircle(x, y, r, col) {
+  if (r < 0.5) return;
+  const R = Math.round(r), p = FXPIX, c = fxPixelColor(col), a = Math.round(c.a * p.globalAlpha);
+  x = Math.round(x); y = Math.round(y); p.fillStyle = col;
+  const cx = x - p.x, cy = y - p.y;
+  const y0 = Math.max(-R, -cy), y1 = Math.min(R, p.h - 1 - cy);
+  if (!a || y0 > y1 || cx + R < 0 || cx - R >= p.w) return;
+  let rows = p.rows.get(R);
+  if (!rows) {
+    rows = [];
+    for (let dy = -R; dy <= R; dy++) rows.push(Math.floor(Math.sqrt(R * R - dy * dy + R * 0.5)));
+    p.rows.set(R, rows);
+  }
+  const blend = a === 255 ? null : fxPixelBlend(c, a);
+  for (let dy = y0; dy <= y1; dy++) {
+    const w = rows[dy + R];
+    const x0 = Math.max(0, cx - w), x1 = Math.min(p.w, cx + w + 1);
+    if (x0 < x1) fxPixelSpan(p, c, blend, x0, cy + dy, x1);
+  }
+}
+function drawFxFlames(pixels) {
+  for (const f of FIRES) drawFlame(f.x, f.y, f.big, f.seed, pixels);
+  for (const f of flames) drawFlame(f.x, f.y, false, f.seed, pixels);
+  drawBurn(pixels);
+}
+function drawNormalFx(withFlames = false) {
+  const p = FXPIX, use = p.force == null ? parts.length + booms.length > 160 || BURN.length > 20 : p.force;
+  if (!use) {
+    if (withFlames) drawFxFlames(false);
+    drawParts(false); drawBooms(); return;
+  }
+  // The horde already paints into the opaque world canvas. Reuse that approach here: an
+  // opaque destination needs only source-over colour blending, with no intermediate alpha.
+  const [sx, sy] = shakeOff();
+  p.w = W; p.h = VH; p.x = G.camX - sx; p.y = G.camY - sy;
+  p.im = ctx.getImageData(0, 0, W, VH);
+  p.words = new Uint32Array(p.im.data.buffer);
+  p.globalAlpha = 1;
+  if (withFlames) drawFxFlames(true);
+  drawParts(false, true);
+  drawBooms(true);
+  ctx.globalAlpha = 1;
+  // putImageData ignores the world clip, so the buffer itself ends above the plane band.
+  ctx.putImageData(p.im, 0, 0);
 }
 
 // audio.js - all sound, made live with the Web Audio API (no sound files). The engine follows
@@ -4596,7 +4786,7 @@ function spread(dt) {
 // over it (those with only things behind them). The rest (between two things, holding on to the
 // train, golden) are sorted in with everything standing (render). For that the screen is cut into
 // 8 px cells, and each cell keeps the nearest and furthest depth (k) of what stands over it.
-const OC = 8, CROWD = { a: [], b: [], ghost: [], list: [], kmin: new Float32Array(0), kmax: new Float32Array(0), tree: new Uint8Array(0),
+const OC = 8, CROWD = { a: [], b: [], ghost: [], list: [], visible: [], kmin: new Float32Array(0), kmax: new Float32Array(0), tree: new Uint8Array(0),
   cols: 0, rows: 0, x0: 0, y0: 0, head: new Int32Array(0), next: new Int32Array(0), force: null };
 // (force = 'a' or 'one': every zombie into layer A, or every one drawn one by one; tests only)
 // the cells under a box (world px): CC = [first column, last column, first row, last row]
@@ -4621,6 +4811,18 @@ function occMark(l, t, w, h, k, tree) {
 // layer B, or DL and VZ (drawn one by one). x0..y1 = the view in world px.
 function gatherHorde(x0, x1, y0, y1) {
   const C = CROWD;
+  // After a large strike, a modest surviving crowd is cheaper in the ordinary depth-sorted
+  // sprite pass. Its shadows share one opacity pass instead of switching alpha per zombie.
+  // Dense hordes still use the existing bulk layers; every zombie remains visible either way.
+  if (!C.force && (parts.length > 160 || booms.length > 10 || BURN.length > 20)) {
+    C.visible.length = 0;
+    for (const z of G.zombies) if (!z.dead && z.x >= x0 - 10 && z.x <= x1 + 10 && z.y >= y0 && z.y <= y1 + 24) C.visible.push(z);
+    if (C.visible.length <= 260) {
+      C.a.length = C.b.length = C.ghost.length = C.list.length = 0;
+      for (const z of C.visible) { DL.push(z); VZ.push(z); }
+      return;
+    }
+  }
   C.x0 = x0 - 16;
   C.y0 = y0 - 24;
   const cols = Math.ceil((x1 - x0 + 32) / OC) + 1, rows = Math.ceil((y1 - y0 + 56) / OC) + 1, n = cols * rows;
@@ -4692,7 +4894,9 @@ function crowdPass(L, sx, sy) {
   const n = L.length;
   if (!n) return;
   const ox = sx - G.camX, oy = sy - G.camY;
-  if (n < 40) {
+  // Native sprites are cheaper for the smaller groups left between overlapping blasts;
+  // reserve a full-canvas pixel readback for a genuinely dense layer.
+  if (n < 160) {
     L.sort(byK);
     for (const z of L) {
       const S = z.S, fr = S.walk[(z.anim | 0) & 3];
@@ -6530,7 +6734,13 @@ function addBurn(x, y, R, duration, dps, source = 'napalm', wall = false) {
     if (old < 0) return null;
     BURN.splice(old, 1);
   }
-  const p = { x, y, R, time: duration, age: 0, duration, dps, tick: 0, source, wall, seed: rnd(TAU) };
+  const p = { x, y, R, time: duration, age: 0, duration, dps, tick: 0, source, wall, seed: rnd(TAU), flameOffsets: [] };
+  // Patch geometry stays fixed; only the existing flame flicker and fade change while it burns.
+  for (let k = 0; k < BURNC.flames; k++) {
+    const a = (k - 1) / (BURNC.flames - 1) * TAU + p.seed;
+    const r = k ? p.R * BURNC.spread : 0;
+    p.flameOffsets.push({ x: Math.cos(a) * r, y: Math.sin(a) * r * FORE, seed: p.seed + k });
+  }
   BURN.push(p);
   if (wall) BURNWALL.push(p);
   stats.created++;
@@ -6604,17 +6814,14 @@ function blockBurnWall(z, x0, y0) {
   }
   return stopped;
 }
-function drawBurn() {
+function drawBurn(pixels = false) {
+  const g = pixels ? FXPIX : ctx;
   for (const p of BURN) {
     if (offView(p.x, p.y, p.R)) continue;
-    ctx.globalAlpha = Math.min(1, p.time / BURNC.fade);
-    for (let k = 0; k < BURNC.flames; k++) {
-      const a = (k - 1) / (BURNC.flames - 1) * TAU + p.seed;
-      const r = k ? p.R * BURNC.spread : 0;
-      drawFlame(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * FORE, false, p.seed + k);
-    }
+    g.globalAlpha = Math.min(1, p.time / BURNC.fade);
+    for (const f of p.flameOffsets) drawFlame(p.x + f.x, p.y + f.y, false, f.seed, pixels);
   }
-  ctx.globalAlpha = 1;
+  g.globalAlpha = 1;
 }
 // Called in the existing additive pass. It uses the scenery-fire glow colour already cached.
 function drawBurnFx() {
@@ -7831,11 +8038,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
   // fires, smoke and dirt, explosions, flying bodies
-  for (const f of FIRES) drawFlame(f.x, f.y, f.big, f.seed);
-  for (const f of flames) drawFlame(f.x, f.y, false, f.seed);
-  drawBurn();
-  drawParts(false);
-  drawBooms();
+  drawNormalFx(true);
   drawBodies();
   drawJuice();
   drawHelis();
@@ -8153,6 +8356,23 @@ function drawArrows() {
 // The radar: the land round the helicopter, 1280 px across, north up. The railway, the train,
 // the dead (bright red: on the track or the train), survivors, the station, the safe zone wall,
 // and the view.
+const RADARDEAD = (() => {
+  const [c, g] = mk(72, 72, true), im = g.createImageData(72, 72);
+  const word = (r, green, b) => new Uint32Array(new Uint8Array([r, green, b, 255]).buffer)[0];
+  return {c, g, im, words: new Uint32Array(im.data.buffer), bright: word(255, 74, 50), dark: word(122, 42, 34)};
+})();
+function drawRadarDead(x0, y0, cx, cy, hx, hy, k) {
+  const p = RADARDEAD;
+  p.words.fill(0);
+  for (const z of G.zombies) {
+    if (z.dead) continue;
+    const x = Math.round(cx + (z.x - hx) * k) - x0, y = Math.round(cy + (z.y - hy) * k) - y0;
+    if (x < 0 || y < 0 || x > 71 || y > 71) continue;
+    p.words[y * 72 + x] = z.st ? p.bright : p.dark;
+  }
+  p.g.putImageData(p.im, 0, 0);
+  ctx.drawImage(p.c, x0, y0);
+}
 function drawRadar() {
   const R = 36, x0 = W - R * 2 - 6, y0 = VH - R * 2 - 6, cx = x0 + R, cy = y0 + R, k = R / 640;
   const hx = G.camX + W / 2, hy = G.camY + VH / 2;
@@ -8162,16 +8382,17 @@ function drawRadar() {
   ctx.fillStyle = 'rgba(86,194,168,0.12)';
   ctx.fillRect(cx, y0, 1, R * 2);
   ctx.fillRect(x0, cy, R * 2, 1);
+  let dotColor = '';
   const dot = (wx, wy, c, s) => {
     const px = Math.round(cx + (wx - hx) * k), py = Math.round(cy + (wy - hy) * k);
     if (px < x0 || py < y0 || px > x0 + R * 2 - s || py > y0 + R * 2 - s) return;
-    ctx.fillStyle = c;
+    if (c !== dotColor) ctx.fillStyle = dotColor = c;
     ctx.fillRect(px, py, s, s);
   };
   for (let wy = hy - 640; wy <= hy + 640; wy += 14) dot(trackX(wy), wy, '#3e434c', 1);
   if (G.safeZone && G.goalY > hy - 640 && G.goalY < hy + 640) for (let dx = -560; dx <= 560; dx += 18) dot(trackX(G.goalY) + dx, G.goalY, '#8fd18a', 1);
   for (const st of G.stops) dot(st.house.x - 1, st.house.y - 1, st.id === 'depot' ? U.gold : '#9fd3f2', 2);
-  for (const z of G.zombies) if (!z.dead) dot(z.x, z.y, z.st ? '#ff4a32' : '#7a2a22', 1);
+  drawRadarDead(x0, y0, cx, cy, hx, hy, k);
   // golden zombies: a blinking gold dot
   if (realT % 0.5 < 0.32) for (const z of G.zombies) if (z.gold && !z.dead) dot(z.x - 1, z.y - 1, '#ffd24a', 2);
   for (const p of G.people) if (p.st === 'run' || p.st === 'wait' || p.st === 'grab') dot(p.x, p.y, '#8fd18a', 1);
@@ -9728,7 +9949,7 @@ const JETC = { speed: 320, alt: 46, dive: 12, len: 230, lead: 44, step: 4, half:
 // ---------- the jet
 // A twin-engine attack jet seen from right above, its nose up: straight wings with bombs under
 // them, engines on the back of the body, a wide tail with a fin at each end.
-const JET = { n: [], sh: [], icon: null, bomb: null };
+const JET = { n: [], sh: [], hot: [], icon: null, bomb: null };
 function jetRaw() {
   return pix(62, 54, (r) => {
     const L = '#c3cad0', A = '#a1a9b1', B = '#848d96', D = '#636b74', E = '#454b53', K = '#18191c';
@@ -9807,18 +10028,19 @@ function jetSpriteBounds(c) {
 // Build the jet at JETC.N headings (0 = nose up, clockwise), its shadow and its card icon. At startup.
 function bakeJet() {
   const raw = jetRaw();
-  JET.n.length = JET.sh.length = 0;
+  JET.n.length = JET.sh.length = JET.hot.length = 0;
   for (let i = 0; i < JETC.N; i++) {
     const r = rotA(raw, i / JETC.N * TAU);
-    JET.n.push(jetSpriteBounds(selOut(r)));
+    JET.n.push(jetSpriteBounds(selOut(rimLight(r, '#e8e2cc', 0.2))));
     JET.sh.push(jetSpriteBounds(tint(r, '#000', 1, 'source-in')));
+    JET.hot.push(jetSpriteBounds(outline(hotSpr(r, 150), '#161616')));
   }
   JET.bomb = outline(pix(3, 6, (r) => {
     r(0, 0, 3, 5, '#565c46');
     r(0, 0, 1, 5, '#7a8262');
     r(0, 5, 3, 1, '#2d3036');
   }), P.out);
-  for (const c of [...JET.n, ...JET.sh, JET.bomb]) atl(c);
+  for (const c of [...JET.n, ...JET.sh, ...JET.hot, JET.bomb]) atl(c);
 }
 bakeJet();
 
@@ -10241,7 +10463,7 @@ const F4C = {
   // Base fire-line length, DPS, patch radius/spacing and filled-preview opacity (proposal)
   length: 230, damage: 2, radius: 14, step: 18, previewAlpha: 0.16
 };
-const F4 = { n: [], sh: [] };
+const F4 = { n: [], sh: [], hot: [] };
 function f4Raw() {
   return pix(62, 64, (r) => {
     const L = '#c3cad0', A = '#a1a9b1', B = '#848d96', D = '#636b74', E = '#454b53', K = '#18191c';
@@ -10287,10 +10509,11 @@ function bakeF4() {
   const raw = f4Raw();
   for (let i = 0; i < JETC.N; i++) {
     const r = rotA(raw, i / JETC.N * TAU);
-    F4.n.push(jetSpriteBounds(selOut(r)));
+    F4.n.push(jetSpriteBounds(selOut(rimLight(r, '#e8e2cc', 0.2))));
     F4.sh.push(jetSpriteBounds(tint(r, '#000', 1, 'source-in')));
+    F4.hot.push(jetSpriteBounds(outline(hotSpr(r, 150), '#161616')));
   }
-  for (const c of [...F4.n, ...F4.sh]) atl(c);
+  for (const c of [...F4.n, ...F4.sh, ...F4.hot]) atl(c);
 }
 bakeF4();
 
@@ -10343,7 +10566,7 @@ const B52C = {
   // Lane length, blast radius/damage, fall seconds, fire seconds/DPS and preview opacity (proposal)
   length: 300, radius: 18, damage: 12, fall: 0.55, burnDuration: 4, burnDamage: 2, previewAlpha: 0.12
 };
-const B52 = { n: [], sh: [], engines: [12, 18, 29, 35, 61, 67, 78, 84].map((x) => ({ x, y: 44 })) };
+const B52 = { n: [], sh: [], hot: [], engines: [12, 18, 29, 35, 61, 67, 78, 84].map((x) => ({ x, y: 44 })) };
 function b52Raw() {
   return pix(96, 76, (r) => {
     const L = '#c3cad0', A = '#a1a9b1', B = '#848d96', D = '#636b74', E = '#454b53', K = '#18191c';
@@ -10386,10 +10609,11 @@ function bakeB52() {
   const raw = b52Raw();
   for (let i = 0; i < JETC.N; i++) {
     const r = rotA(raw, i / JETC.N * TAU);
-    B52.n.push(jetSpriteBounds(selOut(r)));
+    B52.n.push(jetSpriteBounds(selOut(rimLight(r, '#e8e2cc', 0.2))));
     B52.sh.push(jetSpriteBounds(tint(r, '#000', 1, 'source-in')));
+    B52.hot.push(jetSpriteBounds(outline(hotSpr(r, 150), '#161616')));
   }
-  for (const c of [...B52.n, ...B52.sh]) atl(c);
+  for (const c of [...B52.n, ...B52.sh, ...B52.hot]) atl(c);
 }
 bakeB52();
 
@@ -10483,7 +10707,7 @@ function bakeB2() {
   const raw = b2Raw();
   for (let i = 0; i < JETC.N; i++) {
     const r = rotA(raw, i / JETC.N * TAU);
-    B2.n.push(jetSpriteBounds(selOut(r)));
+    B2.n.push(jetSpriteBounds(selOut(rimLight(r, '#e8e2cc', 0.2))));
     B2.sh.push(jetSpriteBounds(tint(r, '#000', 1, 'source-in')));
     B2.hot.push(jetSpriteBounds(outline(hotSpr(r, B2C.heat), '#161616')));
   }
@@ -13016,9 +13240,111 @@ Object.assign(window.__sr, {
 Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assign({}, M), tab: depotTab, mode }) });
 
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
+// QA-only plane injection is scoped to this G; it never writes saved ownership or slots.
+let TEST_PLANE_FIXTURE = null;
+function testClearPlaneFixture() {
+  const before = TEST_PLANE_FIXTURE;
+  if (!before) return false;
+  PLANES.b2.available = before.b2Available;
+  if (G === before.g && AIR.g === before.g) {
+    G.up.planeOwned = before.owned;
+    AIR.slots = before.slots;
+    AIR.planes = before.planes;
+    AIR.arm = AIR.aim = AIR.tap = null;
+    syncViewHeight();
+  }
+  TEST_PLANE_FIXTURE = null;
+  return true;
+}
 Object.assign(window.__sr, {
+  // QA comparison of the ordinary and crowded pixel-effect drawing paths.
+  fxPixels: (on) => { FXPIX.force = on == null ? null : !!on; return FXPIX.force; },
+  // Compare only normal effects over a fixed opaque background; restore every live effect list.
+  fxPixelCase: (kind = 'opaque', frame = 0, background = '#000000') => {
+    if (!G || !['opaque', 'alpha', 'dense', 'real'].includes(kind)) return false;
+    frame = Math.max(0, Math.floor(Number(frame) || 0));
+    const keepParts = parts.slice(), keepBooms = booms.slice(), force = FXPIX.force, random = Math.random;
+    const canvasBefore = ctx.getImageData(0, 0, W, H);
+    const capture = (pixels) => {
+      ctx.save();
+      try {
+        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = background; ctx.fillRect(0, 0, W, H);
+        ctx.beginPath(); ctx.rect(0, 0, W, VH); ctx.clip();
+        const [sx, sy] = shakeOff();
+        ctx.translate(sx - G.camX, sy - G.camY); FXPIX.force = pixels; drawNormalFx(true);
+        return ctx.getImageData(0, 0, W, H).data;
+      } finally { ctx.restore(); }
+    };
+    try {
+      if (kind !== 'real') {
+        parts.length = booms.length = 0; Math.random = mulberry(0xF410);
+        const opaque = kind === 'opaque', count = kind === 'dense' ? 500 : 48;
+        const palette = opaque ? ['#ffffff', '#000000', '#4c4032', '#c2401a', '#ffd25a'] :
+          ['rgba(196,38,28,0.6)', 'rgba(96,92,88,0.7)', 'rgba(124,120,114,0.6)', 'rgba(76,72,68,0.7)'];
+        for (let i = 0; i < count; i++) {
+          const edge = i < 12, x = edge ? [-0.5, 0.5, W - 0.5, W + 0.5][i % 4] : W * 0.48 + (i % 11 - 5) * 5.5;
+          const y = edge ? [0.5, VH - 0.5, VH + 0.5][Math.floor(i / 4)] : VH * 0.5 + (i % 7 - 3) * 4.5;
+          const smoke = i % 3 !== 0, size = smoke ? [5, 9, 48, 49][i % 4] : 1 + i % 8;
+          parts.push({x: G.camX + x + frame * (i % 2 ? 0.7 : -0.45),
+            y: G.camY + y + frame * 0.2, z: i % 4 + frame * 0.12,
+            life: opaque ? 2 : Math.max(0.15, 1.7 - frame / 90), max: 2,
+            s: size + (smoke ? frame * 0.05 : 0), c: palette[i % palette.length], smoke, add: false});
+        }
+        const n = kind === 'dense' ? 18 : 4;
+        for (let i = 0; i < n; i++) {
+          addBoom(G.camX + W * 0.53 + (i % 3 - 1) * 9 + frame * 0.3,
+            G.camY + VH * 0.52 + (i % 4 - 1) * 6, i % 2 ? 44 : 18, 7, 1, i % 2 ? 20 : 8);
+          booms[booms.length - 1].t = opaque ? (i % 2 ? 0.22 + frame / 2000 : frame / 1200) : 0.73 + frame / 300;
+        }
+      }
+      Math.random = random;
+      const original = capture(false), pixels = capture(true), repeated = capture(false);
+      const histogram = new Array(256).fill(0), bounds = {x0: W, y0: H, x1: -1, y1: -1};
+      let max = 0, sum = 0, changed = 0, changedPixels = 0, unstable = 0, worst = null;
+      for (let i = 0; i < original.length; i += 4) {
+        let pixelChanged = false;
+        for (let c = 0; c < 4; c++) {
+          const d = Math.abs(original[i + c] - pixels[i + c]); histogram[d]++; sum += d;
+          if (d) { changed++; pixelChanged = true; }
+          if (d > max) { max = d; worst = {x: (i / 4) % W, y: Math.floor(i / 4 / W),
+            old: Array.from(original.slice(i, i + 4)), pixels: Array.from(pixels.slice(i, i + 4))}; }
+          if (original[i + c] !== repeated[i + c]) unstable++;
+        }
+        if (pixelChanged) {
+          changedPixels++; const x = (i / 4) % W, y = Math.floor(i / 4 / W);
+          bounds.x0 = Math.min(bounds.x0, x); bounds.y0 = Math.min(bounds.y0, y);
+          bounds.x1 = Math.max(bounds.x1, x); bounds.y1 = Math.max(bounds.y1, y);
+        }
+      }
+      return {kind, frame, background, max, mean: sum / original.length, meanChanged: changed ? sum / changed : 0,
+        changed, changedPixels, unstable, histogram: histogram.map((n, d) => [d, n]).filter(v => v[1]),
+        bounds: changedPixels ? bounds : null, worst, parts: parts.length, booms: booms.length};
+    } finally {
+      Math.random = random; FXPIX.force = force;
+      parts.length = booms.length = 0; parts.push(...keepParts); booms.push(...keepBooms);
+      ctx.putImageData(canvasBefore, 0, 0);
+    }
+  },
   // Read the world-space railway centre for controlled moving-stream scenarios.
   railX: (worldY) => Number.isFinite(worldY) ? railX(worldY) : null,
+  // Compare the same frozen picture with one effect group hidden, then restore every object.
+  costFx: (n = 30) => {
+    const groups = { parts, booms, burn: BURN, lights, rings, coins, embers: STRAF.embers,
+      gibs: JUICE.gibs, debris: JUICE.debris, bodies: G.bodies };
+    const out = { full: +window.__sr.bench(n).toFixed(2), without: {} };
+    for (const [key, list] of Object.entries(groups)) {
+      const keep = list.slice();
+      list.length = 0;
+      try { out.without[key] = +window.__sr.bench(n).toFixed(2); }
+      finally { list.push(...keep); }
+    }
+    const saved = Object.values(groups).map((list) => [list, list.slice()]);
+    for (const [list] of saved) list.length = 0;
+    try { out.without.all = +window.__sr.bench(n).toFixed(2); }
+    finally { for (const [list, keep] of saved) list.push(...keep); }
+    return out;
+  },
   // Copy Hangar state; the action helper goes through real pointer input and ordinary UI frames.
   hangar: () => hangarState(),
   hangarDrag: (id, slot) => {
@@ -13044,6 +13370,30 @@ Object.assign(window.__sr, {
   planeAim: () => airAimSnapshot(),
   strike: (key, sx, sy, ang) => airStrike(key, sx, sy, ang),
   smart: (key) => airSmart(key),
+  // QA-only ready slot, for real key/pointer previews and launches with the production AIR path.
+  planeFixture: (id, slot = 0) => {
+    if (!G || G.demo || mode !== 'play' || G.result || !['a10', 'f4', 'b52', 'b2'].includes(id) || !Number.isInteger(slot) || slot < 0 || slot > 1) return false;
+    if (TEST_PLANE_FIXTURE && TEST_PLANE_FIXTURE.g !== G) testClearPlaneFixture();
+    airSync();
+    if (!TEST_PLANE_FIXTURE) {
+      TEST_PLANE_FIXTURE = { g: G, owned: G.up.planeOwned.slice(), slots: AIR.slots.slice(), b2Available: PLANES.b2.available,
+        planes: Object.fromEntries(Object.entries(AIR.planes).map(([key, p]) => [key, { ...p, lastStrike: p.lastStrike ? { ...p.lastStrike } : null }])) };
+    }
+    if (!G.up.planeOwned.includes(id)) G.up.planeOwned.push(id);
+    const from = AIR.slots.indexOf(id), replaced = AIR.slots[slot];
+    if (from >= 0 && from !== slot) AIR.slots[from] = replaced;
+    AIR.slots[slot] = id;
+    const desc = PLANES[id], cd = G.up.planeCooldown[id], charges = G.up.planeCharges[id];
+    const maxCharges = Number.isFinite(charges) ? clamp(Math.floor(charges), 1, 2) : 1;
+    AIR.planes[id] = { maxCd: Number.isFinite(cd) ? clamp(cd, desc.floor, desc.cooldown) : desc.cooldown,
+      maxCharges, charges: maxCharges, cd: 0, strikes: 0, lastStrike: null, readyAt: realT - AIRCFG.returnTime };
+    if (id === 'b2') PLANES.b2.available = true;
+    AIR.arm = AIR.aim = AIR.tap = null;
+    syncViewHeight();
+    return true;
+  },
+  // Restore the pre-fixture AIR resources and descriptor; flights already launched keep flying.
+  clearPlaneFixture: () => testClearPlaneFixture(),
   // Launch the real B-2 transport for strike checks; no ownership, slot or charge is changed.
   b2Strike: (sx, sy, ang) => {
     if (!G || G.demo || mode !== 'play' || G.result || ![sx, sy].every(Number.isFinite) || ang != null && !Number.isFinite(ang)) return false;
@@ -13091,8 +13441,10 @@ Object.assign(window.__sr, {
       b2: { ...STRAF.stats.b2,
         lastDrop: STRAF.stats.b2.lastDrop ? { ...STRAF.stats.b2.lastDrop } : null,
         lastImpact: STRAF.stats.b2.lastImpact ? { ...STRAF.stats.b2.lastImpact } : null } },
-      art: { jet: { w: JET.n[0].width, h: JET.n[0].height }, f4: { w: F4.n[0].width, h: F4.n[0].height },
-        b52: { w: B52.n[0].width, h: B52.n[0].height, engines: B52.engines.map((e) => ({ x: e.x, y: e.y })) },
+      art: { jet: { w: JET.n[0].width, h: JET.n[0].height, normal: JET.n.length, shadow: JET.sh.length, hot: JET.hot.length },
+        f4: { w: F4.n[0].width, h: F4.n[0].height, normal: F4.n.length, shadow: F4.sh.length, hot: F4.hot.length },
+        b52: { w: B52.n[0].width, h: B52.n[0].height, normal: B52.n.length, shadow: B52.sh.length, hot: B52.hot.length,
+          engines: B52.engines.map((e) => ({ x: e.x, y: e.y })) },
         b2: { w: B2.n[0].width, h: B2.n[0].height, normal: B2.n.length, shadow: B2.sh.length, hot: B2.hot.length },
         heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
     };
@@ -13213,6 +13565,142 @@ Object.assign(window.__sr, {
     stars: (SAVE.legs[G.leg]?.stars || [false, false, false]).slice(),
     gold: G.gold || 0, surv: G.surv, scrap: Math.floor(G.cash), wall: null })
 });
+
+// Radar dot batching preserves the old one-pixel overwrite order and rounding exactly.
+Object.assign(window.__sr, {
+  testRadar: () => {
+    if (!G) return false;
+    const w = 128, h = 120, keep = G.zombies, backup = ctx.getImageData(0, 0, w, h);
+    const [reference, expected] = mk(w, h, true), result = {ok: true, cases: 0, mismatchPixels: 0,
+      maxChannelDelta: 0, firstDifferences: []};
+    const started = performance.now();
+    ctx.save();
+    try {
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      ctx.imageSmoothingEnabled = false; ctx.filter = 'none'; ctx.shadowBlur = ctx.shadowOffsetX = ctx.shadowOffsetY = 0;
+      for (let shift = 0; shift < 32; shift++) {
+        const x0 = shift % 8 === 0 ? -4 : 8 + shift % 4 * 7, y0 = shift % 7 === 0 ? -3 : 9 + Math.floor(shift / 4) * 3;
+        const cx = x0 + 36, cy = y0 + 36, hx = -137.5 + shift * 0.31, hy = 224.25 - shift * 0.37, k = 36 / 640;
+        const zombies = [], add = (x, y, st, dead = false, gone = false) => zombies.push({
+          x: hx + (x + x0 - cx) / k, y: hy + (y + y0 - cy) / k, st, dead, gone});
+        const edges = [-1.51, -0.51, -0.5, -0.49, 0, 0.49, 0.5, 0.51, 35.49, 35.5, 36.49,
+          70.49, 70.5, 71.49, 71.5, 71.51, 72, 73];
+        for (let i = 0; i < edges.length; i++) {
+          add(edges[i], 14 + i % 7, i % 3); add(23 + i % 9, edges[i], (i + 1) % 3);
+        }
+        for (let i = 0; i < 700; i++) add((i * 17 + shift * 5) % 76 - 2 + 0.37,
+          (i * 29 + shift * 3) % 76 - 2 + 0.63, i % 3, i % 11 === 0, i % 13 === 0);
+        // Last living dot wins. A later dead dot must leave that color intact.
+        add(35.2, 35.2, 0); add(35.2, 35.2, 1); add(35.2, 35.2, 0, true);
+        add(42.2, 42.2, 2); add(42.2, 42.2, 0);
+        for (const g of [ctx, expected]) {
+          g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+          g.fillStyle = '#132531'; g.fillRect(0, 0, w, h);
+        }
+        G.zombies = zombies;
+        drawRadarDead(x0, y0, cx, cy, hx, hy, k);
+        for (const z of zombies) if (!z.dead) {
+          const x = Math.round(cx + (z.x - hx) * k), y = Math.round(cy + (z.y - hy) * k);
+          if (x < x0 || y < y0 || x > x0 + 71 || y > y0 + 71) continue;
+          expected.fillStyle = z.st ? '#ff4a32' : '#7a2a22'; expected.fillRect(x, y, 1, 1);
+        }
+        const actual = ctx.getImageData(0, 0, w, h).data, old = expected.getImageData(0, 0, w, h).data;
+        result.cases++;
+        for (let i = 0; i < actual.length; i += 4) {
+          let delta = 0;
+          for (let channel = 0; channel < 4; channel++) delta = Math.max(delta, Math.abs(actual[i + channel] - old[i + channel]));
+          if (!delta) continue;
+          result.mismatchPixels++; result.maxChannelDelta = Math.max(result.maxChannelDelta, delta);
+          if (result.firstDifferences.length < 8) result.firstDifferences.push({shift, x: i / 4 % w, y: Math.floor(i / 4 / w),
+            actual: Array.from(actual.slice(i, i + 4)), old: Array.from(old.slice(i, i + 4))});
+        }
+      }
+      result.ok = result.mismatchPixels === 0; result.elapsedMs = +(performance.now() - started).toFixed(3);
+      result.buffer = {w: RADARDEAD.c.width, h: RADARDEAD.c.height};
+      return result;
+    } finally { G.zombies = keep; ctx.restore(); ctx.putImageData(backup, 0, 0); }
+  }
+});
+
+// Pixel comparisons use the actual main drawing context, then restore its pixels and state.
+// The reference renders recreate the old primitives independently of their new caches.
+Object.assign(window.__sr, (() => {
+  function pixelTest(drawCases) {
+    const w = 255, h = 179;
+    if (cv.width < w || cv.height < h) throw new Error('Pixel tests need a canvas of at least 255x179');
+    const reference = document.createElement('canvas');
+    reference.width = w; reference.height = h;
+    const expected = reference.getContext('2d', { alpha: false, willReadFrequently: true });
+    expected.imageSmoothingEnabled = false;
+    const backup = ctx.getImageData(0, 0, w, h), started = performance.now();
+    const result = { ok: true, cases: 0, mismatchPixels: 0, maxChannelDelta: 0, firstDifferences: [],
+      diagnostics: { cases: 0, mismatchPixels: 0, maxChannelDelta: 0, firstDifferences: [] } };
+    ctx.save();
+    try {
+      ctx.imageSmoothingEnabled = false;
+      ctx.filter = 'none'; ctx.shadowBlur = ctx.shadowOffsetX = ctx.shadowOffsetY = 0;
+      ctx.shadowColor = 'rgba(0,0,0,0)';
+      drawCases((meta, actual, legacy, diagnostic = false) => {
+        for (const g of [ctx, expected]) {
+          g.setTransform(1, 0, 0, 1, 0, 0);
+          g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+          g.fillStyle = '#132531'; g.fillRect(0, 0, w, h);
+          g.translate(meta.translate[0], meta.translate[1]);
+          g.globalAlpha = meta.alpha; g.globalCompositeOperation = meta.blend;
+        }
+        actual(); legacy(expected);
+        const a = ctx.getImageData(0, 0, w, h).data, b = expected.getImageData(0, 0, w, h).data;
+        const bucket = diagnostic ? result.diagnostics : result;
+        bucket.cases++;
+        let first = null;
+        for (let i = 0; i < a.length; i += 4) {
+          let delta = 0;
+          for (let ch = 0; ch < 4; ch++) delta = Math.max(delta, Math.abs(a[i + ch] - b[i + ch]));
+          if (!delta) continue;
+          bucket.mismatchPixels++; bucket.maxChannelDelta = Math.max(bucket.maxChannelDelta, delta);
+          if (!first) first = { x: i / 4 % w, y: Math.floor(i / 4 / w),
+            actual: Array.from(a.slice(i, i + 4)), expected: Array.from(b.slice(i, i + 4)) };
+        }
+        if (first && bucket.firstDifferences.length < 8) bucket.firstDifferences.push({ ...meta, ...first });
+      });
+      result.ok = result.mismatchPixels === 0;
+      result.elapsedMs = +(performance.now() - started).toFixed(3);
+      return result;
+    } finally {
+      ctx.restore();
+      ctx.putImageData(backup, 0, 0);
+    }
+  }
+  return {
+    testRings: () => {
+      const pairs = [[1, 1], [2, 1], [3, 2], [4.4, 3.2], [8, 6], [13, 9],
+        [24, 17], [40, 29], [65, 47], [100, 72]];
+      const result = pixelTest((compare) => {
+        for (const [rx, ry] of pairs) for (const color of ['#fff1c2', 'rgba(143,209,138,0.4)']) {
+          const RX = Math.max(1, Math.round(rx)), RY = Math.max(1, Math.round(ry));
+          const bitmap = document.createElement('canvas');
+          bitmap.width = RX * 2 + 1; bitmap.height = RY * 2 + 1;
+          const old = bitmap.getContext('2d');
+          old.fillStyle = color;
+          const n = Math.max(16, Math.ceil((RX + RY) * 1.7));
+          for (let i = 0; i < n; i++) {
+            const a = i / n * (Math.PI * 2);
+            old.fillRect(Math.round(RX + Math.cos(a) * RX), Math.round(RY + Math.sin(a) * RY), 1, 1);
+          }
+          for (const alpha of [1, 0.4]) for (const blend of ['source-over', 'lighter'])
+            for (const repeats of [1, 3]) for (const translate of [[0, 0], [7, -3]]) {
+              const x = 121.25, y = 89.6;
+              compare({ rx, ry, color, alpha, blend, repeats, translate },
+                () => { for (let i = 0; i < repeats; i++) pell(x, y, rx, ry, color); },
+                (g) => { for (let i = 0; i < repeats; i++) g.drawImage(bitmap, Math.round(x) - RX, Math.round(y) - RY); });
+            }
+        }
+      });
+      result.caches = { shapes: PELL_SHAPES.size, bitmaps: PELL.size };
+      return result;
+    }
+  };
+})());
 
 })();
 </script>

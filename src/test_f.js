@@ -1,7 +1,109 @@
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
+// QA-only plane injection is scoped to this G; it never writes saved ownership or slots.
+let TEST_PLANE_FIXTURE = null;
+function testClearPlaneFixture() {
+  const before = TEST_PLANE_FIXTURE;
+  if (!before) return false;
+  PLANES.b2.available = before.b2Available;
+  if (G === before.g && AIR.g === before.g) {
+    G.up.planeOwned = before.owned;
+    AIR.slots = before.slots;
+    AIR.planes = before.planes;
+    AIR.arm = AIR.aim = AIR.tap = null;
+    syncViewHeight();
+  }
+  TEST_PLANE_FIXTURE = null;
+  return true;
+}
 Object.assign(window.__sr, {
+  // QA comparison of the ordinary and crowded pixel-effect drawing paths.
+  fxPixels: (on) => { FXPIX.force = on == null ? null : !!on; return FXPIX.force; },
+  // Compare only normal effects over a fixed opaque background; restore every live effect list.
+  fxPixelCase: (kind = 'opaque', frame = 0, background = '#000000') => {
+    if (!G || !['opaque', 'alpha', 'dense', 'real'].includes(kind)) return false;
+    frame = Math.max(0, Math.floor(Number(frame) || 0));
+    const keepParts = parts.slice(), keepBooms = booms.slice(), force = FXPIX.force, random = Math.random;
+    const canvasBefore = ctx.getImageData(0, 0, W, H);
+    const capture = (pixels) => {
+      ctx.save();
+      try {
+        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = background; ctx.fillRect(0, 0, W, H);
+        ctx.beginPath(); ctx.rect(0, 0, W, VH); ctx.clip();
+        const [sx, sy] = shakeOff();
+        ctx.translate(sx - G.camX, sy - G.camY); FXPIX.force = pixels; drawNormalFx(true);
+        return ctx.getImageData(0, 0, W, H).data;
+      } finally { ctx.restore(); }
+    };
+    try {
+      if (kind !== 'real') {
+        parts.length = booms.length = 0; Math.random = mulberry(0xF410);
+        const opaque = kind === 'opaque', count = kind === 'dense' ? 500 : 48;
+        const palette = opaque ? ['#ffffff', '#000000', '#4c4032', '#c2401a', '#ffd25a'] :
+          ['rgba(196,38,28,0.6)', 'rgba(96,92,88,0.7)', 'rgba(124,120,114,0.6)', 'rgba(76,72,68,0.7)'];
+        for (let i = 0; i < count; i++) {
+          const edge = i < 12, x = edge ? [-0.5, 0.5, W - 0.5, W + 0.5][i % 4] : W * 0.48 + (i % 11 - 5) * 5.5;
+          const y = edge ? [0.5, VH - 0.5, VH + 0.5][Math.floor(i / 4)] : VH * 0.5 + (i % 7 - 3) * 4.5;
+          const smoke = i % 3 !== 0, size = smoke ? [5, 9, 48, 49][i % 4] : 1 + i % 8;
+          parts.push({x: G.camX + x + frame * (i % 2 ? 0.7 : -0.45),
+            y: G.camY + y + frame * 0.2, z: i % 4 + frame * 0.12,
+            life: opaque ? 2 : Math.max(0.15, 1.7 - frame / 90), max: 2,
+            s: size + (smoke ? frame * 0.05 : 0), c: palette[i % palette.length], smoke, add: false});
+        }
+        const n = kind === 'dense' ? 18 : 4;
+        for (let i = 0; i < n; i++) {
+          addBoom(G.camX + W * 0.53 + (i % 3 - 1) * 9 + frame * 0.3,
+            G.camY + VH * 0.52 + (i % 4 - 1) * 6, i % 2 ? 44 : 18, 7, 1, i % 2 ? 20 : 8);
+          booms[booms.length - 1].t = opaque ? (i % 2 ? 0.22 + frame / 2000 : frame / 1200) : 0.73 + frame / 300;
+        }
+      }
+      Math.random = random;
+      const original = capture(false), pixels = capture(true), repeated = capture(false);
+      const histogram = new Array(256).fill(0), bounds = {x0: W, y0: H, x1: -1, y1: -1};
+      let max = 0, sum = 0, changed = 0, changedPixels = 0, unstable = 0, worst = null;
+      for (let i = 0; i < original.length; i += 4) {
+        let pixelChanged = false;
+        for (let c = 0; c < 4; c++) {
+          const d = Math.abs(original[i + c] - pixels[i + c]); histogram[d]++; sum += d;
+          if (d) { changed++; pixelChanged = true; }
+          if (d > max) { max = d; worst = {x: (i / 4) % W, y: Math.floor(i / 4 / W),
+            old: Array.from(original.slice(i, i + 4)), pixels: Array.from(pixels.slice(i, i + 4))}; }
+          if (original[i + c] !== repeated[i + c]) unstable++;
+        }
+        if (pixelChanged) {
+          changedPixels++; const x = (i / 4) % W, y = Math.floor(i / 4 / W);
+          bounds.x0 = Math.min(bounds.x0, x); bounds.y0 = Math.min(bounds.y0, y);
+          bounds.x1 = Math.max(bounds.x1, x); bounds.y1 = Math.max(bounds.y1, y);
+        }
+      }
+      return {kind, frame, background, max, mean: sum / original.length, meanChanged: changed ? sum / changed : 0,
+        changed, changedPixels, unstable, histogram: histogram.map((n, d) => [d, n]).filter(v => v[1]),
+        bounds: changedPixels ? bounds : null, worst, parts: parts.length, booms: booms.length};
+    } finally {
+      Math.random = random; FXPIX.force = force;
+      parts.length = booms.length = 0; parts.push(...keepParts); booms.push(...keepBooms);
+      ctx.putImageData(canvasBefore, 0, 0);
+    }
+  },
   // Read the world-space railway centre for controlled moving-stream scenarios.
   railX: (worldY) => Number.isFinite(worldY) ? railX(worldY) : null,
+  // Compare the same frozen picture with one effect group hidden, then restore every object.
+  costFx: (n = 30) => {
+    const groups = { parts, booms, burn: BURN, lights, rings, coins, embers: STRAF.embers,
+      gibs: JUICE.gibs, debris: JUICE.debris, bodies: G.bodies };
+    const out = { full: +window.__sr.bench(n).toFixed(2), without: {} };
+    for (const [key, list] of Object.entries(groups)) {
+      const keep = list.slice();
+      list.length = 0;
+      try { out.without[key] = +window.__sr.bench(n).toFixed(2); }
+      finally { list.push(...keep); }
+    }
+    const saved = Object.values(groups).map((list) => [list, list.slice()]);
+    for (const [list] of saved) list.length = 0;
+    try { out.without.all = +window.__sr.bench(n).toFixed(2); }
+    finally { for (const [list, keep] of saved) list.push(...keep); }
+    return out;
+  },
   // Copy Hangar state; the action helper goes through real pointer input and ordinary UI frames.
   hangar: () => hangarState(),
   hangarDrag: (id, slot) => {
@@ -27,6 +129,30 @@ Object.assign(window.__sr, {
   planeAim: () => airAimSnapshot(),
   strike: (key, sx, sy, ang) => airStrike(key, sx, sy, ang),
   smart: (key) => airSmart(key),
+  // QA-only ready slot, for real key/pointer previews and launches with the production AIR path.
+  planeFixture: (id, slot = 0) => {
+    if (!G || G.demo || mode !== 'play' || G.result || !['a10', 'f4', 'b52', 'b2'].includes(id) || !Number.isInteger(slot) || slot < 0 || slot > 1) return false;
+    if (TEST_PLANE_FIXTURE && TEST_PLANE_FIXTURE.g !== G) testClearPlaneFixture();
+    airSync();
+    if (!TEST_PLANE_FIXTURE) {
+      TEST_PLANE_FIXTURE = { g: G, owned: G.up.planeOwned.slice(), slots: AIR.slots.slice(), b2Available: PLANES.b2.available,
+        planes: Object.fromEntries(Object.entries(AIR.planes).map(([key, p]) => [key, { ...p, lastStrike: p.lastStrike ? { ...p.lastStrike } : null }])) };
+    }
+    if (!G.up.planeOwned.includes(id)) G.up.planeOwned.push(id);
+    const from = AIR.slots.indexOf(id), replaced = AIR.slots[slot];
+    if (from >= 0 && from !== slot) AIR.slots[from] = replaced;
+    AIR.slots[slot] = id;
+    const desc = PLANES[id], cd = G.up.planeCooldown[id], charges = G.up.planeCharges[id];
+    const maxCharges = Number.isFinite(charges) ? clamp(Math.floor(charges), 1, 2) : 1;
+    AIR.planes[id] = { maxCd: Number.isFinite(cd) ? clamp(cd, desc.floor, desc.cooldown) : desc.cooldown,
+      maxCharges, charges: maxCharges, cd: 0, strikes: 0, lastStrike: null, readyAt: realT - AIRCFG.returnTime };
+    if (id === 'b2') PLANES.b2.available = true;
+    AIR.arm = AIR.aim = AIR.tap = null;
+    syncViewHeight();
+    return true;
+  },
+  // Restore the pre-fixture AIR resources and descriptor; flights already launched keep flying.
+  clearPlaneFixture: () => testClearPlaneFixture(),
   // Launch the real B-2 transport for strike checks; no ownership, slot or charge is changed.
   b2Strike: (sx, sy, ang) => {
     if (!G || G.demo || mode !== 'play' || G.result || ![sx, sy].every(Number.isFinite) || ang != null && !Number.isFinite(ang)) return false;
@@ -74,8 +200,10 @@ Object.assign(window.__sr, {
       b2: { ...STRAF.stats.b2,
         lastDrop: STRAF.stats.b2.lastDrop ? { ...STRAF.stats.b2.lastDrop } : null,
         lastImpact: STRAF.stats.b2.lastImpact ? { ...STRAF.stats.b2.lastImpact } : null } },
-      art: { jet: { w: JET.n[0].width, h: JET.n[0].height }, f4: { w: F4.n[0].width, h: F4.n[0].height },
-        b52: { w: B52.n[0].width, h: B52.n[0].height, engines: B52.engines.map((e) => ({ x: e.x, y: e.y })) },
+      art: { jet: { w: JET.n[0].width, h: JET.n[0].height, normal: JET.n.length, shadow: JET.sh.length, hot: JET.hot.length },
+        f4: { w: F4.n[0].width, h: F4.n[0].height, normal: F4.n.length, shadow: F4.sh.length, hot: F4.hot.length },
+        b52: { w: B52.n[0].width, h: B52.n[0].height, normal: B52.n.length, shadow: B52.sh.length, hot: B52.hot.length,
+          engines: B52.engines.map((e) => ({ x: e.x, y: e.y })) },
         b2: { w: B2.n[0].width, h: B2.n[0].height, normal: B2.n.length, shadow: B2.sh.length, hot: B2.hot.length },
         heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
     };
@@ -196,3 +324,139 @@ Object.assign(window.__sr, {
     stars: (SAVE.legs[G.leg]?.stars || [false, false, false]).slice(),
     gold: G.gold || 0, surv: G.surv, scrap: Math.floor(G.cash), wall: null })
 });
+
+// Radar dot batching preserves the old one-pixel overwrite order and rounding exactly.
+Object.assign(window.__sr, {
+  testRadar: () => {
+    if (!G) return false;
+    const w = 128, h = 120, keep = G.zombies, backup = ctx.getImageData(0, 0, w, h);
+    const [reference, expected] = mk(w, h, true), result = {ok: true, cases: 0, mismatchPixels: 0,
+      maxChannelDelta: 0, firstDifferences: []};
+    const started = performance.now();
+    ctx.save();
+    try {
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      ctx.imageSmoothingEnabled = false; ctx.filter = 'none'; ctx.shadowBlur = ctx.shadowOffsetX = ctx.shadowOffsetY = 0;
+      for (let shift = 0; shift < 32; shift++) {
+        const x0 = shift % 8 === 0 ? -4 : 8 + shift % 4 * 7, y0 = shift % 7 === 0 ? -3 : 9 + Math.floor(shift / 4) * 3;
+        const cx = x0 + 36, cy = y0 + 36, hx = -137.5 + shift * 0.31, hy = 224.25 - shift * 0.37, k = 36 / 640;
+        const zombies = [], add = (x, y, st, dead = false, gone = false) => zombies.push({
+          x: hx + (x + x0 - cx) / k, y: hy + (y + y0 - cy) / k, st, dead, gone});
+        const edges = [-1.51, -0.51, -0.5, -0.49, 0, 0.49, 0.5, 0.51, 35.49, 35.5, 36.49,
+          70.49, 70.5, 71.49, 71.5, 71.51, 72, 73];
+        for (let i = 0; i < edges.length; i++) {
+          add(edges[i], 14 + i % 7, i % 3); add(23 + i % 9, edges[i], (i + 1) % 3);
+        }
+        for (let i = 0; i < 700; i++) add((i * 17 + shift * 5) % 76 - 2 + 0.37,
+          (i * 29 + shift * 3) % 76 - 2 + 0.63, i % 3, i % 11 === 0, i % 13 === 0);
+        // Last living dot wins. A later dead dot must leave that color intact.
+        add(35.2, 35.2, 0); add(35.2, 35.2, 1); add(35.2, 35.2, 0, true);
+        add(42.2, 42.2, 2); add(42.2, 42.2, 0);
+        for (const g of [ctx, expected]) {
+          g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+          g.fillStyle = '#132531'; g.fillRect(0, 0, w, h);
+        }
+        G.zombies = zombies;
+        drawRadarDead(x0, y0, cx, cy, hx, hy, k);
+        for (const z of zombies) if (!z.dead) {
+          const x = Math.round(cx + (z.x - hx) * k), y = Math.round(cy + (z.y - hy) * k);
+          if (x < x0 || y < y0 || x > x0 + 71 || y > y0 + 71) continue;
+          expected.fillStyle = z.st ? '#ff4a32' : '#7a2a22'; expected.fillRect(x, y, 1, 1);
+        }
+        const actual = ctx.getImageData(0, 0, w, h).data, old = expected.getImageData(0, 0, w, h).data;
+        result.cases++;
+        for (let i = 0; i < actual.length; i += 4) {
+          let delta = 0;
+          for (let channel = 0; channel < 4; channel++) delta = Math.max(delta, Math.abs(actual[i + channel] - old[i + channel]));
+          if (!delta) continue;
+          result.mismatchPixels++; result.maxChannelDelta = Math.max(result.maxChannelDelta, delta);
+          if (result.firstDifferences.length < 8) result.firstDifferences.push({shift, x: i / 4 % w, y: Math.floor(i / 4 / w),
+            actual: Array.from(actual.slice(i, i + 4)), old: Array.from(old.slice(i, i + 4))});
+        }
+      }
+      result.ok = result.mismatchPixels === 0; result.elapsedMs = +(performance.now() - started).toFixed(3);
+      result.buffer = {w: RADARDEAD.c.width, h: RADARDEAD.c.height};
+      return result;
+    } finally { G.zombies = keep; ctx.restore(); ctx.putImageData(backup, 0, 0); }
+  }
+});
+
+// Pixel comparisons use the actual main drawing context, then restore its pixels and state.
+// The reference renders recreate the old primitives independently of their new caches.
+Object.assign(window.__sr, (() => {
+  function pixelTest(drawCases) {
+    const w = 255, h = 179;
+    if (cv.width < w || cv.height < h) throw new Error('Pixel tests need a canvas of at least 255x179');
+    const reference = document.createElement('canvas');
+    reference.width = w; reference.height = h;
+    const expected = reference.getContext('2d', { alpha: false, willReadFrequently: true });
+    expected.imageSmoothingEnabled = false;
+    const backup = ctx.getImageData(0, 0, w, h), started = performance.now();
+    const result = { ok: true, cases: 0, mismatchPixels: 0, maxChannelDelta: 0, firstDifferences: [],
+      diagnostics: { cases: 0, mismatchPixels: 0, maxChannelDelta: 0, firstDifferences: [] } };
+    ctx.save();
+    try {
+      ctx.imageSmoothingEnabled = false;
+      ctx.filter = 'none'; ctx.shadowBlur = ctx.shadowOffsetX = ctx.shadowOffsetY = 0;
+      ctx.shadowColor = 'rgba(0,0,0,0)';
+      drawCases((meta, actual, legacy, diagnostic = false) => {
+        for (const g of [ctx, expected]) {
+          g.setTransform(1, 0, 0, 1, 0, 0);
+          g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+          g.fillStyle = '#132531'; g.fillRect(0, 0, w, h);
+          g.translate(meta.translate[0], meta.translate[1]);
+          g.globalAlpha = meta.alpha; g.globalCompositeOperation = meta.blend;
+        }
+        actual(); legacy(expected);
+        const a = ctx.getImageData(0, 0, w, h).data, b = expected.getImageData(0, 0, w, h).data;
+        const bucket = diagnostic ? result.diagnostics : result;
+        bucket.cases++;
+        let first = null;
+        for (let i = 0; i < a.length; i += 4) {
+          let delta = 0;
+          for (let ch = 0; ch < 4; ch++) delta = Math.max(delta, Math.abs(a[i + ch] - b[i + ch]));
+          if (!delta) continue;
+          bucket.mismatchPixels++; bucket.maxChannelDelta = Math.max(bucket.maxChannelDelta, delta);
+          if (!first) first = { x: i / 4 % w, y: Math.floor(i / 4 / w),
+            actual: Array.from(a.slice(i, i + 4)), expected: Array.from(b.slice(i, i + 4)) };
+        }
+        if (first && bucket.firstDifferences.length < 8) bucket.firstDifferences.push({ ...meta, ...first });
+      });
+      result.ok = result.mismatchPixels === 0;
+      result.elapsedMs = +(performance.now() - started).toFixed(3);
+      return result;
+    } finally {
+      ctx.restore();
+      ctx.putImageData(backup, 0, 0);
+    }
+  }
+  return {
+    testRings: () => {
+      const pairs = [[1, 1], [2, 1], [3, 2], [4.4, 3.2], [8, 6], [13, 9],
+        [24, 17], [40, 29], [65, 47], [100, 72]];
+      const result = pixelTest((compare) => {
+        for (const [rx, ry] of pairs) for (const color of ['#fff1c2', 'rgba(143,209,138,0.4)']) {
+          const RX = Math.max(1, Math.round(rx)), RY = Math.max(1, Math.round(ry));
+          const bitmap = document.createElement('canvas');
+          bitmap.width = RX * 2 + 1; bitmap.height = RY * 2 + 1;
+          const old = bitmap.getContext('2d');
+          old.fillStyle = color;
+          const n = Math.max(16, Math.ceil((RX + RY) * 1.7));
+          for (let i = 0; i < n; i++) {
+            const a = i / n * (Math.PI * 2);
+            old.fillRect(Math.round(RX + Math.cos(a) * RX), Math.round(RY + Math.sin(a) * RY), 1, 1);
+          }
+          for (const alpha of [1, 0.4]) for (const blend of ['source-over', 'lighter'])
+            for (const repeats of [1, 3]) for (const translate of [[0, 0], [7, -3]]) {
+              const x = 121.25, y = 89.6;
+              compare({ rx, ry, color, alpha, blend, repeats, translate },
+                () => { for (let i = 0; i < repeats; i++) pell(x, y, rx, ry, color); },
+                (g) => { for (let i = 0; i < repeats; i++) g.drawImage(bitmap, Math.round(x) - RX, Math.round(y) - RY); });
+            }
+        }
+      });
+      result.caches = { shapes: PELL_SHAPES.size, bitmaps: PELL.size };
+      return result;
+    }
+  };
+})());

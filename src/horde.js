@@ -585,7 +585,7 @@ function spread(dt) {
 // over it (those with only things behind them). The rest (between two things, holding on to the
 // train, golden) are sorted in with everything standing (render). For that the screen is cut into
 // 8 px cells, and each cell keeps the nearest and furthest depth (k) of what stands over it.
-const OC = 8, CROWD = { a: [], b: [], ghost: [], list: [], kmin: new Float32Array(0), kmax: new Float32Array(0), tree: new Uint8Array(0),
+const OC = 8, CROWD = { a: [], b: [], ghost: [], list: [], visible: [], kmin: new Float32Array(0), kmax: new Float32Array(0), tree: new Uint8Array(0),
   cols: 0, rows: 0, x0: 0, y0: 0, head: new Int32Array(0), next: new Int32Array(0), force: null };
 // (force = 'a' or 'one': every zombie into layer A, or every one drawn one by one; tests only)
 // the cells under a box (world px): CC = [first column, last column, first row, last row]
@@ -610,6 +610,18 @@ function occMark(l, t, w, h, k, tree) {
 // layer B, or DL and VZ (drawn one by one). x0..y1 = the view in world px.
 function gatherHorde(x0, x1, y0, y1) {
   const C = CROWD;
+  // After a large strike, a modest surviving crowd is cheaper in the ordinary depth-sorted
+  // sprite pass. Its shadows share one opacity pass instead of switching alpha per zombie.
+  // Dense hordes still use the existing bulk layers; every zombie remains visible either way.
+  if (!C.force && (parts.length > 160 || booms.length > 10 || BURN.length > 20)) {
+    C.visible.length = 0;
+    for (const z of G.zombies) if (!z.dead && z.x >= x0 - 10 && z.x <= x1 + 10 && z.y >= y0 && z.y <= y1 + 24) C.visible.push(z);
+    if (C.visible.length <= 260) {
+      C.a.length = C.b.length = C.ghost.length = C.list.length = 0;
+      for (const z of C.visible) { DL.push(z); VZ.push(z); }
+      return;
+    }
+  }
   C.x0 = x0 - 16;
   C.y0 = y0 - 24;
   const cols = Math.ceil((x1 - x0 + 32) / OC) + 1, rows = Math.ceil((y1 - y0 + 56) / OC) + 1, n = cols * rows;
@@ -681,7 +693,9 @@ function crowdPass(L, sx, sy) {
   const n = L.length;
   if (!n) return;
   const ox = sx - G.camX, oy = sy - G.camY;
-  if (n < 40) {
+  // Native sprites are cheaper for the smaller groups left between overlapping blasts;
+  // reserve a full-canvas pixel readback for a genuinely dense layer.
+  if (n < 160) {
     L.sort(byK);
     for (const z of L) {
       const S = z.S, fr = S.walk[(z.anim | 0) & 3];

@@ -236,7 +236,8 @@ function stampCorpse(S, x, y) {
 const BC = ['#ffffff', '#fff3b0', '#ffd25a', '#ffa23a', '#f0702a', '#8f8a83', '#aca79f', '#cac5bd'];
 
 // Particles. add = true: only the glowing ones (drawn with 'lighter'), false: only the others.
-function drawParts(add) {
+function drawParts(add, pixels = false) {
+  const g = pixels ? FXPIX : ctx, circle = pixels ? fxPixelCircle : pcirc;
   // (the alpha in eighths, and the colour and alpha only set when they change: most are drops of
   // blood and dirt at full alpha, so a thousand of them cost little)
   let la = -1, lc = '';
@@ -245,18 +246,19 @@ function drawParts(add) {
     // Strikes throw effects beyond the field. Keep a margin for smoke growth and camera shake.
     if (offView(p.x, p.y - p.z, p.s + 12)) continue;
     const a = add || p.smoke ? clamp(Math.ceil((p.smoke ? Math.min(1, p.life / p.max * 1.5) : p.life / p.max) * 8) / 8, 0, 1) : 1;
-    if (a !== la) { ctx.globalAlpha = la = a; }
-    if (p.c !== lc) { ctx.fillStyle = lc = p.c; }
+    if (a !== la) { g.globalAlpha = la = a; }
+    if (p.c !== lc) { g.fillStyle = lc = p.c; }
     const s = Math.max(1, Math.round(p.s));
     // (a big puff of smoke is round)
-    if (p.smoke && s >= 5) pcirc(p.x, p.y - p.z, s / 2, p.c);
-    else ctx.fillRect(Math.round(p.x - s / 2), Math.round(p.y - p.z - s / 2), s, s);
+    if (p.smoke && s >= 5) circle(p.x, p.y - p.z, s / 2, p.c);
+    else g.fillRect(Math.round(p.x - s / 2), Math.round(p.y - p.z - s / 2), s, s);
   }
-  ctx.globalAlpha = 1;
+  g.globalAlpha = 1;
 }
 // Fire explosions: a white flash with a yellow edge, then fat puffs (white hot in the middle,
 // yellow and orange outside) that swell, rise and cool into grey smoke.
-function drawBooms() {
+function drawBooms(pixels = false) {
+  const g = pixels ? FXPIX : ctx, circle = pixels ? fxPixelCircle : pcirc;
   const many = booms.length > 10;
   for (const b of booms) {
     if (b.t < 0) continue;
@@ -264,8 +266,8 @@ function drawBooms() {
     const u = b.t / b.T, e = 1 - Math.pow(1 - u, 3);
     if (u < 0.06) {
       const r = Math.min(b.cap, b.r * 0.45);
-      pcirc(b.x, b.y - 3, r + 1, '#ffd25a');
-      pcirc(b.x, b.y - 3, r, '#ffffff');
+      circle(b.x, b.y - 3, r + 1, '#ffd25a');
+      circle(b.x, b.y - 3, r, '#ffffff');
       continue;
     }
     const fade = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
@@ -278,30 +280,31 @@ function drawBooms() {
       p.px = b.x + p.ca * b.r * p.d * k;
       p.py = b.y - 3 + p.sa * b.r * p.d * k * FORE - b.r * p.up * e;
       p.pr = Math.min(b.cap, b.r * p.s * sizeK) * fadeK;
+      p.visible = !offView(p.px, p.py, p.pr + 12);
     }
     // three passes, so the puffs read as one ball: a deep orange rim under the fire (a soft grey
     // one under the smoke), the puffs (the outer ones cool first), then their lit tops with a
     // white-hot heart while it is young
     for (let pass = 0; pass < 3; pass++) for (let i = 0; i < n; i++) {
       const p = b.pf[i], px = p.px, py = p.py, pr = p.pr, ci = p.ci;
-      if (pr < 1) continue;
+      if (pr < 1 || !p.visible) continue;
       const fire = ci < 5;
       if (pass === 0) {
-        ctx.globalAlpha = fire ? 1 : 0.3 * fade;
-        pcirc(px + 1, py + 1, pr + 1, fire ? '#c2401a' : '#5e5a55');
+        g.globalAlpha = fire ? 1 : 0.3 * fade;
+        circle(px + 1, py + 1, pr + 1, fire ? '#c2401a' : '#5e5a55');
       } else if (pass === 1) {
-        ctx.globalAlpha = fire ? 1 : 0.7 * fade;
-        pcirc(px, py, pr, BC[ci]);
+        g.globalAlpha = fire ? 1 : 0.7 * fade;
+        circle(px, py, pr, BC[ci]);
       } else if (fire) {
-        ctx.globalAlpha = 1;
-        pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.55, BC[Math.max(0, ci - 1)]);
-        if (ci < 3) pcirc(px - pr * 0.36, py - pr * 0.42, pr * 0.25, '#ffffff');
+        g.globalAlpha = 1;
+        circle(px - pr * 0.3, py - pr * 0.35, pr * 0.55, BC[Math.max(0, ci - 1)]);
+        if (ci < 3) circle(px - pr * 0.36, py - pr * 0.42, pr * 0.25, '#ffffff');
       } else {
-        ctx.globalAlpha = 0.5 * fade;
-        pcirc(px - pr * 0.3, py - pr * 0.35, pr * 0.5, BC[7]);
+        g.globalAlpha = 0.5 * fade;
+        circle(px - pr * 0.3, py - pr * 0.35, pr * 0.5, BC[7]);
       }
     }
-    ctx.globalAlpha = 1;
+    g.globalAlpha = 1;
   }
 }
 // Rings that grow on the ground and fade (draw with 'lighter').
@@ -331,38 +334,67 @@ function drawTexts() {
   }
   ctx.globalAlpha = 1;
 }
+// The same rectangle recipe paints both startup sprites and translucent flames.
+function flamePixels(target, x, y, big, f, g) {
+  if (big) {
+    target.fillStyle = '#c9772f';
+    target.fillRect(x - 4, y - 1, 9, 1);
+    target.fillStyle = '#e2552f';
+    target.fillRect(x - 3, y - 5, 7, 4);
+    target.fillStyle = '#ff8a3a';
+    target.fillRect(x - 2, y - 7 - (f > 0 ? 1 : 0), 5, 6);
+    target.fillStyle = '#ffcf6a';
+    target.fillRect(x - 1, y - 5, 3, 4);
+    target.fillStyle = '#fff1c2';
+    target.fillRect(x, y - 3, 1, 2);
+    target.fillStyle = '#ff8a3a';
+    target.fillRect(x - 1 + (f > 0.2 ? 1 : 0), y - 10 - (g > 0 ? 1 : 0), 2, 3);
+    target.fillStyle = '#e2552f';
+    target.fillRect(x + (f < -0.2 ? -2 : 2), y - 12 - (g > 0.5 ? 1 : 0), 1, 2);
+    target.fillRect(x + (g < 0 ? -3 : 3), y - 8, 1, 1);
+  } else {
+    target.fillStyle = '#c9772f';
+    target.fillRect(x - 2, y - 1, 5, 1);
+    target.fillStyle = '#ffcf6a';
+    target.fillRect(x - 1, y - 3, 3, 2);
+    target.fillStyle = '#ff8a3a';
+    target.fillRect(x - 1 + (f > 0.2 ? 1 : 0), y - 5 - (f > 0 ? 1 : 0), 2, 2);
+    target.fillStyle = '#e2552f';
+    target.fillRect(x + (f < -0.2 ? -1 : 1), y - 7, 1, 1);
+  }
+}
+// Four f threshold states and four g states cover every possible rectangle arrangement.
+// These twenty small images are baked and atlased before boot, with no runtime sprite creation.
+const FLAME_SPR = { small: [], big: [] };
+function bakeFlames() {
+  const fs = [-0.5, -0.1, 0.1, 0.5], gs = [-1, 0, 0.25, 1];
+  for (const big of [false, true]) for (let f = 0; f < fs.length; f++) {
+    for (let g = 0; g < (big ? gs.length : 1); g++) {
+      const ox = big ? 4 : 2, oy = big ? 13 : 7;
+      const [c, target] = mk(ox * 2 + 1, oy);
+      flamePixels(target, ox, oy, big, fs[f], gs[g]);
+      c.ox = ox;
+      c.oy = oy;
+      FLAME_SPR[big ? 'big' : 'small'].push(c);
+      atl(c);
+    }
+  }
+}
+bakeFlames();
 // A small fire: a flickering flame of a few pixels (big = a burning wreck).
-function drawFlame(x, y, big, seed) {
+function drawFlame(x, y, big, seed, pixels = false) {
   const f = Math.sin(realT * 19 + seed) * 0.5 + Math.sin(realT * 31 + seed * 1.7) * 0.5;
   const g = Math.sin(realT * 23 + seed * 3.1);
   x = Math.round(x);
   y = Math.round(y);
-  if (big) {
-    ctx.fillStyle = '#c9772f';
-    ctx.fillRect(x - 4, y - 1, 9, 1);
+  if (pixels) { flamePixels(FXPIX, x, y, big, f, g); return; }
+  if (ctx.globalAlpha === 1 && ctx.globalCompositeOperation === 'source-over') {
+    const fi = f < -0.2 ? 0 : f > 0.2 ? 3 : f > 0 ? 2 : 1;
+    const gi = g < 0 ? 0 : g > 0.5 ? 3 : g > 0 ? 2 : 1;
+    const c = big ? FLAME_SPR.big[fi * 4 + gi] : FLAME_SPR.small[fi];
+    blit(c, x - c.ox, y - c.oy);
     ctx.fillStyle = '#e2552f';
-    ctx.fillRect(x - 3, y - 5, 7, 4);
-    ctx.fillStyle = '#ff8a3a';
-    ctx.fillRect(x - 2, y - 7 - (f > 0 ? 1 : 0), 5, 6);
-    ctx.fillStyle = '#ffcf6a';
-    ctx.fillRect(x - 1, y - 5, 3, 4);
-    ctx.fillStyle = '#fff1c2';
-    ctx.fillRect(x, y - 3, 1, 2);
-    ctx.fillStyle = '#ff8a3a';
-    ctx.fillRect(x - 1 + (f > 0.2 ? 1 : 0), y - 10 - (g > 0 ? 1 : 0), 2, 3);
-    ctx.fillStyle = '#e2552f';
-    ctx.fillRect(x + (f < -0.2 ? -2 : 2), y - 12 - (g > 0.5 ? 1 : 0), 1, 2);
-    ctx.fillRect(x + (g < 0 ? -3 : 3), y - 8, 1, 1);
-  } else {
-    ctx.fillStyle = '#c9772f';
-    ctx.fillRect(x - 2, y - 1, 5, 1);
-    ctx.fillStyle = '#ffcf6a';
-    ctx.fillRect(x - 1, y - 3, 3, 2);
-    ctx.fillStyle = '#ff8a3a';
-    ctx.fillRect(x - 1 + (f > 0.2 ? 1 : 0), y - 5 - (f > 0 ? 1 : 0), 2, 2);
-    ctx.fillStyle = '#e2552f';
-    ctx.fillRect(x + (f < -0.2 ? -1 : 1), y - 7, 1, 1);
-  }
+  } else flamePixels(ctx, x, y, big, f, g);
 }
 
 // ---------- drawing (screen layer)
@@ -372,9 +404,12 @@ function currencyCoins(cur, x, y, n) {
 }
 // Coins on a curve from where the zombie fell to the cash counter (top left).
 function drawCoins() {
+  if (!coins.length) return;
+  // Every flying reward shares the same counters for this frame.
+  const targets = currencyLayout();
   for (const c of coins) {
     if (c.t < 0) continue;
-    const cur = c.cur || 'scrap', target = currencyX(cur);
+    const cur = c.cur || 'scrap', target = targets[cur];
     if (target == null) continue;
     const u = ease(c.t / c.T);
     const x = lerp(c.x0, target, u) + Math.sin(u * Math.PI) * -20, y = lerp(c.y0, 8, u) - Math.sin(u * Math.PI) * 30;

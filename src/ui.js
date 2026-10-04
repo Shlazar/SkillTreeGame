@@ -238,6 +238,23 @@ function drawArrows() {
 // The radar: the land round the helicopter, 1280 px across, north up. The railway, the train,
 // the dead (bright red: on the track or the train), survivors, the station, the safe zone wall,
 // and the view.
+const RADARDEAD = (() => {
+  const [c, g] = mk(72, 72, true), im = g.createImageData(72, 72);
+  const word = (r, green, b) => new Uint32Array(new Uint8Array([r, green, b, 255]).buffer)[0];
+  return {c, g, im, words: new Uint32Array(im.data.buffer), bright: word(255, 74, 50), dark: word(122, 42, 34)};
+})();
+function drawRadarDead(x0, y0, cx, cy, hx, hy, k) {
+  const p = RADARDEAD;
+  p.words.fill(0);
+  for (const z of G.zombies) {
+    if (z.dead) continue;
+    const x = Math.round(cx + (z.x - hx) * k) - x0, y = Math.round(cy + (z.y - hy) * k) - y0;
+    if (x < 0 || y < 0 || x > 71 || y > 71) continue;
+    p.words[y * 72 + x] = z.st ? p.bright : p.dark;
+  }
+  p.g.putImageData(p.im, 0, 0);
+  ctx.drawImage(p.c, x0, y0);
+}
 function drawRadar() {
   const R = 36, x0 = W - R * 2 - 6, y0 = VH - R * 2 - 6, cx = x0 + R, cy = y0 + R, k = R / 640;
   const hx = G.camX + W / 2, hy = G.camY + VH / 2;
@@ -247,16 +264,17 @@ function drawRadar() {
   ctx.fillStyle = 'rgba(86,194,168,0.12)';
   ctx.fillRect(cx, y0, 1, R * 2);
   ctx.fillRect(x0, cy, R * 2, 1);
+  let dotColor = '';
   const dot = (wx, wy, c, s) => {
     const px = Math.round(cx + (wx - hx) * k), py = Math.round(cy + (wy - hy) * k);
     if (px < x0 || py < y0 || px > x0 + R * 2 - s || py > y0 + R * 2 - s) return;
-    ctx.fillStyle = c;
+    if (c !== dotColor) ctx.fillStyle = dotColor = c;
     ctx.fillRect(px, py, s, s);
   };
   for (let wy = hy - 640; wy <= hy + 640; wy += 14) dot(trackX(wy), wy, '#3e434c', 1);
   if (G.safeZone && G.goalY > hy - 640 && G.goalY < hy + 640) for (let dx = -560; dx <= 560; dx += 18) dot(trackX(G.goalY) + dx, G.goalY, '#8fd18a', 1);
   for (const st of G.stops) dot(st.house.x - 1, st.house.y - 1, st.id === 'depot' ? U.gold : '#9fd3f2', 2);
-  for (const z of G.zombies) if (!z.dead) dot(z.x, z.y, z.st ? '#ff4a32' : '#7a2a22', 1);
+  drawRadarDead(x0, y0, cx, cy, hx, hy, k);
   // golden zombies: a blinking gold dot
   if (realT % 0.5 < 0.32) for (const z of G.zombies) if (z.gold && !z.dead) dot(z.x - 1, z.y - 1, '#ffd24a', 2);
   for (const p of G.people) if (p.st === 'run' || p.st === 'wait' || p.st === 'grab') dot(p.x, p.y, '#8fd18a', 1);

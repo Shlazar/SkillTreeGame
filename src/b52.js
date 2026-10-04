@@ -4,7 +4,7 @@ const B52C = {
   // Lane length, blast radius/damage, fall seconds, fire seconds/DPS and preview opacity (proposal)
   length: 300, radius: 18, damage: 12, fall: 0.55, burnDuration: 4, burnDamage: 2, previewAlpha: 0.12
 };
-const B52 = { n: [], sh: [], engines: [12, 18, 29, 35, 61, 67, 78, 84].map((x) => ({ x, y: 44 })) };
+const B52 = { n: [], sh: [], hot: [], engines: [12, 18, 29, 35, 61, 67, 78, 84].map((x) => ({ x, y: 44 })) };
 function b52Raw() {
   return pix(96, 76, (r) => {
     const L = '#c3cad0', A = '#a1a9b1', B = '#848d96', D = '#636b74', E = '#454b53', K = '#18191c';
@@ -47,10 +47,11 @@ function bakeB52() {
   const raw = b52Raw();
   for (let i = 0; i < JETC.N; i++) {
     const r = rotA(raw, i / JETC.N * TAU);
-    B52.n.push(jetSpriteBounds(selOut(r)));
+    B52.n.push(jetSpriteBounds(selOut(rimLight(r, '#e8e2cc', 0.2))));
     B52.sh.push(jetSpriteBounds(tint(r, '#000', 1, 'source-in')));
+    B52.hot.push(jetSpriteBounds(outline(hotSpr(r, 150), '#161616')));
   }
-  for (const c of [...B52.n, ...B52.sh]) atl(c);
+  for (const c of [...B52.n, ...B52.sh, ...B52.hot]) atl(c);
 }
 bakeB52();
 

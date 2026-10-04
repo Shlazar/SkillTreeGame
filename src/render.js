@@ -367,11 +367,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
   // fires, smoke and dirt, explosions, flying bodies
-  for (const f of FIRES) drawFlame(f.x, f.y, f.big, f.seed);
-  for (const f of flames) drawFlame(f.x, f.y, false, f.seed);
-  drawBurn();
-  drawParts(false);
-  drawBooms();
+  drawNormalFx(true);
   drawBodies();
   drawJuice();
   drawHelis();

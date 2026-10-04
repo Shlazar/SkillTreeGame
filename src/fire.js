@@ -29,7 +29,13 @@ function addBurn(x, y, R, duration, dps, source = 'napalm', wall = false) {
     if (old < 0) return null;
     BURN.splice(old, 1);
   }
-  const p = { x, y, R, time: duration, age: 0, duration, dps, tick: 0, source, wall, seed: rnd(TAU) };
+  const p = { x, y, R, time: duration, age: 0, duration, dps, tick: 0, source, wall, seed: rnd(TAU), flameOffsets: [] };
+  // Patch geometry stays fixed; only the existing flame flicker and fade change while it burns.
+  for (let k = 0; k < BURNC.flames; k++) {
+    const a = (k - 1) / (BURNC.flames - 1) * TAU + p.seed;
+    const r = k ? p.R * BURNC.spread : 0;
+    p.flameOffsets.push({ x: Math.cos(a) * r, y: Math.sin(a) * r * FORE, seed: p.seed + k });
+  }
   BURN.push(p);
   if (wall) BURNWALL.push(p);
   stats.created++;
@@ -103,17 +109,14 @@ function blockBurnWall(z, x0, y0) {
   }
   return stopped;
 }
-function drawBurn() {
+function drawBurn(pixels = false) {
+  const g = pixels ? FXPIX : ctx;
   for (const p of BURN) {
     if (offView(p.x, p.y, p.R)) continue;
-    ctx.globalAlpha = Math.min(1, p.time / BURNC.fade);
-    for (let k = 0; k < BURNC.flames; k++) {
-      const a = (k - 1) / (BURNC.flames - 1) * TAU + p.seed;
-      const r = k ? p.R * BURNC.spread : 0;
-      drawFlame(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * FORE, false, p.seed + k);
-    }
+    g.globalAlpha = Math.min(1, p.time / BURNC.fade);
+    for (const f of p.flameOffsets) drawFlame(p.x + f.x, p.y + f.y, false, f.seed, pixels);
   }
-  ctx.globalAlpha = 1;
+  g.globalAlpha = 1;
 }
 // Called in the existing additive pass. It uses the scenery-fire glow colour already cached.
 function drawBurnFx() {

@@ -8,7 +8,8 @@
 // SCALE = screen pixels per game pixel.
 const STEP = 1 / 60, TAU = Math.PI * 2, FORE = 0.72;
 const cv = document.getElementById('c');
-const ctx = cv.getContext('2d', { alpha: false });
+// Horde and effects layers read pixels every frame; keep their destination in CPU memory.
+const ctx = cv.getContext('2d', { alpha: false, willReadFrequently: true });
 ctx.imageSmoothingEnabled = false;
 const REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 let W = 640, H = 360, VH = 360, SCALE = 2, zoomStep = 0;

@@ -45,7 +45,7 @@ function bakeB2() {
   const raw = b2Raw();
   for (let i = 0; i < JETC.N; i++) {
     const r = rotA(raw, i / JETC.N * TAU);
-    B2.n.push(jetSpriteBounds(selOut(r)));
+    B2.n.push(jetSpriteBounds(selOut(rimLight(r, '#e8e2cc', 0.2))));
     B2.sh.push(jetSpriteBounds(tint(r, '#000', 1, 'source-in')));
     B2.hot.push(jetSpriteBounds(outline(hotSpr(r, B2C.heat), '#161616')));
   }
