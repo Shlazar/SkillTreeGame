@@ -3155,7 +3155,7 @@ function newGame(demo, number, replay) {
     goalS: demo ? -1e12 : stopRailS(leg.to), goalY: -1e9,
     // the stops on this run (the Depot and the stations ahead), the stations alone, the one the
     // train goes to next (or stands at), and the Dead Walls ahead
-    stops: [], stations: [], station: null, walls: [], wall: null,
+    stops: [], stations: [], station: null, walls: [], wall: null, safeZone: false, finale: null,
     camX: 0, camY: 0, aimSX: W / 2, aimSY: VH / 2,
     lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
@@ -3194,6 +3194,12 @@ function newGame(demo, number, replay) {
     G.goalY = yOfS(G.goalS);
     G.maxKm = DK();
     buildLine(leg);
+    if (leg.finale) {
+      G.finale = { phase: 'approach', stopS: G.goalS + FINALEC.stop, holdAt: null, elapsed: 0,
+        openAt: null, eventIndex: 0, gifted: false, giftAt: null, giftUsed: false, arrivedAt: null, gateProps: [] };
+      G.station.stopS = G.finale.stopS;
+      buildSafeZone();
+    }
     rollLoot();
   }
   placeCamera();
@@ -3337,6 +3343,7 @@ function hurtTrain(a, car, why) {
 }
 // The safe zone: a concrete wall right across the land, a gate for the railway, two watchtowers.
 function buildSafeZone() {
+  if (G.safeZone) return;
   G.safeZone = true;
   const y = Math.round(G.goalY), gx = Math.round(trackX(G.goalY)), st = G.statics;
   for (let x = gx - 640; x <= gx + 640; x += 16) {
@@ -3347,10 +3354,40 @@ function buildSafeZone() {
     st.push({ d: SAFE.pillar, x: gx + s * 20, y: y + 1, k: y + 1 });
     st.push({ d: SAFE.tower, x: gx + s * 50, y: y - 4, k: y - 4, tower: s });
   }
+  if (G.finale) for (const side of [-1, 1]) {
+    const p = { d: SAFE.blocks[side < 0 ? 0 : 1], x: gx + side * SAFE.blocks[0].spr.width / 2, y, k: y };
+    st.push(p); G.finale.gateProps.push(p);
+  }
+}
+// The closed gate is a route stop, not a damageable wall. Fighting remains live during the hold.
+function beginFinaleHold() {
+  const f = G.finale;
+  if (!f || f.phase !== 'approach' || G.result || G.demo) return false;
+  G.tr.s = f.stopS; G.tr.v = 0;
+  layoutTrain();
+  f.phase = 'hold'; f.holdAt = G.run; f.elapsed = 0;
+  banner('HOLD THE GATE!', 'THE TERMINUS GATE IS CLOSED.', U.amber);
+  return true;
+}
+function openFinaleGate() {
+  const f = G.finale;
+  if (!f || f.phase !== 'hold' || G.result || G.demo) return false;
+  f.phase = 'open'; f.openAt = G.run; f.elapsed = FINALEC.hold;
+  for (const p of f.gateProps) {
+    const i = G.statics.indexOf(p);
+    if (i >= 0) G.statics.splice(i, 1);
+  }
+  f.gateProps.length = 0;
+  G.station.stopS = G.goalS;
+  banner('GATE OPEN!', 'ROLL INTO THE TERMINUS.', U.gold);
+  SFX.horn();
+  return true;
 }
 // Arrival wins this leg. The station guards clear the climbers while the short summary opens.
 function arrive() {
   if (G.demo || G.result) return;
+  if (G.finale && G.finale.phase !== 'open') return;
+  if (G.finale) { G.finale.phase = 'done'; G.finale.arrivedAt = G.run; }
   if (G.leg === 12 && !G.replay) rescueCamp();
   // Arrival rewards must bank while the leg is still live; won legs cannot earn missed stars.
   if (G.leg >= 3) {
@@ -4250,6 +4287,7 @@ function step(dt) {
   // The train recovers after bumps, brakes at its goal, and remains parked after winning.
   if (G.result === 'lost') tr.v = Math.max(0, tr.v - 30 * dt);
   else if (G.result === 'won') tr.v = 0;
+  else if (G.finale?.phase === 'hold') tr.v = 0;
   else if (wall && !ramPowered() && (wall.state === 'braking' || wall.state === 'stopped')) {
     tr.v = Math.min(CFG.train.cruise, tr.v + CFG.train.accel * dt,
       Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - wall.stopS)) + 1.5);
@@ -4262,7 +4300,7 @@ function step(dt) {
       Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - st.stopS)) + 1.5);
     if (tr.s - st.stopS < 0.6) {
       tr.v = 0;
-      trainStops(st);
+      if (!beginFinaleHold()) trainStops(st);
     }
   } else {
     // the Turbo Ram: up to its top speed in 0.4 s, then back down to the cruise over 1 s (also after
@@ -4322,6 +4360,7 @@ function step(dt) {
     }
   }
   updateLegEvents();
+  updateFinale();
   updateAir(dt);
   G.hitT = Math.max(0, G.hitT - dt);
   G.muzzle[0] = Math.max(0, G.muzzle[0] - dt);
@@ -4699,7 +4738,7 @@ function newDead(x, y, type) {
 // ---------- streams and waves
 // A stream: the dead walking in one after another from one point at the edge of the screen (kept
 // in screen px, so it stays at the edge while the view moves on). n = how many are still to come,
-// gap = seconds between two, t = time to the next, edge = -1 left, 1 right, 0 top.
+// gap = seconds between two, t = time to the next, edge = -1 left, 1 right, 0 top, 2 bottom.
 const STREAMS = [];
 // Escort followers begin farther outside the edge, behind the first emitted brutes. (proposal)
 const STREAM_ESCORT_BACK = 72;
@@ -4716,6 +4755,10 @@ function addStream(n, edge, fast, params = {}) {
     sy = -10;
     const rx = railX(G.camY + 10) - G.camX, s = Math.random() < 0.5 ? -1 : 1;
     sx = clamp(rx + s * (leaders ? ESCORTC.railOff : rnd(40, 190)), 8, W - 8);
+  } else if (edge === 2) {
+    // Finale attackers can reach the parked train from behind the last car.
+    sy = VH + 10;
+    sx = clamp(railX(G.camY + VH) - G.camX + rnd(-FINALEC.rearOff, FINALEC.rearOff), 8, W - 8);
   } else {
     // in from a side, level with the ground ahead of the engine (or beside it)
     sx = edge < 0 ? -10 : W + 10;
@@ -4742,10 +4785,11 @@ function updateStreams(dt, want) {
       if (lead && s.escort) s.escort.emitted++;
       if (G.zombies.length >= want) continue;
       // (a stream from the side comes in a band, one from the top in a line across)
-      const jx = s.edge ? rnd(-4, 4) : s.escort ? rnd(-2, 2) : rnd(-10, 10), jy = s.edge ? rnd(-8, 8) : rnd(-3, 3);
+      const side = s.edge === -1 || s.edge === 1;
+      const jx = side ? rnd(-4, 4) : s.escort ? rnd(-2, 2) : rnd(-10, 10), jy = side ? rnd(-8, 8) : rnd(-3, 3);
       const back = s.leaders && !lead ? STREAM_ESCORT_BACK : 0;
-      const y = G.camY + s.sy + jy - (s.edge ? 0 : back * FORE);
-      const x = s.escort ? railX(y) + s.railOff + jx : G.camX + s.sx + jx + (s.edge ? s.edge * back : 0);
+      const y = G.camY + s.sy + jy - (side ? 0 : back * FORE);
+      const x = s.escort ? railX(y) + s.railOff + jx : G.camX + s.sx + jx + (side ? s.edge * back : 0);
       const z = newDead(x, y, pickSpawnType(false, s, index));
       if (s.variant === 'silver') makeSilver(z);
       else if (s.variant === 'boom') makeExplosive(z);
@@ -4759,7 +4803,7 @@ function updateStreams(dt, want) {
         z.escortReleased = true; z.escortReleaseAt = s.escort.releasedAt;
         z.escortReleaseReason = s.escort.releaseReason;
       }
-      if (s.eventId) { z.streamEventId = s.eventId; z.streamIndex = index; z.streamLead = lead; z.streamAt = G.run; }
+      if (s.eventId) { z.streamEventId = s.eventId; z.streamIndex = index; z.streamLead = lead; z.streamAt = G.run; z.streamEdge = s.edge; }
       G.zombies.push(z);
     }
     if (s.n <= 0) STREAMS.splice(i, 1);
@@ -5591,8 +5635,19 @@ const LEG_LENGTH = 2400;
 // First-pass scrap targets from the final design; ordinary kill shares are tuned with real rides.
 const LEG_SCRAP_TARGETS = [80, 95, 115, 135, 160, 190, 225, 265, 310, 365, 430, 500];
 // Ordinary kill multipliers preserve the large hordes; wall drops remain collectible. (proposal)
-const LEG_ORDINARY_PAY = [0.67831, 0.884, 0.75047, 0.66879, 0.37451, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.58263];
+const LEG_ORDINARY_PAY = [0.67831, 0.884, 0.75047, 0.66879, 0.37451, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.14645];
 const LEG_WALL_PAY = { 5: 40, 9: 40 };
+// The closed-gate hold lasts 30 play seconds. Standoff/rear spread px and peak-gift seconds are proposals.
+const FINALEC = { hold: 30,
+  stop: 20, giftAt: 15, rearOff: 40 // (proposal)
+};
+// Hold-relative wave clocks and sizes; every wave enters through all four viewport edges. (proposal)
+const FINALE_EVENTS = [
+  [0, 'wave', { n: 24, edges: [-1, 1, 0, 2] }],
+  [8, 'wave', { n: 30, edges: [-1, 1, 0, 2] }],
+  [15, 'wave', { n: 38, edges: [-1, 1, 0, 2] }],
+  [23, 'wave', { n: 30, edges: [-1, 1, 0, 2] }]
+];
 const STOPS = [
   Object.assign(DEPOT, { kind: 'big', side: 1 }),
   { id: 'millbrook', name: 'MILLBROOK', kind: 'big' },
@@ -5685,7 +5740,7 @@ function dispatchLegEvent(kind, params, id) {
     return G.zombies.length - before;
   }
   if (kind === 'stream') {
-    const edge = p.edge === -1 ? -1 : p.edge === 1 ? 1 : 0;
+    const edge = [-1, 1, 0, 2].includes(p.edge) ? p.edge : 0;
     if (n) addStream(n, edge, false, { ...p, eventId: id });
     return n;
   }
@@ -5697,9 +5752,10 @@ function dispatchLegEvent(kind, params, id) {
     return n;
   }
   if (kind === 'wave') {
-    if (n) { addStream(n, -1, true, { ...p, eventId: id }); addStream(n, 1, true, { ...p, eventId: id }); }
+    const edges = p.edges || [-1, 1];
+    if (n) for (const edge of edges) addStream(n, edge, true, { ...p, eventId: id });
     G.waves++;
-    return n * 2;
+    return n * edges.length;
   }
   if (kind === 'pile' || kind === 'crate') {
     if (!addLegLoot(kind, p, id)) return null;
@@ -5727,6 +5783,21 @@ function updateLegEvents() {
     if (n !== null) G.events.push({ id, kind, at, t: G.run, n });
   }
   updateGoldenEvents();
+}
+// Hold events and the gift run on play time; loss, pause and menus cannot advance the gate.
+function updateFinale() {
+  const f = G.finale;
+  if (!f || G.demo || G.result || mode !== 'play' || paused || f.phase !== 'hold') return;
+  f.elapsed = Math.min(FINALEC.hold, Math.max(0, G.run - f.holdAt));
+  while (f.eventIndex < FINALE_EVENTS.length) {
+    const index = f.eventIndex, [at, kind, params] = FINALE_EVENTS[index];
+    if (f.elapsed < at - 1e-9) break;
+    f.eventIndex++;
+    const id = 'leg-12-finale-' + index, n = dispatchLegEvent(kind, params, id);
+    if (n !== null) G.events.push({ id, kind, at: f.holdAt + at, t: G.run, n });
+  }
+  if (!f.gifted && f.elapsed >= FINALEC.giftAt - 1e-9) airGift();
+  if (f.elapsed >= FINALEC.hold - 1e-9) openFinaleGate();
 }
 // A leg record is made only when progress needs to be stored.
 function legSave(n) {
@@ -8567,7 +8638,11 @@ function render() {
   ctx.globalAlpha = 1;
   drawSky();
   // the names of the safe zone (past the gate), the Depot and the stations, over everything on the ground
-  if (G.safeZone && G.goalY > G.camY - 80 && G.goalY < G.camY + VH + 80) text('SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30, '#8fd18a', { align: 'center', scale: 2 });
+  if (G.safeZone && G.goalY > G.camY - 80 && G.goalY < G.camY + VH + 80) {
+    const closed = G.finale && (G.finale.phase === 'approach' || G.finale.phase === 'hold');
+    text(closed ? 'GATE CLOSED' : 'SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30,
+      closed ? U.amber : '#8fd18a', { align: 'center', scale: 2 });
+  }
   for (const st of G.stops) {
     const hs = st.house;
     if (Math.abs(hs.y - G.camY - VH / 2) < VH) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });
@@ -9147,6 +9222,22 @@ function sumSkip() {
   s.sounds = pl.ev.length;
   return true;
 }
+// The approved short summary comes first. A completed finale then has its own thanks card,
+// on every completion including replays; the card's next action returns to the Depot.
+function summaryContinue() {
+  if (mode !== 'summary' || !G.sum) return false;
+  if (TUT.card?.finale) {
+    TUT.card = null;
+    toDepot();
+    return true;
+  }
+  if (sumSkip()) return false;
+  if (G.sum.leg === 12 && G.sum.result === 'won' && !G.sum.thanksShown) {
+    G.sum.thanksShown = true;
+    openEndCard();
+  } else toDepot();
+  return true;
+}
 function drawSummary() {
   ctx.fillStyle = 'rgba(5,6,8,0.66)';
   ctx.fillRect(0, 0, W, H);
@@ -9192,7 +9283,8 @@ function drawSummary() {
   layout.notes.forEach(([line, color], i) => text(line, cx, layout.notesY + i * layout.noteStep, color, { align: 'center' }));
   ctx.globalAlpha = 1;
   const b = layout.button;
-  if (button(b.x, b.y, b.w, b.h, 'TO THE DEPOT', { primary: true })) toDepot();
+  const finale = s.leg === 12 && s.result === 'won' && !s.thanksShown;
+  if (button(b.x, b.y, b.w, b.h, finale ? 'CONTINUE' : 'TO THE DEPOT', { primary: true })) summaryContinue();
   text('ENTER', b.x + b.w + 6, b.y + 7, U.faint, { outline: false });
 }
 
@@ -9232,7 +9324,10 @@ function drawUI() {
     ctx.restore();
     drawAirBand();
     if (paused) drawPause();
-  } else if (mode === 'summary') drawSummary();
+  } else if (mode === 'summary') {
+    if (TUT.card?.finale) drawEndCard();
+    else drawSummary();
+  }
 }
 
 // depot.js - the save, and the Depot: the screen between runs. SAVE is everything kept from run to
@@ -11303,7 +11398,8 @@ const PLANES = {
 const AIRCFG = { doubleTap: 0.35, slotWidth: 78, slotGap: 4, left: 6, returnTime: 0.25, crowdRadius: 40 };
 const AIRKEYS = ['q', 'w', 'e', 'r'];
 const AIR = { g: null, slots: [], planes: {}, arm: null, aim: null, tap: null };
-const planeBandVisible = () => !!G && !G.demo && (mode === 'play' || mode === 'ending') && G.up.planeOwned.length > 0;
+const planeBandVisible = () => !!G && !G.demo && (mode === 'play' || mode === 'ending') &&
+  (G.up.planeOwned.length > 0 || G.finale?.gifted === true);
 function syncViewHeight() {
   VH = H - (planeBandVisible() ? AIRBAND.height : 0);
 }
@@ -11341,11 +11437,28 @@ function airSync() {
   }
 }
 const airLive = () => !!G && !G.demo && !G.result && mode === 'play' && !paused;
+// The finale lends one B-2 in E on every try. It never enters ownership, Hangar choices or saves.
+function airGift() {
+  if (!airLive() || G.leg !== 12 || !G.finale || G.finale.gifted) return false;
+  airSync();
+  AIR.slots[2] = 'b2';
+  AIR.planes.b2 = { gift: true, maxCd: 0, maxCharges: 1, cd: 0, charges: 1,
+    strikes: 0, lastStrike: null, readyAt: realT };
+  G.finale.gifted = true;
+  G.finale.giftAt = G.run;
+  G.finale.giftUsed = false;
+  syncViewHeight();
+  placeCamera();
+  SFX.planeReady();
+  if (typeof tutEvent === 'function') tutEvent('b2_gift');
+  return true;
+}
 function airSlot(key) {
   const i = AIRKEYS.indexOf(String(key).toLowerCase());
   return i >= 0 && i < AIR.slots.length ? AIR.slots[i] : null;
 }
-const airReady = (id) => !!id && !!PLANES[id]?.available && AIR.planes[id]?.charges > 0;
+const airAvailable = (id) => !!id && (PLANES[id]?.available === true || AIR.planes[id]?.gift === true);
+const airReady = (id) => airAvailable(id) && AIR.planes[id]?.charges > 0;
 // Serial refill is a proposal: a second use keeps the first recharge's progress.
 function updateAir(dt) {
   airSync();
@@ -11354,7 +11467,7 @@ function updateAir(dt) {
     return;
   }
   for (const [id, p] of Object.entries(AIR.planes)) {
-    if (!PLANES[id].available || p.charges >= p.maxCharges) continue;
+    if (p.gift || !PLANES[id].available || p.charges >= p.maxCharges) continue;
     p.cd -= dt;
     while (p.cd <= 1e-9 && p.charges < p.maxCharges) {
       const wasEmpty = p.charges === 0;
@@ -11382,7 +11495,7 @@ function airKey(key) {
   if (!airLive()) return false;
   key = String(key).toLowerCase();
   const id = airSlot(key);
-  if (!id || !PLANES[id].available) return false;
+  if (!airAvailable(id)) return false;
   if (AIR.arm === id && AIR.tap?.key === key && realT - AIR.tap.t <= AIRCFG.doubleTap) return airSmart(key);
   if (!airArm(id)) return false;
   AIR.tap = { key, t: realT };
@@ -11393,7 +11506,8 @@ function airLaunch(id, x, y, ux, uy) {
   if (!airLive() || !airReady(id) || !launchPlane(id, x, y, ux, uy)) return false;
   const p = AIR.planes[id];
   p.charges--;
-  if (p.cd <= 0) p.cd = p.maxCd;
+  if (p.gift) { p.cd = 0; G.finale.giftUsed = true; }
+  else if (p.cd <= 0) p.cd = p.maxCd;
   p.strikes++;
   p.lastStrike = { x, y, ux, uy, t: G.run };
   AIR.arm = AIR.aim = AIR.tap = null;
@@ -11455,16 +11569,19 @@ function airAimSnapshot() {
 function airBandSlots() {
   airSync();
   if (!planeBandVisible()) return [];
-  return AIR.slots.flatMap((id, i) => id && PLANES[id].available ? [{ id, key: AIRKEYS[i],
+  return AIR.slots.flatMap((id, i) => airAvailable(id) ? [{ id, key: AIRKEYS[i],
     x: AIRCFG.left + i * (AIRCFG.slotWidth + AIRCFG.slotGap), y: VH + 1,
-    w: AIRCFG.slotWidth, h: AIRBAND.height - 1 }] : []);
+    w: AIRCFG.slotWidth, h: AIRBAND.height - 1, gift: AIR.planes[id].gift === true,
+    used: AIR.planes[id].gift === true && AIR.planes[id].charges === 0,
+    status: AIR.planes[id].gift && AIR.planes[id].charges === 0 ? 'fullGame' : airReady(id) ? 'ready' : 'cooldown' }] : []);
 }
 function airSnapshot() {
   airSync();
   return AIR.slots.flatMap((id, slot) => {
     if (!id) return [];
     const p = AIR.planes[id];
-    return [{ id, slot, key: AIRKEYS[slot], available: PLANES[id].available, ready: airReady(id),
+    return [{ id, slot, key: AIRKEYS[slot], available: airAvailable(id), ready: airReady(id),
+      gift: p.gift === true, used: p.gift === true && p.charges === 0,
       cd: Math.max(0, p.cd), maxCd: p.maxCd, charges: p.charges, maxCharges: p.maxCharges,
       aiming: AIR.arm === id, strikes: p.strikes, lastStrike: p.lastStrike ? { ...p.lastStrike } : null }];
   });
@@ -11491,8 +11608,9 @@ function drawAirBand() {
     blit(icon, ix, iy);
     ctx.globalAlpha = 1;
     if (ready) text(s.key.toUpperCase(), s.x + 29, VH + 6, U.gold);
+    if (s.used) text('FULL GAME', s.x + 23, VH + 6, U.faint);
     if (p.maxCharges > 1 && p.charges > 0) text(String(p.charges), s.x + 40, VH + 6, U.ink);
-    if (p.charges < p.maxCharges) {
+    if (!p.gift && p.charges < p.maxCharges) {
       const f = clamp(1 - p.cd / p.maxCd, 0, 1), cx = s.x + 61, cy = VH + 9;
       ctx.fillStyle = '#3a3e48';
       ctx.fillRect(cx - 3, cy - 3, 7, 7);
@@ -12283,8 +12401,8 @@ addEventListener('keydown', (e) => {
     else if (k === 'Escape') titleAsk = false;
   } else if (mode === 'depot') depotKey(k);
   else if (mode === 'summary') {
-    // ENTER or ESC: show it all, then go to the Depot, after the opening moment.
-    if ((k === 'Enter' || k === 'Escape') && realT - sumStart > 0.6 && !sumSkip()) toDepot();
+    // Finish the summary, then show the finale card when appropriate before the Depot.
+    if ((k === 'Enter' || k === 'Escape') && realT - sumStart > 0.6) summaryContinue();
   }
 });
 addEventListener('keyup', (e) => { KEYS[keyName(e)] = false; });
@@ -13155,11 +13273,11 @@ Object.assign(window.__sr, {
 // tasks / taskQ = the task lines shown and waiting; tip / tipQ = the tip shown and waiting; banQ =
 // banners waiting; labels = words over a zombie (BRUTE!); mode = the screen last frame (for the
 // fades and for what a new run resets); fade = the black over the screen (1 = all black);
-// cardAt / card = the end-of-build card (when it opens, and its numbers); after = Depot
+// card = the finale thanks card; after = Depot
 // prompts to mark seen when the next run starts
 const TUT = {
   tasks: [], taskQ: [], tip: null, tipQ: [], banQ: [], labels: [], mode: '', fade: 1, fadeK: 1,
-  cardAt: 0, card: null, sum: [], after: new Set()
+  card: null, sum: [], after: new Set()
 };
 const seen = (k) => !!SAVE.seen[k];
 // Mark prompt k as shown. True the first time.
@@ -13250,7 +13368,14 @@ function tutEvent(name, d) {
     crate_taken: () => tutCount('crate'),
     sos_seen: () => tip('p_sos', 'HOVER OVER HIM TO WINCH HIM UP.', P(d)),
     golden_seen: () => tip('p_golden', 'CATCH THE GOLDEN ZOMBIE!', P(d.z || d)),
-    boom_seen: () => tip('p_boom', 'EXPLOSIVE ZOMBIES BLOW UP THEIR FRIENDS.', P(d.z || d))
+    boom_seen: () => tip('p_boom', 'EXPLOSIVE ZOMBIES BLOW UP THEIR FRIENDS.', P(d.z || d)),
+    b2_gift: () => {
+      radio('CONTROL', 'B-2 SUPPORT IS HERE. ONE STRIKE IS YOURS.');
+      tip('p_b2', 'A B-2 JOINS YOU, ONCE! PRESS E TWICE TO STRIKE.', () => {
+        const slot = airBandSlots().find((s) => s.gift);
+        return slot ? [slot.x + slot.w / 2, slot.y + slot.h / 2] : null;
+      });
+    }
   }[name];
   if (ev) ev();
 }
@@ -13275,16 +13400,7 @@ function tutFrame(dt) {
     TUT.mode = m;
   }
   TUT.fade = Math.max(0, TUT.fade - dt / 0.25 * TUT.fadeK);
-  // The end card opens after its scheduled story moment.
-  if (TUT.cardAt && realT >= TUT.cardAt) {
-    TUT.cardAt = 0;
-    if (tutLive() && see('endcard')) {
-      TUT.card = { t: realT, km: km2(G.maxKm), kills: G.kills, scrap: Math.floor(G.cash), surv: G.surv, time: G.run };
-      setPaused(true);
-      SFX.total();
-    }
-  }
-  if (TUT.card && !paused) TUT.card = null;
+  if (TUT.card && mode !== 'summary') TUT.card = null;
   currencyTips();
   // This lesson belongs to the Hangar; its seen key is set when the queued line appears.
   if (mode === 'depot' && depotTab === 'hangar') {
@@ -13303,7 +13419,6 @@ function tutNewRun() {
   TUT.tasks.length = TUT.taskQ.length = TUT.tipQ.length = TUT.banQ.length = TUT.labels.length = 0;
   TUT.tip = null;
   TUT.card = null;
-  TUT.cardAt = 0;
   for (const k of TUT.after) see(k);
   TUT.after.clear();
 }
@@ -13548,34 +13663,38 @@ function quitRun() {
   endGame();
 }
 
-// ---------- the end-of-build card
+// ---------- the finale thanks card (after the short leg summary)
+function openEndCard() {
+  if (mode !== 'summary' || G.sum?.leg !== 12 || G.sum.result !== 'won') return false;
+  TUT.card = { finale: true, t: realT, replay: G.sum.replay };
+  M.px = M.py = -1e4;
+  SFX.total();
+  return true;
+}
+function endCardLayout() {
+  const w = Math.min(W - 24, 288), h = 140, x = Math.round((W - w) / 2), y = Math.max(20, Math.round((H - h) / 2));
+  return { x, y, w, h, button: { x: Math.round(W / 2 - 70), y: y + h - 31, w: 140, h: 20 } };
+}
 function drawEndCard() {
-  const c = TUT.card, u = clamp((realT - c.t) / 0.3, 0, 1), m = Math.floor(c.time / 60), s = Math.floor(c.time % 60);
-  const rows = [['DISTANCE', c.km.toFixed(2) + ' KM', U.ink], ['ZOMBIES', fmt(c.kills), U.ink], ['SCRAP', '+' + fmt(c.scrap), U.gold],
-    ['SURVIVORS', '+' + c.surv, U.green], ['TIME', m + ':' + String(s).padStart(2, '0'), U.ink]];
-  const w = 300, h = 96 + rows.length * 11 + 34, x = Math.round(W / 2 - w / 2), y = Math.max(20, Math.round((H + 19) / 2 - h / 2)), cx = x + w / 2;
+  const c = TUT.card;
+  if (!c?.finale) return;
+  const u = clamp((realT - c.t) / 0.3, 0, 1), layout = endCardLayout(), { x, y, w, h } = layout, cx = x + w / 2;
+  ctx.fillStyle = 'rgba(5,6,8,0.66)';
+  ctx.fillRect(0, 0, W, H);
   ctx.globalAlpha = u;
   panel(x, y + Math.round((1 - u) * 8), w, h, '#0f1014');
   frame(x, y, w, h, '#b8862f');
   ctx.globalAlpha = 1;
   if (u < 1) return;
-  text(STATIONS[1].name + ' REACHED!', cx, y + 10, U.gold, { align: 'center', scale: 2, drop: true });
-  text('THIS IS THE END OF THE FIRST 10 MINUTES.', cx, y + 32, U.ink, { align: 'center' });
-  text('THANKS FOR PLAYING!', cx, y + 44, U.gold, { align: 'center' });
+  text('THANKS FOR PLAYING!', cx, y + 13, U.gold, { align: 'center', scale: 2, drop: true });
+  text('FARMLANDS TERMINUS REACHED.', cx, y + 39, U.ink, { align: 'center' });
   ctx.fillStyle = '#2e3139';
-  ctx.fillRect(x + 14, y + 58, w - 28, 1);
-  text('THIS RUN', cx, y + 64, U.dim, { align: 'center' });
-  rows.forEach(([a, b, col], i) => {
-    text(a, x + 40, y + 78 + i * 11, U.dim);
-    text(b, x + w - 40, y + 78 + i * 11, col, { align: 'right' });
-  });
-  const by = y + 96 + rows.length * 11;
-  if (button(cx - 128, by, 124, 20, 'KEEP PLAYING', { primary: true })) setPaused(false);
-  if (button(cx + 4, by, 124, 20, 'TITLE')) {
-    bankRun();
-    TUT.card = null;
-    toTitle();
-  }
+  ctx.fillRect(x + 14, y + 56, w - 28, 1);
+  text('MORE IN THE FULL GAME.', cx, y + 69, U.gold, { align: 'center' });
+  text('REPLAY ANY LEG FOR SCRAP.', cx, y + 84, U.dim, { align: 'center' });
+  const b = layout.button;
+  if (button(b.x, b.y, b.w, b.h, 'TO THE DEPOT', { primary: true })) summaryContinue();
+  text('ENTER', b.x + b.w + 6, b.y + 7, U.faint, { outline: false });
 }
 // The summary's lines for a lesson from this run, worked out as
 // the summary opens.
@@ -13604,7 +13723,9 @@ Object.assign(window.__sr, {
   tutState: () => ({
     tasks: TUT.tasks.map((t) => taskText(t) + (t.done >= 0 ? ' DONE' : '')), queued: TUT.taskQ.length, tip: TUT.tip && TUT.tip.msg,
     tips: TUT.tipQ.length, tipKey: TUT.tip?.key || null, radio: RADIO.cur && RADIO.cur.msg, banner: banners[0] && banners[0].a, tag: mode === 'depot' ? tutTag() : null,
-    hint: mode === 'depot' ? tutHint() : null, card: !!TUT.card, fade: +TUT.fade.toFixed(2), paused
+    hint: mode === 'depot' ? tutHint() : null, card: !!TUT.card,
+    endCard: TUT.card?.finale ? { title: 'THANKS FOR PLAYING!', buttonLabel: 'TO THE DEPOT', ...endCardLayout(), replay: TUT.card.replay } : null,
+    fade: +TUT.fade.toFixed(2), paused
   }),
   quit: () => quitRun()
 });
@@ -14333,6 +14454,17 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  // Actual Terminus gate state; cached props and events are copied for headless checks.
+  finaleState: () => {
+    const f = G?.finale;
+    if (!f) return null;
+    return { phase: f.phase, stopS: f.stopS, trainS: G.tr.s, trainSpeed: G.tr.v,
+      hold: FINALEC.hold, holdAt: f.holdAt, elapsed: f.elapsed, openAt: f.openAt,
+      gifted: f.gifted, giftAt: f.giftAt, giftUsed: f.giftUsed, arrivedAt: f.arrivedAt,
+      gateClosed: f.phase === 'approach' || f.phase === 'hold',
+      gate: f.gateProps.map((p) => ({ x: p.x, y: p.y, gone: !!p.gone })),
+      events: G.events.filter((e) => e.id.startsWith('leg-12-finale-')).map((e) => ({ ...e })) };
+  },
   incomeState: () => G ? { leg: G.leg, target: legDef(G.leg)?.scrapTarget || 0, ordinaryPay: G.killPay,
     scrap: Math.floor(G.cash), sources: { ...G.earnedSources }, base: { ...G.earnedBase }, counts: { ...G.earnedCounts },
     fractions: { ordinary: G.killAcc, silver: G.silverAcc, loot: G.lootAcc, wall: G.wallAcc } } : null,

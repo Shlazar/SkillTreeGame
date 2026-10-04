@@ -9,11 +9,11 @@
 // tasks / taskQ = the task lines shown and waiting; tip / tipQ = the tip shown and waiting; banQ =
 // banners waiting; labels = words over a zombie (BRUTE!); mode = the screen last frame (for the
 // fades and for what a new run resets); fade = the black over the screen (1 = all black);
-// cardAt / card = the end-of-build card (when it opens, and its numbers); after = Depot
+// card = the finale thanks card; after = Depot
 // prompts to mark seen when the next run starts
 const TUT = {
   tasks: [], taskQ: [], tip: null, tipQ: [], banQ: [], labels: [], mode: '', fade: 1, fadeK: 1,
-  cardAt: 0, card: null, sum: [], after: new Set()
+  card: null, sum: [], after: new Set()
 };
 const seen = (k) => !!SAVE.seen[k];
 // Mark prompt k as shown. True the first time.
@@ -104,7 +104,14 @@ function tutEvent(name, d) {
     crate_taken: () => tutCount('crate'),
     sos_seen: () => tip('p_sos', 'HOVER OVER HIM TO WINCH HIM UP.', P(d)),
     golden_seen: () => tip('p_golden', 'CATCH THE GOLDEN ZOMBIE!', P(d.z || d)),
-    boom_seen: () => tip('p_boom', 'EXPLOSIVE ZOMBIES BLOW UP THEIR FRIENDS.', P(d.z || d))
+    boom_seen: () => tip('p_boom', 'EXPLOSIVE ZOMBIES BLOW UP THEIR FRIENDS.', P(d.z || d)),
+    b2_gift: () => {
+      radio('CONTROL', 'B-2 SUPPORT IS HERE. ONE STRIKE IS YOURS.');
+      tip('p_b2', 'A B-2 JOINS YOU, ONCE! PRESS E TWICE TO STRIKE.', () => {
+        const slot = airBandSlots().find((s) => s.gift);
+        return slot ? [slot.x + slot.w / 2, slot.y + slot.h / 2] : null;
+      });
+    }
   }[name];
   if (ev) ev();
 }
@@ -129,16 +136,7 @@ function tutFrame(dt) {
     TUT.mode = m;
   }
   TUT.fade = Math.max(0, TUT.fade - dt / 0.25 * TUT.fadeK);
-  // The end card opens after its scheduled story moment.
-  if (TUT.cardAt && realT >= TUT.cardAt) {
-    TUT.cardAt = 0;
-    if (tutLive() && see('endcard')) {
-      TUT.card = { t: realT, km: km2(G.maxKm), kills: G.kills, scrap: Math.floor(G.cash), surv: G.surv, time: G.run };
-      setPaused(true);
-      SFX.total();
-    }
-  }
-  if (TUT.card && !paused) TUT.card = null;
+  if (TUT.card && mode !== 'summary') TUT.card = null;
   currencyTips();
   // This lesson belongs to the Hangar; its seen key is set when the queued line appears.
   if (mode === 'depot' && depotTab === 'hangar') {
@@ -157,7 +155,6 @@ function tutNewRun() {
   TUT.tasks.length = TUT.taskQ.length = TUT.tipQ.length = TUT.banQ.length = TUT.labels.length = 0;
   TUT.tip = null;
   TUT.card = null;
-  TUT.cardAt = 0;
   for (const k of TUT.after) see(k);
   TUT.after.clear();
 }
@@ -402,34 +399,38 @@ function quitRun() {
   endGame();
 }
 
-// ---------- the end-of-build card
+// ---------- the finale thanks card (after the short leg summary)
+function openEndCard() {
+  if (mode !== 'summary' || G.sum?.leg !== 12 || G.sum.result !== 'won') return false;
+  TUT.card = { finale: true, t: realT, replay: G.sum.replay };
+  M.px = M.py = -1e4;
+  SFX.total();
+  return true;
+}
+function endCardLayout() {
+  const w = Math.min(W - 24, 288), h = 140, x = Math.round((W - w) / 2), y = Math.max(20, Math.round((H - h) / 2));
+  return { x, y, w, h, button: { x: Math.round(W / 2 - 70), y: y + h - 31, w: 140, h: 20 } };
+}
 function drawEndCard() {
-  const c = TUT.card, u = clamp((realT - c.t) / 0.3, 0, 1), m = Math.floor(c.time / 60), s = Math.floor(c.time % 60);
-  const rows = [['DISTANCE', c.km.toFixed(2) + ' KM', U.ink], ['ZOMBIES', fmt(c.kills), U.ink], ['SCRAP', '+' + fmt(c.scrap), U.gold],
-    ['SURVIVORS', '+' + c.surv, U.green], ['TIME', m + ':' + String(s).padStart(2, '0'), U.ink]];
-  const w = 300, h = 96 + rows.length * 11 + 34, x = Math.round(W / 2 - w / 2), y = Math.max(20, Math.round((H + 19) / 2 - h / 2)), cx = x + w / 2;
+  const c = TUT.card;
+  if (!c?.finale) return;
+  const u = clamp((realT - c.t) / 0.3, 0, 1), layout = endCardLayout(), { x, y, w, h } = layout, cx = x + w / 2;
+  ctx.fillStyle = 'rgba(5,6,8,0.66)';
+  ctx.fillRect(0, 0, W, H);
   ctx.globalAlpha = u;
   panel(x, y + Math.round((1 - u) * 8), w, h, '#0f1014');
   frame(x, y, w, h, '#b8862f');
   ctx.globalAlpha = 1;
   if (u < 1) return;
-  text(STATIONS[1].name + ' REACHED!', cx, y + 10, U.gold, { align: 'center', scale: 2, drop: true });
-  text('THIS IS THE END OF THE FIRST 10 MINUTES.', cx, y + 32, U.ink, { align: 'center' });
-  text('THANKS FOR PLAYING!', cx, y + 44, U.gold, { align: 'center' });
+  text('THANKS FOR PLAYING!', cx, y + 13, U.gold, { align: 'center', scale: 2, drop: true });
+  text('FARMLANDS TERMINUS REACHED.', cx, y + 39, U.ink, { align: 'center' });
   ctx.fillStyle = '#2e3139';
-  ctx.fillRect(x + 14, y + 58, w - 28, 1);
-  text('THIS RUN', cx, y + 64, U.dim, { align: 'center' });
-  rows.forEach(([a, b, col], i) => {
-    text(a, x + 40, y + 78 + i * 11, U.dim);
-    text(b, x + w - 40, y + 78 + i * 11, col, { align: 'right' });
-  });
-  const by = y + 96 + rows.length * 11;
-  if (button(cx - 128, by, 124, 20, 'KEEP PLAYING', { primary: true })) setPaused(false);
-  if (button(cx + 4, by, 124, 20, 'TITLE')) {
-    bankRun();
-    TUT.card = null;
-    toTitle();
-  }
+  ctx.fillRect(x + 14, y + 56, w - 28, 1);
+  text('MORE IN THE FULL GAME.', cx, y + 69, U.gold, { align: 'center' });
+  text('REPLAY ANY LEG FOR SCRAP.', cx, y + 84, U.dim, { align: 'center' });
+  const b = layout.button;
+  if (button(b.x, b.y, b.w, b.h, 'TO THE DEPOT', { primary: true })) summaryContinue();
+  text('ENTER', b.x + b.w + 6, b.y + 7, U.faint, { outline: false });
 }
 // The summary's lines for a lesson from this run, worked out as
 // the summary opens.
@@ -458,7 +459,9 @@ Object.assign(window.__sr, {
   tutState: () => ({
     tasks: TUT.tasks.map((t) => taskText(t) + (t.done >= 0 ? ' DONE' : '')), queued: TUT.taskQ.length, tip: TUT.tip && TUT.tip.msg,
     tips: TUT.tipQ.length, tipKey: TUT.tip?.key || null, radio: RADIO.cur && RADIO.cur.msg, banner: banners[0] && banners[0].a, tag: mode === 'depot' ? tutTag() : null,
-    hint: mode === 'depot' ? tutHint() : null, card: !!TUT.card, fade: +TUT.fade.toFixed(2), paused
+    hint: mode === 'depot' ? tutHint() : null, card: !!TUT.card,
+    endCard: TUT.card?.finale ? { title: 'THANKS FOR PLAYING!', buttonLabel: 'TO THE DEPOT', ...endCardLayout(), replay: TUT.card.replay } : null,
+    fade: +TUT.fade.toFixed(2), paused
   }),
   quit: () => quitRun()
 });

@@ -112,15 +112,15 @@ const replay = seeded(0x654, () => {
 const finalCamp = seeded(0x65C, () => {
   startRescue(12); __sr.sim(1);
   check(__sr.save().surv === 0 && !__sr.save().rescues.length, 'Final camp awarded missing rescues before arrival');
-  __sr.win(); until(() => __sr.G.result === 'won', 2);
+  __sr.win(); until(() => __sr.G.result === 'won', 34); // Terminus now includes its real30s closed-gate hold.
   const ids = ['rescue-4', 'rescue-8', 'rescue-10'];
   check(__sr.save().surv === 3 && ids.every(id => __sr.save().rescues.includes(id)) && !__sr.save().rescueDue.length,
     'Actual Terminus arrival did not claim all three missing demo rescues');
-  __sr.sim(6); startRescue(12, false, true); __sr.win(); until(() => __sr.G.result === 'won', 2);
+  __sr.sim(6); startRescue(12, false, true); __sr.win(); until(() => __sr.G.result === 'won', 34);
   check(__sr.save().surv === 3 && __sr.save().rescues.length === 3, 'Terminus replay duplicated camp rescues');
   spawnRescue4(); __sr.lootGo(rescue().i); __sr.sim(2.5);
   startRescue(12, false); __sr.sim(1); check(__sr.save().surv === 1, 'Partly claimed camp paid early');
-  __sr.win(); until(() => __sr.G.result === 'won', 2);
+  __sr.win(); until(() => __sr.G.result === 'won', 34);
   check(__sr.save().surv === 3 && __sr.save().rescues.length === 3, 'Camp duplicated the field rescue instead of claiming only the missing two');
   return {allMissing: 3, alreadyClaimed: 1, remainingClaimed: 2, replayPaysNone: true, saved: __sr.save()};
 });

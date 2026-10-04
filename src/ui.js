@@ -544,6 +544,22 @@ function sumSkip() {
   s.sounds = pl.ev.length;
   return true;
 }
+// The approved short summary comes first. A completed finale then has its own thanks card,
+// on every completion including replays; the card's next action returns to the Depot.
+function summaryContinue() {
+  if (mode !== 'summary' || !G.sum) return false;
+  if (TUT.card?.finale) {
+    TUT.card = null;
+    toDepot();
+    return true;
+  }
+  if (sumSkip()) return false;
+  if (G.sum.leg === 12 && G.sum.result === 'won' && !G.sum.thanksShown) {
+    G.sum.thanksShown = true;
+    openEndCard();
+  } else toDepot();
+  return true;
+}
 function drawSummary() {
   ctx.fillStyle = 'rgba(5,6,8,0.66)';
   ctx.fillRect(0, 0, W, H);
@@ -589,7 +605,8 @@ function drawSummary() {
   layout.notes.forEach(([line, color], i) => text(line, cx, layout.notesY + i * layout.noteStep, color, { align: 'center' }));
   ctx.globalAlpha = 1;
   const b = layout.button;
-  if (button(b.x, b.y, b.w, b.h, 'TO THE DEPOT', { primary: true })) toDepot();
+  const finale = s.leg === 12 && s.result === 'won' && !s.thanksShown;
+  if (button(b.x, b.y, b.w, b.h, finale ? 'CONTINUE' : 'TO THE DEPOT', { primary: true })) summaryContinue();
   text('ENTER', b.x + b.w + 6, b.y + 7, U.faint, { outline: false });
 }
 
@@ -629,5 +646,8 @@ function drawUI() {
     ctx.restore();
     drawAirBand();
     if (paused) drawPause();
-  } else if (mode === 'summary') drawSummary();
+  } else if (mode === 'summary') {
+    if (TUT.card?.finale) drawEndCard();
+    else drawSummary();
+  }
 }

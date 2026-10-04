@@ -448,7 +448,11 @@ function render() {
   ctx.globalAlpha = 1;
   drawSky();
   // the names of the safe zone (past the gate), the Depot and the stations, over everything on the ground
-  if (G.safeZone && G.goalY > G.camY - 80 && G.goalY < G.camY + VH + 80) text('SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30, '#8fd18a', { align: 'center', scale: 2 });
+  if (G.safeZone && G.goalY > G.camY - 80 && G.goalY < G.camY + VH + 80) {
+    const closed = G.finale && (G.finale.phase === 'approach' || G.finale.phase === 'hold');
+    text(closed ? 'GATE CLOSED' : 'SAFE ZONE', trackX(G.goalY) + 96, G.goalY - 30,
+      closed ? U.amber : '#8fd18a', { align: 'center', scale: 2 });
+  }
   for (const st of G.stops) {
     const hs = st.house;
     if (Math.abs(hs.y - G.camY - VH / 2) < VH) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });

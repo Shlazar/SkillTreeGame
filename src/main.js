@@ -154,8 +154,8 @@ addEventListener('keydown', (e) => {
     else if (k === 'Escape') titleAsk = false;
   } else if (mode === 'depot') depotKey(k);
   else if (mode === 'summary') {
-    // ENTER or ESC: show it all, then go to the Depot, after the opening moment.
-    if ((k === 'Enter' || k === 'Escape') && realT - sumStart > 0.6 && !sumSkip()) toDepot();
+    // Finish the summary, then show the finale card when appropriate before the Depot.
+    if ((k === 'Enter' || k === 'Escape') && realT - sumStart > 0.6) summaryContinue();
   }
 });
 addEventListener('keyup', (e) => { KEYS[keyName(e)] = false; });

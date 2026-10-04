@@ -345,7 +345,7 @@ function newDead(x, y, type) {
 // ---------- streams and waves
 // A stream: the dead walking in one after another from one point at the edge of the screen (kept
 // in screen px, so it stays at the edge while the view moves on). n = how many are still to come,
-// gap = seconds between two, t = time to the next, edge = -1 left, 1 right, 0 top.
+// gap = seconds between two, t = time to the next, edge = -1 left, 1 right, 0 top, 2 bottom.
 const STREAMS = [];
 // Escort followers begin farther outside the edge, behind the first emitted brutes. (proposal)
 const STREAM_ESCORT_BACK = 72;
@@ -362,6 +362,10 @@ function addStream(n, edge, fast, params = {}) {
     sy = -10;
     const rx = railX(G.camY + 10) - G.camX, s = Math.random() < 0.5 ? -1 : 1;
     sx = clamp(rx + s * (leaders ? ESCORTC.railOff : rnd(40, 190)), 8, W - 8);
+  } else if (edge === 2) {
+    // Finale attackers can reach the parked train from behind the last car.
+    sy = VH + 10;
+    sx = clamp(railX(G.camY + VH) - G.camX + rnd(-FINALEC.rearOff, FINALEC.rearOff), 8, W - 8);
   } else {
     // in from a side, level with the ground ahead of the engine (or beside it)
     sx = edge < 0 ? -10 : W + 10;
@@ -388,10 +392,11 @@ function updateStreams(dt, want) {
       if (lead && s.escort) s.escort.emitted++;
       if (G.zombies.length >= want) continue;
       // (a stream from the side comes in a band, one from the top in a line across)
-      const jx = s.edge ? rnd(-4, 4) : s.escort ? rnd(-2, 2) : rnd(-10, 10), jy = s.edge ? rnd(-8, 8) : rnd(-3, 3);
+      const side = s.edge === -1 || s.edge === 1;
+      const jx = side ? rnd(-4, 4) : s.escort ? rnd(-2, 2) : rnd(-10, 10), jy = side ? rnd(-8, 8) : rnd(-3, 3);
       const back = s.leaders && !lead ? STREAM_ESCORT_BACK : 0;
-      const y = G.camY + s.sy + jy - (s.edge ? 0 : back * FORE);
-      const x = s.escort ? railX(y) + s.railOff + jx : G.camX + s.sx + jx + (s.edge ? s.edge * back : 0);
+      const y = G.camY + s.sy + jy - (side ? 0 : back * FORE);
+      const x = s.escort ? railX(y) + s.railOff + jx : G.camX + s.sx + jx + (side ? s.edge * back : 0);
       const z = newDead(x, y, pickSpawnType(false, s, index));
       if (s.variant === 'silver') makeSilver(z);
       else if (s.variant === 'boom') makeExplosive(z);
@@ -405,7 +410,7 @@ function updateStreams(dt, want) {
         z.escortReleased = true; z.escortReleaseAt = s.escort.releasedAt;
         z.escortReleaseReason = s.escort.releaseReason;
       }
-      if (s.eventId) { z.streamEventId = s.eventId; z.streamIndex = index; z.streamLead = lead; z.streamAt = G.run; }
+      if (s.eventId) { z.streamEventId = s.eventId; z.streamIndex = index; z.streamLead = lead; z.streamAt = G.run; z.streamEdge = s.edge; }
       G.zombies.push(z);
     }
     if (s.n <= 0) STREAMS.splice(i, 1);

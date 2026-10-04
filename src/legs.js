@@ -6,8 +6,19 @@ const LEG_LENGTH = 2400;
 // First-pass scrap targets from the final design; ordinary kill shares are tuned with real rides.
 const LEG_SCRAP_TARGETS = [80, 95, 115, 135, 160, 190, 225, 265, 310, 365, 430, 500];
 // Ordinary kill multipliers preserve the large hordes; wall drops remain collectible. (proposal)
-const LEG_ORDINARY_PAY = [0.67831, 0.884, 0.75047, 0.66879, 0.37451, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.58263];
+const LEG_ORDINARY_PAY = [0.67831, 0.884, 0.75047, 0.66879, 0.37451, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.14645];
 const LEG_WALL_PAY = { 5: 40, 9: 40 };
+// The closed-gate hold lasts 30 play seconds. Standoff/rear spread px and peak-gift seconds are proposals.
+const FINALEC = { hold: 30,
+  stop: 20, giftAt: 15, rearOff: 40 // (proposal)
+};
+// Hold-relative wave clocks and sizes; every wave enters through all four viewport edges. (proposal)
+const FINALE_EVENTS = [
+  [0, 'wave', { n: 24, edges: [-1, 1, 0, 2] }],
+  [8, 'wave', { n: 30, edges: [-1, 1, 0, 2] }],
+  [15, 'wave', { n: 38, edges: [-1, 1, 0, 2] }],
+  [23, 'wave', { n: 30, edges: [-1, 1, 0, 2] }]
+];
 const STOPS = [
   Object.assign(DEPOT, { kind: 'big', side: 1 }),
   { id: 'millbrook', name: 'MILLBROOK', kind: 'big' },
@@ -100,7 +111,7 @@ function dispatchLegEvent(kind, params, id) {
     return G.zombies.length - before;
   }
   if (kind === 'stream') {
-    const edge = p.edge === -1 ? -1 : p.edge === 1 ? 1 : 0;
+    const edge = [-1, 1, 0, 2].includes(p.edge) ? p.edge : 0;
     if (n) addStream(n, edge, false, { ...p, eventId: id });
     return n;
   }
@@ -112,9 +123,10 @@ function dispatchLegEvent(kind, params, id) {
     return n;
   }
   if (kind === 'wave') {
-    if (n) { addStream(n, -1, true, { ...p, eventId: id }); addStream(n, 1, true, { ...p, eventId: id }); }
+    const edges = p.edges || [-1, 1];
+    if (n) for (const edge of edges) addStream(n, edge, true, { ...p, eventId: id });
     G.waves++;
-    return n * 2;
+    return n * edges.length;
   }
   if (kind === 'pile' || kind === 'crate') {
     if (!addLegLoot(kind, p, id)) return null;
@@ -142,6 +154,21 @@ function updateLegEvents() {
     if (n !== null) G.events.push({ id, kind, at, t: G.run, n });
   }
   updateGoldenEvents();
+}
+// Hold events and the gift run on play time; loss, pause and menus cannot advance the gate.
+function updateFinale() {
+  const f = G.finale;
+  if (!f || G.demo || G.result || mode !== 'play' || paused || f.phase !== 'hold') return;
+  f.elapsed = Math.min(FINALEC.hold, Math.max(0, G.run - f.holdAt));
+  while (f.eventIndex < FINALE_EVENTS.length) {
+    const index = f.eventIndex, [at, kind, params] = FINALE_EVENTS[index];
+    if (f.elapsed < at - 1e-9) break;
+    f.eventIndex++;
+    const id = 'leg-12-finale-' + index, n = dispatchLegEvent(kind, params, id);
+    if (n !== null) G.events.push({ id, kind, at: f.holdAt + at, t: G.run, n });
+  }
+  if (!f.gifted && f.elapsed >= FINALEC.giftAt - 1e-9) airGift();
+  if (f.elapsed >= FINALEC.hold - 1e-9) openFinaleGate();
 }
 // A leg record is made only when progress needs to be stored.
 function legSave(n) {

@@ -158,7 +158,7 @@ function newGame(demo, number, replay) {
     goalS: demo ? -1e12 : stopRailS(leg.to), goalY: -1e9,
     // the stops on this run (the Depot and the stations ahead), the stations alone, the one the
     // train goes to next (or stands at), and the Dead Walls ahead
-    stops: [], stations: [], station: null, walls: [], wall: null,
+    stops: [], stations: [], station: null, walls: [], wall: null, safeZone: false, finale: null,
     camX: 0, camY: 0, aimSX: W / 2, aimSY: VH / 2,
     lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
@@ -197,6 +197,12 @@ function newGame(demo, number, replay) {
     G.goalY = yOfS(G.goalS);
     G.maxKm = DK();
     buildLine(leg);
+    if (leg.finale) {
+      G.finale = { phase: 'approach', stopS: G.goalS + FINALEC.stop, holdAt: null, elapsed: 0,
+        openAt: null, eventIndex: 0, gifted: false, giftAt: null, giftUsed: false, arrivedAt: null, gateProps: [] };
+      G.station.stopS = G.finale.stopS;
+      buildSafeZone();
+    }
     rollLoot();
   }
   placeCamera();
@@ -340,6 +346,7 @@ function hurtTrain(a, car, why) {
 }
 // The safe zone: a concrete wall right across the land, a gate for the railway, two watchtowers.
 function buildSafeZone() {
+  if (G.safeZone) return;
   G.safeZone = true;
   const y = Math.round(G.goalY), gx = Math.round(trackX(G.goalY)), st = G.statics;
   for (let x = gx - 640; x <= gx + 640; x += 16) {
@@ -350,10 +357,40 @@ function buildSafeZone() {
     st.push({ d: SAFE.pillar, x: gx + s * 20, y: y + 1, k: y + 1 });
     st.push({ d: SAFE.tower, x: gx + s * 50, y: y - 4, k: y - 4, tower: s });
   }
+  if (G.finale) for (const side of [-1, 1]) {
+    const p = { d: SAFE.blocks[side < 0 ? 0 : 1], x: gx + side * SAFE.blocks[0].spr.width / 2, y, k: y };
+    st.push(p); G.finale.gateProps.push(p);
+  }
+}
+// The closed gate is a route stop, not a damageable wall. Fighting remains live during the hold.
+function beginFinaleHold() {
+  const f = G.finale;
+  if (!f || f.phase !== 'approach' || G.result || G.demo) return false;
+  G.tr.s = f.stopS; G.tr.v = 0;
+  layoutTrain();
+  f.phase = 'hold'; f.holdAt = G.run; f.elapsed = 0;
+  banner('HOLD THE GATE!', 'THE TERMINUS GATE IS CLOSED.', U.amber);
+  return true;
+}
+function openFinaleGate() {
+  const f = G.finale;
+  if (!f || f.phase !== 'hold' || G.result || G.demo) return false;
+  f.phase = 'open'; f.openAt = G.run; f.elapsed = FINALEC.hold;
+  for (const p of f.gateProps) {
+    const i = G.statics.indexOf(p);
+    if (i >= 0) G.statics.splice(i, 1);
+  }
+  f.gateProps.length = 0;
+  G.station.stopS = G.goalS;
+  banner('GATE OPEN!', 'ROLL INTO THE TERMINUS.', U.gold);
+  SFX.horn();
+  return true;
 }
 // Arrival wins this leg. The station guards clear the climbers while the short summary opens.
 function arrive() {
   if (G.demo || G.result) return;
+  if (G.finale && G.finale.phase !== 'open') return;
+  if (G.finale) { G.finale.phase = 'done'; G.finale.arrivedAt = G.run; }
   if (G.leg === 12 && !G.replay) rescueCamp();
   // Arrival rewards must bank while the leg is still live; won legs cannot earn missed stars.
   if (G.leg >= 3) {
@@ -1253,6 +1290,7 @@ function step(dt) {
   // The train recovers after bumps, brakes at its goal, and remains parked after winning.
   if (G.result === 'lost') tr.v = Math.max(0, tr.v - 30 * dt);
   else if (G.result === 'won') tr.v = 0;
+  else if (G.finale?.phase === 'hold') tr.v = 0;
   else if (wall && !ramPowered() && (wall.state === 'braking' || wall.state === 'stopped')) {
     tr.v = Math.min(CFG.train.cruise, tr.v + CFG.train.accel * dt,
       Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - wall.stopS)) + 1.5);
@@ -1265,7 +1303,7 @@ function step(dt) {
       Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - st.stopS)) + 1.5);
     if (tr.s - st.stopS < 0.6) {
       tr.v = 0;
-      trainStops(st);
+      if (!beginFinaleHold()) trainStops(st);
     }
   } else {
     // the Turbo Ram: up to its top speed in 0.4 s, then back down to the cruise over 1 s (also after
@@ -1325,6 +1363,7 @@ function step(dt) {
     }
   }
   updateLegEvents();
+  updateFinale();
   updateAir(dt);
   G.hitT = Math.max(0, G.hitT - dt);
   G.muzzle[0] = Math.max(0, G.muzzle[0] - dt);

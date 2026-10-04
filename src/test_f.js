@@ -29,6 +29,17 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  // Actual Terminus gate state; cached props and events are copied for headless checks.
+  finaleState: () => {
+    const f = G?.finale;
+    if (!f) return null;
+    return { phase: f.phase, stopS: f.stopS, trainS: G.tr.s, trainSpeed: G.tr.v,
+      hold: FINALEC.hold, holdAt: f.holdAt, elapsed: f.elapsed, openAt: f.openAt,
+      gifted: f.gifted, giftAt: f.giftAt, giftUsed: f.giftUsed, arrivedAt: f.arrivedAt,
+      gateClosed: f.phase === 'approach' || f.phase === 'hold',
+      gate: f.gateProps.map((p) => ({ x: p.x, y: p.y, gone: !!p.gone })),
+      events: G.events.filter((e) => e.id.startsWith('leg-12-finale-')).map((e) => ({ ...e })) };
+  },
   incomeState: () => G ? { leg: G.leg, target: legDef(G.leg)?.scrapTarget || 0, ordinaryPay: G.killPay,
     scrap: Math.floor(G.cash), sources: { ...G.earnedSources }, base: { ...G.earnedBase }, counts: { ...G.earnedCounts },
     fractions: { ordinary: G.killAcc, silver: G.silverAcc, loot: G.lootAcc, wall: G.wallAcc } } : null,

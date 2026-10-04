@@ -12,7 +12,8 @@ const PLANES = {
 const AIRCFG = { doubleTap: 0.35, slotWidth: 78, slotGap: 4, left: 6, returnTime: 0.25, crowdRadius: 40 };
 const AIRKEYS = ['q', 'w', 'e', 'r'];
 const AIR = { g: null, slots: [], planes: {}, arm: null, aim: null, tap: null };
-const planeBandVisible = () => !!G && !G.demo && (mode === 'play' || mode === 'ending') && G.up.planeOwned.length > 0;
+const planeBandVisible = () => !!G && !G.demo && (mode === 'play' || mode === 'ending') &&
+  (G.up.planeOwned.length > 0 || G.finale?.gifted === true);
 function syncViewHeight() {
   VH = H - (planeBandVisible() ? AIRBAND.height : 0);
 }
@@ -50,11 +51,28 @@ function airSync() {
   }
 }
 const airLive = () => !!G && !G.demo && !G.result && mode === 'play' && !paused;
+// The finale lends one B-2 in E on every try. It never enters ownership, Hangar choices or saves.
+function airGift() {
+  if (!airLive() || G.leg !== 12 || !G.finale || G.finale.gifted) return false;
+  airSync();
+  AIR.slots[2] = 'b2';
+  AIR.planes.b2 = { gift: true, maxCd: 0, maxCharges: 1, cd: 0, charges: 1,
+    strikes: 0, lastStrike: null, readyAt: realT };
+  G.finale.gifted = true;
+  G.finale.giftAt = G.run;
+  G.finale.giftUsed = false;
+  syncViewHeight();
+  placeCamera();
+  SFX.planeReady();
+  if (typeof tutEvent === 'function') tutEvent('b2_gift');
+  return true;
+}
 function airSlot(key) {
   const i = AIRKEYS.indexOf(String(key).toLowerCase());
   return i >= 0 && i < AIR.slots.length ? AIR.slots[i] : null;
 }
-const airReady = (id) => !!id && !!PLANES[id]?.available && AIR.planes[id]?.charges > 0;
+const airAvailable = (id) => !!id && (PLANES[id]?.available === true || AIR.planes[id]?.gift === true);
+const airReady = (id) => airAvailable(id) && AIR.planes[id]?.charges > 0;
 // Serial refill is a proposal: a second use keeps the first recharge's progress.
 function updateAir(dt) {
   airSync();
@@ -63,7 +81,7 @@ function updateAir(dt) {
     return;
   }
   for (const [id, p] of Object.entries(AIR.planes)) {
-    if (!PLANES[id].available || p.charges >= p.maxCharges) continue;
+    if (p.gift || !PLANES[id].available || p.charges >= p.maxCharges) continue;
     p.cd -= dt;
     while (p.cd <= 1e-9 && p.charges < p.maxCharges) {
       const wasEmpty = p.charges === 0;
@@ -91,7 +109,7 @@ function airKey(key) {
   if (!airLive()) return false;
   key = String(key).toLowerCase();
   const id = airSlot(key);
-  if (!id || !PLANES[id].available) return false;
+  if (!airAvailable(id)) return false;
   if (AIR.arm === id && AIR.tap?.key === key && realT - AIR.tap.t <= AIRCFG.doubleTap) return airSmart(key);
   if (!airArm(id)) return false;
   AIR.tap = { key, t: realT };
@@ -102,7 +120,8 @@ function airLaunch(id, x, y, ux, uy) {
   if (!airLive() || !airReady(id) || !launchPlane(id, x, y, ux, uy)) return false;
   const p = AIR.planes[id];
   p.charges--;
-  if (p.cd <= 0) p.cd = p.maxCd;
+  if (p.gift) { p.cd = 0; G.finale.giftUsed = true; }
+  else if (p.cd <= 0) p.cd = p.maxCd;
   p.strikes++;
   p.lastStrike = { x, y, ux, uy, t: G.run };
   AIR.arm = AIR.aim = AIR.tap = null;
@@ -164,16 +183,19 @@ function airAimSnapshot() {
 function airBandSlots() {
   airSync();
   if (!planeBandVisible()) return [];
-  return AIR.slots.flatMap((id, i) => id && PLANES[id].available ? [{ id, key: AIRKEYS[i],
+  return AIR.slots.flatMap((id, i) => airAvailable(id) ? [{ id, key: AIRKEYS[i],
     x: AIRCFG.left + i * (AIRCFG.slotWidth + AIRCFG.slotGap), y: VH + 1,
-    w: AIRCFG.slotWidth, h: AIRBAND.height - 1 }] : []);
+    w: AIRCFG.slotWidth, h: AIRBAND.height - 1, gift: AIR.planes[id].gift === true,
+    used: AIR.planes[id].gift === true && AIR.planes[id].charges === 0,
+    status: AIR.planes[id].gift && AIR.planes[id].charges === 0 ? 'fullGame' : airReady(id) ? 'ready' : 'cooldown' }] : []);
 }
 function airSnapshot() {
   airSync();
   return AIR.slots.flatMap((id, slot) => {
     if (!id) return [];
     const p = AIR.planes[id];
-    return [{ id, slot, key: AIRKEYS[slot], available: PLANES[id].available, ready: airReady(id),
+    return [{ id, slot, key: AIRKEYS[slot], available: airAvailable(id), ready: airReady(id),
+      gift: p.gift === true, used: p.gift === true && p.charges === 0,
       cd: Math.max(0, p.cd), maxCd: p.maxCd, charges: p.charges, maxCharges: p.maxCharges,
       aiming: AIR.arm === id, strikes: p.strikes, lastStrike: p.lastStrike ? { ...p.lastStrike } : null }];
   });
@@ -200,8 +222,9 @@ function drawAirBand() {
     blit(icon, ix, iy);
     ctx.globalAlpha = 1;
     if (ready) text(s.key.toUpperCase(), s.x + 29, VH + 6, U.gold);
+    if (s.used) text('FULL GAME', s.x + 23, VH + 6, U.faint);
     if (p.maxCharges > 1 && p.charges > 0) text(String(p.charges), s.x + 40, VH + 6, U.ink);
-    if (p.charges < p.maxCharges) {
+    if (!p.gift && p.charges < p.maxCharges) {
       const f = clamp(1 - p.cd / p.maxCd, 0, 1), cx = s.x + 61, cy = VH + 9;
       ctx.fillStyle = '#3a3e48';
       ctx.fillRect(cx - 3, cy - 3, 7, 7);
