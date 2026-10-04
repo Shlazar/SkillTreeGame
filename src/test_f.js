@@ -30,6 +30,12 @@ function testClearPlaneFixture() {
 }
 Object.assign(window.__sr, {
   audioState: () => audioState(),
+  uiBounds: () => uiBounds(),
+  motionProbe: (trigger = false) => {
+    if (trigger) { addShake(1); kick(3, 3); hitStop(1, 0.1); }
+    return { reduced: REDUCED, shake: shakeOff(), trauma: cam.trauma, slowT, slowK,
+      aimScale: !REDUCED && mode === 'play' && airAimActive() ? 0.5 : 1 };
+  },
   // Actual Terminus gate state; cached props and events are copied for headless checks.
   finaleState: () => {
     const f = G?.finale;

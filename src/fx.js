@@ -6,9 +6,10 @@
 // ---------- shake, kick and hit-stop
 const cam = { trauma: 0, t: 0, kx: 0, ky: 0 };
 let shakeReq = 0, slowT = 0, slowK = 1;
-// Ask for screen shake of strength a (weaker with reduced motion).
+// Ask for screen shake of strength a; reduced motion keeps the camera still.
 function addShake(a) {
-  shakeReq = Math.max(shakeReq, a * (REDUCED ? 0.3 : 1));
+  if (REDUCED) return;
+  shakeReq = Math.max(shakeReq, a);
 }
 // Slow motion for d seconds at time scale k (default 0.12). Off with reduced motion.
 function hitStop(d, k) {
@@ -33,6 +34,7 @@ function updateCam(dt) {
 }
 // Screen shake offset [x, y]. Strength = trauma squared; two sine waves per axis, plus the kick.
 function shakeOff() {
+  if (REDUCED) return [0, 0];
   const s = cam.trauma * cam.trauma * 5;
   return [Math.round((Math.sin(cam.t * 71.3) + Math.sin(cam.t * 37.9) * 0.6) * s * 0.6 + cam.kx),
     Math.round((Math.sin(cam.t * 53.1 + 1.3) + Math.sin(cam.t * 29.7) * 0.6) * s * 0.6 + cam.ky)];

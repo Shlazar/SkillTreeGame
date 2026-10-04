@@ -183,7 +183,10 @@ function tutLook() {
 // Keep the tip and radio above the Ram card and the plane band.
 const cardsTop = () => Math.min(VH - 30, RAMCARD.on ? RAMCARD.y : VH - 30);
 const warnAt = () => [W / 2, 24];
-const tipRoom = () => TUT.tip && mode === 'play' ? wrap(TUT.tip.msg, W - 36).length * 10 + 4 : 0;
+const tipRoom = () => {
+  const layout = TUT.tip && mode === 'play' ? tutTipLayout() : null;
+  return layout ? layout.lines.length * 10 + 4 + layout.rise : 0;
+};
 // A small blinking triangle at (x, y), its tip toward (ux, uy).
 function triangle(x, y, ux, uy, col) {
   for (const [c, g] of [['#07080a', 1], [col, 0]]) {
@@ -219,8 +222,11 @@ function tutTipLayout() {
   const t = TUT.tip;
   if (!t) return null;
   const lines = wrap(t.msg, W - 36), w = Math.max(...lines.map((l) => tw(l))), target = tutTipAt(t), aw = target ? 12 : 0;
-  const x = Math.round((W - w - aw) / 2), y = (mode === 'depot' ? H - 60 : cardsTop() - 22) - (lines.length - 1) * 10;
-  return { x, y, w: w + aw, h: lines.length * 10 + 3, lines, target, aw };
+  const x = Math.round((W - w - aw) / 2), h = lines.length * 10 + 3;
+  const baseY = (mode === 'depot' ? H - 60 : cardsTop() - 22) - (lines.length - 1) * 10;
+  const overlapsRadar = mode === 'play' && x - 5 < W - 5 && x + w + aw + 5 > W - 79;
+  const y = overlapsRadar ? Math.min(baseY, VH - 79 - h - 5) : baseY;
+  return { x, y, w: w + aw, h, lines, target, aw, rise: baseY - y };
 }
 function drawTipLine() {
   const t = TUT.tip;

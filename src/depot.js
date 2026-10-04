@@ -126,6 +126,7 @@ function depotKey(k) {
   else if (k === 'Escape') { hangarCancel(); toTitle(); }
 }
 function drawDepot() {
+  TIP.bounds = null;
   // the demo behind, dimmed
   ctx.fillStyle = 'rgba(5,6,8,0.62)';
   ctx.fillRect(0, 0, W, H);
@@ -143,13 +144,15 @@ function drawDepot() {
 }
 // A small box of words by the mouse, for the thing it points at. tipAt(x, y, w, h, lines) asks for
 // one this frame when the mouse is in that box (lines = [[text, color], ...]); it is drawn last.
-const TIP = { lines: null };
+const TIP = { lines: null, bounds: null };
 function tipAt(x, y, w, h, lines) {
   if (inR(M.x, M.y, x, y, w, h) && M.inside) TIP.lines = lines;
 }
 function drawTip() {
-  const L = TIP.lines, w = Math.max(...L.map((l) => tw(l[0]))) + 12, h = L.length * 10 + 5;
+  const L = TIP.lines.flatMap(([s, c]) => wrap(s, W - 24).map((line) => [line, c]));
+  const w = Math.max(...L.map((l) => tw(l[0]))) + 12, h = L.length * 10 + 5;
   const x = clamp(Math.round(M.x + 8), 2, W - w - 2), y = clamp(Math.round(M.y + 12), 20, H - h - 30);
+  TIP.bounds = { x, y, w, h };
   panel(x, y, w, h, '#0b0c0f');
   L.forEach((l, i) => text(l[0], x + 6, y + 4 + i * 10, l[1]));
   TIP.lines = null;
@@ -237,8 +240,12 @@ function depotRouteState() {
     loss: depotLoss,
     legs: LEGS.map((l) => {
       const record = SAVE.legs[l.n], won = !!record?.won, stars = (record?.stars || [false, false, false]).slice();
-      return { n: l.n, x: Math.round(pad + (l.n - 0.5) * step), y: 43,
-        won, selectable: l.n === current || won, stars, starsVisible: l.n >= 3 && (won || stars.some(Boolean)) };
+      const x = Math.round(pad + (l.n - 0.5) * step), sw = ICON.star.width;
+      return { n: l.n, x, y: 43, rect: { x: Math.round(pad + (l.n - 1) * step) + 3, y: 32,
+        w: Math.round(pad + l.n * step) - Math.round(pad + (l.n - 1) * step) - 6, h: 27 },
+        won, selectable: l.n === current || won, stars, starsVisible: l.n >= 3 && (won || stars.some(Boolean)),
+        starRects: stars.map((earned, i) => ({ x: x - Math.floor((sw * 3 + 2) / 2) + i * (sw + 1),
+          y: 51, w: sw, h: ICON.star.height, earned })) };
     })
   };
 }
@@ -246,15 +253,22 @@ function depotStartRect() {
   const w = Math.min(W - 12, Math.max(122, tw(depotRouteState().startLabel) + 22));
   return { x: W - w - 6, y: H - 26, w, h: 22 };
 }
+function depotRouteLayout() {
+  const state = depotRouteState(), statusText = state.replay ? 'SCRAP ONLY' : SAVE.leg > 12 ? 'DEMO COMPLETE' : 'NEXT STATION';
+  const status = { x: W - 8 - tw(statusText), y: 24, w: tw(statusText), h: 7, text: statusText };
+  const headingText = fitText('LEG ' + state.selected + ': ' + legDef(state.selected).to.name, status.x - 20);
+  return { heading: { x: 8, y: 24, w: tw(headingText), h: 7, text: headingText }, status, legs: state.legs };
+}
 function drawDepotRoute() {
   const state = depotRouteState(), pad = W < 500 ? 18 : 28, step = (W - pad * 2) / 12;
+  const layout = depotRouteLayout();
   const stopX = (n) => Math.round(pad + n * step), current = Math.min(SAVE.leg, 12);
   ctx.fillStyle = '#0b0e14';
   ctx.fillRect(0, 19, W, 44);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, 62, W, 1);
-  text('LEG ' + state.selected + ': ' + legDef(state.selected).to.name, 8, 24, U.ink);
-  text(state.replay ? 'SCRAP ONLY' : SAVE.leg > 12 ? 'DEMO COMPLETE' : 'NEXT STATION', W - 8, 24, state.replay ? U.blue : U.dim, { align: 'right' });
+  text(layout.heading.text, layout.heading.x, layout.heading.y, U.ink);
+  text(layout.status.text, layout.status.x, layout.status.y, state.replay ? U.blue : U.dim);
   for (const leg of state.legs) {
     const x0 = stopX(leg.n - 1), x1 = stopX(leg.n), chosen = leg.n === state.selected;
     const color = chosen ? U.gold : leg.n === current ? U.amber : leg.won ? U.blue : U.faint;
@@ -266,10 +280,9 @@ function drawDepotRoute() {
     ctx.fillRect(x0 + 4, 43, x1 - x0 - 8, 1);
     text(leg.n, leg.x, 34, color, { align: 'center', outline: false });
     if (leg.starsVisible) {
-      const stars = leg.stars, sw = ICON.star.width, sx = leg.x - Math.floor((sw * 3 + 2) / 2);
-      for (let i = 0; i < 3; i++) {
-        ctx.globalAlpha = stars[i] ? 1 : 0.2;
-        blit(ICON.star, sx + i * (sw + 1), 51);
+      for (const star of leg.starRects) {
+        ctx.globalAlpha = star.earned ? 1 : 0.2;
+        blit(ICON.star, star.x, star.y);
       }
       ctx.globalAlpha = 1;
     }
@@ -312,17 +325,23 @@ function depotHint() {
   if (th) return th;
   return ['ENTER: RIDE TO THE NEXT STATION.', U.faint];
 }
+function depotBottomLayout() {
+  const state = depotRouteState(), leg = legDef(state.selected), button = depotStartRect(), y = H - 44;
+  const message = fitText(state.loss || (SAVE.leg > 12 ? 'DEMO COMPLETE. PICK AN OLD LEG TO REPLAY FOR SCRAP.'
+    : 'LEG ' + leg.n + ': ' + leg.from.name + ' TO ' + leg.to.name), W - 16);
+  const [hint, hc] = depotHint(), available = button.x - 16;
+  const hintText = tw(hint) <= available ? hint : fitText(state.replay ? 'REPLAY: SCRAP ONLY' : 'ENTER: START', available);
+  return { message: { x: 8, y: y + 6, w: tw(message), h: 7, text: message, color: state.loss ? U.red : U.dim }, button,
+    hint: hintText ? { x: 8, y: button.y + 8, w: tw(hintText), h: 7, text: hintText, color: tw(hint) <= available ? hc : U.faint } : null };
+}
 function drawDepotBottom() {
-  const y = H - 44, state = depotRouteState(), leg = legDef(state.selected), start = depotStartRect();
+  const y = H - 44, state = depotRouteState(), layout = depotBottomLayout(), start = layout.button;
   ctx.fillStyle = 'rgba(6,7,9,0.94)';
   ctx.fillRect(0, y, W, 44);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, y, W, 1);
-  const message = state.loss || (SAVE.leg > 12 ? 'DEMO COMPLETE. PICK AN OLD LEG TO REPLAY FOR SCRAP.'
-    : 'LEG ' + leg.n + ': ' + leg.from.name + ' TO ' + leg.to.name);
-  text(message, 8, y + 6, state.loss ? U.red : U.dim);
+  text(layout.message.text, layout.message.x, layout.message.y, layout.message.color);
   if (button(start.x, start.y, start.w, start.h, state.startLabel, { primary: true })) startGame(state.selected, state.replay);
-  const [hint, hc] = depotHint(), hw = tw(hint);
-  text(hw < start.x - 16 ? hint : state.replay ? 'REPLAY: SCRAP ONLY' : 'ENTER: START', 8, start.y + 8, hw < start.x - 16 ? hc : U.faint);
+  if (layout.hint) text(layout.hint.text, layout.hint.x, layout.hint.y, layout.hint.color);
 }
 // The SKILL TREE tab is drawn by drawTreeTab in tree.js.

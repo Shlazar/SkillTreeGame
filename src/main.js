@@ -224,7 +224,7 @@ function oneFrame(dt) {
   let ts = 1;
   if (slowT > 0) {
     slowT -= dt;
-    ts = slowK;
+    ts = REDUCED ? 1 : slowK;
     if (slowT <= 0) slowK = 1;
   }
   // Aiming leaves time to place the strike; reduced motion keeps normal game speed.
@@ -434,11 +434,15 @@ function boot() {
     // infoFit() = the info box lines that do not fit on one line of the box, at any level (none is
     // right), and the widest line's width next to the room there is
     infoFit: () => {
-      const bad = [], inner = INFO_W - 14;
+      const bad = [], inner = Math.min(INFO_W, W - 8) - 14;
       let widest = 0;
       for (const n of NODES) {
-        widest = Math.max(widest, tw(n.desc));
-        if (tw(n.desc) > inner) bad.push(n.id + ': ' + n.desc);
+        for (const line of wrap(n.desc, inner)) {
+          widest = Math.max(widest, tw(line));
+          if (tw(line) > inner) bad.push(n.id + ': ' + line);
+        }
+        const header = tw(n.name) + (n.k === 'tease' ? 0 : 8 + tw(n.id === 'root' ? 'OWNED' : maxLv(n) + '/' + maxLv(n)));
+        if (header > inner) bad.push(n.id + ' HEADER: ' + header);
         for (const s of [n.stat, n.stat2].filter(Boolean)) {
           for (let l = 0; l <= maxLv(n); l++) {
             const w = statSegs(s, l, l >= maxLv(n)).reduce((a, [t]) => a + tw(t) + 5, -5);

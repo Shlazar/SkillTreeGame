@@ -121,19 +121,51 @@ function drawLegStar(x, y, earned, pop = 0) {
   }
   ctx.globalAlpha = 1;
 }
+function currencyBounds(layout, y = 0) {
+  return layout.items.map((i) => ({ key: i.key, x: i.left, y: y + 4,
+    w: i.textX + tw(i.label) - i.left, h: 9, text: i.label }));
+}
+function fitText(s, width) {
+  if (tw(s) <= width) return s;
+  while (s.length && tw(s + '...') > width) s = s.slice(0, -1);
+  return s ? s.trimEnd() + '...' : '';
+}
+// One measured layout drives the HUD and its bounds diagnostics. The destination gets a second
+// row when it cannot fit beside money and health; its full station name and metres stay readable.
+function hudLayout() {
+  const counters = currencyLayout(), kills = fmt(G.kills), hp = String(Math.ceil(G.tr.hp)), kx = counters.end;
+  const hx = kx + 10 + tw(kills) + 24, hw = Math.max(20,
+    Math.min(clamp(Math.round(W * 0.16), 44, 100), W - 32 - hx - tw(hp) - 4));
+  const x0 = hx + hw + 10 + tw(hp), x1 = W - 28, stars = starLayout();
+  let route = null;
+  if (!G.demo) {
+    const [label, color] = nextLabel(), lw = tw(label), secondary = x1 - x0 < lw + 8;
+    const left = secondary ? 4 : x1 - lw, y = secondary ? 22 : 6;
+    const lineW = x1 - x0 - lw - 20;
+    route = { label: { x: left, y, w: lw, h: 7, text: label, color }, secondary,
+      line: !secondary && lineW >= 40 ? { x: x0, y: 5, w: lineW + 10, h: 9 } : null };
+  }
+  return { counters, kills: { x: kx, y: 5, w: 10 + tw(kills), h: 8, text: kills },
+    health: { icon: { x: hx - 12, y: 5, w: ICON.train.width, h: ICON.train.height },
+      bar: { x: hx, y: 6, w: hw, h: 6 }, label: { x: hx + hw + 4, y: 6, w: tw(hp), h: 7, text: hp } },
+    route, pause: mode === 'play' ? { x: W - 23, y: 1, w: 21, h: 16 } : null,
+    stars: stars.visible ? stars : null,
+    mute: Au.muted ? { x: W - 4 - tw('MUTE'), y: stars.visible ? 34 : 22, w: tw('MUTE'), h: 7 } : null,
+    warningY: route?.secondary ? 34 : 24 };
+}
 function drawHUD() {
   ctx.fillStyle = 'rgba(6,7,9,0.88)';
   ctx.fillRect(0, 0, W, 18);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, 18, W, 1);
   // This run's money; survivors and gold appear only after their teaching moment.
-  const counters = currencyLayout();
+  const layout = hudLayout(), { counters } = layout;
   drawCurrencyCounters(counters, 0, { scrap: G.cashPulse > 0 });
-  const kills = fmt(G.kills), kx = counters.end;
+  const kills = layout.kills.text, kx = layout.kills.x;
   blit(ICON.skull, kx, 5);
   text(kills, kx + 10, 6 - (G.killBump > 0.5 ? 1 : 0), U.ink);
   // the train's health: green, then amber, then red; the part just lost shows pale for a moment
-  const tr = G.tr, f = tr.hp / tr.max, hx = kx + 10 + tw(kills) + 24, hw = clamp(Math.round(W * 0.16), 44, 100);
+  const tr = G.tr, f = tr.hp / tr.max, hx = layout.health.bar.x, hw = layout.health.bar.w;
   blit(ICON.train, hx - 12, 5);
   bar(hx, 6, hw, 6, tr.hpShown / tr.max, '#1a1716', '#d8cfb8');
   ctx.fillStyle = f < 0.35 ? '#b8402e' : f < 0.65 ? '#c9862f' : '#6f9a4f';
@@ -142,7 +174,7 @@ function drawHUD() {
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 1);
   // and as a number
   text(Math.ceil(tr.hp), hx + hw + 4, 6, f < 0.35 ? U.red : f < 0.65 ? U.amber : U.dim);
-  if (!G.demo) drawRoute(hx + hw + 10 + tw(String(Math.ceil(tr.hp))), W - 28);
+  if (layout.route) drawRoute(layout.route);
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
   const stars = starLayout();
   if (stars.visible) for (const star of stars.stars) drawLegStar(star.x, star.y, star.earned, star.pop);
@@ -156,16 +188,11 @@ function nextLabel() {
   return ['NEXT: ' + to.name + ' ' + Math.round(distance / 2 / 10) * 10 + ' M', U.blue];
 }
 // This leg alone, between x0 and x1: start, destination, any Dead Walls, and the train's progress.
-function drawRoute(x0, x1) {
-  let [lab, lc] = nextLabel();
-  let lw = tw(lab), w = x1 - x0 - lw - 20;
-  if (w < 60 && lab.startsWith('NEXT: ')) {
-    lab = lab.slice(6);
-    lw = tw(lab);
-    w = x1 - x0 - lw - 20;
-  }
-  text(lab, x1, 6, lc, { align: 'right' });
-  if (w < 40) return;
+function drawRoute(layout) {
+  const label = layout.label;
+  text(label.text, label.x, label.y, label.color);
+  if (!layout.line) return;
+  const x0 = layout.line.x, w = layout.line.w - 10;
   const start = G.tr.startS, end = G.goalS, len = Math.max(1, start - end);
   const X = (s) => x0 + Math.round(w * clamp((start - s) / len, 0, 1)), y = 9;
   ctx.fillStyle = '#3a3e48';
@@ -198,17 +225,20 @@ function drawRoute(x0, x1) {
   ctx.fillRect(tx - 1, y - 2, 3, 5);
 }
 // Warnings under the top bar: the dead on the track or on the train.
-function drawWarnings() {
-  if (G.result) return;
+function warningLayout() {
+  if (G.result) return [];
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', L = [];
   if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (SPACE RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
   // Wrap long warnings below the HUD, leaving its right-hand stars and mute control clear.
-  const [wx, wy] = warnAt(), room = W - 80;
-  let row = 0;
+  const wx = W / 2, wy = hudLayout().warningY, room = W - 80, rows = [];
   for (const [t, c] of L) for (const line of wrap(t, room)) {
-    text(line, wx, wy + row++ * 10, c, { align: 'center' });
+    rows.push({ x: Math.round(wx - tw(line) / 2), y: wy + rows.length * 10, w: tw(line), h: 7, text: line, color: c });
   }
+  return rows;
+}
+function drawWarnings() {
+  for (const r of warningLayout()) text(r.text, r.x, r.y, r.color);
 }
 // An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
 // with a label just inside it.
@@ -447,13 +477,19 @@ function titleGo() {
   if (hasProgress()) toDepot('tree');
   else startGame(1);
 }
+function titleLayout() {
+  const prog = hasProgress(), ask = titleAsk, w = Math.min(300, W - 20);
+  const lines = ['YOUR VIPER FIGHTS BY ITSELF.', 'RIGHT CLICK: ATTACK OR MOVE.',
+    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'].flatMap((s) => wrap(s, w - 24));
+  const h = 82 + (ask ? 58 : prog ? 72 : 30) + lines.length * 11 + 25;
+  const cx = Math.round(W >= 560 ? W * 0.36 : W / 2);
+  return { x: cx - w / 2, y: Math.round((H - h) / 2), w, h, cx, lines, prog, ask };
+}
 function drawTitle() {
   ctx.fillStyle = 'rgba(5,6,8,0.35)';
   ctx.fillRect(0, 0, W, H);
   // the menu sits left of the train (on a wide enough screen); its height follows what it shows
-  const prog = hasProgress(), ask = titleAsk;
-  const cx = Math.round(W >= 560 ? W * 0.36 : W / 2), pw = 300, ph = 82 + (ask ? 58 : prog ? 72 : 30) + 58;
-  const px = cx - pw / 2, py = Math.round(H / 2 - ph / 2);
+  const layout = titleLayout(), { prog, ask, cx, x: px, y: py, w: pw, h: ph } = layout;
   ctx.fillStyle = 'rgba(8,9,11,0.8)';
   ctx.fillRect(px, py, pw, ph);
   frame(px, py, pw, ph, '#2e3139');
@@ -488,11 +524,9 @@ function drawTitle() {
     if (button(cx - 75, y, 150, 20, 'PLAY', { primary: true })) titleGo();
     y += 30;
   }
-  const L = ['YOUR VIPER FIGHTS BY ITSELF.',
-    'RIGHT CLICK: ATTACK OR MOVE.',
-    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
+  const L = layout.lines;
   L.forEach((l, i) => text(l, cx, y + i * 11, U.faint, { align: 'center', outline: false }));
-  text(ask ? 'ESC: GO BACK' : 'ENTER: ' + (prog ? 'CONTINUE' : 'PLAY'), cx, y + 42, U.faint, { align: 'center', outline: false });
+  text(ask ? 'ESC: GO BACK' : 'ENTER: ' + (prog ? 'CONTINUE' : 'PLAY'), cx, y + L.length * 11 + 9, U.faint, { align: 'center', outline: false });
 }
 // A short leg summary: sources, the money kept, saved stars, and the way back to the Depot.
 // Times are seconds after it opens; each source counts up with a tick.
@@ -611,6 +645,33 @@ function drawSummary() {
   const finale = s.leg === 12 && s.result === 'won' && !s.thanksShown;
   if (button(b.x, b.y, b.w, b.h, finale ? 'CONTINUE' : 'TO THE DEPOT', { primary: true })) summaryContinue();
   text('ENTER', b.x + b.w + 6, b.y + 7, U.faint, { outline: false });
+}
+
+// Copied bounds from the same production layouts used above, plus the tooltip actually drawn.
+// Hidden surfaces are null. Nested rectangles describe parts of the same control, not collisions.
+function uiBounds() {
+  const run = mode === 'play' || mode === 'ending', layout = run ? hudLayout() : null;
+  const hud = layout ? { counters: currencyBounds(layout.counters), kills: { ...layout.kills },
+    health: { icon: { ...layout.health.icon }, bar: { ...layout.health.bar }, label: { ...layout.health.label } },
+    route: layout.route ? { label: { ...layout.route.label }, line: layout.route.line ? { ...layout.route.line } : null,
+      secondary: layout.route.secondary } : null,
+    pause: layout.pause ? { ...layout.pause } : null, stars: layout.stars,
+    mute: layout.mute ? { ...layout.mute } : null, warnings: warningLayout() } : null;
+  const depot = mode === 'depot' ? { counters: currencyBounds(currencyLayout(SHOWN)), tabs: depotTabRects(),
+    route: depotRouteLayout(), bottom: depotBottomLayout(),
+    treeArea: depotTab === 'tree' ? { x: 0, y: TREE.y0, w: W, h: TREE.y1 - TREE.y0 } : null,
+    tooltip: depotTab === 'tree' && TREE.infoBounds ? { ...TREE.infoBounds } : null,
+    genericTooltip: TIP.bounds ? { ...TIP.bounds } : null } : null;
+  return { viewport: { W, H, VH, SCALE, reduced: REDUCED }, hud,
+    radar: run ? { x: W - 79, y: VH - 79, w: 74, h: 74 } : null,
+    ram: run && RAMCARD.on ? { x: RAMCARD.x, y: RAMCARD.y, w: RAMCARD.w, h: RAMCARD.h } : null,
+    weapons: run ? HUI.cards.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.ht })) : [],
+    planes: run ? airBandSlots() : [], tutorial: (mode === 'play' || mode === 'depot') && !paused ? tutTipLayout() : null,
+    depot, hangar: mode === 'depot' && depotTab === 'hangar' ? hangarLayout() : null,
+    title: mode === 'title' ? titleLayout() : null,
+    pauseMenu: mode === 'play' && paused ? { ...PAUSE } : null,
+    summary: mode === 'summary' && !TUT.card?.finale ? summaryLayout(G.sum, sumPlan(G.sum)) : null,
+    endCard: mode === 'summary' && TUT.card?.finale ? endCardLayout() : null };
 }
 
 // ---------- the UI for the current mode

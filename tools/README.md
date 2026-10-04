@@ -4,6 +4,13 @@
 scheduled source count, per-cue `{requests, played}` totals, and each voice pool's `{active, max}`.
 The T8.1 scenario checks sixty seconds of maxed combat, the real B-2 gift, a rescue and a silver reward.
 
+Set `QA_REDUCED=1` for the reduced-motion scenario: the runner starts Chrome with its actual
+reduced-motion preference enabled before the game loads. `__sr.motionProbe(true)` requests
+shake, recoil and hit-stop through their production functions, then returns their copied state.
+`__sr.motionProbe()` only reads the state.
+`__sr.uiBounds()` copies the geometry used to draw visible HUD, plane, Depot, title and tooltip
+elements, with the current logical viewport. T8.3 checks these bounds at all three target sizes.
+
 `tools/qa.js` plays the game in headless Chrome from the command line. It has two modes:
 
 - **run**: run a scenario and print its result as JSON.

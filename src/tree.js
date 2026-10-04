@@ -500,6 +500,7 @@ function drawTreeBack(y0, y1) {
 // ---------- the panel
 // The SKILL TREE tab, between y0 and y1.
 function drawTreeTab(y0, y1) {
+  TREE.infoBounds = null;
   TREE.y0 = y0;
   TREE.y1 = y1;
   // The first visit establishes a baseline. Later visits animate flags earned during a ride.
@@ -826,7 +827,7 @@ function statSegs(stat, l, done) {
 const INFO_W = 216;
 function drawInfo(n, st, y0, y1) {
   const K = NODE_KIND[n.k], l = lv(n.id), m = maxLv(n), tease = st === 'tease', lock = tease;
-  const inner = INFO_W - 14;
+  const w = Math.min(INFO_W, W - 8), inner = w - 14;
   const desc = wrap(n.desc, inner);
   const vals = lock || !n.stat ? [] : [n.stat, n.stat2].filter(Boolean).map((s) => statSegs(s, l, l >= m));
   // the foot: [price text, colour, price icon, right text, colour]
@@ -839,7 +840,7 @@ function drawInfo(n, st, y0, y1) {
   else if (st === 'poor') foot = [fmt(pr), U.red, icon, 'NEED ' + fmt(pr - have) + ' MORE', U.red];
   else foot = pr ? [fmt(pr), pcol, icon, 'CLICK TO BUY', U.gold] : ['FREE', U.gold, null, 'CLICK TO TAKE IT', U.gold];
   const kindName = tease ? 'FULL GAME' : n.id === 'root' ? 'THE ROOT' : n.k === 'surv' ? 'NEW UNIT' : n.k === 'gold' ? 'SPECIAL' : 'UPGRADE';
-  const w = INFO_W, h = 31 + desc.length * 10 + vals.length * 10 + 17;
+  const h = 31 + desc.length * 10 + vals.length * 10 + 17;
   // beside the node (right, else left), kept on the panel
   const q = nodeXY(n.id), hn = halfOf(n);
   let x = q.x + hn + 10;
@@ -850,6 +851,7 @@ function drawInfo(n, st, y0, y1) {
   y = clamp(y, y0 + 22, y1 - h - 4);
   x = Math.round(x);
   y = Math.round(y);
+  TREE.infoBounds = { id: n.id, x, y, w, h };
   // the box: near black, a frame and a line under the head in the node's colour
   ctx.fillStyle = 'rgba(5,8,13,0.97)';
   ctx.fillRect(x + 1, y + 1, w - 2, h - 2);

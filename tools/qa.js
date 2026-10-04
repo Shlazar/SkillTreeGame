@@ -54,6 +54,7 @@ build();
 const url = page(args[1], mode);
 const common = ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', '--mute-audio',
   '--user-data-dir=' + path.join(QA, 'chr' + TAG), '--autoplay-policy=no-user-gesture-required'];
+if (process.env.QA_REDUCED === '1') common.push('--force-prefers-reduced-motion');
 process.on('exit', () => { try { fs.unlinkSync(url.replace('file:///', '')); } catch (e) {} });
 if (mode === 'run') {
   const budget = args[2] || '5000';

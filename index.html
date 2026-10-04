@@ -2004,9 +2004,10 @@ function warmAtlas() {
 // ---------- shake, kick and hit-stop
 const cam = { trauma: 0, t: 0, kx: 0, ky: 0 };
 let shakeReq = 0, slowT = 0, slowK = 1;
-// Ask for screen shake of strength a (weaker with reduced motion).
+// Ask for screen shake of strength a; reduced motion keeps the camera still.
 function addShake(a) {
-  shakeReq = Math.max(shakeReq, a * (REDUCED ? 0.3 : 1));
+  if (REDUCED) return;
+  shakeReq = Math.max(shakeReq, a);
 }
 // Slow motion for d seconds at time scale k (default 0.12). Off with reduced motion.
 function hitStop(d, k) {
@@ -2031,6 +2032,7 @@ function updateCam(dt) {
 }
 // Screen shake offset [x, y]. Strength = trauma squared; two sine waves per axis, plus the kick.
 function shakeOff() {
+  if (REDUCED) return [0, 0];
   const s = cam.trauma * cam.trauma * 5;
   return [Math.round((Math.sin(cam.t * 71.3) + Math.sin(cam.t * 37.9) * 0.6) * s * 0.6 + cam.kx),
     Math.round((Math.sin(cam.t * 53.1 + 1.3) + Math.sin(cam.t * 29.7) * 0.6) * s * 0.6 + cam.ky)];
@@ -8292,8 +8294,7 @@ let VIG = null, SCAN = null, GRAIN = null, BODYSH = null;
 function bakeStatic() {
   BODYSH = shadowSpr(9);
 }
-// Made again for every size of the picture: a light vignette (only its edges are ever drawn, see
-// drawVignette), thermal grain and lines.
+// Made again for every size of the picture: a light radial vignette, thermal grain and lines.
 function bakeOverlays() {
   let g, gr;
   [VIG, g] = mk(W, H);
@@ -8567,13 +8568,9 @@ function drawRamCount() {
   const c = G.tr.cars[0], n = r.kills, col = realT - r.killT < 0.07 ? '#ffffff' : n >= 30 ? '#ff7a4a' : n >= 15 ? U.amber : U.gold;
   text('×' + n, c.x0 + 13, c.y0 - 10, col, { scale: 2, drop: true });
 }
-// The vignette: only the bands along the edges where it is not clear (the middle is skipped).
+// Preserve the baked radial fade continuously across the world, above the plane band.
 function drawVignette() {
-  const bx = Math.round(W * 0.14), by = Math.round(VH * 0.16);
-  ctx.drawImage(VIG, 0, 0, W, by, 0, 0, W, by);
-  ctx.drawImage(VIG, 0, H - by, W, by, 0, VH - by, W, by);
-  ctx.drawImage(VIG, 0, by, bx, H - 2 * by, 0, by, bx, VH - 2 * by);
-  ctx.drawImage(VIG, W - bx, by, bx, H - 2 * by, W - bx, by, bx, VH - 2 * by);
+  ctx.drawImage(VIG, 0, 0, W, H, 0, 0, W, VH);
 }
 
 // ---------- the frame (world layer)
@@ -8892,19 +8889,51 @@ function drawLegStar(x, y, earned, pop = 0) {
   }
   ctx.globalAlpha = 1;
 }
+function currencyBounds(layout, y = 0) {
+  return layout.items.map((i) => ({ key: i.key, x: i.left, y: y + 4,
+    w: i.textX + tw(i.label) - i.left, h: 9, text: i.label }));
+}
+function fitText(s, width) {
+  if (tw(s) <= width) return s;
+  while (s.length && tw(s + '...') > width) s = s.slice(0, -1);
+  return s ? s.trimEnd() + '...' : '';
+}
+// One measured layout drives the HUD and its bounds diagnostics. The destination gets a second
+// row when it cannot fit beside money and health; its full station name and metres stay readable.
+function hudLayout() {
+  const counters = currencyLayout(), kills = fmt(G.kills), hp = String(Math.ceil(G.tr.hp)), kx = counters.end;
+  const hx = kx + 10 + tw(kills) + 24, hw = Math.max(20,
+    Math.min(clamp(Math.round(W * 0.16), 44, 100), W - 32 - hx - tw(hp) - 4));
+  const x0 = hx + hw + 10 + tw(hp), x1 = W - 28, stars = starLayout();
+  let route = null;
+  if (!G.demo) {
+    const [label, color] = nextLabel(), lw = tw(label), secondary = x1 - x0 < lw + 8;
+    const left = secondary ? 4 : x1 - lw, y = secondary ? 22 : 6;
+    const lineW = x1 - x0 - lw - 20;
+    route = { label: { x: left, y, w: lw, h: 7, text: label, color }, secondary,
+      line: !secondary && lineW >= 40 ? { x: x0, y: 5, w: lineW + 10, h: 9 } : null };
+  }
+  return { counters, kills: { x: kx, y: 5, w: 10 + tw(kills), h: 8, text: kills },
+    health: { icon: { x: hx - 12, y: 5, w: ICON.train.width, h: ICON.train.height },
+      bar: { x: hx, y: 6, w: hw, h: 6 }, label: { x: hx + hw + 4, y: 6, w: tw(hp), h: 7, text: hp } },
+    route, pause: mode === 'play' ? { x: W - 23, y: 1, w: 21, h: 16 } : null,
+    stars: stars.visible ? stars : null,
+    mute: Au.muted ? { x: W - 4 - tw('MUTE'), y: stars.visible ? 34 : 22, w: tw('MUTE'), h: 7 } : null,
+    warningY: route?.secondary ? 34 : 24 };
+}
 function drawHUD() {
   ctx.fillStyle = 'rgba(6,7,9,0.88)';
   ctx.fillRect(0, 0, W, 18);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, 18, W, 1);
   // This run's money; survivors and gold appear only after their teaching moment.
-  const counters = currencyLayout();
+  const layout = hudLayout(), { counters } = layout;
   drawCurrencyCounters(counters, 0, { scrap: G.cashPulse > 0 });
-  const kills = fmt(G.kills), kx = counters.end;
+  const kills = layout.kills.text, kx = layout.kills.x;
   blit(ICON.skull, kx, 5);
   text(kills, kx + 10, 6 - (G.killBump > 0.5 ? 1 : 0), U.ink);
   // the train's health: green, then amber, then red; the part just lost shows pale for a moment
-  const tr = G.tr, f = tr.hp / tr.max, hx = kx + 10 + tw(kills) + 24, hw = clamp(Math.round(W * 0.16), 44, 100);
+  const tr = G.tr, f = tr.hp / tr.max, hx = layout.health.bar.x, hw = layout.health.bar.w;
   blit(ICON.train, hx - 12, 5);
   bar(hx, 6, hw, 6, tr.hpShown / tr.max, '#1a1716', '#d8cfb8');
   ctx.fillStyle = f < 0.35 ? '#b8402e' : f < 0.65 ? '#c9862f' : '#6f9a4f';
@@ -8913,7 +8942,7 @@ function drawHUD() {
   ctx.fillRect(hx, 6, Math.round(hw * clamp(f, 0, 1)), 1);
   // and as a number
   text(Math.ceil(tr.hp), hx + hw + 4, 6, f < 0.35 ? U.red : f < 0.65 ? U.amber : U.dim);
-  if (!G.demo) drawRoute(hx + hw + 10 + tw(String(Math.ceil(tr.hp))), W - 28);
+  if (layout.route) drawRoute(layout.route);
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
   const stars = starLayout();
   if (stars.visible) for (const star of stars.stars) drawLegStar(star.x, star.y, star.earned, star.pop);
@@ -8927,16 +8956,11 @@ function nextLabel() {
   return ['NEXT: ' + to.name + ' ' + Math.round(distance / 2 / 10) * 10 + ' M', U.blue];
 }
 // This leg alone, between x0 and x1: start, destination, any Dead Walls, and the train's progress.
-function drawRoute(x0, x1) {
-  let [lab, lc] = nextLabel();
-  let lw = tw(lab), w = x1 - x0 - lw - 20;
-  if (w < 60 && lab.startsWith('NEXT: ')) {
-    lab = lab.slice(6);
-    lw = tw(lab);
-    w = x1 - x0 - lw - 20;
-  }
-  text(lab, x1, 6, lc, { align: 'right' });
-  if (w < 40) return;
+function drawRoute(layout) {
+  const label = layout.label;
+  text(label.text, label.x, label.y, label.color);
+  if (!layout.line) return;
+  const x0 = layout.line.x, w = layout.line.w - 10;
   const start = G.tr.startS, end = G.goalS, len = Math.max(1, start - end);
   const X = (s) => x0 + Math.round(w * clamp((start - s) / len, 0, 1)), y = 9;
   ctx.fillStyle = '#3a3e48';
@@ -8969,17 +8993,20 @@ function drawRoute(x0, x1) {
   ctx.fillRect(tx - 1, y - 2, 3, 5);
 }
 // Warnings under the top bar: the dead on the track or on the train.
-function drawWarnings() {
-  if (G.result) return;
+function warningLayout() {
+  if (G.result) return [];
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', L = [];
   if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (SPACE RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
   // Wrap long warnings below the HUD, leaving its right-hand stars and mute control clear.
-  const [wx, wy] = warnAt(), room = W - 80;
-  let row = 0;
+  const wx = W / 2, wy = hudLayout().warningY, room = W - 80, rows = [];
   for (const [t, c] of L) for (const line of wrap(t, room)) {
-    text(line, wx, wy + row++ * 10, c, { align: 'center' });
+    rows.push({ x: Math.round(wx - tw(line) / 2), y: wy + rows.length * 10, w: tw(line), h: 7, text: line, color: c });
   }
+  return rows;
+}
+function drawWarnings() {
+  for (const r of warningLayout()) text(r.text, r.x, r.y, r.color);
 }
 // An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
 // with a label just inside it.
@@ -9218,13 +9245,19 @@ function titleGo() {
   if (hasProgress()) toDepot('tree');
   else startGame(1);
 }
+function titleLayout() {
+  const prog = hasProgress(), ask = titleAsk, w = Math.min(300, W - 20);
+  const lines = ['YOUR VIPER FIGHTS BY ITSELF.', 'RIGHT CLICK: ATTACK OR MOVE.',
+    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'].flatMap((s) => wrap(s, w - 24));
+  const h = 82 + (ask ? 58 : prog ? 72 : 30) + lines.length * 11 + 25;
+  const cx = Math.round(W >= 560 ? W * 0.36 : W / 2);
+  return { x: cx - w / 2, y: Math.round((H - h) / 2), w, h, cx, lines, prog, ask };
+}
 function drawTitle() {
   ctx.fillStyle = 'rgba(5,6,8,0.35)';
   ctx.fillRect(0, 0, W, H);
   // the menu sits left of the train (on a wide enough screen); its height follows what it shows
-  const prog = hasProgress(), ask = titleAsk;
-  const cx = Math.round(W >= 560 ? W * 0.36 : W / 2), pw = 300, ph = 82 + (ask ? 58 : prog ? 72 : 30) + 58;
-  const px = cx - pw / 2, py = Math.round(H / 2 - ph / 2);
+  const layout = titleLayout(), { prog, ask, cx, x: px, y: py, w: pw, h: ph } = layout;
   ctx.fillStyle = 'rgba(8,9,11,0.8)';
   ctx.fillRect(px, py, pw, ph);
   frame(px, py, pw, ph, '#2e3139');
@@ -9259,11 +9292,9 @@ function drawTitle() {
     if (button(cx - 75, y, 150, 20, 'PLAY', { primary: true })) titleGo();
     y += 30;
   }
-  const L = ['YOUR VIPER FIGHTS BY ITSELF.',
-    'RIGHT CLICK: ATTACK OR MOVE.',
-    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'];
+  const L = layout.lines;
   L.forEach((l, i) => text(l, cx, y + i * 11, U.faint, { align: 'center', outline: false }));
-  text(ask ? 'ESC: GO BACK' : 'ENTER: ' + (prog ? 'CONTINUE' : 'PLAY'), cx, y + 42, U.faint, { align: 'center', outline: false });
+  text(ask ? 'ESC: GO BACK' : 'ENTER: ' + (prog ? 'CONTINUE' : 'PLAY'), cx, y + L.length * 11 + 9, U.faint, { align: 'center', outline: false });
 }
 // A short leg summary: sources, the money kept, saved stars, and the way back to the Depot.
 // Times are seconds after it opens; each source counts up with a tick.
@@ -9382,6 +9413,33 @@ function drawSummary() {
   const finale = s.leg === 12 && s.result === 'won' && !s.thanksShown;
   if (button(b.x, b.y, b.w, b.h, finale ? 'CONTINUE' : 'TO THE DEPOT', { primary: true })) summaryContinue();
   text('ENTER', b.x + b.w + 6, b.y + 7, U.faint, { outline: false });
+}
+
+// Copied bounds from the same production layouts used above, plus the tooltip actually drawn.
+// Hidden surfaces are null. Nested rectangles describe parts of the same control, not collisions.
+function uiBounds() {
+  const run = mode === 'play' || mode === 'ending', layout = run ? hudLayout() : null;
+  const hud = layout ? { counters: currencyBounds(layout.counters), kills: { ...layout.kills },
+    health: { icon: { ...layout.health.icon }, bar: { ...layout.health.bar }, label: { ...layout.health.label } },
+    route: layout.route ? { label: { ...layout.route.label }, line: layout.route.line ? { ...layout.route.line } : null,
+      secondary: layout.route.secondary } : null,
+    pause: layout.pause ? { ...layout.pause } : null, stars: layout.stars,
+    mute: layout.mute ? { ...layout.mute } : null, warnings: warningLayout() } : null;
+  const depot = mode === 'depot' ? { counters: currencyBounds(currencyLayout(SHOWN)), tabs: depotTabRects(),
+    route: depotRouteLayout(), bottom: depotBottomLayout(),
+    treeArea: depotTab === 'tree' ? { x: 0, y: TREE.y0, w: W, h: TREE.y1 - TREE.y0 } : null,
+    tooltip: depotTab === 'tree' && TREE.infoBounds ? { ...TREE.infoBounds } : null,
+    genericTooltip: TIP.bounds ? { ...TIP.bounds } : null } : null;
+  return { viewport: { W, H, VH, SCALE, reduced: REDUCED }, hud,
+    radar: run ? { x: W - 79, y: VH - 79, w: 74, h: 74 } : null,
+    ram: run && RAMCARD.on ? { x: RAMCARD.x, y: RAMCARD.y, w: RAMCARD.w, h: RAMCARD.h } : null,
+    weapons: run ? HUI.cards.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.ht })) : [],
+    planes: run ? airBandSlots() : [], tutorial: (mode === 'play' || mode === 'depot') && !paused ? tutTipLayout() : null,
+    depot, hangar: mode === 'depot' && depotTab === 'hangar' ? hangarLayout() : null,
+    title: mode === 'title' ? titleLayout() : null,
+    pauseMenu: mode === 'play' && paused ? { ...PAUSE } : null,
+    summary: mode === 'summary' && !TUT.card?.finale ? summaryLayout(G.sum, sumPlan(G.sum)) : null,
+    endCard: mode === 'summary' && TUT.card?.finale ? endCardLayout() : null };
 }
 
 // ---------- the UI for the current mode
@@ -9554,6 +9612,7 @@ function depotKey(k) {
   else if (k === 'Escape') { hangarCancel(); toTitle(); }
 }
 function drawDepot() {
+  TIP.bounds = null;
   // the demo behind, dimmed
   ctx.fillStyle = 'rgba(5,6,8,0.62)';
   ctx.fillRect(0, 0, W, H);
@@ -9571,13 +9630,15 @@ function drawDepot() {
 }
 // A small box of words by the mouse, for the thing it points at. tipAt(x, y, w, h, lines) asks for
 // one this frame when the mouse is in that box (lines = [[text, color], ...]); it is drawn last.
-const TIP = { lines: null };
+const TIP = { lines: null, bounds: null };
 function tipAt(x, y, w, h, lines) {
   if (inR(M.x, M.y, x, y, w, h) && M.inside) TIP.lines = lines;
 }
 function drawTip() {
-  const L = TIP.lines, w = Math.max(...L.map((l) => tw(l[0]))) + 12, h = L.length * 10 + 5;
+  const L = TIP.lines.flatMap(([s, c]) => wrap(s, W - 24).map((line) => [line, c]));
+  const w = Math.max(...L.map((l) => tw(l[0]))) + 12, h = L.length * 10 + 5;
   const x = clamp(Math.round(M.x + 8), 2, W - w - 2), y = clamp(Math.round(M.y + 12), 20, H - h - 30);
+  TIP.bounds = { x, y, w, h };
   panel(x, y, w, h, '#0b0c0f');
   L.forEach((l, i) => text(l[0], x + 6, y + 4 + i * 10, l[1]));
   TIP.lines = null;
@@ -9665,8 +9726,12 @@ function depotRouteState() {
     loss: depotLoss,
     legs: LEGS.map((l) => {
       const record = SAVE.legs[l.n], won = !!record?.won, stars = (record?.stars || [false, false, false]).slice();
-      return { n: l.n, x: Math.round(pad + (l.n - 0.5) * step), y: 43,
-        won, selectable: l.n === current || won, stars, starsVisible: l.n >= 3 && (won || stars.some(Boolean)) };
+      const x = Math.round(pad + (l.n - 0.5) * step), sw = ICON.star.width;
+      return { n: l.n, x, y: 43, rect: { x: Math.round(pad + (l.n - 1) * step) + 3, y: 32,
+        w: Math.round(pad + l.n * step) - Math.round(pad + (l.n - 1) * step) - 6, h: 27 },
+        won, selectable: l.n === current || won, stars, starsVisible: l.n >= 3 && (won || stars.some(Boolean)),
+        starRects: stars.map((earned, i) => ({ x: x - Math.floor((sw * 3 + 2) / 2) + i * (sw + 1),
+          y: 51, w: sw, h: ICON.star.height, earned })) };
     })
   };
 }
@@ -9674,15 +9739,22 @@ function depotStartRect() {
   const w = Math.min(W - 12, Math.max(122, tw(depotRouteState().startLabel) + 22));
   return { x: W - w - 6, y: H - 26, w, h: 22 };
 }
+function depotRouteLayout() {
+  const state = depotRouteState(), statusText = state.replay ? 'SCRAP ONLY' : SAVE.leg > 12 ? 'DEMO COMPLETE' : 'NEXT STATION';
+  const status = { x: W - 8 - tw(statusText), y: 24, w: tw(statusText), h: 7, text: statusText };
+  const headingText = fitText('LEG ' + state.selected + ': ' + legDef(state.selected).to.name, status.x - 20);
+  return { heading: { x: 8, y: 24, w: tw(headingText), h: 7, text: headingText }, status, legs: state.legs };
+}
 function drawDepotRoute() {
   const state = depotRouteState(), pad = W < 500 ? 18 : 28, step = (W - pad * 2) / 12;
+  const layout = depotRouteLayout();
   const stopX = (n) => Math.round(pad + n * step), current = Math.min(SAVE.leg, 12);
   ctx.fillStyle = '#0b0e14';
   ctx.fillRect(0, 19, W, 44);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, 62, W, 1);
-  text('LEG ' + state.selected + ': ' + legDef(state.selected).to.name, 8, 24, U.ink);
-  text(state.replay ? 'SCRAP ONLY' : SAVE.leg > 12 ? 'DEMO COMPLETE' : 'NEXT STATION', W - 8, 24, state.replay ? U.blue : U.dim, { align: 'right' });
+  text(layout.heading.text, layout.heading.x, layout.heading.y, U.ink);
+  text(layout.status.text, layout.status.x, layout.status.y, state.replay ? U.blue : U.dim);
   for (const leg of state.legs) {
     const x0 = stopX(leg.n - 1), x1 = stopX(leg.n), chosen = leg.n === state.selected;
     const color = chosen ? U.gold : leg.n === current ? U.amber : leg.won ? U.blue : U.faint;
@@ -9694,10 +9766,9 @@ function drawDepotRoute() {
     ctx.fillRect(x0 + 4, 43, x1 - x0 - 8, 1);
     text(leg.n, leg.x, 34, color, { align: 'center', outline: false });
     if (leg.starsVisible) {
-      const stars = leg.stars, sw = ICON.star.width, sx = leg.x - Math.floor((sw * 3 + 2) / 2);
-      for (let i = 0; i < 3; i++) {
-        ctx.globalAlpha = stars[i] ? 1 : 0.2;
-        blit(ICON.star, sx + i * (sw + 1), 51);
+      for (const star of leg.starRects) {
+        ctx.globalAlpha = star.earned ? 1 : 0.2;
+        blit(ICON.star, star.x, star.y);
       }
       ctx.globalAlpha = 1;
     }
@@ -9740,18 +9811,24 @@ function depotHint() {
   if (th) return th;
   return ['ENTER: RIDE TO THE NEXT STATION.', U.faint];
 }
+function depotBottomLayout() {
+  const state = depotRouteState(), leg = legDef(state.selected), button = depotStartRect(), y = H - 44;
+  const message = fitText(state.loss || (SAVE.leg > 12 ? 'DEMO COMPLETE. PICK AN OLD LEG TO REPLAY FOR SCRAP.'
+    : 'LEG ' + leg.n + ': ' + leg.from.name + ' TO ' + leg.to.name), W - 16);
+  const [hint, hc] = depotHint(), available = button.x - 16;
+  const hintText = tw(hint) <= available ? hint : fitText(state.replay ? 'REPLAY: SCRAP ONLY' : 'ENTER: START', available);
+  return { message: { x: 8, y: y + 6, w: tw(message), h: 7, text: message, color: state.loss ? U.red : U.dim }, button,
+    hint: hintText ? { x: 8, y: button.y + 8, w: tw(hintText), h: 7, text: hintText, color: tw(hint) <= available ? hc : U.faint } : null };
+}
 function drawDepotBottom() {
-  const y = H - 44, state = depotRouteState(), leg = legDef(state.selected), start = depotStartRect();
+  const y = H - 44, state = depotRouteState(), layout = depotBottomLayout(), start = layout.button;
   ctx.fillStyle = 'rgba(6,7,9,0.94)';
   ctx.fillRect(0, y, W, 44);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, y, W, 1);
-  const message = state.loss || (SAVE.leg > 12 ? 'DEMO COMPLETE. PICK AN OLD LEG TO REPLAY FOR SCRAP.'
-    : 'LEG ' + leg.n + ': ' + leg.from.name + ' TO ' + leg.to.name);
-  text(message, 8, y + 6, state.loss ? U.red : U.dim);
+  text(layout.message.text, layout.message.x, layout.message.y, layout.message.color);
   if (button(start.x, start.y, start.w, start.h, state.startLabel, { primary: true })) startGame(state.selected, state.replay);
-  const [hint, hc] = depotHint(), hw = tw(hint);
-  text(hw < start.x - 16 ? hint : state.replay ? 'REPLAY: SCRAP ONLY' : 'ENTER: START', 8, start.y + 8, hw < start.x - 16 ? hc : U.faint);
+  if (layout.hint) text(layout.hint.text, layout.hint.x, layout.hint.y, layout.hint.color);
 }
 // The SKILL TREE tab is drawn by drawTreeTab in tree.js.
 
@@ -10257,6 +10334,7 @@ function drawTreeBack(y0, y1) {
 // ---------- the panel
 // The SKILL TREE tab, between y0 and y1.
 function drawTreeTab(y0, y1) {
+  TREE.infoBounds = null;
   TREE.y0 = y0;
   TREE.y1 = y1;
   // The first visit establishes a baseline. Later visits animate flags earned during a ride.
@@ -10583,7 +10661,7 @@ function statSegs(stat, l, done) {
 const INFO_W = 216;
 function drawInfo(n, st, y0, y1) {
   const K = NODE_KIND[n.k], l = lv(n.id), m = maxLv(n), tease = st === 'tease', lock = tease;
-  const inner = INFO_W - 14;
+  const w = Math.min(INFO_W, W - 8), inner = w - 14;
   const desc = wrap(n.desc, inner);
   const vals = lock || !n.stat ? [] : [n.stat, n.stat2].filter(Boolean).map((s) => statSegs(s, l, l >= m));
   // the foot: [price text, colour, price icon, right text, colour]
@@ -10596,7 +10674,7 @@ function drawInfo(n, st, y0, y1) {
   else if (st === 'poor') foot = [fmt(pr), U.red, icon, 'NEED ' + fmt(pr - have) + ' MORE', U.red];
   else foot = pr ? [fmt(pr), pcol, icon, 'CLICK TO BUY', U.gold] : ['FREE', U.gold, null, 'CLICK TO TAKE IT', U.gold];
   const kindName = tease ? 'FULL GAME' : n.id === 'root' ? 'THE ROOT' : n.k === 'surv' ? 'NEW UNIT' : n.k === 'gold' ? 'SPECIAL' : 'UPGRADE';
-  const w = INFO_W, h = 31 + desc.length * 10 + vals.length * 10 + 17;
+  const h = 31 + desc.length * 10 + vals.length * 10 + 17;
   // beside the node (right, else left), kept on the panel
   const q = nodeXY(n.id), hn = halfOf(n);
   let x = q.x + hn + 10;
@@ -10607,6 +10685,7 @@ function drawInfo(n, st, y0, y1) {
   y = clamp(y, y0 + 22, y1 - h - 4);
   x = Math.round(x);
   y = Math.round(y);
+  TREE.infoBounds = { id: n.id, x, y, w, h };
   // the box: near black, a frame and a line under the head in the node's colour
   ctx.fillStyle = 'rgba(5,8,13,0.97)';
   ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
@@ -12574,7 +12653,7 @@ function oneFrame(dt) {
   let ts = 1;
   if (slowT > 0) {
     slowT -= dt;
-    ts = slowK;
+    ts = REDUCED ? 1 : slowK;
     if (slowT <= 0) slowK = 1;
   }
   // Aiming leaves time to place the strike; reduced motion keeps normal game speed.
@@ -12784,11 +12863,15 @@ function boot() {
     // infoFit() = the info box lines that do not fit on one line of the box, at any level (none is
     // right), and the widest line's width next to the room there is
     infoFit: () => {
-      const bad = [], inner = INFO_W - 14;
+      const bad = [], inner = Math.min(INFO_W, W - 8) - 14;
       let widest = 0;
       for (const n of NODES) {
-        widest = Math.max(widest, tw(n.desc));
-        if (tw(n.desc) > inner) bad.push(n.id + ': ' + n.desc);
+        for (const line of wrap(n.desc, inner)) {
+          widest = Math.max(widest, tw(line));
+          if (tw(line) > inner) bad.push(n.id + ': ' + line);
+        }
+        const header = tw(n.name) + (n.k === 'tease' ? 0 : 8 + tw(n.id === 'root' ? 'OWNED' : maxLv(n) + '/' + maxLv(n)));
+        if (header > inner) bad.push(n.id + ' HEADER: ' + header);
         for (const s of [n.stat, n.stat2].filter(Boolean)) {
           for (let l = 0; l <= maxLv(n); l++) {
             const w = statSegs(s, l, l >= maxLv(n)).reduce((a, [t]) => a + tw(t) + 5, -5);
@@ -13519,7 +13602,10 @@ function tutLook() {
 // Keep the tip and radio above the Ram card and the plane band.
 const cardsTop = () => Math.min(VH - 30, RAMCARD.on ? RAMCARD.y : VH - 30);
 const warnAt = () => [W / 2, 24];
-const tipRoom = () => TUT.tip && mode === 'play' ? wrap(TUT.tip.msg, W - 36).length * 10 + 4 : 0;
+const tipRoom = () => {
+  const layout = TUT.tip && mode === 'play' ? tutTipLayout() : null;
+  return layout ? layout.lines.length * 10 + 4 + layout.rise : 0;
+};
 // A small blinking triangle at (x, y), its tip toward (ux, uy).
 function triangle(x, y, ux, uy, col) {
   for (const [c, g] of [['#07080a', 1], [col, 0]]) {
@@ -13555,8 +13641,11 @@ function tutTipLayout() {
   const t = TUT.tip;
   if (!t) return null;
   const lines = wrap(t.msg, W - 36), w = Math.max(...lines.map((l) => tw(l))), target = tutTipAt(t), aw = target ? 12 : 0;
-  const x = Math.round((W - w - aw) / 2), y = (mode === 'depot' ? H - 60 : cardsTop() - 22) - (lines.length - 1) * 10;
-  return { x, y, w: w + aw, h: lines.length * 10 + 3, lines, target, aw };
+  const x = Math.round((W - w - aw) / 2), h = lines.length * 10 + 3;
+  const baseY = (mode === 'depot' ? H - 60 : cardsTop() - 22) - (lines.length - 1) * 10;
+  const overlapsRadar = mode === 'play' && x - 5 < W - 5 && x + w + aw + 5 > W - 79;
+  const y = overlapsRadar ? Math.min(baseY, VH - 79 - h - 5) : baseY;
+  return { x, y, w: w + aw, h, lines, target, aw, rise: baseY - y };
 }
 function drawTipLine() {
   const t = TUT.tip;
@@ -14452,6 +14541,12 @@ function testClearPlaneFixture() {
 }
 Object.assign(window.__sr, {
   audioState: () => audioState(),
+  uiBounds: () => uiBounds(),
+  motionProbe: (trigger = false) => {
+    if (trigger) { addShake(1); kick(3, 3); hitStop(1, 0.1); }
+    return { reduced: REDUCED, shake: shakeOff(), trauma: cam.trauma, slowT, slowK,
+      aimScale: !REDUCED && mode === 'play' && airAimActive() ? 0.5 : 1 };
+  },
   // Actual Terminus gate state; cached props and events are copied for headless checks.
   finaleState: () => {
     const f = G?.finale;

@@ -9,8 +9,7 @@ let VIG = null, SCAN = null, GRAIN = null, BODYSH = null;
 function bakeStatic() {
   BODYSH = shadowSpr(9);
 }
-// Made again for every size of the picture: a light vignette (only its edges are ever drawn, see
-// drawVignette), thermal grain and lines.
+// Made again for every size of the picture: a light radial vignette, thermal grain and lines.
 function bakeOverlays() {
   let g, gr;
   [VIG, g] = mk(W, H);
@@ -284,13 +283,9 @@ function drawRamCount() {
   const c = G.tr.cars[0], n = r.kills, col = realT - r.killT < 0.07 ? '#ffffff' : n >= 30 ? '#ff7a4a' : n >= 15 ? U.amber : U.gold;
   text('×' + n, c.x0 + 13, c.y0 - 10, col, { scale: 2, drop: true });
 }
-// The vignette: only the bands along the edges where it is not clear (the middle is skipped).
+// Preserve the baked radial fade continuously across the world, above the plane band.
 function drawVignette() {
-  const bx = Math.round(W * 0.14), by = Math.round(VH * 0.16);
-  ctx.drawImage(VIG, 0, 0, W, by, 0, 0, W, by);
-  ctx.drawImage(VIG, 0, H - by, W, by, 0, VH - by, W, by);
-  ctx.drawImage(VIG, 0, by, bx, H - 2 * by, 0, by, bx, VH - 2 * by);
-  ctx.drawImage(VIG, W - bx, by, bx, H - 2 * by, W - bx, by, bx, VH - 2 * by);
+  ctx.drawImage(VIG, 0, 0, W, H, 0, 0, W, VH);
 }
 
 // ---------- the frame (world layer)
