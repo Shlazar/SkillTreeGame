@@ -3338,6 +3338,11 @@ function buildSafeZone() {
 function arrive() {
   if (G.demo || G.result) return;
   if (G.leg === 12 && !G.replay) rescueCamp();
+  // Arrival rewards must bank while the leg is still live; won legs cannot earn missed stars.
+  if (G.leg >= 3) {
+    earnLegStar(0);
+    if (G.tr.hp >= G.tr.max * 0.75) earnLegStar(1);
+  }
   G.result = 'won';
   G.tr.v = 0;
   G.tr.s = G.goalS;
@@ -5739,13 +5744,18 @@ function goldHuntPaid() {
   for (const record of Object.values(SAVE.legs)) for (const id of Object.keys(record?.paid || {})) if (id.startsWith('golden-hunt-') && record.paid[id] === true) n++;
   return n;
 }
-// Zero-based star index. Catch awards star3 now; station stars are connected in T6.7.
+// Seconds for a newly earned star's small pixel pop. (proposal)
+const STAR_POP = 0.35;
+// Zero-based star index. Arrival awards stars1/2 before marking the leg won; a catch awards star3.
 function earnLegStar(index) {
   if (G.demo || G.leg < 3 || G.replay || G.result || index < 0 || index > 2 || !Number.isInteger(index)) return 0;
   const record = legSave(G.leg);
   if (record.won || record.stars[index]) return 0;
   record.stars[index] = true;
   const paid = payGold('star-' + (index + 1), 3, 0);
+  if (!G.starAt) G.starAt = [null, null, null];
+  G.starAt[index] = realT;
+  SFX.tick();
   if (paid.gold) floatText(G.helis[0].x, G.helis[0].y - G.helis[0].alt - 20, 'STAR ' + (index + 1) + ': +3 GOLD', U.gold);
   return paid.gold;
 }
@@ -8661,6 +8671,32 @@ function drawCurrencyCounters(layout, y = 0, pulses = {}, outline = true) {
     text(item.label, item.textX, y + 6, pulse ? bright : item.color, { outline });
   }
 }
+// Three cached native star sprites sit below the HUD. The saved receipt is the source of truth;
+// only stars newly earned in this G have a timestamp, so a retry never repeats their earned pop.
+function starLayout() {
+  const sw = ICON.star.width, sh = ICON.star.height, gap = 3, w = sw * 3 + gap * 2;
+  const visible = !G.demo && G.leg >= 3 && (mode === 'play' || mode === 'ending');
+  const x = W - w - 8, y = 22, saved = SAVE.legs[G.leg]?.stars || [false, false, false];
+  return { visible, x, y, w, h: sh, stars: [0, 1, 2].map((index) => {
+    const at = G.starAt?.[index], pop = Number.isFinite(at) ? clamp(1 - (realT - at) / STAR_POP, 0, 1) : 0;
+    return { index, x: x + index * (sw + gap), y, w: sw, h: sh, earned: saved[index] === true, pop };
+  }) };
+}
+function drawLegStar(x, y, earned, pop = 0) {
+  const lift = !REDUCED && earned && pop > 0.5 ? 1 : 0;
+  ctx.globalAlpha = earned ? 1 : 0.2;
+  blit(ICON.star, x, y - lift);
+  if (earned && pop > 0) {
+    ctx.globalAlpha = pop;
+    ctx.fillStyle = '#fff1c2';
+    const cx = x + (ICON.star.width >> 1), cy = y - lift + (ICON.star.height >> 1);
+    ctx.fillRect(cx, y - lift - 2, 1, 1);
+    ctx.fillRect(cx, y - lift + ICON.star.height + 1, 1, 1);
+    ctx.fillRect(x - 2, cy, 1, 1);
+    ctx.fillRect(x + ICON.star.width + 1, cy, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+}
 function drawHUD() {
   ctx.fillStyle = 'rgba(6,7,9,0.88)';
   ctx.fillRect(0, 0, W, 18);
@@ -8684,7 +8720,9 @@ function drawHUD() {
   text(Math.ceil(tr.hp), hx + hw + 4, 6, f < 0.35 ? U.red : f < 0.65 ? U.amber : U.dim);
   if (!G.demo) drawRoute(hx + hw + 10 + tw(String(Math.ceil(tr.hp))), W - 28);
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
-  if (Au.muted) text('MUTE', W - 4, 22, U.faint, { align: 'right' });
+  const stars = starLayout();
+  if (stars.visible) for (const star of stars.stars) drawLegStar(star.x, star.y, star.earned, star.pop);
+  if (Au.muted) text('MUTE', W - 4, stars.visible ? 34 : 22, U.faint, { align: 'right' });
 }
 // The destination for this leg, with metres left to the train's actual stopping point.
 function nextLabel() {
@@ -9118,10 +9156,9 @@ function drawSummary() {
   if (s.hasStars && t >= pl.stars) {
     text('LEG STARS', x + 16, layout.starsY + 3, U.dim);
     for (let i = 0; i < 3; i++) {
-      ctx.globalAlpha = s.stars[i] ? 1 : 0.2;
-      blit(ICON.star, x + w - 16 - (3 - i) * (ICON.star.width + 3), layout.starsY + 2);
+      const pop = Number.isFinite(G.starAt?.[i]) ? clamp(1 - (t - pl.stars) / STAR_POP, 0, 1) : 0;
+      drawLegStar(x + w - 16 - (3 - i) * (ICON.star.width + 3), layout.starsY + 2, s.stars[i], pop);
     }
-    ctx.globalAlpha = 1;
   }
   // a near miss, and the promise: nothing is lost
   ctx.globalAlpha = clamp((t - pl.lines) / 0.3, 0, 1);
@@ -9408,8 +9445,11 @@ function depotRouteState() {
     selected: depotLeg, replay,
     startLabel: replay ? 'REPLAY: SCRAP ONLY' : 'RIDE TO ' + legDef(depotLeg).to.name,
     loss: depotLoss,
-    legs: LEGS.map((l) => ({ n: l.n, x: Math.round(pad + (l.n - 0.5) * step), y: 43,
-      won: !!SAVE.legs[l.n]?.won, selectable: l.n === current || !!SAVE.legs[l.n]?.won }))
+    legs: LEGS.map((l) => {
+      const record = SAVE.legs[l.n], won = !!record?.won, stars = (record?.stars || [false, false, false]).slice();
+      return { n: l.n, x: Math.round(pad + (l.n - 0.5) * step), y: 43,
+        won, selectable: l.n === current || won, stars, starsVisible: l.n >= 3 && (won || stars.some(Boolean)) };
+    })
   };
 }
 function depotStartRect() {
@@ -9435,8 +9475,8 @@ function drawDepotRoute() {
     ctx.fillStyle = color;
     ctx.fillRect(x0 + 4, 43, x1 - x0 - 8, 1);
     text(leg.n, leg.x, 34, color, { align: 'center', outline: false });
-    if (leg.won && leg.n >= 3) {
-      const stars = SAVE.legs[leg.n].stars, sw = ICON.star.width, sx = leg.x - Math.floor((sw * 3 + 2) / 2);
+    if (leg.starsVisible) {
+      const stars = leg.stars, sw = ICON.star.width, sx = leg.x - Math.floor((sw * 3 + 2) / 2);
       for (let i = 0; i < 3; i++) {
         ctx.globalAlpha = stars[i] ? 1 : 0.2;
         blit(ICON.star, sx + i * (sw + 1), 51);
@@ -14266,6 +14306,12 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  starState: () => {
+    if (!G) return null;
+    const record = SAVE.legs[G.leg], stars = record?.stars || [false, false, false];
+    return { leg: G.leg, stars: stars.slice(), gold: [1, 2, 3].reduce((n, i) => n + (record?.paid['star-' + i] ? 3 : 0), 0),
+      layout: starLayout(), atlas: !!ATL.get(ICON.star), popAt: G.starAt ? G.starAt.slice() : [] };
+  },
   // Spawn counters and cached variant art, copied without exposing live sprite or target objects.
   variantState: () => {
     if (!G) return null;

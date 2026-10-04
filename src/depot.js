@@ -235,8 +235,11 @@ function depotRouteState() {
     selected: depotLeg, replay,
     startLabel: replay ? 'REPLAY: SCRAP ONLY' : 'RIDE TO ' + legDef(depotLeg).to.name,
     loss: depotLoss,
-    legs: LEGS.map((l) => ({ n: l.n, x: Math.round(pad + (l.n - 0.5) * step), y: 43,
-      won: !!SAVE.legs[l.n]?.won, selectable: l.n === current || !!SAVE.legs[l.n]?.won }))
+    legs: LEGS.map((l) => {
+      const record = SAVE.legs[l.n], won = !!record?.won, stars = (record?.stars || [false, false, false]).slice();
+      return { n: l.n, x: Math.round(pad + (l.n - 0.5) * step), y: 43,
+        won, selectable: l.n === current || won, stars, starsVisible: l.n >= 3 && (won || stars.some(Boolean)) };
+    })
   };
 }
 function depotStartRect() {
@@ -262,8 +265,8 @@ function drawDepotRoute() {
     ctx.fillStyle = color;
     ctx.fillRect(x0 + 4, 43, x1 - x0 - 8, 1);
     text(leg.n, leg.x, 34, color, { align: 'center', outline: false });
-    if (leg.won && leg.n >= 3) {
-      const stars = SAVE.legs[leg.n].stars, sw = ICON.star.width, sx = leg.x - Math.floor((sw * 3 + 2) / 2);
+    if (leg.starsVisible) {
+      const stars = leg.stars, sw = ICON.star.width, sx = leg.x - Math.floor((sw * 3 + 2) / 2);
       for (let i = 0; i < 3; i++) {
         ctx.globalAlpha = stars[i] ? 1 : 0.2;
         blit(ICON.star, sx + i * (sw + 1), 51);

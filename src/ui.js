@@ -95,6 +95,32 @@ function drawCurrencyCounters(layout, y = 0, pulses = {}, outline = true) {
     text(item.label, item.textX, y + 6, pulse ? bright : item.color, { outline });
   }
 }
+// Three cached native star sprites sit below the HUD. The saved receipt is the source of truth;
+// only stars newly earned in this G have a timestamp, so a retry never repeats their earned pop.
+function starLayout() {
+  const sw = ICON.star.width, sh = ICON.star.height, gap = 3, w = sw * 3 + gap * 2;
+  const visible = !G.demo && G.leg >= 3 && (mode === 'play' || mode === 'ending');
+  const x = W - w - 8, y = 22, saved = SAVE.legs[G.leg]?.stars || [false, false, false];
+  return { visible, x, y, w, h: sh, stars: [0, 1, 2].map((index) => {
+    const at = G.starAt?.[index], pop = Number.isFinite(at) ? clamp(1 - (realT - at) / STAR_POP, 0, 1) : 0;
+    return { index, x: x + index * (sw + gap), y, w: sw, h: sh, earned: saved[index] === true, pop };
+  }) };
+}
+function drawLegStar(x, y, earned, pop = 0) {
+  const lift = !REDUCED && earned && pop > 0.5 ? 1 : 0;
+  ctx.globalAlpha = earned ? 1 : 0.2;
+  blit(ICON.star, x, y - lift);
+  if (earned && pop > 0) {
+    ctx.globalAlpha = pop;
+    ctx.fillStyle = '#fff1c2';
+    const cx = x + (ICON.star.width >> 1), cy = y - lift + (ICON.star.height >> 1);
+    ctx.fillRect(cx, y - lift - 2, 1, 1);
+    ctx.fillRect(cx, y - lift + ICON.star.height + 1, 1, 1);
+    ctx.fillRect(x - 2, cy, 1, 1);
+    ctx.fillRect(x + ICON.star.width + 1, cy, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+}
 function drawHUD() {
   ctx.fillStyle = 'rgba(6,7,9,0.88)';
   ctx.fillRect(0, 0, W, 18);
@@ -118,7 +144,9 @@ function drawHUD() {
   text(Math.ceil(tr.hp), hx + hw + 4, 6, f < 0.35 ? U.red : f < 0.65 ? U.amber : U.dim);
   if (!G.demo) drawRoute(hx + hw + 10 + tw(String(Math.ceil(tr.hp))), W - 28);
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
-  if (Au.muted) text('MUTE', W - 4, 22, U.faint, { align: 'right' });
+  const stars = starLayout();
+  if (stars.visible) for (const star of stars.stars) drawLegStar(star.x, star.y, star.earned, star.pop);
+  if (Au.muted) text('MUTE', W - 4, stars.visible ? 34 : 22, U.faint, { align: 'right' });
 }
 // The destination for this leg, with metres left to the train's actual stopping point.
 function nextLabel() {
@@ -552,10 +580,9 @@ function drawSummary() {
   if (s.hasStars && t >= pl.stars) {
     text('LEG STARS', x + 16, layout.starsY + 3, U.dim);
     for (let i = 0; i < 3; i++) {
-      ctx.globalAlpha = s.stars[i] ? 1 : 0.2;
-      blit(ICON.star, x + w - 16 - (3 - i) * (ICON.star.width + 3), layout.starsY + 2);
+      const pop = Number.isFinite(G.starAt?.[i]) ? clamp(1 - (t - pl.stars) / STAR_POP, 0, 1) : 0;
+      drawLegStar(x + w - 16 - (3 - i) * (ICON.star.width + 3), layout.starsY + 2, s.stars[i], pop);
     }
-    ctx.globalAlpha = 1;
   }
   // a near miss, and the promise: nothing is lost
   ctx.globalAlpha = clamp((t - pl.lines) / 0.3, 0, 1);

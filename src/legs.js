@@ -180,13 +180,18 @@ function goldHuntPaid() {
   for (const record of Object.values(SAVE.legs)) for (const id of Object.keys(record?.paid || {})) if (id.startsWith('golden-hunt-') && record.paid[id] === true) n++;
   return n;
 }
-// Zero-based star index. Catch awards star3 now; station stars are connected in T6.7.
+// Seconds for a newly earned star's small pixel pop. (proposal)
+const STAR_POP = 0.35;
+// Zero-based star index. Arrival awards stars1/2 before marking the leg won; a catch awards star3.
 function earnLegStar(index) {
   if (G.demo || G.leg < 3 || G.replay || G.result || index < 0 || index > 2 || !Number.isInteger(index)) return 0;
   const record = legSave(G.leg);
   if (record.won || record.stars[index]) return 0;
   record.stars[index] = true;
   const paid = payGold('star-' + (index + 1), 3, 0);
+  if (!G.starAt) G.starAt = [null, null, null];
+  G.starAt[index] = realT;
+  SFX.tick();
   if (paid.gold) floatText(G.helis[0].x, G.helis[0].y - G.helis[0].alt - 20, 'STAR ' + (index + 1) + ': +3 GOLD', U.gold);
   return paid.gold;
 }

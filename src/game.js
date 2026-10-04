@@ -344,6 +344,11 @@ function buildSafeZone() {
 function arrive() {
   if (G.demo || G.result) return;
   if (G.leg === 12 && !G.replay) rescueCamp();
+  // Arrival rewards must bank while the leg is still live; won legs cannot earn missed stars.
+  if (G.leg >= 3) {
+    earnLegStar(0);
+    if (G.tr.hp >= G.tr.max * 0.75) earnLegStar(1);
+  }
   G.result = 'won';
   G.tr.v = 0;
   G.tr.s = G.goalS;

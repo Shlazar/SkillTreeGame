@@ -310,6 +310,7 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 
 ### 5.14 Legs and rewards (src/test_f.js)
 
+- `starState()`: copies the current leg's earned stars, total one-time star gold, HUD positions/pop progress and cached icon readiness. From leg 3, reaching the station, arriving with at least 75% health and catching the primary golden zombie each pay 3 gold once. The catch star saves immediately; replays cannot earn missed stars.
 - `variantState()`: copies silver/explosive spawn and blast counters, active variant positions, eligible spawn chances, queued blasts, and startup-art atlas checks. Silver pays 15 base scrap; explosive walkers and runners detonate only if they were visibly explosive before dying.
 - `variantSpawn(kind, sx, sy, type = 0)`: QA-only controlled placement using the real variant converters. `kind` is `normal`, `silver` or `boom`; returns the actor index or `-1`. Special variants respect their leg introductions and cannot be brutes. Screen coordinates must be inside the world view.
 - `goldState()`: copies the golden event queue/receipts and active chase positions, plus the number of Hunt gold rewards already paid and cached gold-art readiness. Primary identities stay `golden-primary` per leg; Hunt extras use `golden-hunt-1..3`. A primary catch pays 1 gold and the third star (3 gold); retries/replays pay 10 base scrap. Hunt extras can pay at most five one-time gold rewards across the demo. Golden crates use `gold-crate`, pay 5 gold at actual proximity pickup, and pay 25 base scrap on retry/replay.

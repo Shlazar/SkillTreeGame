@@ -29,6 +29,12 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  starState: () => {
+    if (!G) return null;
+    const record = SAVE.legs[G.leg], stars = record?.stars || [false, false, false];
+    return { leg: G.leg, stars: stars.slice(), gold: [1, 2, 3].reduce((n, i) => n + (record?.paid['star-' + i] ? 3 : 0), 0),
+      layout: starLayout(), atlas: !!ATL.get(ICON.star), popAt: G.starAt ? G.starAt.slice() : [] };
+  },
   // Spawn counters and cached variant art, copied without exposing live sprite or target objects.
   variantState: () => {
     if (!G) return null;
