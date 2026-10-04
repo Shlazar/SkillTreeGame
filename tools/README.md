@@ -332,6 +332,9 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 
 ### 5.14 Legs and rewards (src/test_f.js)
 
+- `ambushState()`: copied first-leg prototype state, or `null` on other legs/menu demos. Reports `phase`, zero-based `index`, `total`, remaining/pending/spawned/killed counts, train position/speed and three stop records with their start/clear clocks and live attacker snapshots. `remaining` includes pending births. Normal progression requires every assigned attacker to die; no timer clears a wave. `win()` deliberately bypasses this controller as a forced-arrival QA fixture.
+- `uiBounds().depot.tooltip.preview`: copied bounds, node ID, loop `phase`, `animated` and `reduced` for the MG Car/A-10 visual-card trial. Tooltip diagnostics also copy `footer` and `priceText`. The scenes paint baked art without running weapons, consuming RNG or changing saves. Run `tree_previews.js` in normal and reduced-motion modes to verify this.
+
 - `finaleState()`: copies the Terminus phase (`approach`, `hold`, `open`, `done`), actual stop/arrival positions and times, 30-second hold clock, gate props, gift receipt and finale wave receipts. Only leg 12 has this state. The gate clock uses game time; rewards wait until the train rolls through the opened gate.
 - `incomeState()`: copies the current leg's scrap target, ordinary kill multiplier, total paid scrap, paid/base sources (`ordinary`, `silver`, `loot`, `wall`) and remaining fractions. Ordinary kill payouts are tuned per leg while keeping the horde; silver remains 15 base scrap and Salvage Crew applies once to every source. Wall scrap counts only after collecting its dropped pile.
 - `starState()`: copies the current leg's earned stars, total one-time star gold, HUD positions/pop progress and cached icon readiness. From leg 3, reaching the station, arriving with at least 75% health and catching the primary golden zombie each pay 3 gold once. The catch star saves immediately; replays cannot earn missed stars.
@@ -484,6 +487,8 @@ At the default 1280x720, a game pixel (gx, gy) is at screenshot pixel (2*gx, 2*g
 Keep work inside the twelve-leg demo and the requested feature. Locked FULL GAME previews and retained disabled systems do not need implementation or refactoring for a demo change. Keep `FINAL_DESIGN.md` and the style references unchanged.
 
 For small changes, build once, run the quick loop/smoke checks and the affected feature scenarios. Use `check_all.py --match` to select those scenarios. Run the full route when rewards or progression change, and busy-frame checks when rendering or simulation load changes. Reserve the complete saved suite for release checkpoints or broad shared-system changes. Re-run a check only after a relevant change or failure. The owner has waived screenshot inspection; do not spend time reviewing or cropping images unless requested again.
+
+The current first-leg ambush prototype is checked by `ambush_intro.js` and `ambush_positioning.js`. These replace the old leg-1 timed-timeline assumptions in the historical `t6_1_*` fixtures; those fixtures describe the earlier riding version. The two visual upgrade cards are checked by `tree_previews.js`, including reduced motion. The remaining riding legs retain their existing checks.
 
 Do all of these before you call a change done:
 

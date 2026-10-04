@@ -383,7 +383,9 @@ function addStream(n, edge, fast, params = {}) {
   STREAMS.push({ sx, sy, n, gap: fast ? rnd(0.05, 0.08) : rnd(0.09, 0.15), t: 0, edge, fast, age: 0,
     type: params.type, variant: params.variant, leadType: params.leadType ?? 2, leaders, escort,
     railOff: leaders ? (Math.random() < 0.5 ? -1 : 1) * ESCORTC.railOff : 0,
-    emitted: 0, eventId: params.eventId || '' });
+    emitted: 0, eventId: params.eventId || '', ambushId: params.ambushId || '',
+    ambushCar: params.ambushCar || 0, ambushCars: params.ambushCars?.slice(),
+    ambushLanes: params.ambushLanes?.slice(), ambushOff: params.ambushOff || 0 });
 }
 // Each step: the streams let out their dead (none past the most the horde wants).
 function updateStreams(dt, want) {
@@ -392,6 +394,8 @@ function updateStreams(dt, want) {
     s.age += dt;
     s.t -= dt;
     while (s.t <= 0 && s.n > 0) {
+      // Finite intro streams retain unspawned attackers if a temporary fixture fills the cap.
+      if (s.ambushId && G.zombies.length >= want) { s.t = 0; break; }
       s.t += s.gap;
       s.n--;
       const index = s.emitted++;
@@ -402,8 +406,11 @@ function updateStreams(dt, want) {
       const side = s.edge === -1 || s.edge === 1;
       const jx = side ? rnd(-4, 4) : s.escort ? rnd(-2, 2) : rnd(-10, 10), jy = side ? rnd(-8, 8) : rnd(-3, 3);
       const back = s.leaders && !lead ? STREAM_ESCORT_BACK : 0;
-      const y = G.camY + s.sy + jy - (side ? 0 : back * FORE);
-      const x = s.escort ? railX(y) + s.railOff + jx : G.camX + s.sx + jx + (side ? s.edge * back : 0);
+      const car = s.ambushCars ? s.ambushCars[index % s.ambushCars.length] : s.ambushCar;
+      const along = s.ambushLanes ? s.ambushLanes[Math.floor(index / s.ambushCars.length) % s.ambushLanes.length] : 0;
+      const mount = s.ambushId ? trainMount(car, along, s.ambushOff) : null;
+      const y = mount ? mount.y + jy : G.camY + s.sy + jy - (side ? 0 : back * FORE);
+      const x = mount ? mount.x + jx : s.escort ? railX(y) + s.railOff + jx : G.camX + s.sx + jx + (side ? s.edge * back : 0);
       const z = newDead(x, y, pickSpawnType(false, s, index));
       if (s.variant === 'silver') makeSilver(z);
       else if (s.variant === 'boom') makeExplosive(z);
@@ -418,6 +425,7 @@ function updateStreams(dt, want) {
         z.escortReleaseReason = s.escort.releaseReason;
       }
       if (s.eventId) { z.streamEventId = s.eventId; z.streamIndex = index; z.streamLead = lead; z.streamAt = G.run; z.streamEdge = s.edge; }
+      if (s.ambushId) { z.ambushId = s.ambushId; z.ambushCar = car; z.ambushAlong = along; ambushBorn(z); }
       G.zombies.push(z);
     }
     if (s.n <= 0) STREAMS.splice(i, 1);
@@ -428,6 +436,7 @@ function updateStreams(dt, want) {
 function spawn(dt) {
   const h = horde(), want = Math.min(CFG.pop.max, h.want);
   updateStreams(dt, want);
+  if (G.ambush) return; // Every intro attacker belongs to one finite wave, including during travel.
   G.spawnCd -= dt;
   if (G.spawnCd <= 0 && G.zombies.length < want) {
     const r = Math.random(), early = openingHorde();
@@ -540,6 +549,11 @@ function updateZombies(dt) {
     if (escort) {
       tx = escort.x + ((z.streamIndex % 3) - 1) * ESCORTC.lane;
       ty = escort.y;
+    } else if (z.ambushId) {
+      // Reachable flank attackers approach an actual car, instead of chasing an offscreen rail.
+      const c = tr.cars[z.ambushCar], off = side * (hw + 2);
+      tx = c.cx + c.dx * z.ambushAlong + c.nx * off;
+      ty = c.cy + c.dy * z.ambushAlong + c.ny * off;
     } else if (z.gold) {
       const g = goldFlee(z);
       tx = g[0];
@@ -599,7 +613,7 @@ function updateZombies(dt) {
       if (ds > -260) railN++;
     }
     // far from the train and out of view: gone
-    if (Math.abs(z.x - mid.cx) + Math.abs(z.y - mid.cy) > 900 && offView(z.x, z.y, 40)) z.gone = true;
+    if (!z.ambushId && Math.abs(z.x - mid.cx) + Math.abs(z.y - mid.cy) > 900 && offView(z.x, z.y, 40)) z.gone = true;
   }
   G.onTrain = onTrain;
   G.railAhead = railN;

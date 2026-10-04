@@ -192,6 +192,10 @@ function drawHUD() {
 function nextLabel() {
   const st = G.station, to = legDef(G.leg).to;
   if (G.result === 'won') return ['ARRIVED: ' + to.name, U.green];
+  const a = G.ambush;
+  if (a && a.phase !== 'done') return a.phase === 'hold' ?
+    ['AMBUSH ' + (a.index + 1) + '/' + a.total + ': ' + a.remaining + ' LEFT', U.amber] :
+    ['NEXT AMBUSH ' + (a.index + 1) + '/' + a.total, U.blue];
   const distance = Math.max(0, G.tr.s - (st ? st.stopS : G.goalS));
   return ['NEXT: ' + to.name + ' ' + Math.round(distance / 2 / 10) * 10 + ' M', U.blue];
 }
@@ -671,7 +675,8 @@ function uiBounds() {
   const depot = mode === 'depot' ? { counters: currencyBounds(currencyLayout(SHOWN)), tabs: depotTabRects(),
     route: depotRouteLayout(), bottom: depotBottomLayout(),
     treeArea: depotTab === 'tree' ? { x: 0, y: TREE.y0, w: W, h: TREE.y1 - TREE.y0 } : null,
-    tooltip: depotTab === 'tree' && TREE.infoBounds ? { ...TREE.infoBounds } : null,
+    tooltip: depotTab === 'tree' && TREE.infoBounds ? { ...TREE.infoBounds,
+      preview: TREE.infoBounds.preview ? { ...TREE.infoBounds.preview } : null } : null,
     genericTooltip: TIP.bounds ? { ...TIP.bounds } : null } : null;
   return { viewport: { W, H, VH, SCALE, reduced: REDUCED }, hud,
     radar: run ? { x: W - 79, y: VH - 79, w: 74, h: 74 } : null,

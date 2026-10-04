@@ -3,6 +3,8 @@
 
 // Rail px between stations: about 60 s at the train's 40 px/s cruise. (proposal)
 const LEG_LENGTH = 2400;
+// Intro-only station separation and finite-defense rewards; later stops retain their world positions. (proposal)
+const INTRO_LEG = { length: 420, pile: 24, attackers: [16, 24, 32] };
 // First-pass scrap targets from the final design; ordinary kill shares are tuned with real rides.
 const LEG_SCRAP_TARGETS = [80, 95, 115, 135, 160, 190, 225, 265, 310, 365, 430, 500];
 // Ordinary kill multipliers preserve the large hordes; wall drops remain collectible. (proposal)
@@ -88,6 +90,11 @@ for (let n = 1; n < STOPS.length; n++) {
     scrapTarget: LEG_SCRAP_TARGETS[n - 1], ordinaryPay: LEG_ORDINARY_PAY[n - 1], wallPay: LEG_WALL_PAY[n] ?? CFG.wall.loot,
     rescue: [4, 8, 10].includes(n) ? 'rescue-' + n : null, finale: n === 12, events: LEG_EVENT_ROWS[n - 1] });
 }
+// Build the original line first, then move only its departure closer to Millbrook.
+// The train still travels continuously to the same destination; legs2..12 do not move.
+DEPOT.km = STOPS[1].km - INTRO_LEG.length / CFG.line.km;
+Object.assign(LEGS[0], { len: INTRO_LEG.length, td: true, events: [],
+  ordinaryPay: (LEG_SCRAP_TARGETS[0] - INTRO_LEG.pile) / INTRO_LEG.attackers.reduce((n, count) => n + count, 0) });
 const legDef = (n) => LEGS[n - 1] || null;
 // Scenery uses the same complete line on every retry, so cached ground stays consistent.
 const STATIONS = STOPS.slice(1);
@@ -144,6 +151,7 @@ function dispatchLegEvent(kind, params, id) {
 // future kinds, so a deferred feature cannot block the rest of the leg's actual events.
 function updateLegEvents() {
   if (G.demo || G.result || mode !== 'play') return;
+  if (G.ambush) return; // The intro advances its finite encounters by clears, not event clocks.
   const leg = legDef(G.leg);
   if (!leg) return;
   while (G.eventIndex < leg.events.length) {

@@ -28,6 +28,11 @@ const wallets = () => { const s = __sr.save(); return {scrap: s.scrap, surv: s.s
 const ownedTree = () => Object.fromEntries(Object.entries(__sr.save().nodes).filter(([id, level]) => level > 0));
 function steerCollector() {
   const g = __sr.G, h = g.helis[0];
+  // The intro's rear ambush needs a real Viper order before collection/travel can resume.
+  if (g.ambush?.phase === 'hold') {
+    const target = g.zombies.find(z => z.ambushId && !z.dead && !z.gone);
+    if (target) { if (h.order?.kind !== 'attack' || h.order.z !== target) __sr.order(0, 'attack', target); return; }
+  }
   const golden = g.zombies.filter(z => z.goldItemId && !z.dead && !z.gone).sort((a, b) => Number(b.goldPrimary) - Number(a.goldPrimary))[0];
   if (golden) {
     if (h.order?.kind !== 'attack' || h.order.z !== golden) __sr.order(0, 'attack', golden);

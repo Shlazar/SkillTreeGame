@@ -29,6 +29,7 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  ambushState: () => ambushState(),
   audioState: () => audioState(),
   uiBounds: () => uiBounds(),
   motionProbe: (trigger = false) => {
@@ -448,7 +449,11 @@ Object.assign(window.__sr, {
       events: l.events.map(([at, kind, params]) => [at, kind, { ...params }]) }))
   }),
   leg: (n, replay) => { startGame(n, replay); return G.leg; },
-  win: () => { window.__sr.jump(8); },
+  // Forced QA arrival deliberately bypasses intro encounters; production arrival cannot skip them.
+  win: () => {
+    if (G.ambush) { G.ambush = null; clearStreams(); G.spawnCd = 1000000; }
+    window.__sr.jump(8);
+  },
   payGold: (id, amount, scrapIfNot) => payGold(id, amount, scrapIfNot),
   setLeg: (n) => {
     n = clamp(Math.floor(Number(n) || 1), 1, 13);

@@ -259,7 +259,8 @@ const TREE = {};
 const ZOOMS = [0.25, 0.5, 0.75, 1, 1.5, 2];
 function resetTree() {
   Object.assign(TREE, { born: {}, pop: {}, lit: {}, flash: {}, shake: {}, rings: [], sparks: [], floats: [], hov: null, sel: null,
-    cam: { x: 0, y: 0, z: 1 }, zt: 1, anchor: null, drag: null, shown: null, lastBuy: -9, y0: 19, y1: 331 });
+    cam: { x: 0, y: 0, z: 1 }, zt: 1, anchor: null, drag: null, shown: null, lastBuy: -9, y0: 19, y1: 331,
+    previewId: null, previewStart: 0 });
 }
 resetTree();
 const GROW = 0.3;
@@ -823,11 +824,16 @@ function statSegs(stat, l, done) {
 // The tooltip for node n beside it: NAME and LEVEL x/y, a line in its colour, what it does, NOW >
 // NEXT, then the price (red when you cannot pay) and what a click does.
 const INFO_W = 216;
+// Small visual-card trial on the first two weapon unlocks; other nodes keep their stat cards.
+const TREE_PREVIEW_META = {
+  mgCar: { mode: 'AUTOMATIC', desc: 'FIRES AT NEARBY ZOMBIES.' },
+  a10: { mode: 'AIM + CLICK', desc: 'STRAFES A LINE OF ZOMBIES.' }
+};
 function drawInfo(n, st, y0, y1) {
   const K = NODE_KIND[n.k], l = lv(n.id), m = maxLv(n), tease = st === 'tease', lock = tease;
   const w = Math.min(INFO_W, W - 8), inner = w - 14;
-  const desc = wrap(n.desc, inner);
-  const vals = lock || !n.stat ? [] : [n.stat, n.stat2].filter(Boolean).map((s) => statSegs(s, l, l >= m));
+  const preview = TREE_PREVIEW_META[n.id], desc = wrap(preview ? preview.desc : n.desc, inner);
+  const vals = preview || lock || !n.stat ? [] : [n.stat, n.stat2].filter(Boolean).map((s) => statSegs(s, l, l >= m));
   // the foot: [price text, colour, price icon, right text, colour]
   const surv = n.cur === 'surv', gold = n.cur === 'gold', pr = priceOf(n), have = SAVE[n.cur || 'scrap'];
   const icon = surv ? ICON.survS : gold ? ICON.goldS : ICON.boltS;
@@ -837,8 +843,11 @@ function drawInfo(n, st, y0, y1) {
   else if (st === 'max') foot = ['', U.dim, null, n.id === 'root' || m === 1 ? 'OWNED' : 'MAXED', K.c];
   else if (st === 'poor') foot = [fmt(pr), U.red, icon, 'NEED ' + fmt(pr - have) + ' MORE', U.red];
   else foot = pr ? [fmt(pr), pcol, icon, 'CLICK TO BUY', U.gold] : ['FREE', U.gold, null, 'CLICK TO TAKE IT', U.gold];
-  const kindName = tease ? 'FULL GAME' : n.id === 'root' ? 'THE ROOT' : n.k === 'surv' ? 'NEW UNIT' : n.k === 'gold' ? 'SPECIAL' : 'UPGRADE';
-  const h = 31 + desc.length * 10 + vals.length * 10 + 17;
+  if (preview && foot[0]) foot[0] += ' SURVIVOR';
+  const kindName = preview ? preview.mode : tease ? 'FULL GAME' : n.id === 'root' ? 'THE ROOT' : n.k === 'surv' ? 'NEW UNIT' : n.k === 'gold' ? 'SPECIAL' : 'UPGRADE';
+  const textH = 31 + desc.length * 10 + vals.length * 10 + 17;
+  const previewH = preview ? Math.max(0, Math.min(58, y1 - y0 - 26 - textH)) : 0;
+  const h = textH + previewH;
   // beside the node (right, else left), kept on the panel
   const q = nodeXY(n.id), hn = halfOf(n);
   let x = q.x + hn + 10;
@@ -849,7 +858,7 @@ function drawInfo(n, st, y0, y1) {
   y = clamp(y, y0 + 22, y1 - h - 4);
   x = Math.round(x);
   y = Math.round(y);
-  TREE.infoBounds = { id: n.id, x, y, w, h };
+  TREE.infoBounds = { id: n.id, x, y, w, h, footer: foot[3], priceText: foot[0] };
   // the box: near black, a frame and a line under the head in the node's colour
   ctx.fillStyle = 'rgba(5,8,13,0.97)';
   ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
@@ -861,7 +870,7 @@ function drawInfo(n, st, y0, y1) {
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
   text(n.name, x + 7, y + 5, lock ? U.dim : '#ffffff');
-  if (!tease) text(n.id === 'root' ? (l ? 'OWNED' : '0/1') : l + '/' + m, x + w - 7, y + 5, st === 'max' ? K.c : U.ink, { align: 'right' });
+  if (!tease && !preview) text(n.id === 'root' ? (l ? 'OWNED' : '0/1') : l + '/' + m, x + w - 7, y + 5, st === 'max' ? K.c : U.ink, { align: 'right' });
   text(kindName, x + 7, y + 14, tease ? U.dim : lock ? '#3c4658' : K.m, { outline: false });
   ctx.fillStyle = lock ? '#1c2434' : K.m;
   ctx.fillRect(x + 6, y + 23, w - 12, 1);
@@ -869,6 +878,14 @@ function drawInfo(n, st, y0, y1) {
   for (const d of desc) {
     text(d, x + 7, ty, lock ? U.faint : U.ink);
     ty += 10;
+  }
+  if (preview && previewH > 4) {
+    if (TREE.previewId !== n.id) { TREE.previewId = n.id; TREE.previewStart = realT; }
+    const phase = REDUCED ? 0.38 : mod(realT - TREE.previewStart, 3) / 3;
+    const r = { id: n.id, x: x + 7, y: ty + 1, w: inner, h: previewH - 4, phase, animated: !REDUCED, reduced: REDUCED };
+    drawTreePreview(n.id, r.x, r.y, r.w, r.h, phase);
+    TREE.infoBounds.preview = r;
+    ty += previewH;
   }
   for (const segs of vals) {
     let tx = x + 7;

@@ -2,6 +2,8 @@
 
 A procedural pixel-art train escort game. Protect the train through twelve station legs, collect supplies with one Viper, and build up automatic weapons, train gadgets and air support in the Depot.
 
+The current small playtest changes leg 1 to three stopped ambushes with short travel between them. Clear each attacking wave to move on. In the Depot, hover **MG Car** or **A-10** to try simpler upgrade cards with looping weapon previews and a clear survivor price. The remaining legs and upgrade cards keep their existing behavior while these two ideas are tested.
+
 ## Play locally
 
 Run `python build.py` from this folder, then open `index.html` in a browser. The build joins the files in `src/` into one standalone page. No server, npm packages or downloaded art are required.

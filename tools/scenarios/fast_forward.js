@@ -7,7 +7,7 @@ function fresh() {
   __sr.hold(false); __sr.pause(false); __sr.reset();
   check(__sr.node('a10', 1) && __sr.node('ram', 1), 'Speed fixture ownership failed');
   for (const lesson of __sr.tutState().lessonText) __sr.SAVE.seen[lesson.key] = true;
-  __sr.start(); __sr.bot(false); __sr.hp(9999); __sr.rightUp(4, 70);
+  __sr.start(2); __sr.bot(false); __sr.hp(9999); __sr.rightUp(4, 70);
   const g = __sr.G, h = g.helis[0];
   // Isolate clock behavior from hits, timed rewards and arrivals; weapons/input remain production.
   g.zombies.length = g.rounds.length = g.timers.length = g.loot.length = g.lootFly.length = 0;

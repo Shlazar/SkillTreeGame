@@ -58,8 +58,8 @@ const CAMS = ['COLOUR', 'WHITE HOT', 'BLACK HOT'];
 let G = null, mode = 'title', paused = false, realT = 0, frameDt = 0, sumStart = 0, thermal = 0;
 
 // ---------- the fixed line
-// DEPOT_S = the Depot's place along the rails (it stands at y = 0). The rest of the line is counted
-// in km from there: sAtKm(k) = the place k km up the line, kmAt(s) = how many km s is from the Depot.
+// DEPOT_S = the original rail origin at y = 0. Stop coordinates use this fixed origin even when
+// the intro departure is brought closer to Millbrook; later stations keep their world positions.
 const DEPOT_S = trackS(0);
 const sAtKm = (k) => DEPOT_S - k * CFG.line.km;
 const kmAt = (s) => (DEPOT_S - s) / CFG.line.km;
@@ -144,7 +144,7 @@ function newGame(demo, number, replay) {
     goalS: demo ? -1e12 : stopRailS(leg.to), goalY: -1e9,
     // the stops on this run (the Depot and the stations ahead), the stations alone, the one the
     // train goes to next (or stands at), and the Dead Walls ahead
-    stops: [], stations: [], station: null, walls: [], wall: null, safeZone: false, finale: null,
+    stops: [], stations: [], station: null, walls: [], wall: null, safeZone: false, finale: null, ambush: null,
     camX: 0, camY: 0, aimSX: W / 2, aimSY: VH / 2,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
     // Each source carries its own fraction, so silver and wall rewards never inherit ordinary pay.
@@ -181,6 +181,7 @@ function newGame(demo, number, replay) {
     G.goalY = yOfS(G.goalS);
     G.maxKm = DK();
     buildLine(leg);
+    if (leg.td) initAmbush();
     if (leg.finale) {
       G.finale = { phase: 'approach', stopS: G.goalS + FINALEC.stop, holdAt: null, elapsed: 0,
         openAt: null, eventIndex: 0, gifted: false, giftAt: null, giftUsed: false, arrivedAt: null, gateProps: [] };
@@ -190,7 +191,7 @@ function newGame(demo, number, replay) {
     rollLoot();
   }
   placeCamera();
-  scatter(leg && leg.from !== DEPOT ? leg.from : null);
+  if (!G.ambush) scatter(leg && leg.from !== DEPOT ? leg.from : null);
 }
 // Start the next leg, or a selected old leg. Replays cannot advance the route again.
 function startGame(number, replay) {
@@ -374,6 +375,7 @@ function openFinaleGate() {
 // Arrival wins this leg. The station guards clear the climbers while the short summary opens.
 function arrive() {
   if (G.demo || G.result) return;
+  if (G.ambush && G.ambush.phase !== 'done') return;
   if (G.finale && G.finale.phase !== 'open') return;
   if (G.finale) { G.finale.phase = 'done'; G.finale.arrivedAt = G.run; }
   if (G.leg === 12 && !G.replay) rescueCamp();
@@ -771,6 +773,7 @@ function ramFull() {
 // Space or the card. bot = the autopilot (it is not told no). True when the Ram starts.
 function tryRam(bot) {
   if (G.result || !(mode === 'play' || G.demo)) return false;
+  if (G.ambush?.phase === 'hold') return false;
   const s = ramState(), r = G.ram;
   if (s === 'ready') {
     ramStart();
@@ -1269,6 +1272,7 @@ function step(dt) {
   if (G.result === 'lost') tr.v = Math.max(0, tr.v - 30 * dt);
   else if (G.result === 'won') tr.v = 0;
   else if (G.finale?.phase === 'hold') tr.v = 0;
+  else if (G.ambush && G.ambush.phase !== 'done') driveAmbush(dt);
   else if (wall && !ramPowered() && (wall.state === 'braking' || wall.state === 'stopped')) {
     tr.v = Math.min(CFG.train.cruise, tr.v + CFG.train.accel * dt,
       Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - wall.stopS)) + 1.5);
@@ -1358,6 +1362,7 @@ function step(dt) {
   updateSkills(dt);
   updatePlanes(dt);
   if (!G.demo) updateLoot(dt);
+  updateAmbush();
   updateJuice(dt);
   updateScenery(dt);
   updateFX(dt);

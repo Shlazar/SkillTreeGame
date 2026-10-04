@@ -125,10 +125,10 @@ for (let leg = 1; leg <= 5; leg++) for (const seed of OPENING_SEEDS) {
 function assertOpening(results) {
   for (const row of results) {
     const label = 'leg' + row.leg + ' ' + row.control + ' seed' + row.seed;
-    check(row.first.shot !== null && row.first.shot <= 1, 'Opening gunfire starts after 1s: ' + label);
-    if (row.control === 'zero_input_escort') check(row.longestWithoutEither <= 5,
+    check(row.first.shot !== null && row.first.shot <= (row.leg === 1 ? 3 : 1), 'Opening gunfire starts too late: ' + label);
+    if (row.leg > 1 && row.control === 'zero_input_escort') check(row.longestWithoutEither <= 5,
       'Passive opening has a quiet stretch over 5s: ' + label + ' ' + row.longestWithoutEither);
-    if (row.control === 'defensive_right_click' || row.leg === 1) check(row.result === 'won',
+    if (row.control === 'defensive_right_click') check(row.result === 'won',
       'Normal-health defensive ride or first leg failed: ' + label + ' ' + row.result);
     if (row.leg === 1) check(row.first10 && row.first10.hp >= 40,
       'First leg loses more than half its health in 10s: ' + label + ' ' + row.first10?.hp);
@@ -155,7 +155,7 @@ if (window.OPENING_NARROW === true) {
   }
 }
 QA_DONE({diagnosticOnly: false, sampleResolution: SAMPLE_STEP, timeLimit: LIMIT_SECONDS, seeds: OPENING_SEEDS,
-  acceptance: {firstShotSeconds: 1, passiveQuietSeconds: 5, defensiveWins: true, leg1Wins: true, leg1HealthAt10Seconds: 40,
+  acceptance: {firstShotSeconds: {ambushIntro: 3, ridingLegs: 1}, ridingPassiveQuietSeconds: 5, defensiveWins: true, leg1HealthAt10Seconds: 40,
     enemyIntroductionsPreserved: true},
   method: 'Independent seeded normal-health rides. The paired controls share each starting seed. No rendered-frame RNG, bot planes, free currency, injected enemies, manual damage or forced arrivals. Later builds are explicit node fixtures.',
   definitions: {visible: 'Living zombie body centre inside the playable view below the HUD',
