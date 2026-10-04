@@ -15,6 +15,7 @@ Run `python build.py` from this folder, then open `index.html` in a browser. The
 | Strike the largest visible crowd | Press the same plane key twice. |
 | Cancel plane aim | Right click. |
 | Use Turbo Ram when owned | Space. |
+| Switch between normal and double speed | F, or click 1X/2X beside Pause. Each leg starts at 1X. |
 | Change camera | T cycles colour, white hot and black hot. |
 | Toggle sound | M. |
 | Pause | Escape or P. |
@@ -24,6 +25,8 @@ Run `python build.py` from this folder, then open `index.html` in a browser. The
 | Switch Depot tabs | Tab, when the Hangar is available. |
 
 Fly over scrap piles and cleared crates to collect them. Hover over a waving survivor for two continuous seconds to save him with the built-in winch. Right click a golden zombie to chase and catch it.
+
+Double speed advances the whole battle, including travel, enemies and cooldowns. Plane aiming still slows the battle for precise placement (except with reduced motion enabled).
 
 ## Depot and progress
 

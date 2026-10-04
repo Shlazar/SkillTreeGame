@@ -298,6 +298,7 @@ function drawPause() {
   const L = ['YOUR VIPER FIGHTS BY ITSELF.', 'RIGHT CLICK: ATTACK OR MOVE.', 'FLY OVER A SURVIVOR TO WINCH THEM UP.'];
   if (G.up.ram) L.push('PRESS SPACE TO RAM.');
   if (G.up.planeOwned.length) L.push('Q / W: AIM PLANE. DOUBLE TAP: SMART STRIKE.');
+  L.push('F: 1X / 2X SPEED WHILE PLAYING.');
   L.push('T: CAMERA.  M: SOUND.  WHEEL: ZOOM.');
   const w = 280, h = 112 + L.length * 10, x = Math.round(W / 2 - w / 2), y = Math.max(22, Math.round((H + 19) / 2 - h / 2)), cx = x + w / 2;
   Object.assign(PAUSE, { x, y, w, h });

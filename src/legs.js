@@ -6,7 +6,7 @@ const LEG_LENGTH = 2400;
 // First-pass scrap targets from the final design; ordinary kill shares are tuned with real rides.
 const LEG_SCRAP_TARGETS = [80, 95, 115, 135, 160, 190, 225, 265, 310, 365, 430, 500];
 // Ordinary kill multipliers preserve the large hordes; wall drops remain collectible. (proposal)
-const LEG_ORDINARY_PAY = [0.67831, 0.884, 0.75047, 0.66879, 0.37451, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.14645];
+const LEG_ORDINARY_PAY = [0.30377, 0.35372, 0.38152, 0.40152, 0.11, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.14645];
 const LEG_WALL_PAY = { 5: 40, 9: 40 };
 // The closed-gate hold lasts 30 play seconds. Standoff/rear spread px and peak-gift seconds are proposals.
 const FINALEC = { hold: 30,

@@ -22,6 +22,10 @@ function protectedRewards() {
 function pileShot() {
   return seeded(0x611, () => {
     freshTimeline(false, false); __sr.sim(22); __sr.frames(30);
+    // The closer opening packs can be cleared at22.5s; catch the next natural attacker with the pile.
+    const inView = z => !z.dead && !z.gone && z.x - __sr.G.camX >= 0 && z.x - __sr.G.camX < __sr.stats().W &&
+      z.y - __sr.G.camY >= 19 && z.y - __sr.G.camY < __sr.stats().VH;
+    for (let frame = 0; frame < 240 && !__sr.G.zombies.some(inView); frame++) __sr.frames(1);
     const state = __sr.legState(), pile = __sr.loot().find(f => f.eventId === 'leg-1-event-2');
     const g = __sr.G, view = __sr.stats(), visible = g.zombies.filter(z => !z.dead && !z.gone &&
       z.x - g.camX >= 0 && z.x - g.camX < view.W && z.y - g.camY >= 0 && z.y - g.camY < view.VH).length;

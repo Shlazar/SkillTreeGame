@@ -307,6 +307,11 @@ function railLocal(x, y, out) {
 const HORDE = Array.from({ length: 12 }, () => ({ want: 160, size: 4, gap: 4, run: 0, brute: 0, railBrute: 0 }));
 // The menu battle retains its previous middle-route pace, independently of the selected leg.
 const DEMO_HD = { want: 420, size: 16.75, gap: 1.025, wave: 10.25, waveN: 5, run: 0.1, brute: 0.02 };
+// Legs1..5: top-entry offsets, staggered pack leads, side offsets and
+// pack spread radius, all in ground/rail px. Counts and spawn clocks stay unchanged. (proposal)
+const OPENING_HORDE = { lastLeg: 5, entryOff: [40, 70], packLead: [90, 180, 330, 470, 600, 740],
+  packOff: [45, 85], packRadius: 22 };
+const openingHorde = () => !G.demo && G.leg >= 1 && G.leg <= OPENING_HORDE.lastLeg;
 // Older diagnostics may pass km; actual play always reads its selected leg instead.
 function horde() {
   if (G.demo) return DEMO_HD;
@@ -331,9 +336,10 @@ function pickSpawnType(rail, params = {}, index = 0) {
   return type == null ? pickType(rail) : legSpawnType(type);
 }
 // A pack of n standing round (hx, hy) (the start of a run, the demo).
-function pack(n, hx, hy) {
+function pack(n, hx, hy, maxRadius = Infinity) {
+  const radius = Math.min(6 + n * 1.1, maxRadius);
   for (let k = 0; k < n; k++) {
-    const r = Math.sqrt(Math.random()) * (6 + n * 1.1), b = rnd(TAU);
+    const r = Math.sqrt(Math.random()) * radius, b = rnd(TAU);
     G.zombies.push(newDead(hx + Math.cos(b) * r, hy + Math.sin(b) * r * FORE, pickType(false)));
   }
 }
@@ -361,7 +367,8 @@ function addStream(n, edge, fast, params = {}) {
     // over the top edge, to one side of the rails ahead
     sy = -10;
     const rx = railX(G.camY + 10) - G.camX, s = Math.random() < 0.5 ? -1 : 1;
-    sx = clamp(rx + s * (leaders ? ESCORTC.railOff : rnd(40, 190)), 8, W - 8);
+    const off = params.entryOff || [40, 190];
+    sx = clamp(rx + s * (leaders ? ESCORTC.railOff : rnd(off[0], off[1])), 8, W - 8);
   } else if (edge === 2) {
     // Finale attackers can reach the parked train from behind the last car.
     sy = VH + 10;
@@ -423,8 +430,9 @@ function spawn(dt) {
   updateStreams(dt, want);
   G.spawnCd -= dt;
   if (G.spawnCd <= 0 && G.zombies.length < want) {
-    const r = Math.random();
-    addStream(Math.round(h.size * rnd(1, 1.5)), r < 0.5 ? 0 : r < 0.75 ? -1 : 1, false);
+    const r = Math.random(), early = openingHorde();
+    addStream(Math.round(h.size * rnd(1, 1.5)), early ? 0 : r < 0.5 ? 0 : r < 0.75 ? -1 : 1, false,
+      early ? { entryOff: OPENING_HORDE.entryOff } : {});
     G.spawnCd = h.gap * rnd(0.8, 1.25);
   }
   if (!G.demo) return;

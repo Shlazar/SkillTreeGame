@@ -163,7 +163,7 @@ node tools/qa.js shot tools/scenarios/my_boom.js tools/out/boom.png 1500
 ### sim() and frames(): which one to use
 
 - `__sr.sim(sec)`: only the game steps (`step(STEP)` and `camLead`, `STEP = 1/60`). There is no drawing, no tutorial frame, no fade and no click handling. It is fast. Use it to move a run forward. Banners do not age during `sim`.
-- `__sr.frames(n, dt)`: n full frames, the same as the main loop (`oneFrame()`): the clock, hit-stop, plane-aim slowdown, game steps, camera, `tutFrame`, `render`, `drawUI`, `drawFade`, then mouse clicks are used up. Use it for tutorial prompts, banners, fades, camera moves and UI. A frame runs at most eight fixed game steps; large dt is suitable for held UI timing, not fast-forwarding a battle.
+- `__sr.frames(n, dt)`: n full frames, the same as the main loop (`oneFrame()`): the clock, hit-stop, plane-aim slowdown, game steps, camera, `tutFrame`, `render`, `drawUI`, `drawFade`, then mouse clicks are used up. Use it for tutorial prompts, banners, fades, camera moves and UI. A frame runs at most eight fixed game steps at1X or sixteen at2X. Use the real F control to fast-forward; large dt is suitable for held UI timing, not skipping a battle.
 - A common pattern: `sim(20)` to get into the fight, then `frames(30)` so the picture and the UI are up to date.
 
 Some procedural draws consume random numbers. Keep seeded income/balance rides separate from `bench`, `cost` and repeated rendering; freeze a scene before comparing painter costs. Held frames still advance UI time. Play tips wait until the departure banner finishes, and survivor/gold lessons promote only in the Depot.
@@ -217,6 +217,7 @@ This list follows the current build. Most feature diagnostics are copied by `src
 - `frames(n, dt)`: n full main-loop frames of dt seconds (default 1, 1/60).
 - `hold(h)`: `true` freezes game time (drawing goes on); `false` lets it run.
 - `pause(p)`: open/close the pause state (`setPaused`). It shows the pause menu.
+- `playSpeed()`: copied `{selected, effective, available, pending}` for the runtime 1X/2X control; `pending` is the remaining fixed-step accumulator in seconds. Use the real F key or `uiBounds().hud.speed` button to change it. Selection resets to 1X each leg; menus remain 1X, pause freezes time, and ordinary plane aiming caps effective speed at 0.5X. `frames()` observes this rate; `sim()` always advances game seconds directly.
 
 ### 5.4 Train, run and position (src/main.js)
 
@@ -477,6 +478,12 @@ At the default 1280x720, a game pixel (gx, gy) is at screenshot pixel (2*gx, 2*g
 ---
 
 ## 9. Standard checks after every change
+
+### Fast demo iteration (owner request)
+
+Keep work inside the twelve-leg demo and the requested feature. Locked FULL GAME previews and retained disabled systems do not need implementation or refactoring for a demo change. Keep `FINAL_DESIGN.md` and the style references unchanged.
+
+For small changes, build once, run the quick loop/smoke checks and the affected feature scenarios. Use `check_all.py --match` to select those scenarios. Run the full route when rewards or progression change, and busy-frame checks when rendering or simulation load changes. Reserve the complete saved suite for release checkpoints or broad shared-system changes. Re-run a check only after a relevant change or failure. The owner has waived screenshot inspection; do not spend time reviewing or cropping images unless requested again.
 
 Do all of these before you call a change done:
 

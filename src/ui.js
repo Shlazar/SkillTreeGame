@@ -135,9 +135,11 @@ function fitText(s, width) {
 function hudLayout() {
   const counters = currencyLayout(), kills = fmt(G.kills), hp = String(Math.ceil(G.tr.hp)), kx = counters.end;
   const killsW = tw(kills), hpW = tw(hp), muteW = Au.muted ? tw('MUTE') : 0;
+  const speed = mode === 'play' && !G.demo ? { x: W - 49, y: 1, w: 24, h: 16 } : null;
+  const right = speed ? speed.x - 5 : W - 28;
   const hx = kx + 10 + killsW + 24, hw = Math.max(20,
-    Math.min(clamp(Math.round(W * 0.16), 44, 100), W - 32 - hx - hpW - 4));
-  const x0 = hx + hw + 10 + hpW, x1 = W - 28, stars = starLayout();
+    Math.min(clamp(Math.round(W * 0.16), 44, 100), right - 4 - hx - hpW - 4));
+  const x0 = hx + hw + 10 + hpW, x1 = right, stars = starLayout();
   let route = null;
   if (!G.demo) {
     const [label, color] = nextLabel(), lw = tw(label), secondary = x1 - x0 < lw + 8;
@@ -149,7 +151,7 @@ function hudLayout() {
   return { counters, kills: { x: kx, y: 5, w: 10 + killsW, h: 8, text: kills },
     health: { icon: { x: hx - 12, y: 5, w: ICON.train.width, h: ICON.train.height },
       bar: { x: hx, y: 6, w: hw, h: 6 }, label: { x: hx + hw + 4, y: 6, w: hpW, h: 7, text: hp } },
-    route, pause: mode === 'play' ? { x: W - 23, y: 1, w: 21, h: 16 } : null,
+    route, speed, pause: mode === 'play' ? { x: W - 23, y: 1, w: 21, h: 16 } : null,
     stars: stars.visible ? stars : null,
     mute: Au.muted ? { x: W - 4 - muteW, y: stars.visible ? 34 : 22, w: muteW, h: 7 } : null,
     warningY: route?.secondary ? 34 : 24 };
@@ -176,6 +178,10 @@ function drawHUD() {
   // and as a number
   text(Math.ceil(tr.hp), hx + hw + 4, 6, f < 0.35 ? U.red : f < 0.65 ? U.amber : U.dim);
   if (layout.route) drawRoute(layout.route);
+  if (layout.speed) {
+    const s = layout.speed;
+    if (button(s.x, s.y, s.w, s.h, playSpeed + 'X', { off: !canChangePlaySpeed() })) togglePlaySpeed();
+  }
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
   const stars = layout.stars;
   if (stars) for (const star of stars.stars) drawLegStar(star.x, star.y, star.earned, star.pop);
@@ -484,7 +490,8 @@ function titleGo() {
 function titleLayout() {
   const prog = hasProgress(), ask = titleAsk, w = Math.min(300, W - 20);
   const lines = ['YOUR VIPER FIGHTS BY ITSELF.', 'RIGHT CLICK: ATTACK OR MOVE.',
-    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'].flatMap((s) => wrap(s, w - 24));
+    'F: 1X / 2X SPEED.  P: PAUSE.',
+    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.'].flatMap((s) => wrap(s, w - 24));
   const h = 82 + (ask ? 58 : prog ? 72 : 30) + lines.length * 11 + 25;
   const cx = Math.round(W >= 560 ? W * 0.36 : W / 2);
   return { x: cx - w / 2, y: Math.round((H - h) / 2), w, h, cx, lines, prog, ask };
@@ -659,7 +666,7 @@ function uiBounds() {
     health: { icon: { ...layout.health.icon }, bar: { ...layout.health.bar }, label: { ...layout.health.label } },
     route: layout.route ? { label: { ...layout.route.label }, line: layout.route.line ? { ...layout.route.line } : null,
       secondary: layout.route.secondary } : null,
-    pause: layout.pause ? { ...layout.pause } : null, stars: layout.stars,
+    pause: layout.pause ? { ...layout.pause } : null, speed: layout.speed ? { ...layout.speed } : null, stars: layout.stars,
     mute: layout.mute ? { ...layout.mute } : null, warnings: warningLayout(layout) } : null;
   const depot = mode === 'depot' ? { counters: currencyBounds(currencyLayout(SHOWN)), tabs: depotTabRects(),
     route: depotRouteLayout(), bottom: depotBottomLayout(),

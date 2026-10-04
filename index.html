@@ -9,7 +9,7 @@
     background: var(--bg); outline: none; touch-action: none; }
   #c:focus-visible { box-shadow: inset 0 0 0 2px #b8862f; }
 </style>
-<canvas id="c" width="640" height="360" tabindex="0" role="application" aria-label="Sky Reaper. Protect a train through twelve station legs. Right click to move your Viper or focus an enemy. Q or W arms an equipped plane; left click confirms, drag to turn, and right click cancels. Press a plane key twice for a smart strike. Space uses an owned Turbo Ram. T changes the thermal camera, M toggles sound, and Escape or P pauses. Enter starts or continues from menus. The Depot holds upgrades and plane assignments."></canvas>
+<canvas id="c" width="640" height="360" tabindex="0" role="application" aria-label="Sky Reaper. Protect a train through twelve station legs. Right click to move your Viper or focus an enemy. Q or W arms an equipped plane; left click confirms, drag to turn, and right click cancels. Press a plane key twice for a smart strike. Space uses an owned Turbo Ram. F or the 1X/2X button beside Pause switches battle speed; each leg starts at normal speed. T changes the thermal camera, M toggles sound, and Escape or P pauses. Enter starts or continues from menus. The Depot holds upgrades and plane assignments."></canvas>
 <script>
 (() => {
 'use strict';
@@ -3296,6 +3296,7 @@ function startGame(number, replay) {
   saveSave();
   newGame(false, number, replay);
   mode = 'play';
+  resetPlaySpeed();
   syncViewHeight();
   placeCamera();
   paused = false;
@@ -3551,12 +3552,17 @@ function railGroup(n, params = {}) {
     return;
   }
 }
-// The start: packs on both sides of the railway, most of them ahead (10 behind the menus, 4 in a
-// run), and at the Depot 5 of the dead on the rails just ahead. at = the station a run starts at.
+// The start: six packs in a run, twelve behind the menus, and five on the rails at the Depot.
+// Opening packs enter Viper's protection on opposing sides before the train passes them.
+// at = the station a run starts at.
 function scatter(at) {
+  const early = openingHorde(), opening = OPENING_HORDE;
   for (let k = 0, n = G.demo ? 12 : 6; k < n; k++) {
-    const s = G.tr.s - rnd(-40, 300), y = yAtS(s, G.tr.fy + (s - G.tr.s));
-    pack(rndi(10, 22), trackX(y) + (Math.random() < 0.5 ? -1 : 1) * rnd(70, W / 2), y);
+    const lead = rnd(-40, 300), ahead = early ? opening.packLead[k] : lead;
+    const s = G.tr.s - ahead, y = yAtS(s, G.tr.fy + (s - G.tr.s)), count = rndi(10, 22);
+    const side = Math.random() < 0.5 ? -1 : 1, direction = early && k < 2 ? (k ? 1 : -1) : side;
+    const off = early ? rnd(opening.packOff[0], opening.packOff[1]) : rnd(70, W / 2);
+    pack(count, trackX(y) + direction * off, y, early ? opening.packRadius : Infinity);
   }
   if (at) return;
   for (let k = 0; k < 5; k++) railZombie(G.tr.s - 110 - k * 6, rnd(-3, 3), 0);
@@ -4768,6 +4774,11 @@ function railLocal(x, y, out) {
 const HORDE = Array.from({ length: 12 }, () => ({ want: 160, size: 4, gap: 4, run: 0, brute: 0, railBrute: 0 }));
 // The menu battle retains its previous middle-route pace, independently of the selected leg.
 const DEMO_HD = { want: 420, size: 16.75, gap: 1.025, wave: 10.25, waveN: 5, run: 0.1, brute: 0.02 };
+// Legs1..5: top-entry offsets, staggered pack leads, side offsets and
+// pack spread radius, all in ground/rail px. Counts and spawn clocks stay unchanged. (proposal)
+const OPENING_HORDE = { lastLeg: 5, entryOff: [40, 70], packLead: [90, 180, 330, 470, 600, 740],
+  packOff: [45, 85], packRadius: 22 };
+const openingHorde = () => !G.demo && G.leg >= 1 && G.leg <= OPENING_HORDE.lastLeg;
 // Older diagnostics may pass km; actual play always reads its selected leg instead.
 function horde() {
   if (G.demo) return DEMO_HD;
@@ -4792,9 +4803,10 @@ function pickSpawnType(rail, params = {}, index = 0) {
   return type == null ? pickType(rail) : legSpawnType(type);
 }
 // A pack of n standing round (hx, hy) (the start of a run, the demo).
-function pack(n, hx, hy) {
+function pack(n, hx, hy, maxRadius = Infinity) {
+  const radius = Math.min(6 + n * 1.1, maxRadius);
   for (let k = 0; k < n; k++) {
-    const r = Math.sqrt(Math.random()) * (6 + n * 1.1), b = rnd(TAU);
+    const r = Math.sqrt(Math.random()) * radius, b = rnd(TAU);
     G.zombies.push(newDead(hx + Math.cos(b) * r, hy + Math.sin(b) * r * FORE, pickType(false)));
   }
 }
@@ -4822,7 +4834,8 @@ function addStream(n, edge, fast, params = {}) {
     // over the top edge, to one side of the rails ahead
     sy = -10;
     const rx = railX(G.camY + 10) - G.camX, s = Math.random() < 0.5 ? -1 : 1;
-    sx = clamp(rx + s * (leaders ? ESCORTC.railOff : rnd(40, 190)), 8, W - 8);
+    const off = params.entryOff || [40, 190];
+    sx = clamp(rx + s * (leaders ? ESCORTC.railOff : rnd(off[0], off[1])), 8, W - 8);
   } else if (edge === 2) {
     // Finale attackers can reach the parked train from behind the last car.
     sy = VH + 10;
@@ -4884,8 +4897,9 @@ function spawn(dt) {
   updateStreams(dt, want);
   G.spawnCd -= dt;
   if (G.spawnCd <= 0 && G.zombies.length < want) {
-    const r = Math.random();
-    addStream(Math.round(h.size * rnd(1, 1.5)), r < 0.5 ? 0 : r < 0.75 ? -1 : 1, false);
+    const r = Math.random(), early = openingHorde();
+    addStream(Math.round(h.size * rnd(1, 1.5)), early ? 0 : r < 0.5 ? 0 : r < 0.75 ? -1 : 1, false,
+      early ? { entryOff: OPENING_HORDE.entryOff } : {});
     G.spawnCd = h.gap * rnd(0.8, 1.25);
   }
   if (!G.demo) return;
@@ -5705,7 +5719,7 @@ const LEG_LENGTH = 2400;
 // First-pass scrap targets from the final design; ordinary kill shares are tuned with real rides.
 const LEG_SCRAP_TARGETS = [80, 95, 115, 135, 160, 190, 225, 265, 310, 365, 430, 500];
 // Ordinary kill multipliers preserve the large hordes; wall drops remain collectible. (proposal)
-const LEG_ORDINARY_PAY = [0.67831, 0.884, 0.75047, 0.66879, 0.37451, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.14645];
+const LEG_ORDINARY_PAY = [0.30377, 0.35372, 0.38152, 0.40152, 0.11, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.14645];
 const LEG_WALL_PAY = { 5: 40, 9: 40 };
 // The closed-gate hold lasts 30 play seconds. Standoff/rear spread px and peak-gift seconds are proposals.
 const FINALEC = { hold: 30,
@@ -8858,9 +8872,11 @@ function fitText(s, width) {
 function hudLayout() {
   const counters = currencyLayout(), kills = fmt(G.kills), hp = String(Math.ceil(G.tr.hp)), kx = counters.end;
   const killsW = tw(kills), hpW = tw(hp), muteW = Au.muted ? tw('MUTE') : 0;
+  const speed = mode === 'play' && !G.demo ? { x: W - 49, y: 1, w: 24, h: 16 } : null;
+  const right = speed ? speed.x - 5 : W - 28;
   const hx = kx + 10 + killsW + 24, hw = Math.max(20,
-    Math.min(clamp(Math.round(W * 0.16), 44, 100), W - 32 - hx - hpW - 4));
-  const x0 = hx + hw + 10 + hpW, x1 = W - 28, stars = starLayout();
+    Math.min(clamp(Math.round(W * 0.16), 44, 100), right - 4 - hx - hpW - 4));
+  const x0 = hx + hw + 10 + hpW, x1 = right, stars = starLayout();
   let route = null;
   if (!G.demo) {
     const [label, color] = nextLabel(), lw = tw(label), secondary = x1 - x0 < lw + 8;
@@ -8872,7 +8888,7 @@ function hudLayout() {
   return { counters, kills: { x: kx, y: 5, w: 10 + killsW, h: 8, text: kills },
     health: { icon: { x: hx - 12, y: 5, w: ICON.train.width, h: ICON.train.height },
       bar: { x: hx, y: 6, w: hw, h: 6 }, label: { x: hx + hw + 4, y: 6, w: hpW, h: 7, text: hp } },
-    route, pause: mode === 'play' ? { x: W - 23, y: 1, w: 21, h: 16 } : null,
+    route, speed, pause: mode === 'play' ? { x: W - 23, y: 1, w: 21, h: 16 } : null,
     stars: stars.visible ? stars : null,
     mute: Au.muted ? { x: W - 4 - muteW, y: stars.visible ? 34 : 22, w: muteW, h: 7 } : null,
     warningY: route?.secondary ? 34 : 24 };
@@ -8899,6 +8915,10 @@ function drawHUD() {
   // and as a number
   text(Math.ceil(tr.hp), hx + hw + 4, 6, f < 0.35 ? U.red : f < 0.65 ? U.amber : U.dim);
   if (layout.route) drawRoute(layout.route);
+  if (layout.speed) {
+    const s = layout.speed;
+    if (button(s.x, s.y, s.w, s.h, playSpeed + 'X', { off: !canChangePlaySpeed() })) togglePlaySpeed();
+  }
   if (mode === 'play' && button(W - 23, 1, 21, 16, paused ? '>' : 'II')) setPaused(!paused);
   const stars = layout.stars;
   if (stars) for (const star of stars.stars) drawLegStar(star.x, star.y, star.earned, star.pop);
@@ -9207,7 +9227,8 @@ function titleGo() {
 function titleLayout() {
   const prog = hasProgress(), ask = titleAsk, w = Math.min(300, W - 20);
   const lines = ['YOUR VIPER FIGHTS BY ITSELF.', 'RIGHT CLICK: ATTACK OR MOVE.',
-    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.  P: PAUSE.'].flatMap((s) => wrap(s, w - 24));
+    'F: 1X / 2X SPEED.  P: PAUSE.',
+    'T: THERMAL.  WHEEL: ZOOM.  M: SOUND.'].flatMap((s) => wrap(s, w - 24));
   const h = 82 + (ask ? 58 : prog ? 72 : 30) + lines.length * 11 + 25;
   const cx = Math.round(W >= 560 ? W * 0.36 : W / 2);
   return { x: cx - w / 2, y: Math.round((H - h) / 2), w, h, cx, lines, prog, ask };
@@ -9382,7 +9403,7 @@ function uiBounds() {
     health: { icon: { ...layout.health.icon }, bar: { ...layout.health.bar }, label: { ...layout.health.label } },
     route: layout.route ? { label: { ...layout.route.label }, line: layout.route.line ? { ...layout.route.line } : null,
       secondary: layout.route.secondary } : null,
-    pause: layout.pause ? { ...layout.pause } : null, stars: layout.stars,
+    pause: layout.pause ? { ...layout.pause } : null, speed: layout.speed ? { ...layout.speed } : null, stars: layout.stars,
     mute: layout.mute ? { ...layout.mute } : null, warnings: warningLayout(layout) } : null;
   const depot = mode === 'depot' ? { counters: currencyBounds(currencyLayout(SHOWN)), tabs: depotTabRects(),
     route: depotRouteLayout(), bottom: depotBottomLayout(),
@@ -12394,6 +12415,23 @@ function setThermal(k) {
   if (mode === 'play' || mode === 'ending') banner('CAMERA', CAMS[thermal], thermal ? '#e8e8e8' : U.ink, 3);
 }
 
+// Player fast-forward changes fixed-step simulation only. Menus and their clocks stay at 1X.
+let playSpeed = 1;
+const canChangePlaySpeed = () => !!G && !G.demo && mode === 'play' && !G.result && !paused;
+const selectedPlaySpeed = () => G && !G.demo && mode === 'play' && !G.result ? playSpeed : 1;
+function resetPlaySpeed() { playSpeed = 1; }
+function togglePlaySpeed() {
+  if (!canChangePlaySpeed()) return false;
+  playSpeed = playSpeed === 1 ? 2 : 1;
+  return true;
+}
+function playSpeedState() {
+  let effective = selectedPlaySpeed() * (!REDUCED && slowT > 0 ? slowK : 1);
+  if (!REDUCED && mode === 'play' && airAimActive()) effective = Math.min(effective, 0.5);
+  if (mode === 'play' && paused || hold || treeCovers()) effective = 0;
+  return { selected: playSpeed, effective, available: canChangePlaySpeed(), pending: acc };
+}
+
 // ---------- input
 // Browser pointer position -> game pixels.
 function toCanvas(e) {
@@ -12533,6 +12571,7 @@ addEventListener('keydown', (e) => {
     if (['q', 'w', 'e', 'r'].includes(k)) { if (!paused) airKey(k); }
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
     else if (k === ' ') { if (!paused) tryRam(); }
+    else if (k === 'f') { if (togglePlaySpeed()) SFX.ui(); }
     else if (!paused) heliKey(k);
   } else if (mode === 'title') {
     if (k === 'Enter' || k === ' ') titleGo();
@@ -12610,17 +12649,27 @@ function oneFrame(dt) {
     ts = REDUCED ? 1 : slowK;
     if (slowT <= 0) slowK = 1;
   }
-  // Aiming leaves time to place the strike; reduced motion keeps normal game speed.
+  const rate = selectedPlaySpeed();
+  ts *= rate;
+  // Aiming stays genuinely slow even at 2X; reduced motion omits the aiming slowdown.
   if (!REDUCED && mode === 'play' && airAimActive()) ts = Math.min(ts, 0.5);
-  // fixed steps of STEP seconds, at most 8 a frame
+  // Keep STEP unchanged. Twice the catch-up budget prevents 2X from dropping ordinary frame time.
+  const maxSteps = 8 * rate;
   if (!(mode === 'play' && paused) && !hold && !treeCovers()) {
     acc += dt * ts;
-    let n = 0;
+    let n = 0, queuedRate = rate;
     try {
-      while (acc >= STEP && n < 8) {
+      while (acc >= STEP && n < maxSteps) {
         step(STEP);
         acc -= STEP;
         n++;
+        // Arrival/loss can switch to 1X inside a 2X frame. Keep the unspent wall time,
+        // rather than carrying its old double-speed game seconds into the ending.
+        const nextRate = selectedPlaySpeed();
+        if (nextRate !== queuedRate) {
+          acc *= nextRate / queuedRate;
+          queuedRate = nextRate;
+        }
       }
     } catch (err) {
       acc = 0;
@@ -12629,7 +12678,7 @@ function oneFrame(dt) {
         console.error(err);
       }
     }
-    if (n >= 8) acc = 0;
+    if (n >= maxSteps) acc = 0;
   }
   // the view's lead glides in real time, also while time runs slow or stands still
   camLead(dt);
@@ -12684,6 +12733,8 @@ function boot() {
     get SAVE() { return SAVE; },
     FPS,
     CFG,
+    // Actual F key/button changes speed; this copied view reports selection and effective timing.
+    playSpeed: () => playSpeedState(),
     // Per-leg base horde rows, for balance tests.
     HORDE,
     // the sprites, for a test sheet
@@ -12855,6 +12906,7 @@ function boot() {
       mode, result: G.result, km: G.demo ? 0 : +DK().toFixed(3), kills: G.kills, cash: Math.floor(G.cash), runSurv: G.surv,
       scrap: SAVE.scrap, survivors: SAVE.surv, gold: SAVE.gold, leg: G.leg, runs: SAVE.runs,
       pay: Object.assign({}, G.pay), hp: Math.round(G.tr.hp), max: G.tr.max, speed: +G.tr.v.toFixed(1),
+      playSpeed: playSpeedState(),
       onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length, up: Object.assign({}, G.up),
       shots: G.shots, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),
       station: G.station ? G.station.id + ' ' + G.station.state : '-',
@@ -13661,6 +13713,7 @@ function drawPause() {
   const L = ['YOUR VIPER FIGHTS BY ITSELF.', 'RIGHT CLICK: ATTACK OR MOVE.', 'FLY OVER A SURVIVOR TO WINCH THEM UP.'];
   if (G.up.ram) L.push('PRESS SPACE TO RAM.');
   if (G.up.planeOwned.length) L.push('Q / W: AIM PLANE. DOUBLE TAP: SMART STRIKE.');
+  L.push('F: 1X / 2X SPEED WHILE PLAYING.');
   L.push('T: CAMERA.  M: SOUND.  WHEEL: ZOOM.');
   const w = 280, h = 112 + L.length * 10, x = Math.round(W / 2 - w / 2), y = Math.max(22, Math.round((H + 19) / 2 - h / 2)), cx = x + w / 2;
   Object.assign(PAUSE, { x, y, w, h });

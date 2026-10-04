@@ -8,6 +8,23 @@ function setThermal(k) {
   if (mode === 'play' || mode === 'ending') banner('CAMERA', CAMS[thermal], thermal ? '#e8e8e8' : U.ink, 3);
 }
 
+// Player fast-forward changes fixed-step simulation only. Menus and their clocks stay at 1X.
+let playSpeed = 1;
+const canChangePlaySpeed = () => !!G && !G.demo && mode === 'play' && !G.result && !paused;
+const selectedPlaySpeed = () => G && !G.demo && mode === 'play' && !G.result ? playSpeed : 1;
+function resetPlaySpeed() { playSpeed = 1; }
+function togglePlaySpeed() {
+  if (!canChangePlaySpeed()) return false;
+  playSpeed = playSpeed === 1 ? 2 : 1;
+  return true;
+}
+function playSpeedState() {
+  let effective = selectedPlaySpeed() * (!REDUCED && slowT > 0 ? slowK : 1);
+  if (!REDUCED && mode === 'play' && airAimActive()) effective = Math.min(effective, 0.5);
+  if (mode === 'play' && paused || hold || treeCovers()) effective = 0;
+  return { selected: playSpeed, effective, available: canChangePlaySpeed(), pending: acc };
+}
+
 // ---------- input
 // Browser pointer position -> game pixels.
 function toCanvas(e) {
@@ -147,6 +164,7 @@ addEventListener('keydown', (e) => {
     if (['q', 'w', 'e', 'r'].includes(k)) { if (!paused) airKey(k); }
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
     else if (k === ' ') { if (!paused) tryRam(); }
+    else if (k === 'f') { if (togglePlaySpeed()) SFX.ui(); }
     else if (!paused) heliKey(k);
   } else if (mode === 'title') {
     if (k === 'Enter' || k === ' ') titleGo();
@@ -224,17 +242,27 @@ function oneFrame(dt) {
     ts = REDUCED ? 1 : slowK;
     if (slowT <= 0) slowK = 1;
   }
-  // Aiming leaves time to place the strike; reduced motion keeps normal game speed.
+  const rate = selectedPlaySpeed();
+  ts *= rate;
+  // Aiming stays genuinely slow even at 2X; reduced motion omits the aiming slowdown.
   if (!REDUCED && mode === 'play' && airAimActive()) ts = Math.min(ts, 0.5);
-  // fixed steps of STEP seconds, at most 8 a frame
+  // Keep STEP unchanged. Twice the catch-up budget prevents 2X from dropping ordinary frame time.
+  const maxSteps = 8 * rate;
   if (!(mode === 'play' && paused) && !hold && !treeCovers()) {
     acc += dt * ts;
-    let n = 0;
+    let n = 0, queuedRate = rate;
     try {
-      while (acc >= STEP && n < 8) {
+      while (acc >= STEP && n < maxSteps) {
         step(STEP);
         acc -= STEP;
         n++;
+        // Arrival/loss can switch to 1X inside a 2X frame. Keep the unspent wall time,
+        // rather than carrying its old double-speed game seconds into the ending.
+        const nextRate = selectedPlaySpeed();
+        if (nextRate !== queuedRate) {
+          acc *= nextRate / queuedRate;
+          queuedRate = nextRate;
+        }
       }
     } catch (err) {
       acc = 0;
@@ -243,7 +271,7 @@ function oneFrame(dt) {
         console.error(err);
       }
     }
-    if (n >= 8) acc = 0;
+    if (n >= maxSteps) acc = 0;
   }
   // the view's lead glides in real time, also while time runs slow or stands still
   camLead(dt);
@@ -298,6 +326,8 @@ function boot() {
     get SAVE() { return SAVE; },
     FPS,
     CFG,
+    // Actual F key/button changes speed; this copied view reports selection and effective timing.
+    playSpeed: () => playSpeedState(),
     // Per-leg base horde rows, for balance tests.
     HORDE,
     // the sprites, for a test sheet
@@ -469,6 +499,7 @@ function boot() {
       mode, result: G.result, km: G.demo ? 0 : +DK().toFixed(3), kills: G.kills, cash: Math.floor(G.cash), runSurv: G.surv,
       scrap: SAVE.scrap, survivors: SAVE.surv, gold: SAVE.gold, leg: G.leg, runs: SAVE.runs,
       pay: Object.assign({}, G.pay), hp: Math.round(G.tr.hp), max: G.tr.max, speed: +G.tr.v.toFixed(1),
+      playSpeed: playSpeedState(),
       onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length, up: Object.assign({}, G.up),
       shots: G.shots, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),
       station: G.station ? G.station.id + ' ' + G.station.state : '-',

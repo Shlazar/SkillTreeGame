@@ -27,7 +27,7 @@ function validate(surface) {
   for (const r of visibleRects(areas)) inside(r, W, surface === 'run' && r !== b.pauseMenu ? VH : H, surface);
   if (surface === 'run') {
     const h = b.hud;
-    disjoint([...h.counters, h.kills, ...Object.values(h.health), h.pause, h.route?.label, h.route?.line], 'HUD');
+    disjoint([...h.counters, h.kills, ...Object.values(h.health), h.speed, h.pause, h.route?.label, h.route?.line], 'HUD');
     disjoint(b.weapons, 'Weapon cards'); disjoint(b.planes, 'Plane slots');
     for (const p of b.planes) { inside(p, W, H, 'Plane slot'); check(p.y >= VH, 'Plane slot overlaps world'); }
     check(__sr.planeBand().h === 18 && VH === H - 18 && b.planes.length === 3, 'Q/W/E band geometry missing');

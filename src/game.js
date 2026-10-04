@@ -201,6 +201,7 @@ function startGame(number, replay) {
   saveSave();
   newGame(false, number, replay);
   mode = 'play';
+  resetPlaySpeed();
   syncViewHeight();
   placeCamera();
   paused = false;
@@ -456,12 +457,17 @@ function railGroup(n, params = {}) {
     return;
   }
 }
-// The start: packs on both sides of the railway, most of them ahead (10 behind the menus, 4 in a
-// run), and at the Depot 5 of the dead on the rails just ahead. at = the station a run starts at.
+// The start: six packs in a run, twelve behind the menus, and five on the rails at the Depot.
+// Opening packs enter Viper's protection on opposing sides before the train passes them.
+// at = the station a run starts at.
 function scatter(at) {
+  const early = openingHorde(), opening = OPENING_HORDE;
   for (let k = 0, n = G.demo ? 12 : 6; k < n; k++) {
-    const s = G.tr.s - rnd(-40, 300), y = yAtS(s, G.tr.fy + (s - G.tr.s));
-    pack(rndi(10, 22), trackX(y) + (Math.random() < 0.5 ? -1 : 1) * rnd(70, W / 2), y);
+    const lead = rnd(-40, 300), ahead = early ? opening.packLead[k] : lead;
+    const s = G.tr.s - ahead, y = yAtS(s, G.tr.fy + (s - G.tr.s)), count = rndi(10, 22);
+    const side = Math.random() < 0.5 ? -1 : 1, direction = early && k < 2 ? (k ? 1 : -1) : side;
+    const off = early ? rnd(opening.packOff[0], opening.packOff[1]) : rnd(70, W / 2);
+    pack(count, trackX(y) + direction * off, y, early ? opening.packRadius : Infinity);
   }
   if (at) return;
   for (let k = 0; k < 5; k++) railZombie(G.tr.s - 110 - k * 6, rnd(-3, 3), 0);
