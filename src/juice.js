@@ -368,10 +368,21 @@ function drawJuice() {
   const J = JUICE;
   ctx.globalAlpha = 0.3;
   ctx.fillStyle = '#000';
-  for (const b of J.gibs) ctx.fillRect(Math.round(b.x) - 1, Math.round(b.y), 3, 1);
-  for (const c of J.coins) ctx.fillRect(Math.round(c.x) - 1, Math.round(c.y), 3, 1);
+  for (const b of J.gibs) {
+    const x = Math.round(b.x) - 1, y = Math.round(b.y);
+    if (worldRectVisible(x, y, 3, 1)) ctx.fillRect(x, y, 3, 1);
+  }
+  for (const c of J.coins) {
+    const x = Math.round(c.x) - 1, y = Math.round(c.y);
+    if (worldRectVisible(x, y, 3, 1)) ctx.fillRect(x, y, 3, 1);
+  }
   ctx.globalAlpha = 1;
   for (const b of J.gibs) {
+    // Preserve the final drawing colour even when every pixel of this piece is outside the clip.
+    if (offView(b.x, b.y - b.z, b.len + 8)) {
+      if (b.len > 0) ctx.fillStyle = thermal ? (b.len > 1 ? '#e0e0e0' : '#c0c0c0') : b.len > 1 ? b.c : b.c2;
+      continue;
+    }
     const [ox, oy] = gibOff(b.rot), x = Math.round(b.x), y = Math.round(b.y - b.z);
     for (let k = 0; k < b.len; k++) {
       ctx.fillStyle = k ? (thermal ? '#e0e0e0' : b.c) : (thermal ? '#c0c0c0' : b.c2);
@@ -380,10 +391,12 @@ function drawJuice() {
   }
   for (const b of J.debris) {
     ctx.fillStyle = b.fire && !thermal ? '#ff8a3a' : b.c;
-    ctx.fillRect(Math.round(b.x), Math.round(b.y - b.z), 2, 2);
+    const x = Math.round(b.x), y = Math.round(b.y - b.z);
+    if (worldRectVisible(x, y, 2, 2)) ctx.fillRect(x, y, 2, 2);
   }
   for (const c of J.coins) {
     const x = Math.round(c.x), y = Math.round(c.y - c.z) - 2, wob = ((realT * 14 + c.f) | 0) % 3;
+    if (!worldRectVisible(x - 1, y - 1, 3, 3)) { ctx.fillStyle = '#fff1c2'; continue; }
     ctx.fillStyle = '#5a3e10';
     ctx.fillRect(x - 1, y - 1, wob === 1 ? 1 : 3, 3);
     ctx.fillStyle = '#e3b04b';

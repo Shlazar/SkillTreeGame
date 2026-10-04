@@ -40,6 +40,12 @@ const DEADWALL_DRAWS = [];
 // One reward actor is reused while a survivor boards or the locked chest is presented.
 const STATION_REWARD_DRAW = { stationReward: true, x: 0, y: 0, k: 0, z: 0, age: 0, kind: '' };
 const byK = (a, b) => a.k - b.k;
+// An eight-pixel margin covers the rounded camera shake/kick. Test the actual drawing rectangle,
+// so airborne pieces and their ground shadows can be culled independently.
+function worldRectVisible(x, y, w, h) {
+  return x + w > G.camX - 8 && x < G.camX + W + 8 &&
+    y + h > G.camY - 8 && y < G.camY + VH + 8;
+}
 // Collect the props (from the chunk plans and the safe zone), the train and the living dead in
 // view, sorted by depth.
 function gather(ci0, cj0, ci1, cj1) {
@@ -211,14 +217,17 @@ function drawStationReward(o) {
 function drawBodies() {
   for (const b of G.bodies) {
     const S = b.S;
+    let img, x, y;
     if (b.fall) {
-      if (b.age < 0.07) blit(S.walk[0].w, Math.round(b.x - S.ax), Math.round(b.y - S.ay - b.z));
-      else if (b.age < 0.16 && !thermal) blit(S.tilt, Math.round(b.x - S.tilt.width / 2), Math.round(b.y - S.tilt.height * 0.7 - b.z));
-      else blit(thermal ? S.deadH : S.dead, Math.round(b.x - S.dax), Math.round(b.y - S.day - b.z));
+      if (b.age < 0.07) { img = S.walk[0].w; x = Math.round(b.x - S.ax); y = Math.round(b.y - S.ay - b.z); }
+      else if (b.age < 0.16 && !thermal) { img = S.tilt; x = Math.round(b.x - img.width / 2); y = Math.round(b.y - img.height * 0.7 - b.z); }
+      else { img = thermal ? S.deadH : S.dead; x = Math.round(b.x - S.dax); y = Math.round(b.y - S.day - b.z); }
     } else {
-      const n = S.spin.length, img = (thermal ? S.spinH : S.spin)[mod(Math.round(b.rot / (TAU / n)), n)];
-      blit(img, Math.round(b.x - img.width / 2), Math.round(b.y - b.z - 5 - img.height / 2));
+      const n = S.spin.length;
+      img = (thermal ? S.spinH : S.spin)[mod(Math.round(b.rot / (TAU / n)), n)];
+      x = Math.round(b.x - img.width / 2); y = Math.round(b.y - b.z - 5 - img.height / 2);
     }
+    if (worldRectVisible(x, y, img.width, img.height)) blit(img, x, y);
   }
 }
 // Where a 105 shell will land: a blinking ring that closes on the spot (red when it will hit the
@@ -339,7 +348,10 @@ function render() {
     blit(d.sh, Math.round(o.x) - d.ax, Math.round(o.y) - 1);
   }
   ctx.globalAlpha = 0.25;
-  for (const b of G.bodies) blit(BODYSH, Math.round(b.x - 4), Math.round(b.y - 2));
+  for (const b of G.bodies) {
+    const x = Math.round(b.x - 4), y = Math.round(b.y - 2);
+    if (worldRectVisible(x, y, BODYSH.width, BODYSH.height)) blit(BODYSH, x, y);
+  }
   ctx.globalAlpha = 1;
   drawHeliGround();
   drawPlaneShadows();

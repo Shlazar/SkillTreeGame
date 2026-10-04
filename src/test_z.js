@@ -21,7 +21,7 @@ Object.assign(window.__sr, {
   cost: (n) => {
     n = n || 30;
     render();
-    const x0 = G.camX - 8, x1 = G.camX + W + 8, y0 = G.camY - 8, y1 = G.camY + H + 8;
+    const x0 = G.camX - 8, x1 = G.camX + W + 8, y0 = G.camY - 8, y1 = G.camY + VH + 8;
     let t = performance.now();
     for (let i = 0; i < n; i++) { DL.length = 0; VZ.length = 0; gatherHorde(x0, x1, y0, y1); }
     const g = (performance.now() - t) / n;
