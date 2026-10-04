@@ -147,6 +147,7 @@ addEventListener('keydown', (e) => {
   if (mode === 'play') {
     if (['q', 'w', 'e', 'r'].includes(k)) { if (!paused) airKey(k); }
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
+    else if (k === ' ') { if (!paused) tryRam(); }
     else if (!paused) heliKey(k);
   } else if (mode === 'title') {
     if (k === 'Enter' || k === ' ') titleGo();
@@ -388,13 +389,9 @@ function boot() {
     frames: (n, dt) => {
       for (let i = 0; i < (n || 1); i++) oneFrame(dt || 1 / 60);
     },
-    // the Turbo Ram: ram() = press E (true when it starts), ramCharge(v) = fill it to v (0..1);
-    // ramState() = 'none', 'lock', 'on', 'stop', 'charge' or 'ready'
+    // the Turbo Ram: ram() = press Space (true when it starts).
+    // ramState() = 'none', 'lock', 'on', 'stop', 'cooldown' or 'ready'
     ram: () => tryRam(),
-    ramCharge: (v) => {
-      G.ram.left = Math.round((1 - clamp(+v || 0, 0, 1)) * CFG.ram.charge);
-      return ramCharge();
-    },
     ramState: () => ramState(),
     // sound: roar = the Ram's roar is playing (or set to play), ctx = the audio is on
     sound: () => ({ ctx: !!Au.ctx, roar: !!Au.roar, muted: Au.muted }),
@@ -481,7 +478,8 @@ function boot() {
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
       W, H, VH, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),
       gun: { rate: G.up.gun, shots: G.gun.shots, kills: G.gun.kills, ang: +G.gun.ang.toFixed(2), tgt: G.gun.tgt ? G.gun.tgt.st : -1 },
-      ram: { state: ramState(), on: G.ram.on, t: +G.ram.t.toFixed(2), charge: +ramCharge().toFixed(3), kills: G.ram.kills, pay: G.ram.pay,
+      ram: { state: ramState(), on: G.ram.on, t: +G.ram.t.toFixed(2), cd: +G.ram.cd.toFixed(3), cooldown: G.ram.cooldown,
+        duration: G.ram.dur, band: G.ram.band, damage: G.ram.damage, progress: +ramProgress().toFixed(3), kills: G.ram.kills, pay: G.ram.pay,
         uses: G.ram.uses, total: G.ram.total }
     })
   };

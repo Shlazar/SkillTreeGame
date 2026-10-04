@@ -173,7 +173,7 @@ function drawRoute(x0, x1) {
 function drawWarnings() {
   if (G.result) return;
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', L = [];
-  if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (CLICK RAM)' : ''), red]);
+  if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (SPACE RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
   // Place the lines beside the task box, or under it when they would touch (tut.js).
   const [wx, wy] = warnAt(L);
@@ -298,7 +298,7 @@ function drawWeapons() {
   drawRamCard(rx, ry);
   text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, VH - 90, U.faint, { align: 'right' });
 }
-// The Turbo Ram's card: CLICK in gold when it is full, the % while it fills (the bar is the charge),
+// The Turbo Ram's card: SPACE in gold when ready, seconds left while its cooldown fills,
 // GO! while it runs (the bar is the time left), and STOP near a station (grey). A click on it rams.
 // Over it, for a moment, why it can't ram now.
 const RAMCARD = { x: 0, y: 0, w: 106, h: 26, on: false };
@@ -310,13 +310,13 @@ function drawRamCard(x, y) {
   C.x = x;
   C.y = y;
   const w = C.w, h = C.h, fl = realT - r.flash;
-  // it hops when it gets full
+  // it hops when it becomes ready
   if (fl < 0.2) y--;
   let tag, tagc, f, fc, nc = U.ink, icon = ICON.ram;
   if (s === 'on') [tag, tagc, f, fc] = ['GO!', Math.floor(realT * 8) % 2 ? '#ffe39a' : U.amber, 1 - r.t / (r.dur + R.ease), '#ff8a3a'];
-  else if (s === 'ready') [tag, tagc, f, fc] = ['CLICK', U.gold, 1, '#e3b04b'];
-  else if (s === 'charge') [tag, tagc, f, fc] = [Math.floor(ramCharge() * 100) + '%', U.dim, ramCharge(), '#8a6a3a'];
-  else if (s === 'stop') [tag, tagc, f, fc, nc, icon] = ['STOP', U.faint, ramCharge(), '#3a3e48', U.faint, ICON.ramOff];
+  else if (s === 'ready') [tag, tagc, f, fc] = ['SPACE', U.gold, 1, '#e3b04b'];
+  else if (s === 'cooldown') [tag, tagc, f, fc] = [Math.ceil(r.cd) + 'S', U.dim, ramProgress(), '#8a6a3a'];
+  else if (s === 'stop') [tag, tagc, f, fc, nc, icon] = ['STOP', U.faint, ramProgress(), '#3a3e48', U.faint, ICON.ramOff];
   else [tag, tagc, f, fc, nc, icon] = ['TREE', U.dim, 0, '#3a3e48', U.faint, ICON.lock];
   card(x, y, w, h, icon, 'TURBO RAM', tag, tagc, f, fc, nc);
   // ready: a gold frame; just full: a white and gold flash

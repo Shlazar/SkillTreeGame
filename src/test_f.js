@@ -16,6 +16,18 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  // Seconds until the Ram can be used again; kills never change this clock.
+  ramCd: () => G ? G.ram.cd : 0,
+  // Copy the actual Ram state, card bounds and live shock rings without changing cooldowns.
+  ramInfo: () => {
+    if (!G) return null;
+    const r = G.ram;
+    return { state: ramState(), on: r.on, powered: ramPowered(), t: r.t,
+      duration: r.dur, cooldown: r.cooldown, cd: r.cd, progress: ramProgress(),
+      band: r.band, damage: r.damage, hits: r.hits, kills: r.kills, total: r.total, uses: r.uses,
+      shocks: r.shocks, shockKills: r.shockKills, lastShock: r.lastShock ? { ...r.lastShock } : null,
+      card: { ...RAMCARD }, rings: rings.filter((v) => v.source === 'ramShock').map((v) => ({ ...v })) };
+  },
   // QA comparison of the ordinary and crowded pixel-effect drawing paths.
   fxPixels: (on) => { FXPIX.force = on == null ? null : !!on; return FXPIX.force; },
   // Compare only normal effects over a fixed opaque background; restore every live effect list.

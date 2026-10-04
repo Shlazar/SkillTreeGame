@@ -407,7 +407,7 @@ function updateZombies(dt) {
   updateBooms(dt);
   updateHits(dt);
   silverShine();
-  const kb = Math.exp(-5 * dt), mid = tr.cars[2], R = CFG.ram, ram = G.ram.on, hunt = G.people.length > 0, L = ZL;
+  const kb = Math.exp(-5 * dt), mid = tr.cars[2], R = CFG.ram, ram = ramPowered(), hunt = G.people.length > 0, L = ZL;
   let onTrain = 0, ahead = 1e9, railN = 0;
   for (let i = 0; i < zs.length; i++) {
     const z = zs[i];
@@ -480,8 +480,8 @@ function updateZombies(dt) {
     // it climbs on. Not once the train is safe.
     if (!safe && !fireBlocked) {
       const au = L.u < 0 ? -L.u : L.u;
-      if (ram && au < R.band && ds > -R.front && ds < R.back) {
-        ramKill(z);
+      if (ram && au < G.ram.band && ds > -R.front && ds < R.back) {
+        ramHit(z);
         continue;
       }
       if (au < hw + 2 && ds > -5 && ds < 6) {

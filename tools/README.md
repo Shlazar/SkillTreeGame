@@ -229,9 +229,10 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 
 ### 5.7 The Turbo Ram and sound (src/main.js)
 
-- `ram()`: press E for the Ram. Returns true when it starts (`tryRam`).
-- `ramCharge(v)`: fill the Ram charge to v (0..1). Returns the charge.
-- `ramState()`: `'none'`, `'lock'`, `'on'`, `'stop'`, `'charge'` or `'ready'`. It returns `'stop'` near a station stop or when the run has a result, so do not test cooldowns there.
+- `ram()`: use the Ram as Space does. Returns true when it starts (`tryRam`). For an actual keyboard check, use `press(' ')`.
+- `ramCd()`: seconds left on the Ram cooldown. It starts at 20 (12 fully upgraded) on activation and counts down with game time; kills do not change it.
+- `ramInfo()`: a copied Ram snapshot with state, active/powered flags, duration, cooldown, remaining seconds, progress, band, damage, use/kill/shock counters, last shock impact, card bounds and live shock rings. Base smash damage 3 against brutes, band 16 (+3 per Long Charge level), and radius-40 shock damage equal to smash damage are proposals. Walkers and runners are smashed immediately. The powered charge is 2-3.5 seconds; its existing one-second visual slowdown follows it.
+- `ramState()`: `'none'`, `'lock'`, `'on'`, `'stop'`, `'cooldown'` or `'ready'`. It returns `'stop'` near a station stop or when the run has a result, so do not test cooldowns there.
 - `sound()`: `{ctx, roar, muted}`: whether audio is on and the Ram roar plays.
 
 ### 5.8 Helicopters (src/test_h.js, src/test_f.js)

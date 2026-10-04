@@ -35,11 +35,13 @@ const CFG = {
   // level takes off, px either side of its line that it kills, how fast its barrel turns (radians/s).
   gun: { reload: 4, fast: 0.5, hw: 5, turn: 7 },
   // The Turbo Ram: top speed (px/s), seconds at it, seconds to get up to it and to ease back, the
-  // kill zone (px either side of the rail middle, px behind and ahead of the nose), kills to fill it
-  // again, the next stop nearer than noStart px = it can't start, nearer than cut px = it ends
+  // hit zone (px either side of the rail middle, px behind and ahead of the nose), cooldown seconds,
+  // the next stop nearer than noStart px = it can't start, nearer than cut px = it ends
   // (250 and 200 m), px the camera leads, and its kills pay ×pay.
-  ram: { speed: 120, dur: 3, rise: 0.4, ease: 1, band: 16, back: 10, front: 8, charge: 250, noStart: 500, cut: 400,
-    lead: 40, pay: 2 },
+  ram: { speed: 120, dur: 2, cooldown: 20, rise: 0.4, ease: 1, band: 16, back: 10, front: 8, noStart: 500, cut: 400,
+    lead: 40, pay: 2,
+    damage: 3, bandGrowth: 6, shove: 70, clearance: 3, shockR: 40, shockT: 0.35 // (proposal)
+  },
   // Seconds the built-in winch needs over a survivor: about 2 s. (proposal)
   winch: { hover: 2 },
   // what one level of a skill tree node adds: train HP (ARMOR), the 25mm's heat per round is
@@ -159,11 +161,14 @@ function newGame(demo, number, replay) {
     // the rail cannon on the flatcar (cannon.js)
     gun: newCannon(),
     // the Turbo Ram: on = running, t = seconds since it started, dur = its seconds at top speed,
-    // left = kills still needed to fill it (0 = full; every run starts full), kills / pay = this Ram's,
-    // card = its card shows, flash = when it got full, msg = a line over its card, pop = scrap of
+    // cd / cooldown = seconds left and its activation snapshot, kills / pay = this Ram's,
+    // card = its card shows, flash = when it became ready, msg = a line over its card, pop = scrap of
     // its kills not yet shown (popT = when the last +N popped)
-    ram: { on: false, t: 0, dur: 0, left: 0, kills: 0, pay: 0, card: up.ram,
-      hissed: false, flash: -9, killT: -9, msg: null, uses: 0, total: 0, pop: 0, popT: -9 },
+    ram: { on: false, t: 0, dur: up.ramDuration || CFG.ram.dur, cd: 0, cooldown: up.ramCooldown || CFG.ram.cooldown,
+      band: CFG.ram.band + ((up.ramDuration || CFG.ram.dur) - CFG.ram.dur) * CFG.ram.bandGrowth,
+      damage: CFG.ram.damage * (up.ramPower || 1), hits: 0, shocks: 0, shockKills: 0, lastShock: null,
+      kills: 0, pay: 0, card: up.ram, hissed: false, flash: -9, killT: -9, msg: null,
+      uses: 0, total: 0, pop: 0, popT: -9 },
     // the dead on the rails within 130 m ahead; px the camera is moved by (camLead)
     railAhead: 0, lead: [0, 0]
   };
@@ -479,7 +484,7 @@ function updateWalls() {
     // past its far end), the Turbo Ram ran into it, or was full near it and not used
     if (w.hpIn != null && w.hpOut == null && d < -c.len - 40) w.hpOut = tr.hp;
     if (d < c.wake && d > -c.len) {
-      if (G.ram.on && d < 10) w.rammed = true;
+      if (ramPowered() && d < 10) w.rammed = true;
       else if (ramState() === 'ready') w.ready = true;
     }
   }
@@ -535,8 +540,8 @@ function attach(z, side, ds, u) {
 // The engine runs one down: it dies, and the train loses speed and health (a red -2 over the nose).
 // Not while the Turbo Ram runs: then it costs nothing.
 function crush(z) {
-  if (G.ram.on) {
-    ramKill(z);
+  if (ramPowered()) {
+    ramHit(z);
     return;
   }
   if (G.up.cow && !z.big) {
@@ -650,41 +655,32 @@ function gunXY() {
 }
 
 // ---------- the Turbo Ram
-// E (or a click on its card): the train runs at 120 px/s (3x its cruise) for 3 s and smashes every zombie in its way,
-// brutes too, at no cost. Every run starts with it full; 250 kills (not its own) fill it again.
-// What it can do now: 'none' (no card), 'lock' (the boiler cracked: buy TURBO RAM in the tree),
-// 'on' (running), 'stop' (a station is too near), 'charge' (filling up) or 'ready'.
+// Space or its card: a two-second powered charge, then the existing one-second ease. Its clock
+// starts at activation, and kills do not change it. Brutes take one shove and hit per charge.
+// States: 'none', 'lock', 'on', 'stop', 'cooldown' or 'ready'.
 function ramState() {
   const r = G.ram;
   if (r.on) return 'on';
   if (!G.up.ram) return r.card ? 'lock' : 'none';
   if (G.result || nearStop(CFG.ram.noStart)) return 'stop';
-  return r.left > 0 ? 'charge' : 'ready';
+  return r.cd > 0 ? 'cooldown' : 'ready';
 }
-// 0..1: how full the Ram is
-const ramCharge = () => 1 - G.ram.left / ramFill();
-// kills to fill the Ram (RAM CHARGE takes some off)
-const ramFill = () => CFG.ram.charge - (G.up.ramCharge || 0);
+// The filling clock, and the short phase that actually damages the dead.
+const ramProgress = () => clamp(1 - G.ram.cd / G.ram.cooldown, 0, 1);
+const ramPowered = () => G.ram.on && G.ram.t < G.ram.dur - 1e-9 && !G.result;
 // true while the train brakes for a station or stands at one, or the next one is less than d px ahead
 function nearStop(d) {
   const st = G.station;
   if (!st || st.state === 'done') return false;
   return st.state !== 'ahead' || G.tr.s - st.stopS < d;
 }
-// A kill (not the Ram's) fills the Ram a little, also while it runs; when it gets full: a beep and a
-// gold flash on its card (once the Ram that runs is over).
-function chargeRam() {
-  const r = G.ram;
-  if (r.left <= 0) return;
-  r.left--;
-  if (r.left <= 0 && !r.on) ramFull();
-}
+// One beep and a gold card flash when the cooldown crosses zero.
 function ramFull() {
-  if (!G.up.ram || G.demo) return;
+  if (!G.up.ram || G.demo || G.result) return;
   G.ram.flash = realT;
   SFX.ramReady();
 }
-// E or a click on the card. bot = the autopilot (it is not told no). True when the Ram starts.
+// Space or the card. bot = the autopilot (it is not told no). True when the Ram starts.
 function tryRam(bot) {
   if (G.result || !(mode === 'play' || G.demo)) return false;
   const s = ramState(), r = G.ram;
@@ -697,18 +693,21 @@ function tryRam(bot) {
   const st = G.station, m = st ? Math.max(0, Math.round((G.tr.s - st.stopS) / 20) * 10) : 0;
   r.msg = { t: realT, s: s === 'lock' ? 'BUY TURBO RAM IN THE SKILL TREE.'
     : s === 'stop' ? (st && st.state === 'ahead' ? 'STATION IN ' + m + ' M. NO RAM UNDER ' + CFG.ram.noStart / 2 + ' M.' : 'NO RAM AT A STATION.')
-      : 'KILL ' + r.left + ' MORE TO FILL IT.' };
+      : 'READY IN ' + Math.ceil(r.cd) + ' S.' };
   SFX.deny();
   return false;
 }
 function ramStart() {
   const r = G.ram, tr = G.tr, c = tr.cars[0];
-  Object.assign(r, { on: true, t: 0, dur: CFG.ram.dur + (G.up.ramTime || 0), kills: 0, pay: 0, hissed: false, card: true,
+  Object.assign(r, { on: true, t: 0, dur: G.up.ramDuration || CFG.ram.dur,
+    cooldown: G.up.ramCooldown || CFG.ram.cooldown,
+    band: CFG.ram.band + ((G.up.ramDuration || CFG.ram.dur) - CFG.ram.dur) * CFG.ram.bandGrowth,
+    damage: CFG.ram.damage * (G.up.ramPower || 1), kills: 0, pay: 0, hissed: false, card: true,
     pop: 0, popT: -9 });
-  r.left = ramFill();
+  r.cd = r.cooldown;
   r.uses++;
-  // the dead holding the engine's nose die at once
-  for (const z of G.zombies) if (!z.dead && z.st === 2 && z.side === 0) ramKill(z);
+  // The nose is cleared immediately; a surviving brute is pushed off it.
+  for (const z of G.zombies) if (!z.dead && z.st === 2 && z.side === 0) ramHit(z);
   // black smoke and a jet of steam from the stack, a flash of fire at the engine
   const sx = c.x0 - c.dx * 15, sy = c.y0 - c.dy * 15;
   for (let k = 0; k < 6; k++) {
@@ -745,6 +744,7 @@ function popRam() {
 }
 // The Ram kills z: twice the scrap, a crunch that climbs with the count, a small shake.
 function ramKill(z) {
+  if (z.dead || z.gone) return;
   const r = G.ram;
   r.kills++;
   r.total++;
@@ -755,9 +755,28 @@ function ramKill(z) {
   addShake(z.big ? 0.3 : 0.12);
   SFX.crunch(r.kills);
 }
+// Walkers and runners die immediately. A brute takes one damage hit per use, then moves aside.
+function ramHit(z) {
+  const r = G.ram, c = G.tr.cars[0], C = CFG.ram;
+  if (!ramPowered() || z.dead || z.gone || z.ramUse === r.uses) return;
+  z.ramUse = r.uses; r.hits++;
+  if (!z.big || z.hp <= r.damage) { ramKill(z); return; }
+  JUICE.from = [c.x0, c.y0];
+  hitZombie(z, r.damage, 'ram');
+  JUICE.from = null;
+  const u = (z.x - c.x0) * c.nx + (z.y - c.y0) * c.ny, side = Math.sign(u) || (z.left ? -1 : 1);
+  const push = Math.max(0, r.band + C.clearance - Math.abs(u));
+  z.st = 0; z.x += c.nx * side * push; z.y += c.ny * side * push; z.k = z.y;
+  z.kbx += c.nx * side * C.shove; z.kby += c.ny * side * C.shove;
+  if (!G.demo) { addShake(0.12); SFX.crunch(r.kills); }
+}
 // Each step of the Ram: its time, the station rule, the hiss as it eases off, the end.
 function updateRam(dt) {
   const r = G.ram;
+  if (r.cd > 0) {
+    r.cd = Math.max(0, r.cd - dt);
+    if (r.cd < 1e-9) { r.cd = 0; ramFull(); }
+  }
   if (!r.on) return;
   if (G.result) {
     r.on = false;
@@ -770,13 +789,13 @@ function updateRam(dt) {
     ramEnd(true);
     return;
   }
-  if (r.t >= r.dur && !r.hissed) {
+  if (r.t >= r.dur - 1e-9 && !r.hissed) {
     r.hissed = true;
     if (!G.demo) SFX.hiss();
   }
   // (scrap from the last kills, waiting for its turn to pop)
   if (r.pop && G.t - r.popT >= RAM_POP) popRam();
-  if (r.t >= r.dur + CFG.ram.ease) {
+  if (r.t >= r.dur + CFG.ram.ease - 1e-9) {
     ramEnd(false);
     return;
   }
@@ -811,7 +830,9 @@ function ramFx() {
 // The Ram is over (cut = a station is near: BRAKES!). Show its rank and what it paid.
 function ramEnd(cut) {
   const r = G.ram, c = G.tr.cars[0], n = r.kills;
+  if (!r.on) return;
   r.on = false;
+  if (G.up.shockwave && G.result !== 'lost') ramShock();
   if (G.demo) return;
   popRam();
   SFX.ramStop(cut ? 0.3 : 0.4);
@@ -819,13 +840,27 @@ function ramEnd(cut) {
     floatText(c.x0, c.y0 - 16, 'BRAKES!', U.amber);
     if (!r.hissed) SFX.hiss();
   }
-  // the kills made while it ran have filled it up again
-  if (r.left <= 0) ramFull();
   if (n >= 5) {
     const [name, col] = n >= 30 ? ['UNSTOPPABLE', '#ff7a4a'] : n >= 15 ? ['RAMPAGE', U.amber] : ['SMASH', U.gold];
     banner(name + ' ×' + n, '+' + r.pay + ' SCRAP', col, 3);
     SFX.rank(n);
   }
+}
+
+// An end shockwave hits zombies only, at the engine's actual nose, including a station cut.
+function ramShock() {
+  const r = G.ram, c = G.tr.cars[0], C = CFG.ram, x = c.x0, y = c.y0;
+  let hits = 0, kills = 0;
+  queryEll(x, y, C.shockR, (z, d) => {
+    if (z.gone || z.gate && z.still) return;
+    hits++;
+    if (z.hp <= r.damage) { kill(z, 'he', x, y, d); kills++; }
+    else { JUICE.from = [x, y]; hitZombie(z, r.damage, 'boom'); JUICE.from = null; }
+  });
+  r.shocks++; r.shockKills += kills;
+  r.lastShock = { x, y, radius: C.shockR, damage: r.damage, hits, kills, t: G.t };
+  rings.push({ x, y, r0: 4, r1: C.shockR, t: 0, T: C.shockT, c: '#fff1c2', w: 2, source: 'ramShock' });
+  rocketBlast(x, y);
 }
 
 // ---------- hits and kills
@@ -843,8 +878,6 @@ function kill(z, cause, cx, cy, dist, free) {
   z.hp = 0;
   z.paid = 0;
   const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160, ram = cause === 'ram';
-  // every kill but the Ram's own fills the Ram again
-  if (!ram && !free) chargeRam();
   // Its value (twice for the Ram) times kill pay, then Salvage Crew's extra share.
   // Whole scrap pays now; the fraction waits for the next scored kill.
   let pay = 0;
@@ -1159,7 +1192,7 @@ function step(dt) {
     // the Turbo Ram: up to its top speed in 0.4 s, then back down to the cruise over 1 s (also after
     // a Ram cut short). Otherwise the train gets back up to its cruise.
     const R = CFG.ram, cr = CFG.train.cruise, up = (R.speed - cr) / R.rise, down = (R.speed - cr) / R.ease;
-    if (G.ram.on && G.ram.t < G.ram.dur) tr.v = Math.min(R.speed, tr.v + up * dt);
+    if (ramPowered()) tr.v = Math.min(R.speed, tr.v + up * dt);
     else if (tr.v > cr) tr.v = Math.max(cr, tr.v - down * dt);
     else tr.v = Math.min(cr, tr.v + CFG.train.accel * dt);
   }

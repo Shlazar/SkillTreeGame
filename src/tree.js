@@ -237,9 +237,11 @@ function treeUp(L, up) {
     katyusha: L('katyusha') > 0, katyushaRockets: UP.katyushaRockets(L('katyushaRockets')),
     katyushaReload: UP.katyushaReload(L('katyushaReload')), katyushaBlast: UP.katyushaBlast(L('katyushaBlast')),
     clusterRockets: UP.clusterRockets(L('clusterRockets')),
+    ramPower: UP.ramPower(L('ramPower')), ramCooldown: UP.ramCooldown(L('ramCooldown')),
+    ramDuration: UP.ramDuration(L('ramDuration')), shockwave: UP.shockwave(L('shockwave')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
-    ramTime: 0, ramCharge: 0, power: false
+    power: false
   });
 }
 
