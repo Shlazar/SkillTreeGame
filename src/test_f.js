@@ -27,10 +27,22 @@ Object.assign(window.__sr, {
           lines: j.lines, offsets: j.offsets ? j.offsets.slice() : [], bombCount: j.bombCount, dropped: j.dropped,
           fireDamage: j.fireDamage, fireDuration: j.fireDuration, fireWall: j.fireWall,
           patchRadius: j.patchRadius, patchStep: j.patchStep, patchCount: j.patchCount,
-          patches: j.patches, patchNext: j.patchNext };
+          patches: j.patches, patchNext: j.patchNext,
+          bombsDropped: j.bombsDropped, bombNext: j.bombNext, bombStep: j.bombStep,
+          bombRadius: j.bombRadius, bombDamage: j.bombDamage, burnTime: j.burnTime, burnDamage: j.burnDamage };
       }),
       bombs: STRAF.bombs.length, embers: STRAF.embers.length, roars: STRAF.roars,
+      activeBombs: STRAF.bombs.map((b) => {
+        const u = clamp(b.t / b.T, 0, 1);
+        return { source: b.source, x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1, z0: b.z0,
+          age: b.t, T: b.T, a: b.a, radius: b.radius, dmg: b.dmg, burnTime: b.burnTime, burnDamage: b.burnDamage,
+          visible: b.t >= 0, position: [lerp(b.x0, b.x1, u), lerp(b.y0, b.y1, u), b.z0 * (1 - u * u)] };
+      }),
+      stats: { b52: { ...STRAF.stats.b52,
+        lastDrop: STRAF.stats.b52.lastDrop ? { ...STRAF.stats.b52.lastDrop } : null,
+        lastImpact: STRAF.stats.b52.lastImpact ? { ...STRAF.stats.b52.lastImpact } : null } },
       art: { jet: { w: JET.n[0].width, h: JET.n[0].height }, f4: { w: F4.n[0].width, h: F4.n[0].height },
+        b52: { w: B52.n[0].width, h: B52.n[0].height, engines: B52.engines.map((e) => ({ x: e.x, y: e.y })) },
         heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
     };
   },

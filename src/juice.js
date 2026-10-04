@@ -157,34 +157,35 @@ function blastRays() {
 // dust racing out over the ground, chunks that fly trailing smoke, then a column of smoke and
 // embers that rises from the crater for a few seconds, the crater glowing, rays of scorch and
 // rubble round it. It also scares the crows.
-function juiceBoom(x, y, big) {
-  if (!offView(x, y, 20)) JUICE.flash = Math.max(JUICE.flash, big ? 0.1 : 0.06);
-  addBoom(x, y - 2, big ? 30 : 22, 8, big ? 1.1 : 0.9, big ? 13 : 10, 0.02);
-  lights.push({ x, y, z: 10, r: big ? 60 : 46, c: '#ffb060', life: 0.45, max: 0.45, a: 0.35 });
-  lights.push({ x, y, z: 1, r: big ? 26 : 18, c: '#ff6a28', life: 3, max: 3, a: 0.5 });
-  rings.push({ x, y, r0: 4, r1: big ? 72 : 48, t: 0, T: 0.2, c: '#fff6e0', w: 2 });
+function juiceBoom(x, y, big, scale = 1) {
+  // Small bomber bombs reuse this recipe at their actual blast-size ratio.
+  if (!offView(x, y, 20)) JUICE.flash = Math.max(JUICE.flash, (big ? 0.1 : 0.06) * scale);
+  addBoom(x, y - 2, (big ? 30 : 22) * scale, 8, big ? 1.1 : 0.9, (big ? 13 : 10) * scale, 0.02);
+  lights.push({ x, y, z: 10, r: (big ? 60 : 46) * scale, c: '#ffb060', life: 0.45, max: 0.45, a: 0.35 });
+  lights.push({ x, y, z: 1, r: (big ? 26 : 18) * scale, c: '#ff6a28', life: 3, max: 3, a: 0.5 });
+  rings.push({ x, y, r0: 4 * scale, r1: (big ? 72 : 48) * scale, t: 0, T: 0.2, c: '#fff6e0', w: 2 });
   // the shock ring of dust along the ground
-  const nd = big ? 22 : 14;
+  const nd = Math.ceil((big ? 22 : 14) * scale);
   for (let i = 0; i < nd; i++) {
-    const a = i / nd * TAU + rnd(-0.1, 0.1), s = rnd(110, 170);
-    part({ x: x + Math.cos(a) * 6, y: y + Math.sin(a) * 6 * FORE, z: 1, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(2, 8), g: 0,
-      life: rnd(0.6, 0.9), max: 0.9, s: rnd(3, 4), c: pick(DUSTC), grow: 7, drag: 3.6, smoke: true });
+    const a = i / nd * TAU + rnd(-0.1, 0.1), s = rnd(110, 170) * scale;
+    part({ x: x + Math.cos(a) * 6 * scale, y: y + Math.sin(a) * 6 * FORE * scale, z: 1, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(2, 8), g: 0,
+      life: rnd(0.6, 0.9), max: 0.9, s: rnd(3, 4) * scale, c: pick(DUSTC), grow: 7 * scale, drag: 3.6, smoke: true });
   }
   // chunks that fly trailing smoke (some of them burning)
-  for (let i = 0; i < (big ? 7 : 4) && JUICE.debris.length < 24; i++) {
-    const a = rnd(TAU), s = rnd(40, 120);
+  for (let i = 0; i < Math.ceil((big ? 7 : 4) * scale) && JUICE.debris.length < 24; i++) {
+    const a = rnd(TAU), s = rnd(40, 120) * scale;
     JUICE.debris.push({ x, y, z: 4, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(90, 190), fire: Math.random() < 0.5, trail: 0,
       c: pick(['#2a241d', '#3a3027', '#4c4032']) });
   }
   // the smoke column and embers, then the crater's rays and rubble
-  JUICE.emit.push({ x, y, t: 0, T: big ? 4.5 : 3, smoke: 0, ember: 0 });
-  stampSpr(blastRays(), x - (BLASTR.width >> 1), y - (BLASTR.height >> 1), 0.8);
-  stampScorch(x, y, 3);
+  JUICE.emit.push({ x, y, t: 0, T: (big ? 4.5 : 3) * scale, smoke: 0, ember: 0, scale });
+  if (scale >= 1) stampSpr(blastRays(), x - (BLASTR.width >> 1), y - (BLASTR.height >> 1), 0.8);
+  stampScorch(x, y, scale < 0.65 ? 1 : scale < 1 ? 2 : 3);
   for (let i = 0; i < 14; i++) {
-    const a = rnd(TAU), r = rnd(16, 30);
+    const a = rnd(TAU), r = rnd(16, 30) * scale;
     stampPix(x + Math.cos(a) * r, y + Math.sin(a) * r * FORE, pick(['#5e5140', '#2a241d', '#6d6a62', '#463b2f']), Math.random() < 0.3 ? 2 : 1);
   }
-  if (typeof scareBirds === 'function') scareBirds(x, y, 220);
+  if (typeof scareBirds === 'function') scareBirds(x, y, 220 * scale);
 }
 
 // ---------- the Turbo Ram
@@ -247,14 +248,14 @@ function updateJuice(dt) {
     const e = J.emit[i];
     e.t += dt;
     if (e.t >= e.T) { J.emit.splice(i, 1); continue; }
-    const k = 1 - e.t / e.T;
+    const k = 1 - e.t / e.T, scale = e.scale ?? 1;
     e.smoke += dt * (2 + 4 * k);
     while (e.smoke >= 1) {
       e.smoke--;
       const dark = Math.random() < k;
-      part({ x: e.x + rnd(-6, 6), y: e.y + rnd(-3, 3), z: rnd(2, 8), vx: rnd(2, 9), vy: rnd(-3, 1), vz: rnd(12, 24) * (0.6 + k * 0.6), g: 0,
-        life: rnd(2.2, 3.4), max: 3.4, s: rnd(3, 6), c: dark ? pick(['rgba(66,62,58,0.7)', 'rgba(84,80,76,0.65)']) : pick(['rgba(128,124,118,0.5)', 'rgba(156,152,146,0.45)']),
-        grow: 4.5, drag: 0.5, smoke: true });
+      part({ x: e.x + rnd(-6, 6) * scale, y: e.y + rnd(-3, 3) * scale, z: rnd(2, 8), vx: rnd(2, 9), vy: rnd(-3, 1), vz: rnd(12, 24) * (0.6 + k * 0.6), g: 0,
+        life: rnd(2.2, 3.4), max: 3.4, s: rnd(3, 6) * scale, c: dark ? pick(['rgba(66,62,58,0.7)', 'rgba(84,80,76,0.65)']) : pick(['rgba(128,124,118,0.5)', 'rgba(156,152,146,0.45)']),
+        grow: 4.5 * scale, drag: 0.5, smoke: true });
     }
     e.ember += dt * 5 * k;
     while (e.ember >= 1) {

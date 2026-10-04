@@ -5,7 +5,7 @@ const AIRBAND = { height: 18 }; // Band height in game px.
 const PLANES = {
   a10: { name: 'A-10', cooldown: 25, floor: 12, available: true },
   f4: { name: 'F-4', cooldown: 30, floor: 15, available: true },
-  b52: { name: 'B-52', cooldown: 45, floor: 25, available: false },
+  b52: { name: 'B-52', cooldown: 45, floor: 25, available: true },
   b2: { name: 'B-2', cooldown: 60, floor: 40, available: false }
 };
 // Double-tap seconds, slot width/gap/left px, return-animation seconds, and crowd radius px (proposal).
@@ -222,6 +222,7 @@ function drawAirAim() {
   ctx.rect(0, 19, W, VH - 19);
   ctx.clip();
   if (a.id === 'f4') drawFireLine(a.x, a.y, ux, uy, G.up.fireLength, G.up.fireWall);
+  else if (a.id === 'b52') drawBombLane(a.x, a.y, ux, uy, G.up.b52Bombs, G.up.b52Blast);
   else drawStrafeLine(a.x, a.y, ux, uy, G.up.a10Lines);
   const hint = AIR.aim ? 'LET GO: STRIKE' : 'CLICK: STRIKE. DRAG: AIM. RIGHT CLICK: CANCEL.', w = tw(hint);
   text(hint, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, VH - 44)), U.gold, { align: 'center' });

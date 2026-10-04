@@ -228,6 +228,8 @@ function treeUp(L, up) {
     fireDamage: UP.fireDamage(L('fireDamage')), fireLength: UP.fireLength(L('fireLength')),
     fireDuration: L('fireWall') > 0 ? UP.fireWall(L('fireWall')) : UP.fireDuration(L('fireLength')),
     fireWall: L('fireWall') > 0,
+    b52Bombs: UP.b52Bombs(L('b52Bombs')), b52Blast: UP.b52Blast(L('b52Blast')),
+    fireBombs: UP.fireBombs(L('fireBombs')),
     hellfireCount: UP.doubleHellfire(L('doubleHellfire')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,

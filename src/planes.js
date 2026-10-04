@@ -111,13 +111,15 @@ bakeJet();
 
 // ---------- this run's flights
 // STRAF holds transport effects only. Charges and input belong to AIR.
-const STRAF = { g: null, jets: [], bombs: [], embers: [], marks: [], roars: 0, demoT: 6 };
+const STRAF = { g: null, jets: [], bombs: [], embers: [], marks: [], roars: 0, demoT: 6,
+  stats: { b52: { launched: 0, dropped: 0, impacts: 0, lastDrop: null, lastImpact: null } } };
 function srSync() {
   if (STRAF.g === G) return;
   STRAF.g = G;
   STRAF.jets.length = STRAF.bombs.length = STRAF.embers.length = STRAF.marks.length = 0;
   STRAF.roars = 0;
   STRAF.demoT = 6;
+  Object.assign(STRAF.stats.b52, { launched: 0, dropped: 0, impacts: 0, lastDrop: null, lastImpact: null });
 }
 // The way the jet flies for a press at (ax, ay) let go at (bx, by): the drag, or the train's way.
 function strafeDir(ax, ay, bx, by) {
@@ -128,10 +130,10 @@ function strafeDir(ax, ay, bx, by) {
 }
 // AIR validates ownership and charges before asking a supported payload to launch.
 function launchPlane(id, worldX, worldY, ux, uy) {
-  if (id !== 'a10' && id !== 'f4') return false;
+  if (id !== 'a10' && id !== 'f4' && id !== 'b52') return false;
   return callPlane(id, worldX, worldY, ux, uy);
 }
-function planeArt(j) { return j.id === 'f4' ? F4 : JET; }
+function planeArt(j) { return j.id === 'f4' ? F4 : j.id === 'b52' ? B52 : JET; }
 // The aiming preview and the actual payload share centred offsets for one to four bands.
 function a10Offsets(count = 1) {
   const n = clamp(Math.floor(count) || 1, 1, 4);
@@ -148,16 +150,17 @@ function callPlane(id, px, py, ux, uy) {
   else { ux /= length; uy /= length; }
   srSync();
   // it comes in from just off the screen, and flies on until it is off the other side
-  const fire = id === 'f4', payload = fire ? f4Payload(G.up) : null;
-  const len = fire ? payload.len : JETC.len, lead = fire ? 0 : JETC.lead;
-  const half = fire ? payload.patchRadius : JETC.half, offsets = fire ? [0] : a10Offsets(G.up.a10Lines);
+  const fire = id === 'f4', bomber = id === 'b52', payload = fire ? f4Payload(G.up) : bomber ? b52Payload(G.up) : null;
+  const len = payload ? payload.len : JETC.len, lead = payload ? 0 : JETC.lead;
+  const half = fire ? payload.patchRadius : bomber ? payload.bombRadius : JETC.half, offsets = payload ? [0] : a10Offsets(G.up.a10Lines);
   const back = Math.max(jetEdge(px, py, -ux, -uy) + 40, len / 2 + lead + 20), on = jetEdge(px, py, ux, uy) + 60;
   const j = { id, len, lead, px, py, ux, uy, o: 0, s: -back, end: Math.max(on, len / 2 + 40),
-    front: -Infinity, half, dmg: fire ? 0 : JETC.dmg * (G.up.a10Damage ?? 1), lines: fire ? 0 : offsets.length, offsets,
-    bombCount: !fire && G.up.bombRun ? 4 : 0, dropped: false, fired: false, lineHits: fire ? [] : offsets.map(() => null),
+    front: -Infinity, half, dmg: payload ? 0 : JETC.dmg * (G.up.a10Damage ?? 1), lines: payload ? 0 : offsets.length, offsets,
+    bombCount: !payload && G.up.bombRun ? 4 : 0, dropped: false, fired: false, lineHits: payload ? [] : offsets.map(() => null),
     smoke: 0, alt: JETC.alt, delay: JETC.showDelay, age: 0, roared: false,
     shadowSeen: false, shadowAge: 0, bodyReady: false };
-  if (fire) Object.assign(j, payload);
+  if (payload) Object.assign(j, payload);
+  if (bomber) STRAF.stats.b52.launched++;
   STRAF.jets.push(j);
   for (const o of offsets) {
     STRAF.marks.push({ x: px - uy * o, y: py + ux * o, age: 0,
@@ -221,8 +224,9 @@ function updatePlanes(dt) {
       if (!G.demo) { STRAF.roars++; SFX.planeRoar(); }
     }
     if (j.id === 'f4') f4Fire(j);
+    else if (j.id === 'b52') b52Drop(j);
     else strafeFire(j);
-    if (j.bombCount && !j.dropped && j.s + j.lead >= j.len / 2) dropBombs(j);
+    if (j.id === 'a10' && j.bombCount && !j.dropped && j.s + j.lead >= j.len / 2) dropBombs(j);
     // a thin trail from the engines
     if (j.bodyReady) j.smoke -= flightDt;
     if (j.bodyReady && j.smoke <= 0) {
@@ -242,7 +246,7 @@ function updatePlanes(dt) {
     const b = STRAF.bombs[i];
     b.t += dt;
     if (b.t >= b.T) {
-      bombHit(b.x1, b.y1);
+      bombHit(b.x1, b.y1, b);
       STRAF.bombs.splice(i, 1);
     }
   }
@@ -360,14 +364,30 @@ function dropBombs(j) {
   const [gx, gy] = jetGround(j);
   for (let k = 0; k < j.bombCount; k++) {
     const d = 34 + k * 24, sd = (k - (j.bombCount - 1) / 2) * 6;
-    STRAF.bombs.push({ x0: gx, y0: gy, x1: gx + j.ux * d - j.uy * sd, y1: gy + j.uy * d + j.ux * sd, z0: j.alt, t: -k * 0.08, T: 0.55, a: Math.atan2(j.ux, -j.uy) });
+    STRAF.bombs.push({ source: 'a10', x0: gx, y0: gy, x1: gx + j.ux * d - j.uy * sd, y1: gy + j.uy * d + j.ux * sd,
+      z0: j.alt, t: -k * 0.08, T: 0.55, a: Math.atan2(j.ux, -j.uy), radius: JETC.bombR, dmg: null, burnTime: 0, burnDamage: 0 });
   }
 }
-// A bomb lands: the big blast, and every zombie near it dies (brutes too).
-function bombHit(x, y) {
-  juiceBoom(x, y, false);
-  addBoom(x, y - 2, 24, 8, 0.9, 11);
-  queryEll(x, y, JETC.bombR, (z, d) => kill(z, 'he', x, y, d));
+// A-10 bombs retain their lethal blast; bomber payloads use their snapshotted radius and damage.
+function bombHit(x, y, payload) {
+  const radius = payload?.radius ?? JETC.bombR, damage = payload?.dmg;
+  const scale = payload?.source === 'b52' ? radius / JETC.bombR : 1;
+  juiceBoom(x, y, false, scale);
+  addBoom(x, y - 2, 24 * scale, 8, 0.9, 11 * scale);
+  queryEll(x, y, radius, (z, d) => {
+    if (damage == null || z.hp <= damage) kill(z, 'he', x, y, d);
+    else {
+      JUICE.from = [x, y];
+      hitZombie(z, damage, 'boom');
+      JUICE.from = null;
+    }
+  });
+  if (payload?.burnTime) addBurn(x, y, radius, payload.burnTime, payload.burnDamage, payload.source);
+  if (payload?.source === 'b52') {
+    const stats = STRAF.stats.b52;
+    stats.impacts++;
+    stats.lastImpact = { x, y, t: heliWeaponTime(), radius, damage, burnTime: payload.burnTime };
+  }
   if (!G.demo) {
     addShake(0.45);
     hitStop(0.04, 0.3);
@@ -441,7 +461,7 @@ function drawPlanes() {
   // the gun: a big flickering flash at the nose, tracers down to where the rounds land
   ctx.globalCompositeOperation = 'lighter';
   for (const j of STRAF.jets) {
-    if (!j.bodyReady || j.id === 'f4') continue;
+    if (!j.bodyReady || j.id !== 'a10') continue;
     const firing = j.s + j.lead > -j.len / 2 && j.s + j.lead < j.len / 2;
     if (!firing) continue;
     const [gx, gy] = jetGround(j), nx = gx + j.ux * 28, ny = gy + j.uy * 28 - j.alt;
