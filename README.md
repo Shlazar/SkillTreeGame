@@ -35,7 +35,7 @@ From leg 3, each leg has three stars: reach the station, arrive with at least 75
 
 With up to two planes owned, they equip automatically. Owning all three opens the Hangar: drag a card into Q or W, or select a card and click a slot. Assignments save for later legs. Each plane refills its charges on its own cooldown. The Terminus finale grants one temporary B-2 in E on every attempt; it becomes FULL GAME after use and is never saved as owned.
 
-Progress uses browser local storage. Keep playing in the same browser/profile to retain it. The title and visible Hangar background show a separate battle that earns no rewards.
+Progress uses browser local storage. Keep playing in the same browser/profile to retain it. This build uses save version 2; older version 1 progress starts fresh. The title and visible Hangar background show a separate battle that earns no rewards.
 
 ## Code map
 
@@ -64,3 +64,5 @@ generator so mute settings and sound limits cannot change combat outcomes.
 ## Development and checks
 
 Edit `src/`, then rebuild `index.html`. [tools/README.md](tools/README.md) documents the headless runner, scenarios and `window.__sr` test helpers; `python tools/check_all.py` runs the saved checks sequentially. [FINAL_DESIGN.md](FINAL_DESIGN.md), [STYLE_GUIDE.md](STYLE_GUIDE.md) and [BUILD_PLAN.md](BUILD_PLAN.md) describe the game, visual rules and implementation sequence. The reference images in `docs/style/` remain visual standards; regenerated fixtures belong in `tools/out/`.
+
+The [final implementation report](docs/final-report.html) records the twelve-leg results, chosen proposals, checks and screenshot gallery. Run `python tools/final_shots.py` after the complete scenario suite to regenerate its 25 screenshots under `tools/out/final/`.

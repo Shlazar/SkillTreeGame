@@ -1,0 +1,957 @@
+{
+  "schemaVersion": 1,
+  "title": "Sky Reaper — Farmlands final report",
+  "date": "2026-10-04",
+  "implementationRange": "BUILD_PLAN T0–T8.6",
+  "status": "Final demo report; latest 201 saved checks pass",
+  "evidence": {
+    "route": "tools/out/t8_5_all_first/t6_10_playthrough.json",
+    "performance": "tools/out/t8_5_final_checks/t8_4_perf.json",
+    "tests": "tools/out/t8_5_all.json",
+    "approved": "tools/out/approved_design_decisions.json",
+    "galleryManifest": "tools/out/final/manifest.json",
+    "sourceCommit": "a2da3b9"
+  },
+  "route": {
+    "method": "One cumulative first pass; actual bought caps, bot weapons and real Viper collection. No ride renders, free rewards or forced arrivals.",
+    "validation": "One cumulative save; real purchases using earned wallets, normal rewards, bot weapons plus Viper collector, HP9999. No free currency, forced arrivals or ride rendering. This validates economy/accounting, not human difficulty.",
+    "seeds": "Each real ride uses0x680+leg; one cumulative save remains intact between rides.",
+    "rows": [
+      {
+        "leg": 1,
+        "target": 80,
+        "scrap": 80,
+        "gold": 0,
+        "survivors": 1,
+        "stars": [
+          false,
+          false,
+          false
+        ],
+        "seconds": 59.52,
+        "kills": 83,
+        "sources": {
+          "ordinary": 56,
+          "silver": 0,
+          "loot": 24,
+          "wall": 0
+        },
+        "wallet": {
+          "scrap": 15,
+          "surv": 0,
+          "gold": 0
+        },
+        "unlocks": [
+          "a10"
+        ],
+        "destination": "Millbrook",
+        "newUnits": [
+          "A-10"
+        ]
+      },
+      {
+        "leg": 2,
+        "target": 95,
+        "scrap": 95,
+        "gold": 0,
+        "survivors": 0,
+        "stars": [
+          false,
+          false,
+          false
+        ],
+        "seconds": 59.8,
+        "kills": 75,
+        "sources": {
+          "ordinary": 66,
+          "silver": 0,
+          "loot": 29,
+          "wall": 0
+        },
+        "wallet": {
+          "scrap": 37,
+          "surv": 0,
+          "gold": 0
+        },
+        "unlocks": [],
+        "destination": "Cornfield Halt",
+        "newUnits": []
+      },
+      {
+        "leg": 3,
+        "target": 115,
+        "scrap": 115,
+        "gold": 16,
+        "survivors": 1,
+        "stars": [
+          true,
+          true,
+          true
+        ],
+        "seconds": 59.42,
+        "kills": 108,
+        "sources": {
+          "ordinary": 80,
+          "silver": 0,
+          "loot": 35,
+          "wall": 0
+        },
+        "wallet": {
+          "scrap": 40,
+          "surv": 0,
+          "gold": 12
+        },
+        "unlocks": [
+          "f4"
+        ],
+        "destination": "Red Barn",
+        "newUnits": [
+          "F-4"
+        ]
+      },
+      {
+        "leg": 4,
+        "target": 135,
+        "scrap": 135,
+        "gold": 16,
+        "survivors": 1,
+        "stars": [
+          true,
+          true,
+          true
+        ],
+        "seconds": 59.33,
+        "kills": 142,
+        "sources": {
+          "ordinary": 94,
+          "silver": 0,
+          "loot": 41,
+          "wall": 0
+        },
+        "wallet": {
+          "scrap": 42,
+          "surv": 0,
+          "gold": 22
+        },
+        "unlocks": [
+          "rocketPods"
+        ],
+        "destination": "Silo Junction",
+        "newUnits": [
+          "Rocket Pods"
+        ]
+      },
+      {
+        "leg": 5,
+        "target": 160,
+        "scrap": 160,
+        "gold": 10,
+        "survivors": 1,
+        "stars": [
+          true,
+          true,
+          true
+        ],
+        "seconds": 61.17,
+        "kills": 155,
+        "sources": {
+          "ordinary": 57,
+          "silver": 15,
+          "loot": 48,
+          "wall": 40
+        },
+        "wallet": {
+          "scrap": 40,
+          "surv": 0,
+          "gold": 32
+        },
+        "unlocks": [
+          "ram"
+        ],
+        "destination": "Old Mill",
+        "newUnits": [
+          "Turbo Ram"
+        ]
+      },
+      {
+        "leg": 6,
+        "target": 190,
+        "scrap": 216,
+        "gold": 21,
+        "survivors": 0,
+        "stars": [
+          true,
+          true,
+          true
+        ],
+        "seconds": 55.9,
+        "kills": 185,
+        "sources": {
+          "ordinary": 99,
+          "silver": 60,
+          "loot": 57,
+          "wall": 0
+        },
+        "wallet": {
+          "scrap": 79,
+          "surv": 0,
+          "gold": 41
+        },
+        "unlocks": [],
+        "destination": "Pumpkin Halt",
+        "newUnits": []
+      },
+      {
+        "leg": 7,
+        "target": 225,
+        "scrap": 225,
+        "gold": 10,
+        "survivors": 1,
+        "stars": [
+          true,
+          true,
+          true
+        ],
+        "seconds": 56.82,
+        "kills": 178,
+        "sources": {
+          "ordinary": 142,
+          "silver": 15,
+          "loot": 68,
+          "wall": 0
+        },
+        "wallet": {
+          "scrap": 50,
+          "surv": 0,
+          "gold": 39
+        },
+        "unlocks": [
+          "mgCar"
+        ],
+        "destination": "Crossroads",
+        "newUnits": [
+          "MG Car"
+        ]
+      },
+      {
+        "leg": 8,
+        "target": 265,
+        "scrap": 265,
+        "gold": 21,
+        "survivors": 1,
+        "stars": [
+          true,
+          true,
+          true
+        ],
+        "seconds": 56.17,
+        "kills": 274,
+        "sources": {
+          "ordinary": 170,
+          "silver": 15,
+          "loot": 80,
+          "wall": 0
+        },
+        "wallet": {
+          "scrap": 73,
+          "surv": 0,
+          "gold": 35
+        },
+        "unlocks": [
+          "steamVent"
+        ],
+        "destination": "Water Tower",
+        "newUnits": [
+          "Steam Vent"
+        ]
+      },
+      {
+        "leg": 9,
+        "target": 310,
+        "scrap": 310,
+        "gold": 15,
+        "survivors": 1,
+        "stars": [
+          true,
+          true,
+          true
+        ],
+        "seconds": 50.68,
+        "kills": 168,
+        "sources": {
+          "ordinary": 162,
+          "silver": 15,
+          "loot": 93,
+          "wall": 40
+        },
+        "wallet": {
+          "scrap": 103,
+          "surv": 0,
+          "gold": 50
+        },
+        "unlocks": [
+          "b52"
+        ],
+        "destination": "Haybale Camp",
+        "newUnits": [
+          "B-52"
+        ]
+      },
+      {
+        "leg": 10,
+        "target": 365,
+        "scrap": 365,
+        "gold": 16,
+        "survivors": 1,
+        "stars": [
+          true,
+          true,
+          true
+        ],
+        "seconds": 55.27,
+        "kills": 301,
+        "sources": {
+          "ordinary": 240,
+          "silver": 15,
+          "loot": 110,
+          "wall": 0
+        },
+        "wallet": {
+          "scrap": 195,
+          "surv": 0,
+          "gold": 66
+        },
+        "unlocks": [
+          "hellfire"
+        ],
+        "destination": "Windmill Halt",
+        "newUnits": [
+          "Hellfire"
+        ]
+      },
+      {
+        "leg": 11,
+        "target": 430,
+        "scrap": 430,
+        "gold": 15,
+        "survivors": 1,
+        "stars": [
+          true,
+          true,
+          true
+        ],
+        "seconds": 55.62,
+        "kills": 400,
+        "sources": {
+          "ordinary": 286,
+          "silver": 15,
+          "loot": 129,
+          "wall": 0
+        },
+        "wallet": {
+          "scrap": 136,
+          "surv": 0,
+          "gold": 81
+        },
+        "unlocks": [
+          "katyusha"
+        ],
+        "destination": "Grain Elevator",
+        "newUnits": [
+          "Katyusha"
+        ]
+      },
+      {
+        "leg": 12,
+        "target": 500,
+        "scrap": 500,
+        "gold": 15,
+        "survivors": 0,
+        "stars": [
+          true,
+          true,
+          true
+        ],
+        "seconds": 89.07,
+        "kills": 1219,
+        "sources": {
+          "ordinary": 245,
+          "silver": 105,
+          "loot": 150,
+          "wall": 0
+        },
+        "wallet": {
+          "scrap": 636,
+          "surv": 0,
+          "gold": 96
+        },
+        "unlocks": [],
+        "destination": "Farmlands Terminus",
+        "newUnits": []
+      }
+    ],
+    "totals": {
+      "scrap": 2896,
+      "gold": 155,
+      "surv": 9,
+      "sources": {
+        "ordinary": 1697,
+        "silver": 255,
+        "loot": 864,
+        "wall": 80
+      },
+      "stars": 30,
+      "seconds": 718.77,
+      "scrapSpent": 2260,
+      "goldSpent": 59,
+      "finalWallet": {
+        "scrap": 636,
+        "gold": 96,
+        "survivors": 0
+      }
+    },
+    "allNineUnits": true,
+    "outOfTarget": [],
+    "goldSupply": {
+      "measuredCompleteBase": 155,
+      "maxAdditionalGoldHunt": 5,
+      "totalCeiling": 160,
+      "typical120To140Verified": false
+    }
+  },
+  "testing": {
+    "latestPasses": 201,
+    "totalScenarios": 201,
+    "initialSequentialSweep": true,
+    "staleFixturesCorrected": 13,
+    "focusedChecks": 18,
+    "finalChecks": 2,
+    "method": "All 201 scenarios ran sequentially once. After 13 stale fixture corrections, the shared F-4 burn tooltip fix and a performance fix, 18 focused checks and two final checks ran sequentially. The aggregate retains the latest passing result for each scenario; a second full sweep was not run.",
+    "performanceRepair": "An intermediate performance check measured 8.10/8.23 ms; redundant exact-output HUD work was removed before the passing final measurement.",
+    "screenshotPolicy": "Final screenshots captured from current fixtures. The user waived manual image review; no claim of final manual visual approval is made."
+  },
+  "performance": {
+    "metric": "Headless average ms per frozen render+UI frame; not real device FPS",
+    "baseline": {
+      "task": "T0.1",
+      "bench": 3.27,
+      "render": 2.97,
+      "land": {
+        "paint": 2.22,
+        "full": 2.36
+      },
+      "late": 1
+    },
+    "finalWorst": {
+      "label": "b2-early-impact",
+      "bench": 7.66,
+      "cost": {
+        "gather": 0.01,
+        "draw": 0,
+        "render": 7.36,
+        "renderNoDead": 5.69,
+        "layer": 0,
+        "single": 93,
+        "onTrain": 0,
+        "allA": 7.01,
+        "allOne": 8.13
+      },
+      "land": {
+        "paint": 1.36,
+        "full": 1.6
+      },
+      "late": 1,
+      "live": 117,
+      "fx": {
+        "parts": 1675,
+        "lights": 7,
+        "booms": 7,
+        "rings": 5,
+        "embers": 0,
+        "texts": 2
+      }
+    },
+    "lateAtlasPages": 1,
+    "targetMs": 8,
+    "deltaMs": 4.39,
+    "interpretation": "Final worst sampled average7.66 ms is below8 ms, with one late atlas page. It is4.39 ms above the initial3.27 ms baseline; this does not establish performance on every device."
+  },
+  "save": {
+    "version": 2,
+    "storageKey": "sky-reaper-save-1",
+    "legacy": "Old v1 saves reset rather than migrate.",
+    "contents": [
+      "currencies",
+      "known node levels",
+      "leg progression",
+      "per-leg stars and paid receipts",
+      "rescues and due IDs",
+      "two validated ordinary Hangar assignments",
+      "strict boolean flags/seen maps"
+    ],
+    "runtimeOnly": [
+      "current ride",
+      "demo state",
+      "finale B-2 gift",
+      "active targets/projectiles/effects"
+    ]
+  },
+  "humanApprovedResolutions": [
+    {
+      "number": 1,
+      "text": "Remove Viper overheating: continuous fire and no Cooling node."
+    },
+    {
+      "number": 2,
+      "text": "Keep five existing cars: MG turrets on boxcar index 3, Katyusha on flatcar index 2 replacing its riders."
+    },
+    {
+      "number": 3,
+      "text": "Retain the short won/lost summary before returning to the Depot."
+    },
+    {
+      "number": 4,
+      "text": "Keep large readable hordes and reduce fractional kill payouts to meet the per-leg scrap targets."
+    },
+    {
+      "number": 5,
+      "text": "Cap extra one-time Gold Hunt rewards at five gold across the demo."
+    },
+    {
+      "number": 6,
+      "text": "Reveal gold on the first actual leg-3 gold reward, including arrival stars if the golden zombie escapes, and open the leg-2 chest then."
+    },
+    {
+      "number": 7,
+      "text": "Award remaining missed rescues at the final Terminus camp, including rescue events that never spawned, so no survivor is permanently lost."
+    }
+  ],
+  "numericInventory": [
+    {
+      "title": "Design-specified values",
+      "classification": "Design requirements; distinct from chosen implementation proposals",
+      "sources": [
+        "FINAL_DESIGN.md",
+        "src/tree.js",
+        "src/air.js"
+      ],
+      "entries": [
+        "Every unit unlock costs 1 survivor. Rockets chances are 5/8/11/14/18%, with a 6 s bad-luck guarantee and first rocket within 3 s after purchase.",
+        "Plane cooldowns/floors: A-10 25/12 s, F-4 30/15 s, B-52 45/25 s, B-2 60/40 s. Katyusha starts with 6 rockets per 15 s; B-52 starts with 8 bombs.",
+        "Two saved demo slots Q/W; a +1 Charge holds two strikes. The finale gate holds for 30 game seconds; its runtime B-2 gift has one charge per attempt.",
+        "Route introductions: runners leg 2, gold/stars leg 3, silver leg 4, first wall leg 5, brutes leg 6 and explosive zombies leg 7. Rescue identities are legs 4/8/10."
+      ]
+    },
+    {
+      "title": "Upgrade curves and prices",
+      "classification": "Chosen proposals from FINAL_DESIGN sections 6–7, implemented through UP and node caps",
+      "sources": [
+        "src/tree.js",
+        "src/game.js"
+      ],
+      "entries": [
+        "Scrap tracks A=[15,23,34,51,76,114,171,256]; B=[20,30,45,68,101,152]; C=[25,38,56,84,127]; D=[30,45,68,101,152]; E=[40,60,90,135]; F=[40,64,102,164]. Node prices and level counts follow the design table.",
+        "Viper damage +20% ×8 → 2.6; rate +12% ×6 → 6.88 shots/s; range +15% ×4 → 240 px. Armor +15% ×6 → 152 HP; Magnet +25% ×5 → 31.5 px; Salvage Crew +8% ×4 → +32% scrap.",
+        "Pods damage +25% ×4; reload [8,7,6,5.5,5] s; salvo 4→7; Napalm 3 s. Hellfire damage +30% ×4; reload 10→6 s; blast +20% ×3; Double Hellfire uses two distinct targets.",
+        "MG damage +25% ×5 → 2.25; rate +15% ×5 → 3.5/s; range +15% ×3 → 145 px; turrets 1→3; AP hits up to 3. Katyusha 6→14 rockets, 15→9 s reload, blast +20% ×3; cluster splits into 3.",
+        "Ram power +30% ×4 → 6.6 brute damage; cooldown 20→12 s; duration 2→3.5 s. Steam damage +25% ×4 → 4; intervals [5,4.4,3.8,3.2,2.5] s; Reach 6 px/level; Hot Cloud 2 s.",
+        "A-10 damage +25% ×4, 1→4 gun lines and Bomb Run 4. F-4 DPS +25% ×4, length +20% ×3, ordinary burn 4→7 s or Fire Wall 12 s. B-52 bombs 8→16, blast +20% ×3 and Fire Bombs enabled.",
+        "Gold prices: Rockets [4,6,8,10,12]; Napalm12, Double Hellfire12, AP12, Clusters15, Shockwave10, Hot Cloud10, Bomb Run12, Fire Wall15, Fire Bombs15; Charge A-10/F-4/B-52=15/18/20. Full-game teases remain unavailable."
+      ]
+    },
+    {
+      "title": "Base combat and Viper",
+      "classification": "Chosen runtime geometry and baseline combat tuning",
+      "sources": [
+        "src/game.js",
+        "src/helis.js",
+        "src/heliweap.js"
+      ],
+      "entries": [
+        "Train cruise40 px/s, acceleration14, brake16, baseHP80; crush costs .5 or6 HP. Viper speed170, acceleration3.2, pickup14; flight altitude34/hover25, base gun range150, target look .12 s, turn4 rad/s.",
+        "Nose gun: 4 shots/s, travel .07 s, spread5 px, splash7 px, at most4 victims. Walker/runner/brute HP=2/1/6, speeds15–20/42–52/10–13, train damage .25/.3/2 per second, base scrap1/1/5.",
+        "Gun-ring lesson: first3 s and physical right-button hold; ground dot spacing8 px, alpha .4. Hit-star scale follows fired damage; MG Car flashes use .6 scale.",
+        "Nose Rocket: flight .25 s, radius16, damage6, arc12; smoke .4–.6 s and hot-streak step .005 s.",
+        "Pods: range180, launch gap .08 s, retry .25 s, spread8; mount(11,−9), flash .07 s/glow radius8, burn DPS2 before upgrade.",
+        "Hellfire: range220, damage18, radius30, flight .8 s, arc28/curve18; retry .25 s, mount(8,−8), smoke .4–.6 s/streak .015 s. Dead Walls take targeting priority."
+      ]
+    },
+    {
+      "title": "Train weapons and gadgets",
+      "classification": "Chosen payload, mount and collision geometry",
+      "sources": [
+        "src/cars.js",
+        "src/gadgets.js",
+        "src/game.js"
+      ],
+      "entries": [
+        "MG on car3: 32 headings, damage1, rate2/s, ordinary range100, finite blocking-wall fallback200; barrel8/z2, AP half-width3, recoil1.3/decay12. Offsets [0], [−7,7], [−9,0,9].",
+        "Katyusha on car2/deck3: 32 headings, damage8, radius24, range300, flight .8 s/arc32, salvo gap .08/retry .25/spread12. Cluster split at .65 progress; children damage4/radius12/fall .3/spread12. Tube front9, muzzleZ4, flash .07 s.",
+        "Ram: speed120, rise .4 s/ease1 s; band16 plus6 px per added duration second →25 max; back10/front8; start exclusion500/cut400; camera lead40; kill pay×2; brute damage3, shove70, clearance3; Shockwave radius40/life .35 s.",
+        "Steam base damage2, wall reach24, base cloud extra6 and duration2. Two puffs/vent, refresh1 every .25 s, across8/z≥3; life .5–.75 s, size2–3, growth8+3/Reach level, side24–40/rise25–45, carry .45/drag2.6; white opacity .65/.5."
+      ]
+    },
+    {
+      "title": "Planes, aiming and burning ground",
+      "classification": "Chosen transport, effects and recharge details",
+      "sources": [
+        "src/air.js",
+        "src/planes.js",
+        "src/f4.js",
+        "src/b52.js",
+        "src/b2.js",
+        "src/fire.js"
+      ],
+      "entries": [
+        "Band18 px when a real owned or gifted plane exists; double tap .35 s, ready slot78/gap4/left6, return .25 s, smart crowd radius40. Aim slows normal frames to50%; reduced motion keeps normal speed. Refill is serial per plane: a second use preserves clock progress.",
+        "A-10 transport speed320, altitude46/dive12, line230/lead44/step4/half-width13/damage3. Parallel centres30 px apart. Marker .3 s then shadow lead .1 s. Bomb Run has4 bombs staggered .08 s, fall .55 s, kill radius34.",
+        "F-4: base line230, DPS2, patch radius14/spacing≤18, previewalpha .16. Endpoint-inclusive 14 base or22 max patches; two max walls use44 of the60 patch slots. Burn4–7 s or12 s.",
+        "B-52: lane300, damage12/radius18/fall .55 s; optional fire4 s/DPS2, previewalpha .12. Eight physical engine centres drive the sprite; bombs follow the same preview centres.",
+        "B-2: radius65/fall .7 s; core radius44/cap20/life1.1, outer ring×1.5→97.5, ring .35/dust .7, previewalpha .1, shake .9/hit-stop .08. Actual blast remains train-safe.",
+        "All four planes have32 normal/shadow/hot headings; heat150, rim #e8e2cc at .2. Attract A-10 first at6 s, repeat16 s, target crowd radius40.",
+        "Burn tick .25 s, cap60, seven flames, spread .6, final fade .35, glow×1.5/alpha .38/flicker .08; wall padding2 or brute3. Overlaps stack; active Fire Walls are protected from ordinary-fire eviction."
+      ]
+    },
+    {
+      "title": "Route, crowds and economy",
+      "classification": "Chosen event/population tables and measured payout tuning",
+      "sources": [
+        "src/legs.js",
+        "src/horde.js"
+      ],
+      "entries": [
+        "Leg length2400 rail px, about60 s at cruise. Scrap targets [80,95,115,135,160,190,225,265,310,365,430,500]. Ordinary multipliers [.67831,.884,.75047,.66879,.37451,.47,.74115,.54759,.80347,.60226,.56248,.14645]; collected walls pay40 in legs5/9.",
+        "Per-leg living caps [160,180,210,240,280,340,400,470,540,620,700,800]; stream sizes [4,4,5,5,6,7,8,9,10,11,12,14]; gaps [4,3.9,3.8,3.7,3.6,3.5,3.4,3.3,3.2,3.1,3,2.9] s. Global living cap1100.",
+        "Runner shares [0, .08,.12,.14,.16,.18,.20,.22,.23,.25,.27,.30]; brute shares [0,0,0,0,0,.02,.03,.04,.05,.07,.09,.12]; rail brute shares [0,0,0,0,0,.05,.06,.07,.08,.10,.12,.15].",
+        "Leg1 clocks3/12/22/32/42/52; most later legs3/11/19/27/35/43/51. Leg9 overlaps stream/wall at27. Loot totals by leg [24,29,35,41,48,57,68,80,93,110,129,150], with leg7 split38+30. Full crowd/event counts are retained in the source configuration appendix.",
+        "Finale hold starts at actual brake stop:30 s, standoff20, gift15/rear offset40. Four-edge wave requests [0s,24], [8s,30], [15s,38], [23s,30] per edge; event notice1.8 s.",
+        "Escort back72, rail offset8/follow gap14/release30/approach2/lane4. Silver pays15 base. Silver birth .4%+.3%/level, explosive .6%+.6%/level; explosive radius18/damage3, queue80, delay .06–.12 s."
+      ]
+    },
+    {
+      "title": "Rewards, rescues and Dead Walls",
+      "classification": "Chosen reward amounts, collection and presentation details",
+      "sources": [
+        "src/skills.js",
+        "src/loot.js",
+        "src/legs.js",
+        "src/game.js",
+        "src/sprites.js",
+        "src/render.js"
+      ],
+      "entries": [
+        "Primary golden reward1 gold, paid retry/replay alternative10 scrap; crate5 gold/alternative25 scrap. Small station6; leg2 locks its6 in a chest. Stars3 gold each fromleg3, health goal≥75%; earned-star pop .35 s. Gold Hunt adds1 event/level at8 s gaps, with5 extra paid gold maximum across the demo.",
+        "Golden crossing: speed60, edge18, lane .2 with top48/bottom42, tracking follow180/ahead80. Loot default pile15/crate50, guards8/wake120/arrow450/place500; gold/SOS arrows700, SOS hover radius20, collection flight .3 s.",
+        "Event finds: ahead120/off100/maxahead500/minoff24/maxoff180/width .4/goalpad40/startpad24/screen margin40/56/42. Missed rescue carry ahead80/step60/off70; claim after2 s, cosmetic rope .45/lift1.6/icon .8, hand9/label22. IDs rescue-4/8/10 cannot pay twice.",
+        "Dead Wall HP75/ahead180/standoff20/drop40/warn300/length48/goalpad40/six thrown bodies. Collision half34/depthY29; art80×48/anchor40,46 with about20 packed zombies and wrecks; bar52×4/gap7/labelgap10."
+      ]
+    },
+    {
+      "title": "Tutorial, audio and performance limits",
+      "classification": "Chosen presentation timing and bounded implementation details",
+      "sources": [
+        "src/tut.js",
+        "src/audio.js",
+        "src/fx.js",
+        "src/art.js",
+        "src/fx_pixels.js",
+        "src/horde.js"
+      ],
+      "entries": [
+        "Tips last4 s, fade .15 in/.4 out, departure delay1.5. First move precedes scrap; survivor/gold lessons wait for Depot. Pending tips persist; seen receipts are written only when a visible promotion starts.",
+        "All cues are Web Audio synthesis. New cue [gate ms, voices, life s, gain]: MG[70,3,.075,.045], Silver[90,2,.22,.022], F4[160,2,.38,.055], B2[300,1,1.8,.32], RamShock[200,2,.42,.10]. Ready swoosh90 ms/.22 s/.065; roar2 voices/1.2 s/.12; rocket70 ms gate.",
+        "Shared [gate ms, voices, life s]: hiss[100,2,1.6], gold[100,2,.32], loot[60,3,.22], crate[90,2,.3], golden[150,2,.65], winch[200,2,.5], saved[120,2,.22]. Exact procedural frequency envelopes are included in the configuration appendix.",
+        "Inherited limits retained: particles2600/additive260, A-10 embers200. New BURN60 and explosive queue80. Ellipse bitmap/geometry caches512 each; small circles1–24 px/cache clear above600. FX colour cache256.",
+        "Automatic normal pixel buffer when particles+booms>160 or burns>20; heavy-FX horde native fallback at particles>160/booms>10/burns>20, small crowd<160. Original additive glows remain; rejected software/scaled-glow experiments are absent. Cached output keeps recipes and late atlas pages stable."
+      ]
+    }
+  ],
+  "proceduralAudio": [
+    {
+      "group": "Continuous battle",
+      "cues": [
+        "Viper rotor drone",
+        "Nose-gun firing, ground impacts and death pops",
+        "MG Car light reports"
+      ],
+      "source": "src/audio.js"
+    },
+    {
+      "group": "Missiles and air support",
+      "cues": [
+        "Rocket launch whoosh",
+        "Ready-plane swoosh",
+        "Flight roar",
+        "F-4 ignition",
+        "B-2 heavy blast"
+      ],
+      "source": "src/audio.js"
+    },
+    {
+      "group": "Train and collection",
+      "cues": [
+        "Turbo Ram roar and shock",
+        "Steam hiss",
+        "Scrap pickup/crate opening",
+        "Silver chime",
+        "Golden catch/gold reward",
+        "Winch and survivor saved"
+      ],
+      "source": "src/audio.js"
+    },
+    {
+      "group": "Menus and retained systems",
+      "cues": [
+        "UI click/buy/deny and reward chimes",
+        "Retained full-game 105 and cannon effects"
+      ],
+      "source": "src/audio.js"
+    }
+  ],
+  "configurationAppendix": [
+    {
+      "file": "src/game.js",
+      "startLine": 1,
+      "endLine": 48,
+      "source": "// game.js - escort the train for one leg of the fixed Farmlands line. The Viper fights by itself\n// or where you send it. Zombies walk in, block the rails and climb onto the train. A run ends at\n// the next station or when the train breaks; collected rewards are kept. The view follows the\n// train. Behind the title and Depot, a separate demo battle runs without earning rewards.\n// Units are world pixels and seconds; y on the ground is squashed by FORE; the train runs to -y.\n\nconst CFG = {\n  // the line: px along the rails in 1 km (2 px = 1 m)\n  line: { km: 2000 },\n  // the train: top speed (px/s), how fast it gets back up to speed, how hard it brakes, its health,\n  // and the health it loses for each zombie it runs over (a brute costs more)\n  train: { cruise: 40, accel: 14, brake: 16, hp: 80, crush: 0.5, crushBig: 6 },\n  // a helicopter: its top speed, how fast it gets there, how near loot must be to pick it up\n  heli: { speed: 170, accel: 3.2, pickup: 14 },\n  // 25mm: 4 rounds/s, flight seconds, spread px, burst radius px and most victims. (proposal)\n  // The Viper fires continuously.\n  mg: { rate: 4, travel: 0.07, spread: 5, splash: 7, victims: 4 },\n  // 105mm: reload, flight time, kill radius, hurt radius (a hurt walker dies too, a brute may not),\n  // and how close to the train a blast hurts the train too\n  he: { reload: 2.4, travel: 0.7, kill: 34, hurt: 56, close: 28 },\n  // The global living limit. Individual leg populations and enemy introductions are in legs.js.\n  pop: { max: 1100 },\n  // Seconds before a grabbed survivor is lost, for the retained full-game survivor helpers.\n  station: { grab: 1.4 },\n  // Share of each zombie's scrap value paid now; fractions wait in the kill pot. (proposal)\n  pay: { kill: 1 },\n  // Dead Wall health, rail placement/standoff, collectible scrap, warning/clearance and crash bodies. (proposal)\n  wall: { hp: 75, ahead: 180, stop: 20, loot: 40, warn: 300, len: 48, goalPad: 40, bodies: 6,\n    half: 34, depthY: 29 // Cached actor's ground feet span x7..71 and y17..46, behind its face. (proposal)\n  },\n  // bought in the skill tree. The rail cannon (cannon.js): seconds to reload, seconds each GUN SPEED\n  // level takes off, px either side of its line that it kills, how fast its barrel turns (radians/s).\n  gun: { reload: 4, fast: 0.5, hw: 5, turn: 7 },\n  // The Turbo Ram: top speed (px/s), seconds at it, seconds to get up to it and to ease back, the\n  // hit zone (px either side of the rail middle, px behind and ahead of the nose), cooldown seconds,\n  // the next stop nearer than noStart px = it can't start, nearer than cut px = it ends\n  // (250 and 200 m), px the camera leads, and its kills pay ×pay.\n  ram: { speed: 120, dur: 2, cooldown: 20, rise: 0.4, ease: 1, band: 16, back: 10, front: 8, noStart: 500, cut: 400,\n    lead: 40, pay: 2,\n    damage: 3, bandGrowth: 6, shove: 70, clearance: 3, shockR: 40, shockT: 0.35 // (proposal)\n  },\n  // Seconds the built-in winch needs over a survivor: about 2 s. (proposal)\n  winch: { hover: 2 },\n  // dps = damage to the train each second while it holds on\n  types: [\n    { hp: 2, speed: [15, 20], value: 1, dps: 0.25 },               // walker: 2 base gun hits (proposal)\n    { hp: 1, speed: [42, 52], value: 1, dps: 0.3, run: true },     // runner\n    { hp: 6, speed: [10, 13], value: 5, dps: 2, big: true }        // brute"
+    },
+    {
+      "file": "src/tree.js",
+      "startLine": 1,
+      "endLine": 82,
+      "source": "// tree.js - the skill tree. One table, NODES, drives all of it: the map on the SKILL TREE tab of the\n// Depot, how each node looks, the tooltip (what it does, NOW > NEXT, the price), buying, and the goal\n// line under the summary. What a node does in a run is read from the UP numbers (game.js, and the new\n// ones below), the same numbers the tooltip shows.\n// The look: a dark starry panel with glowing nodes and lines around VIPER. Drag to move the map,\n// use the wheel to zoom, and C to centre it. Blue is scrap, orange is survivors, and gold is gold.\n\n// ---------- colours and numbers\n// Each kind of node: c = bright, m = mid, d = dark (the body when maxed), g = its glow.\nconst NODE_KIND = {\n  root: { c: '#ffd36a', m: '#a07a30', d: '#2e2410', g: '#ffb040' },\n  scrap: { c: '#62c8ff', m: '#2f6f9e', d: '#0b2234', g: '#2a9dff' },\n  surv: { c: '#ffa448', m: '#a55a1e', d: '#331b08', g: '#ff7a1a' },\n  gold: { c: '#ffd36a', m: '#a07a30', d: '#2e2410', g: '#ffb040' },\n  tease: { c: '#3a4458', m: '#202838', d: '#10141c', g: '#3a4458' }\n};\n// A value with its unit, for the tooltip. (2 px on the ground = 1 m.)\nconst perS = (v) => +v.toFixed(1) + '/S', secs = (v) => +v.toFixed(1) + ' S', metres = (px) => Math.round(px / 2) + ' M';\nconst pctS = (v) => Math.round(v * 100) + '%';\nconst TRACKS = {\n  A: [15, 23, 34, 51, 76, 114, 171, 256],\n  B: [20, 30, 45, 68, 101, 152],\n  C: [25, 38, 56, 84, 127],\n  D: [30, 45, 68, 101, 152],\n  E: [40, 60, 90, 135],\n  F: [40, 64, 102, 164]\n};\n\n// ---------- node values\n// These are the demo's numbers at level l; treeUp snapshots them for every active system.\nObject.assign(UP, {\n  hdmg: (l) => 1 + 0.2 * l,\n  hrate: (l) => 1 + 0.12 * l,\n  hrange: (l) => 1 + 0.15 * l,\n  rockets: (l) => [0, 0.05, 0.08, 0.11, 0.14, 0.18][l],\n  podDamage: (l) => 1 + 0.25 * l,\n  podReload: (l) => [8, 7, 6, 5.5, 5][l],\n  podSalvo: (l) => 4 + l,\n  napalm: (l) => l ? 3 : 0,\n  hellfireDamage: (l) => 1 + 0.3 * l,\n  hellfireReload: (l) => 10 - l,\n  hellfireBlast: (l) => 1 + 0.2 * l,\n  doubleHellfire: (l) => l ? 2 : 1,\n  mgDamage: (l) => 1 + 0.25 * l,\n  mgRate: (l) => 2 * (1 + 0.15 * l),\n  mgRange: (l) => 1 + 0.15 * l,\n  mgTurrets: (l) => 1 + l,\n  apRounds: (l) => l ? 3 : 1,\n  katyushaRockets: (l) => 6 + 2 * l,\n  katyushaReload: (l) => 15 - 1.5 * l,\n  katyushaBlast: (l) => 1 + 0.2 * l,\n  clusterRockets: (l) => l ? 3 : 0,\n  ramPower: (l) => 1 + 0.3 * l,\n  ramCooldown: (l) => 20 - 2 * l,\n  ramDuration: (l) => 2 + 0.5 * l,\n  shockwave: (l) => l > 0,\n  steamDamage: (l) => 1 + 0.25 * l,\n  steamSpeed: (l) => [5, 4.4, 3.8, 3.2, 2.5][l],\n  steamReach: (l) => l,\n  hotCloud: (l) => l ? 2 : 0,\n  a10Damage: (l) => 1 + 0.25 * l,\n  a10Cooldown: (l) => [25, 22, 19, 16, 14, 12][l],\n  a10Lines: (l) => 1 + l,\n  bombRun: (l) => l ? 4 : 0,\n  a10Charge: (l) => 1 + l,\n  fireDamage: (l) => 1 + 0.25 * l,\n  f4Cooldown: (l) => 30 - 3 * l,\n  fireLength: (l) => 1 + 0.2 * l,\n  fireDuration: (l) => 4 + l,\n  fireWall: (l) => l ? 12 : 4,\n  fireBurn: (lengthLevel, wallLevel) => wallLevel > 0 ? UP.fireWall(wallLevel) : UP.fireDuration(lengthLevel),\n  f4Charge: (l) => 1 + l,\n  b52Bombs: (l) => 8 + 2 * l,\n  b52Cooldown: (l) => 45 - 5 * l,\n  b52Blast: (l) => 1 + 0.2 * l,\n  fireBombs: (l) => l > 0,\n  b52Charge: (l) => 1 + l,\n  salvageCrew: (l) => 0.08 * l,\n  // Rare variant birth chances; Hunt levels add to the chance, not the death roll. (proposal)\n  silver: (l) => 0.004 + 0.003 * l,\n  boom: (l) => 0.006 + 0.006 * l,\n  goldHunt: (l) => l"
+    },
+    {
+      "file": "src/heliweap.js",
+      "startLine": 1,
+      "endLine": 16,
+      "source": "// heliweap.js - the Viper's automatic weapons. A nose-gun shot can become a rocket, with a short\n// smoke trail and an area blast. Projectiles carry their own numbers and world launch position.\n// Friendly blasts use zombie damage helpers only, so they cannot hurt the train.\n\nconst HWC = {\n  // Seconds without a rocket before the next nose-gun shot must become one.\n  rocketWait: 6,\n  // Flight seconds, blast radius/damage, arc height, smoke lifetime and hot streak spacing (proposal)\n  rocket: { travel: 0.25, radius: 16, damage: 6, arc: 12, smokeLife: [0.4, 0.6], streakStep: 0.005 },\n  // Ground range, launch/retry seconds, spread/mount px, flash seconds/glow and burn DPS (proposal)\n  pod: { range: 180, gap: 0.08, retry: 0.25, spread: 8, mountX: 11, mountY: -9, flash: 0.07, flashRadius: 8, burnDps: 2 },\n  // Ground range/damage/radius, flight/arc/curve, retry seconds, mount px and trail timing (proposal)\n  hellfire: { range: 220, damage: 18, radius: 30, travel: 0.8, arc: 28, curve: 18,\n    retry: 0.25, mountX: 8, mountY: -8, smokeLife: [0.4, 0.6], streakStep: 0.015 }\n};\n// Lazy run state also works behind the title: a new G starts fresh counters without touching SAVE."
+    },
+    {
+      "file": "src/cars.js",
+      "startLine": 1,
+      "endLine": 16,
+      "source": "// cars.js - automatic weapons mounted on the existing train cars. Art is baked before the atlas\n// warms; runtime state belongs to one G and never keeps zombie references between shots.\n// Hooks: updateTrainWeapons (step), drawTrainWeapon (drawCar), drawTrainWeaponFx (additive pass).\nconst MGC = {\n  car: 3, headings: 32, rate: 2, scale: 0.6, flash: 0.07,\n  damage: 1, range: 100, wallRange: 200, barrel: 8, barrelZ: 2, halfWidth: 3, recoil: 1.3, recoilDecay: 12 // (proposal)\n};\nconst MG_OFFSETS = [[0], [-7, 7], [-9, 0, 9]];\nconst MGART = { n: [], h: [], bn: [], bh: [] };\nconst MGCAR = { g: null, mg: null };\n// Independent rocket range/payload, flight seconds/height, launch/retry timing and spread (proposal)\nconst KATC = { car: 2, deck: 3, headings: 32, damage: 8, radius: 24, range: 300,\n  travel: 0.8, arc: 32, gap: 0.08, retry: 0.25, spread: 12, split: 0.65,\n  tubeFront: 9, muzzleZ: 4, flash: 0.07,\n  cluster: { damage: 4, radius: 12, fall: 0.3, spread: 12 } };\nconst KAT_TUBES = [-5, -3, -1, 1, 3, 5], KATART = { n: [], h: [] };"
+    },
+    {
+      "file": "src/gadgets.js",
+      "startLine": 1,
+      "endLine": 10,
+      "source": "// gadgets.js - hot steam clears climbers, then its optional cloud follows the train for two seconds.\n// Each burst has one receipt per zombie, shared with its cloud. Steam uses ordinary white smoke\n// particles and zombie damage helpers, never fire, scorch or train damage.\n// Hooks: updateGadgets (step, after updateZombies); steamState (read-only run diagnostics).\n\n// Base damage/ground reach, puff spacing/count, minimum emitter height and particle tuning (proposal)\nconst STEAMC = { damage: 2, interval: 5, reachStep: 6, wallReach: 24, cloudBase: 6, cloudDuration: 2,\n  puffGap: 0.25, puffsPerVent: 2, refreshPuffs: 1, ventAcross: 8, ventZ: 3,\n  life: [0.5, 0.75], size: [2, 3], grow: 8, growPerLevel: 3, sideSpeed: [24, 40], rise: [25, 45], carry: 0.45, drag: 2.6,\n  colors: ['rgba(240,240,232,0.65)', 'rgba(214,218,214,0.5)'] };"
+    },
+    {
+      "file": "src/air.js",
+      "startLine": 1,
+      "endLine": 12,
+      "source": "// air.js - plane slots, charges, aiming and the reserved band below the world.\n// Ownership and upgrades are fixed when a leg starts; flight and damage stay in planes.js.\nconst AIRBAND = { height: 18 }; // Band height in game px.\n// Starting cooldowns and floors are seconds; payloads enable at their own tasks.\nconst PLANES = {\n  a10: { name: 'A-10', cooldown: 25, floor: 12, available: true },\n  f4: { name: 'F-4', cooldown: 30, floor: 15, available: true },\n  b52: { name: 'B-52', cooldown: 45, floor: 25, available: true },\n  b2: { name: 'B-2', cooldown: 60, floor: 40, available: false }\n};\n// Double-tap seconds, slot width/gap/left px, return-animation seconds, and crowd radius px (proposal).\nconst AIRCFG = { doubleTap: 0.35, slotWidth: 78, slotGap: 4, left: 6, returnTime: 0.25, crowdRadius: 40 };"
+    },
+    {
+      "file": "src/planes.js",
+      "startLine": 1,
+      "endLine": 14,
+      "source": "// planes.js - plane flights and payloads. The shared air.js framework owns keys, aiming, charges\n// and cooldowns; this file only launches and updates the actual planes, bombs and glowing hits.\n// The A-10 flies one pass, with parallel gun bands and an optional four-bomb finish.\n\n// speed = px/s, alt = height (px) as it comes in, dive = px lower while it fires, len = px of\n// ground it strafes, lead = px ahead of the jet its rounds land, step = px between two hits you see\n// (a puff of fire every 3rd, a big blast every 8th), half / dmg = the band and the damage before upgrades, bombR = px\n// a bomb kills round it\nconst JETC = { speed: 320, alt: 46, dive: 12, len: 230, lead: 44, step: 4, half: 13, dmg: 3, bombR: 34, N: 32,\n  // Centre spacing leaves four pixels between the original gun bands (proposal)\n  lineGap: 30,\n  // Seconds of ground-marker anticipation, then shadow entry before the body appears (proposal)\n  showDelay: 0.3, shadowLead: 0.1 };\n"
+    },
+    {
+      "file": "src/f4.js",
+      "startLine": 1,
+      "endLine": 6,
+      "source": "// f4.js - the swept-wing F-4 and its line of burning ground. Flight/show state stays in STRAF.\n// Hooks: f4Payload/f4Fire (plane launch/update), drawFireLine (air aim), planeArt (body/shadow).\nconst F4C = {\n  // Base fire-line length, DPS, patch radius/spacing and filled-preview opacity (proposal)\n  length: 230, damage: 2, radius: 14, step: 18, previewAlpha: 0.16\n};"
+    },
+    {
+      "file": "src/b52.js",
+      "startLine": 1,
+      "endLine": 6,
+      "source": "// b52.js - the eight-engine bomber and its row of falling bombs. Flights live in STRAF.\n// Hooks: b52Payload/b52Drop (plane launch/update), drawBombLane (air aim), planeArt (body/shadow).\nconst B52C = {\n  // Lane length, blast radius/damage, fall seconds, fire seconds/DPS and preview opacity (proposal)\n  length: 300, radius: 18, damage: 12, fall: 0.55, burnDuration: 4, burnDamage: 2, previewAlpha: 0.12\n};"
+    },
+    {
+      "file": "src/b2.js",
+      "startLine": 1,
+      "endLine": 9,
+      "source": "// b2.js - a flying wing and one huge, train-safe blast. The finale gift enables its slot later.\n// Hooks: b2Payload/b2Drop/b2Impact (planes), drawB2Circle (aim), planeArt (normal/shadow/thermal).\nconst B2C = {\n  // Ground radius, fall seconds, largest core radius/cap/time, ring ratio/times, preview opacity (proposal)\n  radius: 65, fall: 0.7, coreRadius: 44, coreCap: 20, coreTime: 1.1,\n  outerRing: 1.5, ringTime: 0.35, dustTime: 0.7, previewAlpha: 0.1,\n  // Huge-blast shake, hit-stop seconds, and thermal body brightness (proposal)\n  shake: 0.9, stop: 0.08, heat: 150\n};"
+    },
+    {
+      "file": "src/fire.js",
+      "startLine": 1,
+      "endLine": 9,
+      "source": "// fire.js - burning ground shared by Napalm and planes; Fire Walls also stop walking zombies.\n// Hooks: updateBurn (step), drawBurn/drawBurnFx (render), blockBurnWall (updateZombies).\n// Each patch has its own damage cadence. Overlapping patches stack, and only zombies take hits.\nconst BURNC = {\n  step: 0.25,\n  // Patch cap, flame count/spread, final fade seconds and glow radius/opacity/flicker (proposal)\n  cap: 60, flames: 7, spread: 0.6, fade: 0.35, glow: 1.5, alpha: 0.38, flicker: 0.08,\n  // Zombie body padding outside a blocking patch, in ground px (proposal)\n  wallPad: 2, wallBrutePad: 3"
+    },
+    {
+      "file": "src/loot.js",
+      "startLine": 1,
+      "endLine": 22,
+      "source": "// loot.js - timeline finds: scrap piles on wrecks and supply crates in burnt farms. Fly the Viper\n// near a find to collect it; it flies up to the heli and pays. Golden crates bank at pickup.\n// Field rescues bank after a two-second hover and carry forward until saved. G.loot resets per leg.\n\n// pile: scrap paid. crate: its guards, how near the heli wakes them,\n// how near the heli its edge arrow shows, how far along the rails ahead of the train its guards are\n// placed. gold: first gold payment / retry scrap, arrow reach. sos: hover reach and arrow reach.\n// sos.reach = px the heli must hover within for the Winch. fly = seconds a find takes to fly\n// up to the heli. Leg events supply the position and can override scrap paid.\nconst LOOT = {\n  pile: { pay: 15 },\n  crate: { pay: 50, guards: 8, wake: 120, arrow: 450, place: 500 },\n  gold: { pay: 5, scrap: 25, arrow: 700 },\n  sos: { reach: 20, arrow: 700 },\n  fly: 0.3\n};\n// Event placement distances/margins in world or screen px; widthFrac is a viewport fraction (proposal)\nconst LEGLOOTC = { ahead: 120, off: 100, maxAhead: 500, minOff: 24, maxOff: 180, widthFrac: 0.4,\n  goalPad: 40, startPad: 24, viewX: 40, viewTop: 56, viewBottom: 42 };\nconst RESCUE_IDS = ['rescue-4', 'rescue-8', 'rescue-10'];\n// Carry placements in world px; rope/lift/icon durations in seconds; ground hand/label height in px. (proposal)\nconst RESCUEC = { carryAhead: 80, carryStep: 60, carryOff: 70, rope: 0.45, lift: 1.6, icon: 0.8, hand: 9, label: 22 };"
+    },
+    {
+      "file": "src/skills.js",
+      "startLine": 1,
+      "endLine": 8,
+      "source": "// skills.js - scheduled golden runners and their rewards, the dormant cow catcher, and armor.\n// Also the 25mm's kill feel: a short hit-stop when one round kills 3 or more.\n\nconst SK = {\n  // Gold payout/replay scrap, crossing speed/edge margin, screen lane, bounded tracking and Hunt gaps. (proposal)\n  gold: { reward: 1, scrap: 10, speed: 60, edge: 18, lane: 0.2, laneTop: 48, laneBottom: 42,\n    follow: 180, ahead: 80, huntGap: 8 }\n};"
+    },
+    {
+      "file": "src/audio.js",
+      "startLine": 1,
+      "endLine": 35,
+      "source": "// audio.js - all sound, made live with the Web Audio API (no sound files). The engine follows\n// Ball x Archers: audioInit builds the graph (master -> compressor, plus a light reverb), voice and\n// gap limit how often a sound can play, tone and nz make one synth note or one noise burst.\n// SFX holds every game sound; drone() is the helicopter's rotor under everything.\n\nconst Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null, roar: null,\n  cues: {}, scheduledSources: 0 };\n// Audio voice/gap limits use wall time. Their random draws must never advance combat's RNG.\nconst audioRandom = mulberry(0xa0d10);\nconst audioRnd = (a, b) => b === undefined ? audioRandom() * a : a + audioRandom() * (b - a);\n// Ready swoosh: gate ms, burst/note seconds, volumes and rising filter/note frequencies (proposal)\nconst PLANE_READY_SFX = { gap: 90, life: 0.22, volume: 0.065, from: 500, to: 2300,\n  q: 0.7, note: 380, noteEnd: 740, noteLife: 0.16, noteVolume: 0.012 };\n// Flyover roar: simultaneous voices, seconds, volumes and falling filter/note frequencies (proposal)\nconst PLANE_ROAR_SFX = { voices: 2, life: 1.2, volume: 0.12, from: 2200, to: 160,\n  q: 0.8, note: 180, noteEnd: 50, noteVolume: 0.03 };\n// New cue gates (ms), voice counts, seconds, gains and Hz; lighter MG, rewards and heavy blasts. (proposal)\nconst NEW_SFXC = {\n  mgCar: { gap: 70, voices: 3, life: 0.075, volume: 0.045, from: 2200, to: 650,\n    note: 220, noteLife: 0.045, noteVolume: 0.014, noteEnd: 85 },\n  silver: { gap: 90, voices: 2, life: 0.22, note: 1760, noteEnd: 2640, volume: 0.022 },\n  f4Ignite: { gap: 160, voices: 2, life: 0.38, volume: 0.055, from: 1700, to: 250,\n    note: 180, noteLife: 0.25, noteVolume: 0.018, noteEnd: 65 },\n  b2Boom: { gap: 300, voices: 1, life: 1.8, volume: 0.32, from: 700, to: 35,\n    note: 38, noteLife: 1.4, noteVolume: 0.22, noteEnd: 20 },\n  ramShock: { gap: 200, voices: 2, life: 0.42, volume: 0.1, from: 1200, to: 100,\n    note: 96, noteLife: 0.32, noteVolume: 0.07, noteEnd: 35 }\n};\n// Repeated pickups, chimes and steam share bounded copies rather than building a noisy crowd. (proposal)\nconst SFX_LIMITS = {\n  hiss: { gap: 100, voices: 2, life: 1.6 }, gold: { gap: 100, voices: 2, life: 0.32 },\n  lootUp: { gap: 60, voices: 3, life: 0.22 }, crate: { gap: 90, voices: 2, life: 0.3 },\n  golden: { gap: 150, voices: 2, life: 0.65 }, winch: { gap: 200, voices: 2, life: 0.5 },\n  saved: { gap: 120, voices: 2, life: 0.22 }\n};"
+    },
+    {
+      "file": "src/legs.js",
+      "startLine": 1,
+      "endLine": 96,
+      "source": "// legs.js - the Farmlands route: one short ride between each pair of stops. This table is the\n// source for the route map, station rewards and timed events. Leg numbers shown to players are 1..12.\n\n// Rail px between stations: about 60 s at the train's 40 px/s cruise. (proposal)\nconst LEG_LENGTH = 2400;\n// First-pass scrap targets from the final design; ordinary kill shares are tuned with real rides.\nconst LEG_SCRAP_TARGETS = [80, 95, 115, 135, 160, 190, 225, 265, 310, 365, 430, 500];\n// Ordinary kill multipliers preserve the large hordes; wall drops remain collectible. (proposal)\nconst LEG_ORDINARY_PAY = [0.67831, 0.884, 0.75047, 0.66879, 0.37451, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.14645];\nconst LEG_WALL_PAY = { 5: 40, 9: 40 };\n// The closed-gate hold lasts 30 play seconds. Standoff/rear spread px and peak-gift seconds are proposals.\nconst FINALEC = { hold: 30,\n  stop: 20, giftAt: 15, rearOff: 40 // (proposal)\n};\n// Hold-relative wave clocks and sizes; every wave enters through all four viewport edges. (proposal)\nconst FINALE_EVENTS = [\n  [0, 'wave', { n: 24, edges: [-1, 1, 0, 2] }],\n  [8, 'wave', { n: 30, edges: [-1, 1, 0, 2] }],\n  [15, 'wave', { n: 38, edges: [-1, 1, 0, 2] }],\n  [23, 'wave', { n: 30, edges: [-1, 1, 0, 2] }]\n];\nconst STOPS = [\n  Object.assign(DEPOT, { kind: 'big', side: 1 }),\n  { id: 'millbrook', name: 'MILLBROOK', kind: 'big' },\n  { id: 'cornfield', name: 'CORNFIELD HALT', kind: 'small' },\n  { id: 'redbarn', name: 'RED BARN', kind: 'big' },\n  { id: 'silo', name: 'SILO JUNCTION', kind: 'small' },\n  { id: 'oldmill', name: 'OLD MILL', kind: 'big' },\n  { id: 'pumpkin', name: 'PUMPKIN HALT', kind: 'small' },\n  { id: 'crossroads', name: 'CROSSROADS', kind: 'big' },\n  { id: 'water', name: 'WATER TOWER', kind: 'small' },\n  { id: 'haybale', name: 'HAYBALE CAMP', kind: 'big' },\n  { id: 'windmill', name: 'WINDMILL HALT', kind: 'small' },\n  { id: 'grain', name: 'GRAIN ELEVATOR', kind: 'big' },\n  { id: 'terminus', name: 'FARMLANDS TERMINUS', kind: 'end' }\n];\n// Actual run eligibility also applies to old-leg replays after buying Hunt upgrades.\nconst LEG_INTRO = { runner: 2, gold: 3, silver: 4, brute: 6, boom: 7 };\nconst legAllows = (kind) => !G.demo && G.leg >= LEG_INTRO[kind];\n\n// Living caps, base stream sizes/cadence and type shares; final scrap tuning is separate. (proposal)\n// [want, size, gap, runner share, brute share, rail brute share]\nconst LEG_BASE_ROWS = [\n  [160, 4, 4, 0, 0, 0], [180, 4, 3.9, 0.08, 0, 0], [210, 5, 3.8, 0.12, 0, 0],\n  [240, 5, 3.7, 0.14, 0, 0], [280, 6, 3.6, 0.16, 0, 0], [340, 7, 3.5, 0.18, 0.02, 0.05],\n  [400, 8, 3.4, 0.20, 0.03, 0.06], [470, 9, 3.3, 0.22, 0.04, 0.07], [540, 10, 3.2, 0.23, 0.05, 0.08],\n  [620, 11, 3.1, 0.25, 0.07, 0.10], [700, 12, 3, 0.27, 0.09, 0.12], [800, 14, 2.9, 0.30, 0.12, 0.15]\n];\n// Event clocks, crowd sizes and scrap placements/value; special tuples stay deferred until their\n// real handlers exist. Leg 9's two events at 27 s deliberately overlap. (proposal)\nconst legPile = (pay) => ({ ahead: 120, off: 100, side: 1, pay });\nconst LEG_EVENT_ROWS = [\n  [[3, 'railCrowd', { n: 6 }], [12, 'stream', { edge: -1, n: 12 }], [22, 'pile', legPile(24)],\n    [32, 'stream', { edge: 1, n: 14 }], [42, 'railCrowd', { n: 8 }], [52, 'wave', { n: 10 }]],\n  [[3, 'railCrowd', { n: 10 }], [12, 'stream', { edge: -1, n: 18, type: 1 }], [22, 'pile', legPile(29)],\n    [32, 'stream', { edge: 1, n: 20 }], [42, 'railCrowd', { n: 12 }], [52, 'wave', { n: 12 }]],\n  [[3, 'railCrowd', { n: 12 }], [11, 'stream', { edge: -1, n: 22 }], [19, 'golden', { edge: -1 }],\n    [27, 'pile', legPile(35)], [35, 'stream', { edge: 1, n: 24 }], [43, 'railCrowd', { n: 16 }], [51, 'wave', { n: 14 }]],\n  [[3, 'railCrowd', { n: 14 }], [11, 'stream', { edge: -1, n: 24 }], [19, 'golden', { edge: 1 }],\n    [27, 'rescue', { id: 'rescue-4' }], [35, 'pile', legPile(41)], [43, 'silverGroup', { n: 3, edge: 1 }], [51, 'wave', { n: 16 }]],\n  [[3, 'railCrowd', { n: 18 }], [11, 'stream', { edge: -1, n: 26 }], [19, 'golden', { edge: -1 }],\n    [27, 'deadWall', {}], [35, 'pile', legPile(48)], [43, 'stream', { edge: 1, n: 28 }], [51, 'wave', { n: 18 }]],\n  [[3, 'railCrowd', { n: 20, leaders: 1, leadType: 2 }], [11, 'stream', { edge: -1, n: 30 }], [19, 'golden', { edge: 1 }],\n    [27, 'goldCrate', {}], [35, 'pile', legPile(57)], [43, 'stream', { edge: 1, n: 32 }], [51, 'wave', { n: 20 }]],\n  [[3, 'explosiveStream', { edge: -1, n: 8 }], [11, 'stream', { edge: 1, n: 34 }], [19, 'golden', { edge: -1 }],\n    [27, 'crate', legPile(38)], [35, 'pile', legPile(30)], [43, 'railCrowd', { n: 24 }], [51, 'wave', { n: 24 }]],\n  [[3, 'railCrowd', { n: 26 }], [11, 'golden', { edge: 1 }], [19, 'rescue', { id: 'rescue-8' }],\n    [27, 'pile', legPile(80)], [35, 'goldCrate', {}], [43, 'silverGroup', { n: 4, edge: 1 }], [51, 'wave', { n: 40, big: true }]],\n  [[3, 'railCrowd', { n: 30 }], [11, 'stream', { edge: -1, n: 40 }], [19, 'golden', { edge: -1 }],\n    [27, 'stream', { edge: 1, n: 40 }], [27, 'deadWall', {}], [35, 'pile', legPile(93)], [43, 'goldCrate', {}], [51, 'wave', { n: 44, big: true }]],\n  [[3, 'stream', { edge: 0, n: 26, leaders: 2, leadType: 2, type: 1 }], [11, 'railCrowd', { n: 34 }], [19, 'golden', { edge: 1 }],\n    [27, 'rescue', { id: 'rescue-10' }], [35, 'pile', legPile(110)],\n    [43, 'stream', { edge: 0, n: 30, leaders: 3, leadType: 2, type: 1 }], [51, 'wave', { n: 48, big: true }]],\n  [[3, 'railCrowd', { n: 40 }], [11, 'stream', { edge: -1, n: 50 }], [19, 'golden', { edge: -1 }],\n    [27, 'goldCrate', {}], [35, 'pile', legPile(129)],\n    [43, 'stream', { edge: 0, n: 50, leaders: 4, leadType: 2, type: 1 }], [51, 'wave', { n: 65, big: true }]],\n  [[3, 'wave', { n: 65, big: true }], [11, 'stream', { edge: -1, n: 60 }], [19, 'golden', { edge: 1 }],\n    [27, 'goldCrate', {}], [35, 'pile', legPile(150)], [43, 'railCrowd', { n: 50 }], [51, 'wave', { n: 75, big: true }]]\n];\nconst LEGS = [];\nfor (let n = 1; n < STOPS.length; n++) {\n  const from = STOPS[n - 1], to = STOPS[n];\n  to.km = from.km + LEG_LENGTH / CFG.line.km;\n  to.side = n % 2 ? 1 : -1;\n  const b = LEG_BASE_ROWS[n - 1], base = HORDE[n - 1];\n  Object.assign(base, { want: b[0], size: b[1], gap: b[2], run: b[3], brute: b[4], railBrute: b[5] });\n  LEGS.push({ n, from, to, len: LEG_LENGTH, stars: n >= 3, base: HORDE[n - 1],\n    scrapTarget: LEG_SCRAP_TARGETS[n - 1], ordinaryPay: LEG_ORDINARY_PAY[n - 1], wallPay: LEG_WALL_PAY[n] ?? CFG.wall.loot,\n    rescue: [4, 8, 10].includes(n) ? 'rescue-' + n : null, finale: n === 12, events: LEG_EVENT_ROWS[n - 1] });\n}\nconst legDef = (n) => LEGS[n - 1] || null;\n// Scenery uses the same complete line on every retry, so cached ground stays consistent.\nconst STATIONS = STOPS.slice(1);\n\n// Brief title-only event notice; streams already have their own edge marks. (proposal)\nconst LEG_EVENT_NOTICE = 1.8;"
+    }
+  ],
+  "gallery": [
+    {
+      "task": "T1.4",
+      "title": "Station rewards",
+      "fixture": "tools/scenarios/t1_4_big_shot.js",
+      "image": "tools/out/final/t1_4.png"
+    },
+    {
+      "task": "T1.7",
+      "title": "Currency counters",
+      "fixture": "tools/scenarios/t1_7_hud_shot.js",
+      "image": "tools/out/final/t1_7.png"
+    },
+    {
+      "task": "T1.8",
+      "title": "Depot route map",
+      "fixture": "tools/scenarios/t1_8_depot_shot.js",
+      "image": "tools/out/final/t1_8.png"
+    },
+    {
+      "task": "T2.2",
+      "title": "Currency node colours",
+      "fixture": "tools/scenarios/t2_2_gold_shot.js",
+      "image": "tools/out/final/t2_2.png"
+    },
+    {
+      "task": "T2.6",
+      "title": "Armor, Magnet and Salvage",
+      "fixture": "tools/scenarios/t2_6_pops_shot.js",
+      "image": "tools/out/final/t2_6.png"
+    },
+    {
+      "task": "T3.2",
+      "title": "Viper gun range",
+      "fixture": "tools/scenarios/t3_2_range4_shot.js",
+      "image": "tools/out/final/t3_2.png"
+    },
+    {
+      "task": "T3.3",
+      "title": "Heli Rockets",
+      "fixture": "tools/scenarios/t3_3_trail_shot.js",
+      "image": "tools/out/final/t3_3.png"
+    },
+    {
+      "task": "T3.4",
+      "title": "Rocket Pods salvo",
+      "fixture": "tools/scenarios/t3_4_salvo_shot.js",
+      "image": "tools/out/final/t3_4.png"
+    },
+    {
+      "task": "T3.5",
+      "title": "Napalm burning ground",
+      "fixture": "tools/scenarios/t3_5_burn_shot.js",
+      "image": "tools/out/final/t3_5.png"
+    },
+    {
+      "task": "T3.6",
+      "title": "Guided Hellfire",
+      "fixture": "tools/scenarios/t3_6_curve_shot.js",
+      "image": "tools/out/final/t3_6.png"
+    },
+    {
+      "task": "T4.1",
+      "title": "Reserved plane band",
+      "fixture": "tools/scenarios/t4_1_with_shot.js",
+      "image": "tools/out/final/t4_1.png"
+    },
+    {
+      "task": "T4.3",
+      "title": "Strike flyover",
+      "fixture": "tools/scenarios/t4_3_over_shot.js",
+      "image": "tools/out/final/t4_3.png"
+    },
+    {
+      "task": "T4.4",
+      "title": "Four-line A-10",
+      "fixture": "tools/scenarios/t4_4_four_shot.js",
+      "image": "tools/out/final/t4_4.png"
+    },
+    {
+      "task": "T4.5",
+      "title": "F-4 fire pass",
+      "fixture": "tools/scenarios/t4_5_pass_shot.js",
+      "image": "tools/out/final/t4_5.png"
+    },
+    {
+      "task": "T4.6",
+      "title": "B-52 bomb lane",
+      "fixture": "tools/scenarios/t4_6_mid_shot.js",
+      "image": "tools/out/final/t4_6.png"
+    },
+    {
+      "task": "T4.7",
+      "title": "Saved Hangar slots",
+      "fixture": "tools/scenarios/t4_7_hangar_shot.js",
+      "image": "tools/out/final/t4_7.png"
+    },
+    {
+      "task": "T5.1",
+      "title": "MG Car",
+      "fixture": "tools/scenarios/t5_1_mg_shot.js",
+      "image": "tools/out/final/t5_1.png"
+    },
+    {
+      "task": "T5.2",
+      "title": "Katyusha launch",
+      "fixture": "tools/scenarios/t5_2_launch_shot.js",
+      "image": "tools/out/final/t5_2.png"
+    },
+    {
+      "task": "T5.4",
+      "title": "Steam Vent burst",
+      "fixture": "tools/scenarios/t5_4_burst_shot.js",
+      "image": "tools/out/final/t5_4.png"
+    },
+    {
+      "task": "T6.3",
+      "title": "Dead Wall fight",
+      "fixture": "tools/scenarios/t6_3_mid_shot.js",
+      "image": "tools/out/final/t6_3.png"
+    },
+    {
+      "task": "T6.4",
+      "title": "Golden runner",
+      "fixture": "tools/scenarios/t6_4_runner_shot.js",
+      "image": "tools/out/final/t6_4.png"
+    },
+    {
+      "task": "T6.5",
+      "title": "Built-in winch rescue",
+      "fixture": "tools/scenarios/t6_5_winch_shot.js",
+      "image": "tools/out/final/t6_5.png"
+    },
+    {
+      "task": "T6.6",
+      "title": "Silver and explosive variants",
+      "fixture": "tools/scenarios/t6_6_variants_shot.js",
+      "image": "tools/out/final/t6_6.png"
+    },
+    {
+      "task": "T6.7",
+      "title": "Earned leg-star pop",
+      "fixture": "tools/scenarios/t6_7_hud_shot.js",
+      "image": "tools/out/final/t6_7.png"
+    },
+    {
+      "task": "T6.9",
+      "title": "Finale B-2 gift strike",
+      "fixture": "tools/scenarios/t6_9_strike_shot.js",
+      "image": "tools/out/final/t6_9.png"
+    }
+  ],
+  "openQuestions": [],
+  "codeMap": "README.md#code-map"
+}
