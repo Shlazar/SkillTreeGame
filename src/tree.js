@@ -76,8 +76,9 @@ Object.assign(UP, {
   fireBombs: (l) => l > 0,
   b52Charge: (l) => 1 + l,
   salvageCrew: (l) => 0.08 * l,
-  silverHunt: (l) => l,
-  boomHunt: (l) => l,
+  // Rare variant birth chances; Hunt levels add to the chance, not the death roll. (proposal)
+  silver: (l) => 0.004 + 0.003 * l,
+  boom: (l) => 0.006 + 0.006 * l,
   goldHunt: (l) => l
 });
 
@@ -173,8 +174,8 @@ const NODES = [
   // SALVAGE: west
   scrapNode('magnet', 'SCRAP MAGNET', 'root', -1.5, 0, 'A', 5, 'LOOT PICKUP REACH GROWS BY 25%.', ['PICKUP', (l) => metres(UP.pickup(l))]),
   scrapNode('salvageCrew', 'SALVAGE CREW', 'magnet', -3, 0, 'D', 4, 'EARN 8% MORE SCRAP FROM EVERYTHING.', ['SCRAP', (l) => pctS(1 + UP.salvageCrew(l))]),
-  scrapNode('silverHunt', 'SILVER HUNT', 'salvageCrew', -4.5, -1.5, 'E', 3, 'FIND MORE SILVER ZOMBIES.', ['HUNT LEVEL', UP.silverHunt]),
-  scrapNode('boomHunt', 'BOOM HUNT', 'salvageCrew', -4.5, 1.5, 'E', 3, 'FIND MORE EXPLOSIVE ZOMBIES.', ['HUNT LEVEL', UP.boomHunt]),
+  scrapNode('silverHunt', 'SILVER HUNT', 'salvageCrew', -4.5, -1.5, 'E', 3, 'FIND MORE SILVER ZOMBIES.', ['SPAWN CHANCE', (l) => +(100 * UP.silver(l)).toFixed(1) + '%']),
+  scrapNode('boomHunt', 'BOOM HUNT', 'salvageCrew', -4.5, 1.5, 'E', 3, 'FIND MORE EXPLOSIVE ZOMBIES.', ['SPAWN CHANCE', (l) => +(100 * UP.boom(l)).toFixed(1) + '%']),
   scrapNode('goldHunt', 'GOLD HUNT', 'silverHunt', -6, -1.5, 'F', 3, 'MORE GOLDEN ZOMBIES, UP TO 5 EXTRA GOLD IN THIS DEMO.', ['EXTRA GOLDEN', UP.goldHunt])
 ];
 const NODE = {};
@@ -244,7 +245,7 @@ function treeUp(L, up) {
     hotCloud: UP.hotCloud(L('hotCloud')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     goldHunt: UP.goldHunt(L('goldHunt')),
-    boom: 0, boomR: 18, silver: 0,
+    boom: UP.boom(L('boomHunt')), boomR: VARIANTC.radius, silver: UP.silver(L('silverHunt')),
     power: false
   });
 }

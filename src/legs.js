@@ -98,6 +98,13 @@ function dispatchLegEvent(kind, params, id) {
     if (n) addStream(n, edge, false, { ...p, eventId: id });
     return n;
   }
+  if (kind === 'silverGroup' || kind === 'explosiveStream') {
+    const silver = kind === 'silverGroup';
+    if (!legAllows(silver ? 'silver' : 'boom')) return null;
+    const edge = p.edge === -1 ? -1 : p.edge === 1 ? 1 : 0;
+    if (n) addStream(n, edge, false, { ...p, type: 0, variant: silver ? 'silver' : 'boom', eventId: id });
+    return n;
+  }
   if (kind === 'wave') {
     if (n) { addStream(n, -1, true, { ...p, eventId: id }); addStream(n, 1, true, { ...p, eventId: id }); }
     G.waves++;

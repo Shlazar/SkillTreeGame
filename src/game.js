@@ -388,7 +388,7 @@ function lose() {
 // ---------- the dead
 function makeZombie(x, y, type) {
   const T = CFG.types[type], sets = ZS[type];
-  return silverRoll({
+  return variantRoll({
     x, y, type, S: sets[(Math.random() * sets.length) | 0], hp: T.hp, max: T.hp, value: T.value, run: !!T.run, big: !!T.big,
     sp: rnd(T.speed[0], T.speed[1]), dps: T.dps, wob: rnd(TAU), anim: rnd(2), left: Math.random() < 0.5,
     vx: 0, vy: 0, kbx: 0, kby: 0, flash: 0, pending: 0, block: [], blockT: rnd(0.5), dead: false, gone: false, qd: 0, k: y,

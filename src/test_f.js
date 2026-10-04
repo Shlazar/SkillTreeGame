@@ -1,6 +1,12 @@
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 // QA-only plane injection is scoped to this G; it never writes saved ownership or slots.
 let TEST_PLANE_FIXTURE = null;
+function testVariantArt(sets) {
+  const frames = [...new Set(sets.flatMap((S) => S.walk.flatMap((f) =>
+    [f.n, f.nf, f.w, f.wf, f.h, f.hf, f.s, f.sf]).concat(
+    [S.dead, S.deadH, S.tilt], S.spin, S.spinH, S.corpses, S.splats)))];
+  return { sets: sets.length, frames: frames.length, atlas: frames.length > 0 && frames.every((f) => !!ATL.get(f)) };
+}
 function testWallView(w) {
   return w ? { id: w.id, eventId: w.eventId, leg: w.leg, s: w.s, km: w.km, x: w.x, y: w.y,
     sx: w.x - G.camX, sy: w.y - G.camY, hp: w.hp, max: w.max, state: w.state,
@@ -23,6 +29,32 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  // Spawn counters and cached variant art, copied without exposing live sprite or target objects.
+  variantState: () => {
+    if (!G) return null;
+    const s = variantStats();
+    return { silverChance: legAllows('silver') ? G.up.silver : 0, boomChance: legAllows('boom') ? G.up.boom : 0,
+      silverPay: SILVER_PAY, radius: G.up.boomR, damage: VARIANTC.damage, queued: BOOMS.length,
+      silver: s.silver, boom: s.boom, blasts: s.blasts, hits: s.hits, kills: s.kills,
+      lastBlast: s.lastBlast ? { ...s.lastBlast } : null,
+      art: { silver: testVariantArt(ZS.flat().map((S) => S.silver)), boom: testVariantArt(BOOMSETS) },
+      active: G.zombies.filter((z) => !z.dead && !z.gone && (z.silver || z.boom)).map((z) => ({
+        x: z.x, y: z.y, sx: z.x - G.camX, sy: z.y - G.camY, type: z.type, hp: z.hp, max: z.max, st: z.st,
+        silver: !!z.silver, boom: !!z.boom, dead: !!z.dead, gone: !!z.gone,
+        streamEventId: z.streamEventId || null, streamIndex: z.streamIndex ?? null })) };
+  },
+  // QA-only controlled actors use the real converters, and respect their leg introductions.
+  variantSpawn: (kind, sx, sy, type = 0) => {
+    if (!G || G.demo || G.result || mode !== 'play' || !['normal', 'silver', 'boom'].includes(kind) ||
+      !Number.isInteger(type) || type < 0 || type > 2 || ![sx, sy].every(Number.isFinite) ||
+      sx < 0 || sx >= W || sy < 19 || sy >= VH || kind !== 'normal' && (type === 2 || !legAllows(kind))) return -1;
+    const z = makeZombie(G.camX + sx, G.camY + sy, type);
+    z.silver = z.boom = false; z.S = ZS[type][0]; z.value = CFG.types[type].value;
+    if (kind === 'silver') makeSilver(z);
+    if (kind === 'boom') makeExplosive(z);
+    G.zombies.push(z); gridBuild();
+    return G.zombies.length - 1;
+  },
   // Golden event receipts and live chase positions, copied independently of actors and sprites.
   goldState: () => {
     if (!G) return null;

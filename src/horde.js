@@ -68,6 +68,20 @@ function hRunner(r, f, c) {
   else { o(6, 3, 3, 1, b2); o(6, 5, 2, 1, b0); }
   o(5, 0, 3, 3, h1); o(7, 0, 1, 3, h0); o(5, 0, 2, 1, b0); o(7, 2, 1, 1, ZRED);
 }
+// A swollen orange body and an alternating warning lamp distinguish explosives while alive.
+const BOOMPAL = { body: ['#8e321d', '#c75b28', '#ed9850'], head: ['#1b1713', '#33241b'],
+  leg: ['#2d261e', '#514032'], wound: true };
+const BOOMSETS = [];
+function hExplosive(r, f, c, runner) {
+  const rr = (x, y, w, h, col) => r(x + 1, y, w, h, col);
+  (runner ? hRunner : hWalker)(rr, f, c);
+  const b = f & 1 ? -1 : 0, x = runner ? 3 : 2, h = runner ? 3 : 4;
+  r(x, 3 + b, 6, h, c.body[1]); r(x, 3 + b, 2, h, c.body[2]);
+  r(x + 5, 3 + b, 1, h, c.body[0]); r(x + 1, 3 + b, 3, 1, c.body[2]);
+  r(x + 3, 4 + b, 2, 2, '#452418');
+  r(x + 3, 4 + b, 1, 1, f & 1 ? '#9c3a20' : '#fff1c2');
+  r(x + 4, 5 + b, 1, 1, ZRED);
+}
 // Brute: 12 x 14, a big dark hulk with a small head and long heavy arms.
 function hBrute(r, f, c) {
   const b = f & 1 ? -1 : 0, o = (x, y, w, h, col) => r(x, y + b, w, h, col);
@@ -108,7 +122,10 @@ function silverSpr(src) {
   const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
   for (let i = 0; i < d.length; i += 4) {
     if (!d[i + 3]) continue;
-    const L = d[i] * 0.3 + d[i + 1] * 0.55 + d[i + 2] * 0.15, col = SILVER[L < 25 ? 0 : L < 60 ? 1 : L < 110 ? 2 : L < 170 ? 3 : 4];
+    const L = d[i] * 0.3 + d[i + 1] * 0.55 + d[i + 2] * 0.15;
+    // The dark outline/head and red mouth remain readable in the silver copy.
+    if (L < 60 || d[i] > d[i + 1] * 1.6 && d[i] > d[i + 2] * 1.6) continue;
+    const col = SILVER[L < 110 ? 2 : L < 170 ? 3 : 4];
     d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2];
   }
   g.putImageData(im, 0, 0);
@@ -215,13 +232,15 @@ function makeHordeSet(w, h, draw, pal, shw, big) {
 // The silver copy of set S (made once): the same frames in polished silver.
 function silverSet(S) {
   if (S.silver) return S.silver;
-  const V = Object.assign({}, S, { walk: [] });
+  const V = Object.assign({}, S, { walk: [], base: S });
   for (const fr of S.walk) {
     const n = silverSpr(fr.n), nf = flipH(n), shw = Math.round(S.w * 0.7);
     V.walk.push(Object.assign({}, fr, { n, nf, px: Object.assign({}, fr.px, { n: pixOf(n, shw), nf: pixOf(nf, shw) }) }));
   }
   V.dead = silverSpr(S.dead);
+  V.tilt = silverSpr(S.tilt);
   V.spin = S.spin.map(silverSpr);
+  V.corpses = S.corpses.map(silverSpr);
   V.isSilver = true;
   S.silver = V;
   V.silver = V;
@@ -234,6 +253,18 @@ function makeHordeSprites() {
   for (const p of ZPAL.run) ZS[1].push(makeHordeSet(9, 10, hRunner, p, 7));
   for (const p of ZPAL.brute) ZS[2].push(makeHordeSet(12, 14, hBrute, p, 11, true));
   for (const a of ZS) for (const S of a) silverSet(S);
+  BOOMSETS.length = 0;
+  BOOMSETS.push(makeHordeSet(10, 11, (r, f, c) => hExplosive(r, f, c, false), BOOMPAL, 8));
+  BOOMSETS.push(makeHordeSet(11, 10, (r, f, c) => hExplosive(r, f, c, true), BOOMPAL, 8));
+  for (const S of BOOMSETS) S.isBoom = true;
+}
+// Explicit startup atlas writes include every variant pose used by live actors and corpses.
+function bakeHordeVariants() {
+  for (const S of [...ZS.flat().map((s) => s.silver), ...BOOMSETS]) {
+    for (const f of S.walk) for (const k of ['n', 'nf', 'w', 'wf', 'h', 'hf', 's', 'sf']) atl(f[k]);
+    for (const c of [S.dead, S.deadH, S.tilt, ...S.spin, ...S.spinH, ...S.corpses, ...S.splats]) atl(c);
+  }
+  for (const c of ['#cfe0ff', '#dfe8ff']) atl(glow(c));
 }
 
 // ---------- the railway, looked up by row
@@ -339,7 +370,7 @@ function addStream(n, edge, fast, params = {}) {
   const escort = edge === 0 && leaders ? { leaders: [], members: [], expected: leaders, emitted: 0, active: true, ready: false, x: 0, y: 0 } : null;
   if (escort) ESCORTS.push(escort);
   STREAMS.push({ sx, sy, n, gap: fast ? rnd(0.05, 0.08) : rnd(0.09, 0.15), t: 0, edge, fast, age: 0,
-    type: params.type, leadType: params.leadType ?? 2, leaders, escort,
+    type: params.type, variant: params.variant, leadType: params.leadType ?? 2, leaders, escort,
     railOff: leaders ? (Math.random() < 0.5 ? -1 : 1) * ESCORTC.railOff : 0,
     emitted: 0, eventId: params.eventId || '' });
 }
@@ -362,6 +393,8 @@ function updateStreams(dt, want) {
       const y = G.camY + s.sy + jy - (s.edge ? 0 : back * FORE);
       const x = s.escort ? railX(y) + s.railOff + jx : G.camX + s.sx + jx + (s.edge ? s.edge * back : 0);
       const z = newDead(x, y, pickSpawnType(false, s, index));
+      if (s.variant === 'silver') makeSilver(z);
+      else if (s.variant === 'boom') makeExplosive(z);
       z.stream = 1;
       if (s.escort) { z.streamLead = lead; z.streamIndex = index; }
       if (s.escort && s.escort.active) {
@@ -834,14 +867,42 @@ function popKill(z, cause) {
 }
 // Scrap for a silver zombie, regardless of its base type. (proposal)
 const SILVER_PAY = 15;
-// Called by makeZombie: roll silver (never in the demo, never a brute).
+// Blast radius/damage, queued-blast cap and delay seconds. (proposal)
+const VARIANTC = { radius: 18, damage: 3, queue: 80, delayMin: 0.06, delayMax: 0.12 };
+function variantStats() {
+  return G.variantStats || (G.variantStats = { silver: 0, boom: 0, blasts: 0, hits: 0, kills: 0, lastBlast: null });
+}
+function makeSilver(z) {
+  if (!legAllows('silver') || z.big || z.gold || z.silver) return z;
+  const S = z.S.isSilver ? z.S.base : z.boom ? ZS[z.type][0] : z.S;
+  z.silver = true; z.boom = false;
+  z.S = S.silver;
+  z.value = SILVER_PAY;
+  variantStats().silver++;
+  return z;
+}
+function makeExplosive(z) {
+  if (!legAllows('boom') || z.big || z.gold || z.boom) return z;
+  z.silver = false; z.boom = true;
+  z.S = BOOMSETS[z.type];
+  z.value = CFG.types[z.type].value;
+  variantStats().boom++;
+  return z;
+}
+// One roll makes the variants mutually exclusive. Early-leg replays and demos stay ordinary.
+function variantRoll(z) {
+  if (G.demo || z.big || z.gold) return z;
+  const s = legAllows('silver') ? G.up.silver : 0, b = legAllows('boom') ? G.up.boom : 0;
+  if (s + b <= 0) return z;
+  const r = Math.random();
+  if (r < s) return makeSilver(z);
+  if (r < s + b) return makeExplosive(z);
+  return z;
+}
+// Retained silver-only converter for existing callers; all ordinary births use variantRoll.
 function silverRoll(z) {
   const c = G && G.up && legAllows('silver') ? G.up.silver || 0 : 0;
-  if (c > 0 && !z.big && Math.random() < c) {
-    z.silver = true;
-    z.S = silverSet(z.S);
-    z.value = SILVER_PAY;
-  }
+  if (c > 0 && !z.big && !z.gold && !z.boom && Math.random() < c) makeSilver(z);
   return z;
 }
 // A silver one dies: a white ring, silver sparks, coins.
@@ -857,22 +918,29 @@ function silverKill(z, sc) {
 }
 // The shine of the silver ones in view: a soft glow and a glint now and then.
 function silverShine() {
-  if (!G.up.silver || thermal) return;
-  let n = 0;
+  if (G.demo) return;
+  let n = 0, changed = false;
   for (const z of G.zombies) {
-    if (!z.silver || z.dead || offView(z.x, z.y, 0)) continue;
-    if (++n > 40) break;
+    if (z.dead || z.gone || offView(z.x, z.y, 0) || z.y < G.camY + 19) continue;
+    if (z.silver && !SAVE.flags.silverSeen) { SAVE.flags.silverSeen = true; changed = true; }
+    if (z.boom && !SAVE.flags.boomSeen) {
+      SAVE.flags.boomSeen = true; changed = true;
+      if (typeof tutEvent === 'function') tutEvent('boom_seen', { z });
+    }
+    if (!z.silver || thermal || ++n > 40) continue;
     lights.push({ x: z.x, y: z.y, z: 5, r: 8, c: '#cfe0ff', life: 0.03, max: 0.03, a: 0.3 });
     if (Math.random() < 0.06) part({ x: z.x + rnd(-3, 3), y: z.y, z: rnd(3, z.S.h), vx: 0, vy: 0, vz: rnd(6, 12), g: 0, life: 0.35, max: 0.35,
       s: 1, c: '#ffffff', add: true });
   }
+  if (changed) saveSave();
 }
 // Explosive zombies: BOOMS = blasts to come ({x, y, t}); at most BOOM_STEP go off in one step.
 const BOOMS = [], BOOM_STEP = 6;
-// Called by kill(): 1 in G.up.boom of the dead blow up a moment after they fall.
+// Only a visibly explosive birth can detonate; each death queues at most one bounded blast.
 function boomRoll(z) {
-  const c = legAllows('boom') ? G.up.boom || 0 : 0;
-  if (c > 0 && Math.random() < c && BOOMS.length < 80) BOOMS.push({ x: z.x, y: z.y, t: rnd(0.06, 0.12) });
+  if (!z.boom || z.boomQueued) return;
+  z.boomQueued = true;
+  if (BOOMS.length < VARIANTC.queue) BOOMS.push({ x: z.x, y: z.y, t: rnd(VARIANTC.delayMin, VARIANTC.delayMax) });
 }
 function updateBooms(dt) {
   let n = 0;
@@ -888,7 +956,8 @@ function updateBooms(dt) {
 // One explosive zombie blows up at (x, y): a fat white-yellow puff, smoke, sparks; every zombie in
 // G.up.boomR px dies (and may blow up in turn).
 function zombieBlast(x, y) {
-  const R = G.up.boomR || 18;
+  const R = G.up.boomR || VARIANTC.radius, stats = variantStats();
+  stats.blasts++;
   lights.push({ x, y, z: 4, r: R * 1.6, c: '#ffb060', life: 0.2, max: 0.2, a: 0.55 });
   lights.push({ x, y, z: 4, r: R * 0.6, c: '#fff6e0', life: 0.07, max: 0.07, a: 0.8 });
   addBoom(x, y, Math.round(R * 0.7), 5, 0.45, Math.max(5, Math.round(R * 0.4)));
@@ -901,17 +970,22 @@ function zombieBlast(x, y) {
   for (let k = 0; k < 4; k++) part({ x: x + rnd(-5, 5), y: y + rnd(-3, 3), z: rnd(3, 8), vx: rnd(-8, 8) + 3, vy: rnd(-4, 4), vz: rnd(8, 18),
     g: 0, life: rnd(0.9, 1.5), max: 1.5, s: rnd(3, 5), c: pick(['rgba(70,64,58,0.55)', 'rgba(110,100,90,0.45)']), grow: 5, drag: 1, smoke: true });
   stampScorch(x, y, 1);
-  let killed = 0;
+  let killed = 0, hits = 0;
   queryEll(x, y, R, (z) => {
+    if (z.wall) { damageWall(z.wall, VARIANTC.damage, 'boom'); return; }
     if (z.gate && z.still) return;
+    hits++;
     if (z.big) {
-      z.hp -= 3;
-      z.flash = 0.18;
-      if (z.hp > 0) return;
+      JUICE.from = [x, y];
+      if (hitZombie(z, VARIANTC.damage, 'boom')) killed++;
+      JUICE.from = null;
+      return;
     }
     killed++;
     kill(z, 'boom', x, y, 0);
   });
+  stats.hits += hits; stats.kills += killed;
+  stats.lastBlast = { x, y, radius: R, damage: VARIANTC.damage, hits, kills: killed, t: G.run };
   if (!G.demo) {
     addShake(0.12);
     if (killed >= 3) hitStop(0.02);

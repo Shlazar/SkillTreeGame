@@ -678,6 +678,7 @@ function initSprites() {
   // the dead: 8 walkers, 4 runners and 3 brutes, each in its own clothes
   // (the horde's own look is in horde.js)
   makeHordeSprites();
+  bakeHordeVariants();
   bakeGoldenHorde();
   // trees and scenery
   const PINE = [['#142018', '#1d2b20', '#2f4229'], ['#101a14', '#18241b', '#283a26'], ['#1a261c', '#243323', '#35492d']];
