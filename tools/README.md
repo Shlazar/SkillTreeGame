@@ -200,7 +200,7 @@ This list follows the current build. Tasks remove old calls and add new ones in 
 - `hp(v)`: set the train's health (and its shown bar) to v.
 - `jump(px)`: move the train to px before this leg's nose stopping point. Zombies are removed; the train still brakes and arrives through normal game logic.
 - `km(x)`: move within the current leg to x km along the whole line, without paying. Does nothing on the title demo.
-- `bot(on)`: the autopilot plays (aims and pulls triggers). `bot(false)` also lets go of the trigger.
+- `bot(on)`: the test autopilot handles the Ram and smart-strikes each ready equipped plane when at least 15 zombies form a visible crowd. It checks planes every 0.5 s; the Viper still fires automatically. `bot(false)` also lets go of the trigger.
 
 ### 5.5 Input (src/main.js, src/test_h.js)
 

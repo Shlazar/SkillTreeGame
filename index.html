@@ -3854,6 +3854,8 @@ function updateFireSpots(dt) {
 }
 
 // ---------- the autopilot (the title demo, and tests through window.__sr.bot)
+// Plane scan interval in seconds (proposal); use a strike only for a visible crowd of at least 15.
+const BOTC = { planeScan: 0.5, planeCrowd: 15 };
 // It shoots the dead on the train first, then the ones near the survivors, then the ones on the
 // rails nearest the engine, then whoever is nearest the train. The Turbo Ram tackles a Dead Wall
 // or a crowd on the rails.
@@ -3886,9 +3888,17 @@ function autopilot(dt) {
 function attract(dt) {
   autopilot(dt);
 }
-// In play with the bot on: the heli fights by itself and the bot handles the Ram.
+// In play with the bot on: the heli fights, and the bot handles the Ram and equipped planes.
 function botPlay(dt) {
   autopilot(dt);
+  G.botPlaneT = (G.botPlaneT ?? 0) - dt;
+  if (G.botPlaneT > 0 || !airLive()) return;
+  G.botPlaneT = BOTC.planeScan;
+  airSync();
+  // A half-second scan avoids repeating the crowd search on every simulation step.
+  for (let slot = 0; slot < AIR.slots.length; slot++) {
+    if (airReady(AIR.slots[slot])) airSmart(AIRKEYS[slot], BOTC.planeCrowd);
+  }
 }
 
 // ---------- the ride
@@ -10644,14 +10654,18 @@ function airStrike(key, sx, sy, ang) {
   const [ux, uy] = ang == null ? strafeDir(sx, sy, sx, sy) : [Math.cos(ang), Math.sin(ang)];
   return airLaunch(airSlot(key), G.camX + sx, G.camY + sy, ux, uy);
 }
-function airSmart(key) {
+function airSmart(key, minCount = 1) {
   airSync();
   const id = airSlot(key);
   if (!airLive() || !airReady(id)) return false;
   const x = G.camX + W / 2, y = G.camY + VH / 2, R = Math.hypot(W / 2, VH / (2 * FORE));
   const target = bestCrowd(x, y, R, AIRCFG.crowdRadius,
     (z) => z.x >= G.camX && z.x < G.camX + W && z.y >= G.camY + 19 && z.y < G.camY + VH);
-  if (!target) { AIR.tap = null; SFX.deny(); return false; }
+  if (!target || target.count < minCount) {
+    AIR.tap = null;
+    if (minCount === 1) SFX.deny();
+    return false;
+  }
   const c = G.tr.cars[0];
   return airLaunch(id, target.x, target.y, c.dx, c.dy);
 }
@@ -11298,7 +11312,7 @@ function boot() {
     ramState: () => ramState(),
     // sound: roar = the Ram's roar is playing (or set to play), ctx = the audio is on
     sound: () => ({ ctx: !!Au.ctx, roar: !!Au.roar, muted: Au.muted }),
-    // bot(on): the autopilot plays (it aims and pulls the triggers)
+    // bot(on): the autopilot handles the Ram and smart plane strikes; the Viper fires by itself.
     bot: (on) => { G.bot = !!on; if (!on) G.trigger = false; },
     pause: (p) => setPaused(!!p),
     hold: (h) => { hold = !!h; },

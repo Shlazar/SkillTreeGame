@@ -398,7 +398,7 @@ function boot() {
     ramState: () => ramState(),
     // sound: roar = the Ram's roar is playing (or set to play), ctx = the audio is on
     sound: () => ({ ctx: !!Au.ctx, roar: !!Au.roar, muted: Au.muted }),
-    // bot(on): the autopilot plays (it aims and pulls the triggers)
+    // bot(on): the autopilot handles the Ram and smart plane strikes; the Viper fires by itself.
     bot: (on) => { G.bot = !!on; if (!on) G.trigger = false; },
     pause: (p) => setPaused(!!p),
     hold: (h) => { hold = !!h; },

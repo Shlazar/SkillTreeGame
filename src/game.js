@@ -1085,6 +1085,8 @@ function updateFireSpots(dt) {
 }
 
 // ---------- the autopilot (the title demo, and tests through window.__sr.bot)
+// Plane scan interval in seconds (proposal); use a strike only for a visible crowd of at least 15.
+const BOTC = { planeScan: 0.5, planeCrowd: 15 };
 // It shoots the dead on the train first, then the ones near the survivors, then the ones on the
 // rails nearest the engine, then whoever is nearest the train. The Turbo Ram tackles a Dead Wall
 // or a crowd on the rails.
@@ -1117,9 +1119,17 @@ function autopilot(dt) {
 function attract(dt) {
   autopilot(dt);
 }
-// In play with the bot on: the heli fights by itself and the bot handles the Ram.
+// In play with the bot on: the heli fights, and the bot handles the Ram and equipped planes.
 function botPlay(dt) {
   autopilot(dt);
+  G.botPlaneT = (G.botPlaneT ?? 0) - dt;
+  if (G.botPlaneT > 0 || !airLive()) return;
+  G.botPlaneT = BOTC.planeScan;
+  airSync();
+  // A half-second scan avoids repeating the crowd search on every simulation step.
+  for (let slot = 0; slot < AIR.slots.length; slot++) {
+    if (airReady(AIR.slots[slot])) airSmart(AIRKEYS[slot], BOTC.planeCrowd);
+  }
 }
 
 // ---------- the ride

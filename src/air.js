@@ -115,14 +115,18 @@ function airStrike(key, sx, sy, ang) {
   const [ux, uy] = ang == null ? strafeDir(sx, sy, sx, sy) : [Math.cos(ang), Math.sin(ang)];
   return airLaunch(airSlot(key), G.camX + sx, G.camY + sy, ux, uy);
 }
-function airSmart(key) {
+function airSmart(key, minCount = 1) {
   airSync();
   const id = airSlot(key);
   if (!airLive() || !airReady(id)) return false;
   const x = G.camX + W / 2, y = G.camY + VH / 2, R = Math.hypot(W / 2, VH / (2 * FORE));
   const target = bestCrowd(x, y, R, AIRCFG.crowdRadius,
     (z) => z.x >= G.camX && z.x < G.camX + W && z.y >= G.camY + 19 && z.y < G.camY + VH);
-  if (!target) { AIR.tap = null; SFX.deny(); return false; }
+  if (!target || target.count < minCount) {
+    AIR.tap = null;
+    if (minCount === 1) SFX.deny();
+    return false;
+  }
   const c = G.tr.cars[0];
   return airLaunch(id, target.x, target.y, c.dx, c.dy);
 }
