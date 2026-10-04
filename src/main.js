@@ -20,6 +20,7 @@ cv.addEventListener('pointermove', (e) => {
   M.y = p.y;
   M.inside = true;
   M.right = !!(e.buttons & 2);
+  if (HANGAR.drag) hangarMove(p.x, p.y);
 });
 cv.addEventListener('pointerleave', () => { M.inside = false; });
 cv.addEventListener('pointerdown', (e) => {
@@ -32,12 +33,19 @@ cv.addEventListener('pointerdown', (e) => {
   if (e.button === 2) {
     M.right = true;
     try { cv.setPointerCapture(e.pointerId); } catch (_) { /* release still reaches the window */ }
-    if (mode === 'depot') M.rpressed = true;
+    if (mode === 'depot') { M.rpressed = true; hangarCancel(); }
     if (mode === 'play' && !paused && airCancel()) return;
     if (mode === 'play' && !paused && p.y >= 19 && p.y < VH) heliRight(p.x, p.y);
     return;
   }
   if (e.button !== 0) return;
+  if (mode === 'depot' && depotTab === 'hangar' && hangarDown(p.x, p.y)) {
+    M.down = true;
+    M.px = p.x;
+    M.py = p.y;
+    try { cv.setPointerCapture(e.pointerId); } catch (_) { /* outside release cancels below */ }
+    return;
+  }
   // Plane controls consume their own clicks before the battlefield sees them.
   if (mode === 'play' && !paused && airDown(p.x, p.y)) {
     try { cv.setPointerCapture(e.pointerId); } catch (_) { /* release can still reach the canvas */ }
@@ -75,6 +83,7 @@ cv.addEventListener('pointerup', (e) => {
     M.down = false;
     M.released = true;
   }
+  if (mode === 'depot' && depotTab === 'hangar' && hangarUp(p.x, p.y)) { M.used = true; return; }
   if (mode === 'play' && !paused && airUp(p.x, p.y)) return;
   // A drag released in the reserved strip cannot command units in the world above it.
   if (mode === 'play' && p.y >= VH) { HUI.box = null; return; }
@@ -84,13 +93,20 @@ cv.addEventListener('pointerup', (e) => {
 cv.addEventListener('pointercancel', () => {
   M.down = M.right = false;
   airCancel();
+  hangarCancel();
   if (G) G.trigger = false;
 });
-cv.addEventListener('lostpointercapture', () => { M.right = false; });
+cv.addEventListener('lostpointercapture', () => {
+  M.right = false;
+  if (HANGAR.drag) { M.down = false; hangarCancel(); }
+});
 // A release can land outside the canvas, or arrive as a move when another button stays held.
-addEventListener('pointerup', (e) => { if (!(e.buttons & 2)) M.right = false; });
+addEventListener('pointerup', (e) => {
+  if (!(e.buttons & 2)) M.right = false;
+  if (e.target !== cv && HANGAR.drag) { M.down = false; hangarCancel(); }
+});
 addEventListener('pointermove', (e) => { if (!(e.buttons & 2)) M.right = false; });
-addEventListener('pointercancel', () => { M.right = false; });
+addEventListener('pointercancel', () => { M.right = false; hangarCancel(); });
 cv.addEventListener('contextmenu', (e) => e.preventDefault());
 // the wheel zooms in and out one step (bigger or smaller pixels)
 cv.addEventListener('wheel', (e) => {
@@ -100,6 +116,7 @@ cv.addEventListener('wheel', (e) => {
     treeWheel(e.deltaY);
     return;
   }
+  if (mode === 'depot' && depotTab === 'hangar') return;
   const z = clamp(zoomStep + (e.deltaY < 0 ? 1 : -1), -1, 1);
   if (z !== zoomStep) {
     zoomStep = z;
@@ -156,6 +173,7 @@ function lostFocus() {
   if (G) G.trigger = false;
   M.down = M.right = false;
   airCancel();
+  hangarCancel();
   if (mode === 'play') setPaused(true);
 }
 addEventListener('blur', lostFocus);
@@ -166,6 +184,7 @@ addEventListener('pagehide', () => {
 document.addEventListener('visibilitychange', () => { if (document.hidden) lostFocus(); });
 function onResize() {
   if (resize()) {
+    hangarCancel();
     bakeOverlays();
     if (G) placeCamera();
   }

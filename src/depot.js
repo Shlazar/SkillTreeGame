@@ -77,6 +77,7 @@ function saveSave() {
 // Wipe everything and start over.
 function newSave() {
   SAVE = freshSave();
+  hangarCancel();
   depotLeg = 1;
   depotLoss = '';
   saveSave();
@@ -102,26 +103,37 @@ function toDepot(tab) {
   SHOWN.scrap = SHOWN.surv = SHOWN.gold = -1;
   setTab(tab);
 }
-// Keep the Depot on the tree until another panel is added.
-function setTab() {
-  depotTab = 'tree';
+// A third owned plane reveals the Hangar. Other panel requests fall back to the tree.
+function setTab(tab) {
+  TREE.drag = null;
+  hangarCancel();
+  hangarSync();
+  depotTab = tab === 'hangar' && hangarVisible() ? 'hangar' : 'tree';
 }
 // Keys on the Depot screen: ENTER rides the selection, ESC goes back to the title.
-// TAB does nothing while there is only one panel.
+// TAB changes panels once the Hangar is available.
 function depotKey(k) {
-  if (treeKey(k)) return;
+  if (depotTab === 'tree' && treeKey(k)) return;
+  if (k === 'Tab') {
+    if (hangarVisible()) setTab(depotTab === 'tree' ? 'hangar' : 'tree');
+    return;
+  }
   if (k === 'Enter') {
+    hangarCancel();
     const state = depotRouteState();
     startGame(state.selected, state.replay);
   }
-  else if (k === 'Escape') toTitle();
+  else if (k === 'Escape') { hangarCancel(); toTitle(); }
 }
 function drawDepot() {
   // the demo behind, dimmed
   ctx.fillStyle = 'rgba(5,6,8,0.62)';
   ctx.fillRect(0, 0, W, H);
   const y0 = 63, y1 = H - 45;
-  drawTreeTab(y0, y1);
+  hangarSync();
+  if (depotTab === 'hangar' && !hangarVisible()) setTab('tree');
+  if (depotTab === 'hangar') drawHangarTab(y0, y1);
+  else drawTreeTab(y0, y1);
   drawDepotTop();
   drawDepotRoute();
   drawDepotBottom();
@@ -189,7 +201,7 @@ function drawDepotTop() {
   ctx.fillRect(0, 18, W, 1);
   // All three money families share the HUD's layout; a number still counting is lighter.
   countMoney();
-  const narrow = W < 500, counters = currencyLayout(SHOWN);
+  const counters = currencyLayout(SHOWN);
   const pulses = Object.fromEntries(['scrap', 'surv', 'gold'].map((key) => [key, Math.round(SHOWN[key]) !== SAVE[key]]));
   drawCurrencyCounters(counters, 0, pulses);
   const tips = {
@@ -198,9 +210,21 @@ function drawDepotTop() {
     gold: [['GOLD', U.gold], ['FROM GOLDEN FINDS, STARS AND STATIONS.', U.dim], ['IT BUYS SPECIAL NODES.', U.dim]]
   };
   for (const item of counters.items) tipAt(item.left - 2, 0, item.textX + tw(item.label) - item.left + 4, 18, tips[item.key]);
-  // the tree tab in the middle
-  const tw0 = narrow ? 66 : 84, tx = Math.max(counters.end + 4, Math.round((W - tw0) / 2));
-  if (depotTabBtn(tx, tw0, narrow ? 'TREE' : 'SKILL TREE', depotTab === 'tree', false, false)) setTab('tree');
+  for (const tab of depotTabRects(counters)) {
+    if (depotTabBtn(tab.x, tab.w, tab.label, depotTab === tab.id, false, false)) setTab(tab.id);
+  }
+}
+// Measure both tabs after the counters so narrow windows keep the Hangar reachable.
+function depotTabRects(counters = currencyLayout(SHOWN)) {
+  const narrow = W < 500, tabs = [{ id: 'tree', label: narrow ? 'TREE' : 'SKILL TREE', w: narrow ? 52 : 84 }];
+  if (hangarVisible()) tabs.push({ id: 'hangar', label: 'HANGAR', w: narrow ? 60 : 72 });
+  const width = tabs.reduce((n, tab) => n + tab.w, 0) + (tabs.length - 1) * 3;
+  let x = Math.max(counters.end + 4, Math.round((W - width) / 2));
+  return tabs.map((tab) => {
+    const rect = { ...tab, x, y: 2, h: 17 };
+    x += tab.w + 3;
+    return rect;
+  });
 }
 // A compact line of thirteen stops; each leg's midpoint is its click target.
 function depotRouteState() {
@@ -277,6 +301,7 @@ function drawDepotRoute() {
 }
 // The bottom row gives context without covering the ride button.
 function depotHint() {
+  if (depotTab === 'hangar') return ['PICK WHICH PLANES TO BRING.', U.gold];
   if (depotRouteState().replay) return ['SCRAP ONLY: NO GOLD OR SURVIVORS.', U.blue];
   const tut = tutHint();
   if (tut) return tut;

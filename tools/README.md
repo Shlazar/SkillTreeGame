@@ -345,6 +345,11 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 - `smart(key)`: use the same biggest-crowd targeting as a double tap. Returns whether it launched.
 - `planeBand().slots`: copied clickable rectangles `{id, key, x, y, w, h}`. Use real pointer events for input tests. `press('q')` twice within 0.35 real seconds tests the double tap; right click cancels aiming without moving the helicopter.
 
+### Hangar (src/hangar.js, src/test_f.js)
+
+- `hangar()`: copied `{visible, owned, slots, selected, drag, layout}`. The tab is visible once more than two planes are owned. `slots` holds the two saved plane IDs (or null); `layout.cards` copies `{id,x,y,w,h}` and `layout.slots` copies `{slot,key,id,x,y,w,h}` in game pixels. No ownership or saved assignments change when reading this snapshot.
+- `hangarDrag(id, slot)`: real canvas pointer down/move/up through ordinary UI frames, for a visible Hangar tab in the Depot. Slots are zero-based (0=Q, 1=W). Returns whether the plane is assigned to the requested slot afterward; unknown cards/slots or another screen return false. Assigning an equipped plane to the other slot swaps the two. Use raw PointerEvents to test outside drops, pointer cancellation and browser blur.
+
 ### 5.15 Tutorial (src/tut.js)
 
 - `tut(name, data)`: send a tutorial event (`tutEvent`). Works in play/ending only, not in the demo.

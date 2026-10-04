@@ -145,6 +145,15 @@ function tutFrame(dt) {
   }
   if (TUT.card && !paused) TUT.card = null;
   currencyTips();
+  // This lesson belongs to the Hangar; its seen key is set when the queued line appears.
+  if (mode === 'depot' && depotTab === 'hangar') {
+    if (!seen('p_hangar') && TUT.tip?.key !== 'p_hangar' && !TUT.tipQ.some((t) => t.key === 'p_hangar')) {
+      TUT.tipQ.push({ key: 'p_hangar', msg: 'PICK WHICH PLANES TO BRING.', at: null, t: 0 });
+    }
+  } else {
+    TUT.tipQ = TUT.tipQ.filter((t) => t.key !== 'p_hangar');
+    if (TUT.tip?.key === 'p_hangar') TUT.tip = null;
+  }
   tutChannels(dt);
   if (tutLive() && !paused) tutLook(dt);
 }
@@ -317,7 +326,7 @@ function tutTag() {
   return first ? [first.id, 'CHOOSE ANY BLUE UPGRADE.'] : null;
 }
 function drawTutTags() {
-  if (TUT.tip?.cur) { drawTipLine(); return; }
+  if (TUT.tip?.cur || TUT.tip?.key === 'p_hangar') { drawTipLine(); return; }
   const g = tutTag();
   if (!g) return;
   const [id, msg] = g, L = tw(msg) > 190 ? wrap(msg, 190) : [msg];

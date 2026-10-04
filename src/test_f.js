@@ -2,6 +2,24 @@
 Object.assign(window.__sr, {
   // Read the world-space railway centre for controlled moving-stream scenarios.
   railX: (worldY) => Number.isFinite(worldY) ? railX(worldY) : null,
+  // Copy Hangar state; the action helper goes through real pointer input and ordinary UI frames.
+  hangar: () => hangarState(),
+  hangarDrag: (id, slot) => {
+    const state = hangarState(), card = state.layout.cards.find((c) => c.id === id);
+    const target = state.layout.slots.find((s) => s.slot === slot);
+    if (mode !== 'depot' || depotTab !== 'hangar' || !state.visible || !card || !target) return false;
+    const emit = (type, x, y, buttons) => {
+      const r = cv.getBoundingClientRect();
+      cv.dispatchEvent(new PointerEvent(type, { bubbles: true, button: type === 'pointermove' ? -1 : 0,
+        buttons, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+        clientX: r.left + x / W * r.width, clientY: r.top + y / H * r.height }));
+      oneFrame(STEP);
+    };
+    emit('pointerdown', card.x + card.w / 2, card.y + card.h / 2, 1);
+    emit('pointermove', target.x + target.w / 2, target.y + target.h / 2, 1);
+    emit('pointerup', target.x + target.w / 2, target.y + target.h / 2, 0);
+    return hangarState().slots[slot] === id;
+  },
   // The band's rectangle is in game px, including its full canvas and world heights.
   planeBand: () => ({ visible: planeBandVisible(), x: 0, y: VH, w: W, h: H - VH, worldHeight: VH, fullHeight: H, slots: airBandSlots() }),
   // Copy plane resources and aiming state; strikes use the same path as input.
