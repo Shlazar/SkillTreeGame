@@ -197,18 +197,3 @@ function updateSkills(dt) {
   }
 }
 
-// ---------- sounds
-Object.assign(SFX, {
-  clang() {
-    // the plow hits one: a steel knock
-    if (!gap('clang', 40)) return;
-    tone(audioRnd(700, 820), 0.08, 'square', 0.012, 380);
-    nz(0.04, 0.03, 'bandpass', 1800, 2);
-  },
-  gold() {
-    // a golden zombie falls: a bright chime up
-    tone(1320, 0.08, 'triangle', 0.035);
-    tone(1760, 0.08, 'triangle', 0.035, null, 0.07);
-    tone(2640, 0.18, 'triangle', 0.03, null, 0.14);
-  }
-});

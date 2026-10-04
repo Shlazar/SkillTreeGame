@@ -29,6 +29,7 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  audioState: () => audioState(),
   // Actual Terminus gate state; cached props and events are copied for headless checks.
   finaleState: () => {
     const f = G?.finale;

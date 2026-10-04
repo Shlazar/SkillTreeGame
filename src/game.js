@@ -966,6 +966,7 @@ function ramShock() {
   r.lastShock = { x, y, radius: C.shockR, damage: r.damage, hits, kills, t: G.t };
   rings.push({ x, y, r0: 4, r1: C.shockR, t: 0, T: C.shockT, c: '#fff1c2', w: 2, source: 'ramShock' });
   rocketBlast(x, y);
+  if (!G.demo) SFX.ramShock();
 }
 
 // ---------- hits and kills

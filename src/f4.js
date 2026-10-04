@@ -77,7 +77,10 @@ function f4Fire(j) {
     const p = addBurn(j.px + j.ux * s, j.py + j.uy * s,
       j.patchRadius, j.fireDuration, j.fireDamage, 'f4', j.fireWall);
     j.patchNext++;
-    if (p) { j.patches++; j.fired = true; }
+    if (p) {
+      if (!j.fired && !G.demo) SFX.f4Ignite();
+      j.patches++; j.fired = true;
+    }
   }
 }
 // The filled lane and flame pixels follow the same centres as the production burn patches.

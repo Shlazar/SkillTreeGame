@@ -83,7 +83,7 @@ function b2Impact(x, y, payload) {
   const stats = STRAF.stats.b2;
   stats.impacts++; stats.kills += killed;
   stats.lastImpact = { x, y, t: heliWeaponTime(), radius: payload.radius, kills: killed, coreRadius: core.r, outerRing };
-  if (!G.demo) { addShake(B2C.shake); hitStop(B2C.stop, 0.25); SFX.boom(); }
+  if (!G.demo) { addShake(B2C.shake); hitStop(B2C.stop, 0.25); SFX.b2Boom(); }
 }
 // Circle means a ground ellipse in this view. Whole-pixel rows keep the preview sharp.
 function drawB2Circle(x, y, radius = B2C.radius) {

@@ -1,5 +1,9 @@
 # tools/ - testing Sky Reaper headless
 
+`__sr.audioState()` returns a copied audio diagnostic: initialization/mute/context state,
+scheduled source count, per-cue `{requests, played}` totals, and each voice pool's `{active, max}`.
+The T8.1 scenario checks sixty seconds of maxed combat, the real B-2 gift, a rescue and a silver reward.
+
 `tools/qa.js` plays the game in headless Chrome from the command line. It has two modes:
 
 - **run**: run a scenario and print its result as JSON.

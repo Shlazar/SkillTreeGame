@@ -3,7 +3,8 @@
 // gap limit how often a sound can play, tone and nz make one synth note or one noise burst.
 // SFX holds every game sound; drone() is the helicopter's rotor under everything.
 
-const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null, roar: null };
+const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null, roar: null,
+  cues: {}, scheduledSources: 0 };
 // Audio voice/gap limits use wall time. Their random draws must never advance combat's RNG.
 const audioRandom = mulberry(0xa0d10);
 const audioRnd = (a, b) => b === undefined ? audioRandom() * a : a + audioRandom() * (b - a);
@@ -13,6 +14,25 @@ const PLANE_READY_SFX = { gap: 90, life: 0.22, volume: 0.065, from: 500, to: 230
 // Flyover roar: simultaneous voices, seconds, volumes and falling filter/note frequencies (proposal)
 const PLANE_ROAR_SFX = { voices: 2, life: 1.2, volume: 0.12, from: 2200, to: 160,
   q: 0.8, note: 180, noteEnd: 50, noteVolume: 0.03 };
+// New cue gates (ms), voice counts, seconds, gains and Hz; lighter MG, rewards and heavy blasts. (proposal)
+const NEW_SFXC = {
+  mgCar: { gap: 70, voices: 3, life: 0.075, volume: 0.045, from: 2200, to: 650,
+    note: 220, noteLife: 0.045, noteVolume: 0.014, noteEnd: 85 },
+  silver: { gap: 90, voices: 2, life: 0.22, note: 1760, noteEnd: 2640, volume: 0.022 },
+  f4Ignite: { gap: 160, voices: 2, life: 0.38, volume: 0.055, from: 1700, to: 250,
+    note: 180, noteLife: 0.25, noteVolume: 0.018, noteEnd: 65 },
+  b2Boom: { gap: 300, voices: 1, life: 1.8, volume: 0.32, from: 700, to: 35,
+    note: 38, noteLife: 1.4, noteVolume: 0.22, noteEnd: 20 },
+  ramShock: { gap: 200, voices: 2, life: 0.42, volume: 0.1, from: 1200, to: 100,
+    note: 96, noteLife: 0.32, noteVolume: 0.07, noteEnd: 35 }
+};
+// Repeated pickups, chimes and steam share bounded copies rather than building a noisy crowd. (proposal)
+const SFX_LIMITS = {
+  hiss: { gap: 100, voices: 2, life: 1.6 }, gold: { gap: 100, voices: 2, life: 0.32 },
+  lootUp: { gap: 60, voices: 3, life: 0.22 }, crate: { gap: 90, voices: 2, life: 0.3 },
+  golden: { gap: 150, voices: 2, life: 0.65 }, winch: { gap: 200, voices: 2, life: 0.5 },
+  saved: { gap: 120, voices: 2, life: 0.22 }
+};
 
 function audioInit() {
   if (Au.ctx) {
@@ -54,8 +74,9 @@ function audioInit() {
 }
 
 // voice: at most max copies of sound id at once (each copy lasts dur seconds).
-const VO = {};
+const VO = {}, VO_MAX = {};
 function voice(id, max, dur) {
+  VO_MAX[id] = max;
   const t = Au.ctx ? Au.ctx.currentTime : 0, a = (VO[id] || []).filter((x) => x > t);
   VO[id] = a;
   if (a.length >= max) return false;
@@ -68,6 +89,18 @@ function gap(id, ms) {
   if (Au.last[id] && t - Au.last[id] < ms) return false;
   Au.last[id] = t;
   return true;
+}
+function soundLimit(id, c = SFX_LIMITS[id]) {
+  return !!Au.ctx && !Au.muted && gap(id, c.gap) && voice(id, c.voices, c.life);
+}
+// Diagnostics count scheduled sources, not claimed audible output; mute and rejected cues play zero.
+function audioState() {
+  const t = Au.ctx ? Au.ctx.currentTime : 0;
+  return { initialized: !!Au.ctx, muted: Au.muted, contextState: Au.ctx?.state || 'uninitialized',
+    scheduledSources: Au.scheduledSources,
+    cues: Object.fromEntries(Object.entries(Au.cues).map(([id, c]) => [id, { ...c }])),
+    activeVoices: Object.fromEntries(Object.entries(VO_MAX).map(([id, max]) =>
+      [id, { active: (VO[id] || []).filter((end) => end > t).length, max }])) };
 }
 
 // One synth note: frequency f, duration d (s), wave type, volume v, optional slide to f2, delay (s).
@@ -85,6 +118,7 @@ function tone(f, d, type, v, f2, delay) {
   o.connect(g);
   g.connect(Au.master);
   o.start(t);
+  Au.scheduledSources++;
   o.stop(t + d + 0.03);
 }
 // One noise burst: duration d, volume v, filter type ft at frequency f with Q q, optional filter
@@ -108,6 +142,7 @@ function nz(d, v, ft, f, q, f2, delay) {
   fl.connect(g);
   g.connect(Au.master);
   s.start(t, audioRandom() * 0.4, d + 0.05);
+  Au.scheduledSources++;
 }
 
 // The helicopter: rotor noise through a low-pass filter, chopped by the blades (an LFO on its
@@ -159,6 +194,38 @@ function drone(v, k) {
 
 // Every game sound, built from tone() and nz().
 const SFX = {
+  mgCar() {
+    const c = NEW_SFXC.mgCar;
+    if (!soundLimit('mgCar', c)) return;
+    nz(c.life, c.volume, 'bandpass', c.from, 1.1, c.to);
+    tone(c.note, c.noteLife, 'square', c.noteVolume, c.noteEnd);
+  },
+  silver() {
+    const c = NEW_SFXC.silver;
+    if (!soundLimit('silver', c)) return;
+    tone(c.note, c.life * 0.45, 'sine', c.volume);
+    tone(c.noteEnd, c.life * 0.65, 'triangle', c.volume * 0.7, null, c.life * 0.25);
+  },
+  f4Ignite() {
+    const c = NEW_SFXC.f4Ignite;
+    if (!soundLimit('f4Ignite', c)) return;
+    nz(c.life, c.volume, 'bandpass', c.from, 0.65, c.to);
+    tone(c.note, c.noteLife, 'sawtooth', c.noteVolume, c.noteEnd);
+  },
+  b2Boom() {
+    const c = NEW_SFXC.b2Boom;
+    if (!soundLimit('b2Boom', c)) return;
+    const p = audioRnd(0.93, 1.07);
+    nz(c.life, c.volume, 'lowpass', c.from * p, 0.7, c.to);
+    tone(c.note * p, c.noteLife, 'sine', c.noteVolume, c.noteEnd);
+    nz(c.life * 0.25, c.volume * 0.2, 'highpass', 2400, 0.7, 650);
+  },
+  ramShock() {
+    const c = NEW_SFXC.ramShock;
+    if (!soundLimit('ramShock', c)) return;
+    nz(c.life, c.volume, 'lowpass', c.from, 0.8, c.to);
+    tone(c.note, c.noteLife, 'triangle', c.noteVolume, c.noteEnd);
+  },
   mg() {
     // the 25mm: a hard, punchy thump with a crack on top
     if (!gap('mg', 55)) return;
@@ -277,6 +344,7 @@ const SFX = {
       o.frequency.linearRampToValueAtTime(fr * k, t + 0.12);
       o.connect(f);
       o.start(t);
+      Au.scheduledSources++;
       o.stop(t + len + 0.05);
     }
     f.connect(g);
@@ -316,6 +384,7 @@ const SFX = {
       o.frequency.exponentialRampToValueAtTime(fr * 1.2, t + d);
       o.connect(f);
       o.start(t);
+      Au.scheduledSources++;
       o.stop(t + d + 0.05);
       os.push(o);
     }
@@ -346,6 +415,7 @@ const SFX = {
   },
   hiss() {
     // a long hiss of steam
+    if (!soundLimit('hiss')) return;
     nz(1.6, 0.075, 'highpass', 4200, 0.7, 1800);
     nz(1.3, 0.04, 'bandpass', 2600, 0.6, 1400, 0.05);
   },
@@ -393,6 +463,7 @@ const SFX = {
   },
   saved() {
     // a survivor made it aboard: a bright double chime
+    if (!soundLimit('saved')) return;
     tone(988, 0.08, 'triangle', 0.035);
     tone(1319, 0.14, 'triangle', 0.035, null, 0.07);
   },
@@ -431,5 +502,51 @@ const SFX = {
     // that can't be done yet: a short low buzz
     if (!gap('deny', 150)) return;
     tone(150, 0.12, 'square', 0.025, 110);
+  },
+  clang() {
+    // The retained plow's steel knock.
+    if (!gap('clang', 40)) return;
+    tone(audioRnd(700, 820), 0.08, 'square', 0.012, 380);
+    nz(0.04, 0.03, 'bandpass', 1800, 2);
+  },
+  gold() {
+    if (!soundLimit('gold')) return;
+    tone(1320, 0.08, 'triangle', 0.035);
+    tone(1760, 0.08, 'triangle', 0.035, null, 0.07);
+    tone(2640, 0.18, 'triangle', 0.03, null, 0.14);
+  },
+  lootUp() {
+    if (!soundLimit('lootUp')) return;
+    tone(420, 0.22, 'sine', 0.03, 1250);
+    nz(0.2, 0.02, 'bandpass', 900, 1.2, 3000);
+  },
+  crate() {
+    if (!soundLimit('crate')) return;
+    nz(0.12, 0.07, 'lowpass', 500, 0.8, 120);
+    tone(784, 0.12, 'triangle', 0.035);
+    tone(1175, 0.22, 'triangle', 0.035, null, 0.08);
+  },
+  golden() {
+    if (!soundLimit('golden')) return;
+    [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.22, 'triangle', 0.04, null, i * 0.07));
+    nz(0.5, 0.02, 'highpass', 6000, 0.7, null, 0.1);
+  },
+  winch() {
+    if (!soundLimit('winch')) return;
+    tone(160, 0.5, 'sawtooth', 0.018, 320);
+    nz(0.5, 0.025, 'bandpass', 700, 2, 1400);
+  },
+  flare() {
+    if (!gap('flare', 500)) return;
+    tone(300, 0.06, 'square', 0.02, 90);
+    nz(0.7, 0.02, 'highpass', 3500, 0.7, 1800);
   }
+};
+// A bounded catalog of counters follows real source scheduling, including delayed notes.
+for (const [id, fn] of Object.entries(SFX)) SFX[id] = function (...args) {
+  const c = Au.cues[id] || (Au.cues[id] = { requests: 0, played: 0 }), before = Au.scheduledSources;
+  c.requests++;
+  const result = fn.apply(this, args);
+  if (Au.scheduledSources > before) c.played++;
+  return result;
 };

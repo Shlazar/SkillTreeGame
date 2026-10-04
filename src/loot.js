@@ -458,37 +458,6 @@ function drawLootUI() {
   }
 }
 
-// ---------- sounds
-Object.assign(SFX, {
-  lootUp() {
-    // a find whooshes up to the heli
-    tone(420, 0.22, 'sine', 0.03, 1250);
-    nz(0.2, 0.02, 'bandpass', 900, 1.2, 3000);
-  },
-  crate() {
-    // a supply crate: a wooden thump and two bright notes
-    nz(0.12, 0.07, 'lowpass', 500, 0.8, 120);
-    tone(784, 0.12, 'triangle', 0.035);
-    tone(1175, 0.22, 'triangle', 0.035, null, 0.08);
-  },
-  golden() {
-    // the golden crate: a rising run of chimes
-    [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.22, 'triangle', 0.04, null, i * 0.07));
-    nz(0.5, 0.02, 'highpass', 6000, 0.7, null, 0.1);
-  },
-  winch() {
-    // the winch motor whirs as the rope drops
-    tone(160, 0.5, 'sawtooth', 0.018, 320);
-    nz(0.5, 0.025, 'bandpass', 700, 2, 1400);
-  },
-  flare() {
-    // a flare goes up: a pop and a hiss
-    if (!gap('flare', 500)) return;
-    tone(300, 0.06, 'square', 0.02, 90);
-    nz(0.7, 0.02, 'highpass', 3500, 0.7, 1800);
-  }
-});
-
 // ---------- test calls
 Object.assign(window.__sr, {
   // loot(): this run's finds. lootGo(i): put the heli's ground point over find i (the radio range

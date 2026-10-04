@@ -919,7 +919,10 @@ function silverKill(z, sc) {
     part({ x: z.x, y: z.y, z: 5, vx: Math.cos(a) * s, vy: Math.sin(a) * s * FORE, vz: rnd(20, 60), g: 180, life: rnd(0.3, 0.6), max: 0.6,
       s: 1, c: pick(['#ffffff', '#dfe8ff', '#a8b8d0']), add: true, drag: 1.5 });
   }
-  if (sc) for (let k = 0; k < 3 && coins.length < 60; k++) coins.push({ x0: z.x - G.camX + rnd(-4, 4), y0: z.y - G.camY - 8, t: -k * 0.05, T: rnd(0.55, 0.8) });
+  if (sc) {
+    for (let k = 0; k < 3 && coins.length < 60; k++) coins.push({ x0: z.x - G.camX + rnd(-4, 4), y0: z.y - G.camY - 8, t: -k * 0.05, T: rnd(0.55, 0.8) });
+    SFX.silver();
+  }
 }
 // The shine of the silver ones in view: a soft glow and a glint now and then.
 function silverShine() {
