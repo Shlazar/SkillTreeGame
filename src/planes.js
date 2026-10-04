@@ -128,9 +128,10 @@ function strafeDir(ax, ay, bx, by) {
 }
 // AIR validates ownership and charges before asking a supported payload to launch.
 function launchPlane(id, worldX, worldY, ux, uy) {
-  if (id !== 'a10') return false;
-  return callStrafe(worldX, worldY, ux, uy);
+  if (id !== 'a10' && id !== 'f4') return false;
+  return callPlane(id, worldX, worldY, ux, uy);
 }
+function planeArt(j) { return j.id === 'f4' ? F4 : JET; }
 // The aiming preview and the actual payload share centred offsets for one to four bands.
 function a10Offsets(count = 1) {
   const n = clamp(Math.floor(count) || 1, 1, 4);
@@ -138,23 +139,29 @@ function a10Offsets(count = 1) {
 }
 // Send a flight through a world point. This transport does not spend any framework resources.
 function callStrafe(px, py, ux, uy) {
+  return callPlane('a10', px, py, ux, uy);
+}
+function callPlane(id, px, py, ux, uy) {
   if (!G || G.result || !Number.isFinite(px) || !Number.isFinite(py)) return false;
   const length = Math.hypot(ux, uy);
   if (!Number.isFinite(length) || length <= 0) [ux, uy] = [G.tr.cars[0].dx, G.tr.cars[0].dy];
   else { ux /= length; uy /= length; }
   srSync();
   // it comes in from just off the screen, and flies on until it is off the other side
-  const half = JETC.half, offsets = a10Offsets(G.up.a10Lines);
-  const back = Math.max(jetEdge(px, py, -ux, -uy) + 40, JETC.len / 2 + JETC.lead + 20), on = jetEdge(px, py, ux, uy) + 60;
-  const j = { px, py, ux, uy, o: 0, s: -back, end: Math.max(on, JETC.len / 2 + 40),
-    front: -Infinity, half, dmg: JETC.dmg * (G.up.a10Damage ?? 1), lines: offsets.length, offsets,
-    bombCount: G.up.bombRun ? 4 : 0, dropped: false, fired: false, lineHits: offsets.map(() => null),
+  const fire = id === 'f4', payload = fire ? f4Payload(G.up) : null;
+  const len = fire ? payload.len : JETC.len, lead = fire ? 0 : JETC.lead;
+  const half = fire ? payload.patchRadius : JETC.half, offsets = fire ? [0] : a10Offsets(G.up.a10Lines);
+  const back = Math.max(jetEdge(px, py, -ux, -uy) + 40, len / 2 + lead + 20), on = jetEdge(px, py, ux, uy) + 60;
+  const j = { id, len, lead, px, py, ux, uy, o: 0, s: -back, end: Math.max(on, len / 2 + 40),
+    front: -Infinity, half, dmg: fire ? 0 : JETC.dmg * (G.up.a10Damage ?? 1), lines: fire ? 0 : offsets.length, offsets,
+    bombCount: !fire && G.up.bombRun ? 4 : 0, dropped: false, fired: false, lineHits: fire ? [] : offsets.map(() => null),
     smoke: 0, alt: JETC.alt, delay: JETC.showDelay, age: 0, roared: false,
     shadowSeen: false, shadowAge: 0, bodyReady: false };
+  if (fire) Object.assign(j, payload);
   STRAF.jets.push(j);
   for (const o of offsets) {
     STRAF.marks.push({ x: px - uy * o, y: py + ux * o, age: 0,
-      T: JETC.showDelay + Math.max(0, (back - JETC.lead - JETC.len / 2) / JETC.speed), radius: half, jet: j });
+      T: JETC.showDelay + Math.max(0, (back - lead - len / 2) / JETC.speed), radius: half, jet: j });
   }
   return true;
 }
@@ -203,7 +210,7 @@ function updatePlanes(dt) {
     }
     j.s += JETC.speed * flightDt;
     // lower while it fires
-    const mid = Math.abs(j.s + JETC.lead - 0) / (JETC.len * 0.75);
+    const mid = Math.abs(j.s + j.lead) / (j.len * 0.75);
     j.alt = JETC.alt - JETC.dive * Math.max(0, 1 - mid * mid);
     if (!j.shadowSeen && jetShadowInView(j)) j.shadowSeen = true;
     else if (j.shadowSeen) j.shadowAge += flightDt;
@@ -213,8 +220,9 @@ function updatePlanes(dt) {
       // Count actual player-flight requests; the audio helper caps overlapping voices.
       if (!G.demo) { STRAF.roars++; SFX.planeRoar(); }
     }
-    strafeFire(j);
-    if (j.bombCount && !j.dropped && j.s + JETC.lead >= JETC.len / 2) dropBombs(j);
+    if (j.id === 'f4') f4Fire(j);
+    else strafeFire(j);
+    if (j.bombCount && !j.dropped && j.s + j.lead >= j.len / 2) dropBombs(j);
     // a thin trail from the engines
     if (j.bodyReady) j.smoke -= flightDt;
     if (j.bodyReady && j.smoke <= 0) {
@@ -257,17 +265,17 @@ function jetSpriteInView(c, x, y) {
 }
 function jetShadowInView(j) {
   const [x, y] = jetGround(j);
-  return j.delay <= 0 && jetSpriteInView(JET.sh[jetIdx(j)], x + j.alt * SUNX, y + j.alt * SUNY);
+  return j.delay <= 0 && jetSpriteInView(planeArt(j).sh[jetIdx(j)], x + j.alt * SUNX, y + j.alt * SUNY);
 }
 function jetBodyInView(j) {
   const [x, y] = jetGround(j);
-  return j.delay <= 0 && jetSpriteInView(JET.n[jetIdx(j)], x, y - j.alt);
+  return j.delay <= 0 && jetSpriteInView(planeArt(j).n[jetIdx(j)], x, y - j.alt);
 }
 // The gun: its rounds land JETC.lead px ahead of the jet. Every zombie in the band the hits swept over
 // since the last step takes the hit; a hit flashes every JETC.step px, a blast every JETC.blast px.
 function strafeFire(j) {
-  const L = JETC.len / 2, a = Math.min(j.s + JETC.lead, L), a0 = Math.max(j.front, -L);
-  j.front = Math.max(j.front, j.s + JETC.lead);
+  const L = j.len / 2, a = Math.min(j.s + j.lead, L), a0 = Math.max(j.front, -L);
+  j.front = Math.max(j.front, j.s + j.lead);
   if (a <= a0 || a < -L) return;
   if (!j.fired) {
     j.fired = true;
@@ -390,7 +398,7 @@ function drawPlaneShadows() {
   ctx.globalAlpha = thermal ? 0.2 : 0.3;
   for (const j of STRAF.jets) {
     if (j.delay > 0) continue;
-    const [gx, gy] = jetGround(j), i = jetIdx(j), sh = JET.sh[i];
+    const [gx, gy] = jetGround(j), i = jetIdx(j), sh = planeArt(j).sh[i];
     blit(sh, Math.round(gx + j.alt * SUNX - sh.width / 2), Math.round(gy + j.alt * SUNY - sh.height / 2));
   }
   for (const b of STRAF.bombs) {
@@ -427,14 +435,14 @@ function drawPlanes() {
   }
   for (const j of STRAF.jets) {
     if (!j.bodyReady) continue;
-    const [gx, gy] = jetGround(j), spr = JET.n[jetIdx(j)];
+    const [gx, gy] = jetGround(j), spr = planeArt(j).n[jetIdx(j)];
     blit(spr, Math.round(gx - spr.width / 2), Math.round(gy - j.alt - spr.height / 2));
   }
   // the gun: a big flickering flash at the nose, tracers down to where the rounds land
   ctx.globalCompositeOperation = 'lighter';
   for (const j of STRAF.jets) {
-    if (!j.bodyReady) continue;
-    const firing = j.s + JETC.lead > -JETC.len / 2 && j.s + JETC.lead < JETC.len / 2;
+    if (!j.bodyReady || j.id === 'f4') continue;
+    const firing = j.s + j.lead > -j.len / 2 && j.s + j.lead < j.len / 2;
     if (!firing) continue;
     const [gx, gy] = jetGround(j), nx = gx + j.ux * 28, ny = gy + j.uy * 28 - j.alt;
     const f = 0.7 + 0.3 * Math.random();

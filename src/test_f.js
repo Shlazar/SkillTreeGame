@@ -1,5 +1,7 @@
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
+  // Read the world-space railway centre for controlled moving-stream scenarios.
+  railX: (worldY) => Number.isFinite(worldY) ? railX(worldY) : null,
   // The band's rectangle is in game px, including its full canvas and world heights.
   planeBand: () => ({ visible: planeBandVisible(), x: 0, y: VH, w: W, h: H - VH, worldHeight: VH, fullHeight: H, slots: airBandSlots() }),
   // Copy plane resources and aiming state; strikes use the same path as input.
@@ -14,18 +16,22 @@ Object.assign(window.__sr, {
     return {
       marks: STRAF.marks.map((m) => ({ x: m.x, y: m.y, age: m.age, T: m.T, radius: m.radius })),
       jets: STRAF.jets.map((j) => {
-        const [x, y] = jetGround(j), sprite = JET.n[jetIdx(j)];
+        const [x, y] = jetGround(j), sprite = planeArt(j).n[jetIdx(j)];
         const shadowX = x + j.alt * SUNX, shadowY = y + j.alt * SUNY;
-        return { x, y, screenX: x - G.camX, screenY: y - j.alt - G.camY,
+        return { id: j.id, len: j.len, x, y, screenX: x - G.camX, screenY: y - j.alt - G.camY,
           shadowX, shadowY, shadowScreenX: shadowX - G.camX, shadowScreenY: shadowY - G.camY,
           spriteW: sprite.width, spriteH: sprite.height, alt: j.alt, delay: j.delay, age: j.age,
           shadowSeen: j.shadowSeen, shadowAge: j.shadowAge, bodyReady: j.bodyReady,
           bodyVisible: j.bodyReady && jetBodyInView(j), shadowVisible: j.delay <= 0 && jetShadowInView(j),
           roared: j.roared, fired: j.fired, s: j.s, end: j.end, ux: j.ux, uy: j.uy, dmg: j.dmg, half: j.half,
-          lines: j.lines, offsets: j.offsets.slice(), bombCount: j.bombCount, dropped: j.dropped };
+          lines: j.lines, offsets: j.offsets ? j.offsets.slice() : [], bombCount: j.bombCount, dropped: j.dropped,
+          fireDamage: j.fireDamage, fireDuration: j.fireDuration, fireWall: j.fireWall,
+          patchRadius: j.patchRadius, patchStep: j.patchStep, patchCount: j.patchCount,
+          patches: j.patches, patchNext: j.patchNext };
       }),
       bombs: STRAF.bombs.length, embers: STRAF.embers.length, roars: STRAF.roars,
-      art: { jet: { w: JET.n[0].width, h: JET.n[0].height }, heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
+      art: { jet: { w: JET.n[0].width, h: JET.n[0].height }, f4: { w: F4.n[0].width, h: F4.n[0].height },
+        heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
     };
   },
   // Report only implemented unit systems; later weapons stay neutral until their own tasks.
@@ -64,7 +70,7 @@ Object.assign(window.__sr, {
     if (!G) return [];
     burnState();
     return BURN.map((f) => ({ x: f.x, y: f.y, R: f.R, time: f.time, age: f.age,
-      duration: f.duration, dps: f.dps, tick: f.tick, source: f.source }));
+      duration: f.duration, dps: f.dps, tick: f.tick, source: f.source, wall: !!f.wall }));
   },
   fireStats: () => {
     if (!G) return null;

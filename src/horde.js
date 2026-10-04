@@ -412,6 +412,7 @@ function updateZombies(dt) {
   for (let i = 0; i < zs.length; i++) {
     const z = zs[i];
     if (z.dead) continue;
+    if (BURNWALL.length) { z.fireX = z.x; z.fireY = z.y; }
     if (z.flash > 0) z.flash -= dt;
     if (z.st === 2) {
       // holding on: it rides along and claws at the car
@@ -467,16 +468,17 @@ function updateZombies(dt) {
     z.vy = uy * sp * FORE + z.kby;
     z.x += z.vx * dt;
     z.y += z.vy * dt;
+    const fireBlocked = BURNWALL.length && blockBurnWall(z, z.fireX, z.fireY);
     z.kbx *= kb;
     z.kby *= kb;
     z.k = z.y;
     if (ux > 0.3) z.left = false;
     else if (ux < -0.3) z.left = true;
     z.anim += dt * (z.still ? 0.3 : 0.6 + sp / 3.2);
-    if (z.st === 0 && !z.gold && ds < -6 && Math.abs(L.u - z.rx) < 2.5) z.st = 1;
+    if (!fireBlocked && z.st === 0 && !z.gold && ds < -6 && Math.abs(L.u - z.rx) < 2.5) z.st = 1;
     // the engine runs it down, or (too slow to crush it) it climbs onto the nose; beside the train
     // it climbs on. Not once the train is safe.
-    if (!safe) {
+    if (!safe && !fireBlocked) {
       const au = L.u < 0 ? -L.u : L.u;
       if (ram && au < R.band && ds > -R.front && ds < R.back) {
         ramKill(z);
@@ -510,6 +512,12 @@ function updateZombies(dt) {
   }
   gridBuild();
   spread(dt);
+  // Neighbours can push after walking, so enforce the wall once more before weapons query the grid.
+  if (BURNWALL.length) {
+    let moved = false;
+    for (const z of zs) if (!z.dead && z.st !== 2) moved = blockBurnWall(z, z.fireX, z.fireY) || moved;
+    if (moved) gridBuild();
+  }
   // drop the dead and the lost
   let j = 0;
   for (let i = 0; i < zs.length; i++) if (!zs[i].dead && !zs[i].gone) zs[j++] = zs[i];
