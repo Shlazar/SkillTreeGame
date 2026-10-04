@@ -221,7 +221,7 @@ function drawAirAim() {
   ctx.beginPath();
   ctx.rect(0, 19, W, VH - 19);
   ctx.clip();
-  drawStrafeLine(a.x, a.y, ux, uy);
+  drawStrafeLine(a.x, a.y, ux, uy, G.up.a10Lines);
   const hint = AIR.aim ? 'LET GO: STRIKE' : 'CLICK: STRIKE. DRAG: AIM. RIGHT CLICK: CANCEL.', w = tw(hint);
   text(hint, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, VH - 44)), U.gold, { align: 'center' });
   ctx.restore();

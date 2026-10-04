@@ -65,7 +65,11 @@ function part(o) {
 // delay = seconds before it starts.
 function addBoom(x, y, R, n, T, cap, delay) {
   const pf = [];
-  for (let i = 0; i < n; i++) pf.push({ a: i * TAU / n + rnd(-0.5, 0.5), d: rnd(0.2, 0.45), s: rnd(0.42, 0.6), up: rnd(0.3, 0.6) });
+  for (let i = 0; i < n; i++) {
+    const a = i * TAU / n + rnd(-0.5, 0.5);
+    pf.push({ a, ca: Math.cos(a), sa: Math.sin(a), d: rnd(0.2, 0.45), s: rnd(0.42, 0.6), up: rnd(0.3, 0.6),
+      px: 0, py: 0, pr: 0, ci: 0 });
+  }
   booms.push({ x, y, r: R, t: -(delay || 0), T, cap: cap || 7, pf });
 }
 
@@ -238,6 +242,8 @@ function drawParts(add) {
   let la = -1, lc = '';
   for (const p of parts) {
     if (!!p.add !== add) continue;
+    // Strikes throw effects beyond the field. Keep a margin for smoke growth and camera shake.
+    if (offView(p.x, p.y - p.z, p.s + 12)) continue;
     const a = add || p.smoke ? clamp(Math.ceil((p.smoke ? Math.min(1, p.life / p.max * 1.5) : p.life / p.max) * 8) / 8, 0, 1) : 1;
     if (a !== la) { ctx.globalAlpha = la = a; }
     if (p.c !== lc) { ctx.fillStyle = lc = p.c; }
@@ -254,6 +260,7 @@ function drawBooms() {
   const many = booms.length > 10;
   for (const b of booms) {
     if (b.t < 0) continue;
+    if (offView(b.x, b.y - b.r / 2, b.r * 1.5 + 12)) continue;
     const u = b.t / b.T, e = 1 - Math.pow(1 - u, 3);
     if (u < 0.06) {
       const r = Math.min(b.cap, b.r * 0.45);
@@ -263,14 +270,20 @@ function drawBooms() {
     }
     const fade = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
     const n = many ? Math.min(3, b.pf.length) : b.pf.length;
+    // Calculate this frame's geometry once on each existing puff, then reuse it in draw order.
+    const k = 0.55 + 0.7 * e, sizeK = 0.55 + 0.35 * e, fadeK = 0.6 + 0.4 * fade;
+    for (let i = 0; i < n; i++) {
+      const p = b.pf[i];
+      p.ci = clamp((u * 10 + (p.d - 0.32) * 5) | 0, 0, 7);
+      p.px = b.x + p.ca * b.r * p.d * k;
+      p.py = b.y - 3 + p.sa * b.r * p.d * k * FORE - b.r * p.up * e;
+      p.pr = Math.min(b.cap, b.r * p.s * sizeK) * fadeK;
+    }
     // three passes, so the puffs read as one ball: a deep orange rim under the fire (a soft grey
     // one under the smoke), the puffs (the outer ones cool first), then their lit tops with a
     // white-hot heart while it is young
     for (let pass = 0; pass < 3; pass++) for (let i = 0; i < n; i++) {
-      const p = b.pf[i], k = 0.55 + 0.7 * e, ci = clamp((u * 10 + (p.d - 0.32) * 5) | 0, 0, 7);
-      const px = b.x + Math.cos(p.a) * b.r * p.d * k,
-        py = b.y - 3 + Math.sin(p.a) * b.r * p.d * k * FORE - b.r * p.up * e,
-        pr = Math.min(b.cap, b.r * p.s * (0.55 + 0.35 * e)) * (0.6 + 0.4 * fade);
+      const p = b.pf[i], px = p.px, py = p.py, pr = p.pr, ci = p.ci;
       if (pr < 1) continue;
       const fire = ci < 5;
       if (pass === 0) {
@@ -294,6 +307,7 @@ function drawBooms() {
 // Rings that grow on the ground and fade (draw with 'lighter').
 function drawRings() {
   for (const r of rings) {
+    if (offView(r.x, r.y, r.r1 + 12)) continue;
     const u = r.t / r.T, rr = lerp(r.r0, r.r1, 1 - Math.pow(1 - u, 2));
     ctx.globalAlpha = 1 - u;
     pell(r.x, r.y, rr, rr * FORE, r.c);
@@ -303,7 +317,10 @@ function drawRings() {
 }
 // Effect glows (draw with 'lighter').
 function drawLights() {
-  for (const l of lights) light(l.x, l.y - l.z, l.r, l.c, l.a * (l.life / l.max));
+  for (const l of lights) {
+    if (offView(l.x, l.y - l.z, l.r + 12)) continue;
+    light(l.x, l.y - l.z, l.r, l.c, l.a * (l.life / l.max));
+  }
   ctx.globalAlpha = 1;
 }
 // Floating numbers and words.

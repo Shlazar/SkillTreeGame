@@ -224,11 +224,11 @@ function treeUp(L, up) {
     planeOwned: ['a10', 'f4', 'b52'].filter((id) => L(id) > 0),
     planeCooldown: { a10: UP.a10Cooldown(L('a10Cooldown')), f4: UP.f4Cooldown(L('f4Cooldown')), b52: UP.b52Cooldown(L('b52Cooldown')) },
     planeCharges: { a10: UP.a10Charge(L('a10Charge')), f4: UP.f4Charge(L('f4Charge')), b52: UP.b52Charge(L('b52Charge')) },
+    a10Damage: UP.a10Damage(L('a10Damage')), a10Lines: UP.a10Lines(L('a10Lines')), bombRun: UP.bombRun(L('bombRun')),
     hellfireCount: UP.doubleHellfire(L('doubleHellfire')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
-    ramTime: 0, ramCharge: 0, power: false,
-    strafe: 0, strafeW: JETC.half, strafeD: JETC.dmg, strafeBomb: false, twin: false
+    ramTime: 0, ramCharge: 0, power: false
   });
 }
 

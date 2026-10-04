@@ -21,7 +21,8 @@ Object.assign(window.__sr, {
           spriteW: sprite.width, spriteH: sprite.height, alt: j.alt, delay: j.delay, age: j.age,
           shadowSeen: j.shadowSeen, shadowAge: j.shadowAge, bodyReady: j.bodyReady,
           bodyVisible: j.bodyReady && jetBodyInView(j), shadowVisible: j.delay <= 0 && jetShadowInView(j),
-          roared: j.roared, fired: j.fired, s: j.s, end: j.end, ux: j.ux, uy: j.uy, dmg: j.dmg, half: j.half };
+          roared: j.roared, fired: j.fired, s: j.s, end: j.end, ux: j.ux, uy: j.uy, dmg: j.dmg, half: j.half,
+          lines: j.lines, offsets: j.offsets.slice(), bombCount: j.bombCount, dropped: j.dropped };
       }),
       bombs: STRAF.bombs.length, embers: STRAF.embers.length, roars: STRAF.roars,
       art: { jet: { w: JET.n[0].width, h: JET.n[0].height }, heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
