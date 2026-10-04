@@ -9815,7 +9815,8 @@ bakeJet();
 // ---------- this run's flights
 // STRAF holds transport effects only. Charges and input belong to AIR.
 const STRAF = { g: null, jets: [], bombs: [], embers: [], marks: [], roars: 0, demoT: 6,
-  stats: { b52: { launched: 0, dropped: 0, impacts: 0, lastDrop: null, lastImpact: null } } };
+  stats: { b52: { launched: 0, dropped: 0, impacts: 0, lastDrop: null, lastImpact: null },
+    b2: { launched: 0, dropped: 0, impacts: 0, kills: 0, lastDrop: null, lastImpact: null } } };
 function srSync() {
   if (STRAF.g === G) return;
   STRAF.g = G;
@@ -9823,6 +9824,7 @@ function srSync() {
   STRAF.roars = 0;
   STRAF.demoT = 6;
   Object.assign(STRAF.stats.b52, { launched: 0, dropped: 0, impacts: 0, lastDrop: null, lastImpact: null });
+  Object.assign(STRAF.stats.b2, { launched: 0, dropped: 0, impacts: 0, kills: 0, lastDrop: null, lastImpact: null });
 }
 // The way the jet flies for a press at (ax, ay) let go at (bx, by): the drag, or the train's way.
 function strafeDir(ax, ay, bx, by) {
@@ -9833,10 +9835,10 @@ function strafeDir(ax, ay, bx, by) {
 }
 // AIR validates ownership and charges before asking a supported payload to launch.
 function launchPlane(id, worldX, worldY, ux, uy) {
-  if (id !== 'a10' && id !== 'f4' && id !== 'b52') return false;
+  if (id !== 'a10' && id !== 'f4' && id !== 'b52' && id !== 'b2') return false;
   return callPlane(id, worldX, worldY, ux, uy);
 }
-function planeArt(j) { return j.id === 'f4' ? F4 : j.id === 'b52' ? B52 : JET; }
+function planeArt(j) { return j.id === 'f4' ? F4 : j.id === 'b52' ? B52 : j.id === 'b2' ? B2 : JET; }
 // The aiming preview and the actual payload share centred offsets for one to four bands.
 function a10Offsets(count = 1) {
   const n = clamp(Math.floor(count) || 1, 1, 4);
@@ -9853,9 +9855,10 @@ function callPlane(id, px, py, ux, uy) {
   else { ux /= length; uy /= length; }
   srSync();
   // it comes in from just off the screen, and flies on until it is off the other side
-  const fire = id === 'f4', bomber = id === 'b52', payload = fire ? f4Payload(G.up) : bomber ? b52Payload(G.up) : null;
+  const fire = id === 'f4', bomber = id === 'b52', huge = id === 'b2';
+  const payload = fire ? f4Payload(G.up) : bomber ? b52Payload(G.up) : huge ? b2Payload() : null;
   const len = payload ? payload.len : JETC.len, lead = payload ? 0 : JETC.lead;
-  const half = fire ? payload.patchRadius : bomber ? payload.bombRadius : JETC.half, offsets = payload ? [0] : a10Offsets(G.up.a10Lines);
+  const half = fire ? payload.patchRadius : bomber || huge ? payload.bombRadius : JETC.half, offsets = payload ? [0] : a10Offsets(G.up.a10Lines);
   const back = Math.max(jetEdge(px, py, -ux, -uy) + 40, len / 2 + lead + 20), on = jetEdge(px, py, ux, uy) + 60;
   const j = { id, len, lead, px, py, ux, uy, o: 0, s: -back, end: Math.max(on, len / 2 + 40),
     front: -Infinity, half, dmg: payload ? 0 : JETC.dmg * (G.up.a10Damage ?? 1), lines: payload ? 0 : offsets.length, offsets,
@@ -9864,10 +9867,11 @@ function callPlane(id, px, py, ux, uy) {
     shadowSeen: false, shadowAge: 0, bodyReady: false };
   if (payload) Object.assign(j, payload);
   if (bomber) STRAF.stats.b52.launched++;
+  if (huge) STRAF.stats.b2.launched++;
   STRAF.jets.push(j);
   for (const o of offsets) {
     STRAF.marks.push({ x: px - uy * o, y: py + ux * o, age: 0,
-      T: JETC.showDelay + Math.max(0, (back - lead - len / 2) / JETC.speed), radius: half, jet: j });
+      T: JETC.showDelay + Math.max(0, (back - lead - (huge ? 0 : len / 2)) / JETC.speed), radius: half, jet: j });
   }
   return true;
 }
@@ -9928,6 +9932,7 @@ function updatePlanes(dt) {
     }
     if (j.id === 'f4') f4Fire(j);
     else if (j.id === 'b52') b52Drop(j);
+    else if (j.id === 'b2') b2Drop(j);
     else strafeFire(j);
     if (j.id === 'a10' && j.bombCount && !j.dropped && j.s + j.lead >= j.len / 2) dropBombs(j);
     // a thin trail from the engines
@@ -10073,6 +10078,7 @@ function dropBombs(j) {
 }
 // A-10 bombs retain their lethal blast; bomber payloads use their snapshotted radius and damage.
 function bombHit(x, y, payload) {
+  if (payload?.source === 'b2') { b2Impact(x, y, payload); return; }
   const radius = payload?.radius ?? JETC.bombR, damage = payload?.dmg;
   const scale = payload?.source === 'b52' ? radius / JETC.bombR : 1;
   juiceBoom(x, y, false, scale);
@@ -10158,7 +10164,7 @@ function drawPlanes() {
   }
   for (const j of STRAF.jets) {
     if (!j.bodyReady) continue;
-    const [gx, gy] = jetGround(j), spr = planeArt(j).n[jetIdx(j)];
+    const [gx, gy] = jetGround(j), art = planeArt(j), spr = (thermal && art.hot ? art.hot : art.n)[jetIdx(j)];
     blit(spr, Math.round(gx - spr.width / 2), Math.round(gy - j.alt - spr.height / 2));
   }
   // the gun: a big flickering flash at the nose, tracers down to where the rounds land
@@ -10420,6 +10426,107 @@ function drawBombLane(x, y, ux, uy, count = 8, blastMultiplier = 1) {
   ctx.globalAlpha = 1;
 }
 
+// b2.js - a flying wing and one huge, train-safe blast. The finale gift enables its slot later.
+// Hooks: b2Payload/b2Drop/b2Impact (planes), drawB2Circle (aim), planeArt (normal/shadow/thermal).
+const B2C = {
+  // Ground radius, fall seconds, largest core radius/cap/time, ring ratio/times, preview opacity (proposal)
+  radius: 65, fall: 0.7, coreRadius: 44, coreCap: 20, coreTime: 1.1,
+  outerRing: 1.5, ringTime: 0.35, dustTime: 0.7, previewAlpha: 0.1,
+  // Huge-blast shake, hit-stop seconds, and thermal body brightness (proposal)
+  shake: 0.9, stop: 0.08, heat: 150
+};
+const B2 = { n: [], sh: [], hot: [] };
+function b2Raw() {
+  return pix(110, 58, (r) => {
+    const edge = [[55, 0], [109, 39], [78, 52], [70, 44], [55, 55], [40, 44], [32, 52], [0, 39]];
+    // Scan whole-pixel rows of the flying wing; its angular rear edge has no tail or fins.
+    for (let y = 0; y <= 55; y++) {
+      const xs = [];
+      for (let i = 0; i < edge.length; i++) {
+        const [ax, ay] = edge[i], [bx, by] = edge[(i + 1) % edge.length];
+        if (y >= Math.min(ay, by) && y < Math.max(ay, by)) xs.push(ax + (y - ay) / (by - ay) * (bx - ax));
+      }
+      xs.sort((a, b) => a - b);
+      for (let i = 0; i < xs.length; i += 2) {
+        const l = Math.ceil(xs[i]), h = Math.floor(xs[i + 1]);
+        if (h < l) continue;
+        r(l, y, h - l + 1, 1, '#454b53');
+        if (l < 55) r(l, y, Math.min(h + 1, 55) - l, 1, '#636b74');
+        r(l, y, 1, 1, '#848d96'); r(h, y, 1, 1, '#18191c');
+      }
+    }
+    // Subtle panel seams and a small canopy keep the silhouette broad and uninterrupted.
+    for (let y = 18; y < 39; y++) {
+      const d = Math.floor((y - 12) * 1.1);
+      r(54 - d, y, 1, 1, '#454b53'); r(55 + d, y, 1, 1, '#2b2e35');
+    }
+    r(51, 11, 8, 4, '#22384a'); r(52, 11, 2, 1, '#c4ecf8');
+    r(52, 16, 6, 14, '#636b74'); r(54, 17, 1, 11, '#848d96');
+    for (const x of [36, 44, 62, 70]) {
+      r(x, 36, 4, 7, '#2b2e35'); r(x, 36, 4, 1, '#848d96');
+      r(x + 1, 42, 2, 1, '#c9772f');
+    }
+  });
+}
+// Every picture is made before warmAtlas. Thermal view uses its own baked bright body.
+function bakeB2() {
+  const raw = b2Raw();
+  for (let i = 0; i < JETC.N; i++) {
+    const r = rotA(raw, i / JETC.N * TAU);
+    B2.n.push(jetSpriteBounds(selOut(r)));
+    B2.sh.push(jetSpriteBounds(tint(r, '#000', 1, 'source-in')));
+    B2.hot.push(jetSpriteBounds(outline(hotSpr(r, B2C.heat), '#161616')));
+  }
+  for (const c of [...B2.n, ...B2.sh, ...B2.hot]) atl(c);
+}
+bakeB2();
+
+function b2Payload() {
+  return { len: JETC.len, bombCount: 1, bombsDropped: 0, bombRadius: B2C.radius, bombDamage: null };
+}
+function b2Drop(j) {
+  if (j.dropped || j.s < 0) return;
+  const [x0, y0] = jetGround(j);
+  STRAF.bombs.push({ source: 'b2', x0, y0, x1: j.px, y1: j.py, z0: j.alt, t: 0, T: B2C.fall,
+    a: Math.atan2(j.ux, -j.uy), radius: j.bombRadius, dmg: null, burnTime: 0, burnDamage: 0 });
+  j.dropped = j.fired = true; j.bombsDropped = 1;
+  const stats = STRAF.stats.b2;
+  stats.dropped++;
+  stats.lastDrop = { x: j.px, y: j.py, t: heliWeaponTime(), radius: j.bombRadius };
+}
+function b2Impact(x, y, payload) {
+  // boomFx supplies the huge-blast recipe without any of explode's train/survivor damage.
+  boomFx(x, y, true);
+  addBoom(x, y - 2, B2C.coreRadius, 8, B2C.coreTime, B2C.coreCap);
+  const core = booms[booms.length - 1];
+  core.source = 'b2';
+  rings.push({ source: 'b2', x, y, r0: 8, r1: payload.radius, t: 0, T: B2C.ringTime, c: '#fff1c2', w: 2 });
+  const outerRing = payload.radius * B2C.outerRing;
+  rings.push({ source: 'b2', x, y, r0: 20, r1: outerRing, t: 0, T: B2C.dustTime, c: '#a89878' });
+  let killed = 0;
+  queryEll(x, y, payload.radius, (z, d) => {
+    if (z.gone || z.gate && z.still) return;
+    killed++; kill(z, 'he', x, y, d);
+  });
+  const stats = STRAF.stats.b2;
+  stats.impacts++; stats.kills += killed;
+  stats.lastImpact = { x, y, t: heliWeaponTime(), radius: payload.radius, kills: killed, coreRadius: core.r, outerRing };
+  if (!G.demo) { addShake(B2C.shake); hitStop(B2C.stop, 0.25); SFX.boom(); }
+}
+// Circle means a ground ellipse in this view. Whole-pixel rows keep the preview sharp.
+function drawB2Circle(x, y, radius = B2C.radius) {
+  const R = Math.round(radius), RY = Math.round(radius * FORE), px = Math.round(x), py = Math.round(y);
+  ctx.globalAlpha = B2C.previewAlpha; ctx.fillStyle = '#e2552f';
+  for (let dy = -RY; dy <= RY; dy++) {
+    const w = Math.floor(R * Math.sqrt(Math.max(0, 1 - dy * dy / (RY * RY))));
+    ctx.fillRect(px - w, py + dy, w * 2 + 1, 1);
+  }
+  ctx.globalAlpha = Math.floor(realT * 6) % 2 ? 0.9 : 0.6;
+  pell(px, py, R, RY, '#ffb347');
+  ctx.fillStyle = '#fff1c2'; ctx.fillRect(px - 2, py, 5, 1); ctx.fillRect(px, py - 2, 1, 5);
+  ctx.globalAlpha = 1;
+}
+
 // air.js - plane slots, charges, aiming and the reserved band below the world.
 // Ownership and upgrades are fixed when a leg starts; flight and damage stay in planes.js.
 const AIRBAND = { height: 18 }; // Band height in game px.
@@ -10645,6 +10752,7 @@ function drawAirAim() {
   ctx.clip();
   if (a.id === 'f4') drawFireLine(a.x, a.y, ux, uy, G.up.fireLength, G.up.fireWall);
   else if (a.id === 'b52') drawBombLane(a.x, a.y, ux, uy, G.up.b52Bombs, G.up.b52Blast);
+  else if (a.id === 'b2') drawB2Circle(a.x, a.y);
   else drawStrafeLine(a.x, a.y, ux, uy, G.up.a10Lines);
   const hint = AIR.aim ? 'LET GO: STRIKE' : 'CLICK: STRIKE. DRAG: AIM. RIGHT CLICK: CANCEL.', w = tw(hint);
   text(hint, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, VH - 44)), U.gold, { align: 'center' });
@@ -12922,6 +13030,18 @@ Object.assign(window.__sr, {
   planeAim: () => airAimSnapshot(),
   strike: (key, sx, sy, ang) => airStrike(key, sx, sy, ang),
   smart: (key) => airSmart(key),
+  // Launch the real B-2 transport for strike checks; no ownership, slot or charge is changed.
+  b2Strike: (sx, sy, ang) => {
+    if (!G || G.demo || mode !== 'play' || G.result || ![sx, sy].every(Number.isFinite) || ang != null && !Number.isFinite(ang)) return false;
+    if (sx < 0 || sx >= W || sy < 19 || sy >= VH) return false;
+    const [ux, uy] = ang == null ? strafeDir(sx, sy, sx, sy) : [Math.cos(ang), Math.sin(ang)];
+    return launchPlane('b2', G.camX + sx, G.camY + sy, ux, uy);
+  },
+  // Copy the actual B-2 core and shockwave effects while they are alive.
+  b2Fx: () => ({
+    cores: booms.filter((b) => b.source === 'b2').map((b) => ({ x: b.x, y: b.y, r: b.r, cap: b.cap, t: b.t, T: b.T })),
+    rings: rings.filter((r) => r.source === 'b2').map((r) => ({ x: r.x, y: r.y, r0: r.r0, r1: r.r1, t: r.t, T: r.T }))
+  }),
   // Copied strike-show geometry keeps the flight, marker and shadow testable after each step.
   planeShow: () => {
     if (!G) return null;
@@ -12953,9 +13073,13 @@ Object.assign(window.__sr, {
       }),
       stats: { b52: { ...STRAF.stats.b52,
         lastDrop: STRAF.stats.b52.lastDrop ? { ...STRAF.stats.b52.lastDrop } : null,
-        lastImpact: STRAF.stats.b52.lastImpact ? { ...STRAF.stats.b52.lastImpact } : null } },
+        lastImpact: STRAF.stats.b52.lastImpact ? { ...STRAF.stats.b52.lastImpact } : null },
+      b2: { ...STRAF.stats.b2,
+        lastDrop: STRAF.stats.b2.lastDrop ? { ...STRAF.stats.b2.lastDrop } : null,
+        lastImpact: STRAF.stats.b2.lastImpact ? { ...STRAF.stats.b2.lastImpact } : null } },
       art: { jet: { w: JET.n[0].width, h: JET.n[0].height }, f4: { w: F4.n[0].width, h: F4.n[0].height },
         b52: { w: B52.n[0].width, h: B52.n[0].height, engines: B52.engines.map((e) => ({ x: e.x, y: e.y })) },
+        b2: { w: B2.n[0].width, h: B2.n[0].height, normal: B2.n.length, shadow: B2.sh.length, hot: B2.hot.length },
         heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
     };
   },

@@ -27,6 +27,18 @@ Object.assign(window.__sr, {
   planeAim: () => airAimSnapshot(),
   strike: (key, sx, sy, ang) => airStrike(key, sx, sy, ang),
   smart: (key) => airSmart(key),
+  // Launch the real B-2 transport for strike checks; no ownership, slot or charge is changed.
+  b2Strike: (sx, sy, ang) => {
+    if (!G || G.demo || mode !== 'play' || G.result || ![sx, sy].every(Number.isFinite) || ang != null && !Number.isFinite(ang)) return false;
+    if (sx < 0 || sx >= W || sy < 19 || sy >= VH) return false;
+    const [ux, uy] = ang == null ? strafeDir(sx, sy, sx, sy) : [Math.cos(ang), Math.sin(ang)];
+    return launchPlane('b2', G.camX + sx, G.camY + sy, ux, uy);
+  },
+  // Copy the actual B-2 core and shockwave effects while they are alive.
+  b2Fx: () => ({
+    cores: booms.filter((b) => b.source === 'b2').map((b) => ({ x: b.x, y: b.y, r: b.r, cap: b.cap, t: b.t, T: b.T })),
+    rings: rings.filter((r) => r.source === 'b2').map((r) => ({ x: r.x, y: r.y, r0: r.r0, r1: r.r1, t: r.t, T: r.T }))
+  }),
   // Copied strike-show geometry keeps the flight, marker and shadow testable after each step.
   planeShow: () => {
     if (!G) return null;
@@ -58,9 +70,13 @@ Object.assign(window.__sr, {
       }),
       stats: { b52: { ...STRAF.stats.b52,
         lastDrop: STRAF.stats.b52.lastDrop ? { ...STRAF.stats.b52.lastDrop } : null,
-        lastImpact: STRAF.stats.b52.lastImpact ? { ...STRAF.stats.b52.lastImpact } : null } },
+        lastImpact: STRAF.stats.b52.lastImpact ? { ...STRAF.stats.b52.lastImpact } : null },
+      b2: { ...STRAF.stats.b2,
+        lastDrop: STRAF.stats.b2.lastDrop ? { ...STRAF.stats.b2.lastDrop } : null,
+        lastImpact: STRAF.stats.b2.lastImpact ? { ...STRAF.stats.b2.lastImpact } : null } },
       art: { jet: { w: JET.n[0].width, h: JET.n[0].height }, f4: { w: F4.n[0].width, h: F4.n[0].height },
         b52: { w: B52.n[0].width, h: B52.n[0].height, engines: B52.engines.map((e) => ({ x: e.x, y: e.y })) },
+        b2: { w: B2.n[0].width, h: B2.n[0].height, normal: B2.n.length, shadow: B2.sh.length, hot: B2.hot.length },
         heli: { w: HSPR.n[0].width, h: HSPR.n[0].height } }
     };
   },

@@ -112,7 +112,8 @@ bakeJet();
 // ---------- this run's flights
 // STRAF holds transport effects only. Charges and input belong to AIR.
 const STRAF = { g: null, jets: [], bombs: [], embers: [], marks: [], roars: 0, demoT: 6,
-  stats: { b52: { launched: 0, dropped: 0, impacts: 0, lastDrop: null, lastImpact: null } } };
+  stats: { b52: { launched: 0, dropped: 0, impacts: 0, lastDrop: null, lastImpact: null },
+    b2: { launched: 0, dropped: 0, impacts: 0, kills: 0, lastDrop: null, lastImpact: null } } };
 function srSync() {
   if (STRAF.g === G) return;
   STRAF.g = G;
@@ -120,6 +121,7 @@ function srSync() {
   STRAF.roars = 0;
   STRAF.demoT = 6;
   Object.assign(STRAF.stats.b52, { launched: 0, dropped: 0, impacts: 0, lastDrop: null, lastImpact: null });
+  Object.assign(STRAF.stats.b2, { launched: 0, dropped: 0, impacts: 0, kills: 0, lastDrop: null, lastImpact: null });
 }
 // The way the jet flies for a press at (ax, ay) let go at (bx, by): the drag, or the train's way.
 function strafeDir(ax, ay, bx, by) {
@@ -130,10 +132,10 @@ function strafeDir(ax, ay, bx, by) {
 }
 // AIR validates ownership and charges before asking a supported payload to launch.
 function launchPlane(id, worldX, worldY, ux, uy) {
-  if (id !== 'a10' && id !== 'f4' && id !== 'b52') return false;
+  if (id !== 'a10' && id !== 'f4' && id !== 'b52' && id !== 'b2') return false;
   return callPlane(id, worldX, worldY, ux, uy);
 }
-function planeArt(j) { return j.id === 'f4' ? F4 : j.id === 'b52' ? B52 : JET; }
+function planeArt(j) { return j.id === 'f4' ? F4 : j.id === 'b52' ? B52 : j.id === 'b2' ? B2 : JET; }
 // The aiming preview and the actual payload share centred offsets for one to four bands.
 function a10Offsets(count = 1) {
   const n = clamp(Math.floor(count) || 1, 1, 4);
@@ -150,9 +152,10 @@ function callPlane(id, px, py, ux, uy) {
   else { ux /= length; uy /= length; }
   srSync();
   // it comes in from just off the screen, and flies on until it is off the other side
-  const fire = id === 'f4', bomber = id === 'b52', payload = fire ? f4Payload(G.up) : bomber ? b52Payload(G.up) : null;
+  const fire = id === 'f4', bomber = id === 'b52', huge = id === 'b2';
+  const payload = fire ? f4Payload(G.up) : bomber ? b52Payload(G.up) : huge ? b2Payload() : null;
   const len = payload ? payload.len : JETC.len, lead = payload ? 0 : JETC.lead;
-  const half = fire ? payload.patchRadius : bomber ? payload.bombRadius : JETC.half, offsets = payload ? [0] : a10Offsets(G.up.a10Lines);
+  const half = fire ? payload.patchRadius : bomber || huge ? payload.bombRadius : JETC.half, offsets = payload ? [0] : a10Offsets(G.up.a10Lines);
   const back = Math.max(jetEdge(px, py, -ux, -uy) + 40, len / 2 + lead + 20), on = jetEdge(px, py, ux, uy) + 60;
   const j = { id, len, lead, px, py, ux, uy, o: 0, s: -back, end: Math.max(on, len / 2 + 40),
     front: -Infinity, half, dmg: payload ? 0 : JETC.dmg * (G.up.a10Damage ?? 1), lines: payload ? 0 : offsets.length, offsets,
@@ -161,10 +164,11 @@ function callPlane(id, px, py, ux, uy) {
     shadowSeen: false, shadowAge: 0, bodyReady: false };
   if (payload) Object.assign(j, payload);
   if (bomber) STRAF.stats.b52.launched++;
+  if (huge) STRAF.stats.b2.launched++;
   STRAF.jets.push(j);
   for (const o of offsets) {
     STRAF.marks.push({ x: px - uy * o, y: py + ux * o, age: 0,
-      T: JETC.showDelay + Math.max(0, (back - lead - len / 2) / JETC.speed), radius: half, jet: j });
+      T: JETC.showDelay + Math.max(0, (back - lead - (huge ? 0 : len / 2)) / JETC.speed), radius: half, jet: j });
   }
   return true;
 }
@@ -225,6 +229,7 @@ function updatePlanes(dt) {
     }
     if (j.id === 'f4') f4Fire(j);
     else if (j.id === 'b52') b52Drop(j);
+    else if (j.id === 'b2') b2Drop(j);
     else strafeFire(j);
     if (j.id === 'a10' && j.bombCount && !j.dropped && j.s + j.lead >= j.len / 2) dropBombs(j);
     // a thin trail from the engines
@@ -370,6 +375,7 @@ function dropBombs(j) {
 }
 // A-10 bombs retain their lethal blast; bomber payloads use their snapshotted radius and damage.
 function bombHit(x, y, payload) {
+  if (payload?.source === 'b2') { b2Impact(x, y, payload); return; }
   const radius = payload?.radius ?? JETC.bombR, damage = payload?.dmg;
   const scale = payload?.source === 'b52' ? radius / JETC.bombR : 1;
   juiceBoom(x, y, false, scale);
@@ -455,7 +461,7 @@ function drawPlanes() {
   }
   for (const j of STRAF.jets) {
     if (!j.bodyReady) continue;
-    const [gx, gy] = jetGround(j), spr = planeArt(j).n[jetIdx(j)];
+    const [gx, gy] = jetGround(j), art = planeArt(j), spr = (thermal && art.hot ? art.hot : art.n)[jetIdx(j)];
     blit(spr, Math.round(gx - spr.width / 2), Math.round(gy - j.alt - spr.height / 2));
   }
   // the gun: a big flickering flash at the nose, tracers down to where the rounds land

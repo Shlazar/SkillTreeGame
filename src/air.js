@@ -223,6 +223,7 @@ function drawAirAim() {
   ctx.clip();
   if (a.id === 'f4') drawFireLine(a.x, a.y, ux, uy, G.up.fireLength, G.up.fireWall);
   else if (a.id === 'b52') drawBombLane(a.x, a.y, ux, uy, G.up.b52Bombs, G.up.b52Blast);
+  else if (a.id === 'b2') drawB2Circle(a.x, a.y);
   else drawStrafeLine(a.x, a.y, ux, uy, G.up.a10Lines);
   const hint = AIR.aim ? 'LET GO: STRIKE' : 'CLICK: STRIKE. DRAG: AIM. RIGHT CLICK: CANCEL.', w = tw(hint);
   text(hint, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, VH - 44)), U.gold, { align: 'center' });
