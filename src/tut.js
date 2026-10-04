@@ -1,20 +1,28 @@
-// tut.js - the teaching layer and the frame polish: the tutorial prompts, the pause menu, the fades
-// between screens and the end-of-build card. Features call tutEvent(name, data) at their moments;
-// the rest is found here by looking at the game each frame. Prompts show in five channels, one at a
-// time each (the rest wait in a queue): TASKS (a box at the top left, up to 3 lines with a check
-// box), RADIO (radio() in ui.js), TIP (one gold line over the weapon cards with a blinking arrow
-// toward the thing), BANNER (banner()) and TAG (a label with an arrow in the Depot). Each prompt
-// shows once per save (SAVE.seen).
-
-// tasks / taskQ = the task lines shown and waiting; tip / tipQ = the tip shown and waiting; banQ =
-// banners waiting; labels = words over a zombie (BRUTE!); mode = the screen last frame (for the
-// fades and for what a new run resets); fade = the black over the screen (1 = all black);
-// card = the finale thanks card; after = Depot
-// prompts to mark seen when the next run starts
-const TUT = {
-  tasks: [], taskQ: [], tip: null, tipQ: [], banQ: [], labels: [], mode: '', fade: 1, fadeK: 1,
-  card: null, sum: [], after: new Set()
+// tut.js - one queued lesson at a time, the pause menu, screen fades and the finale thanks card.
+// Features call tutEvent at real moments. Pending lesson keys survive screen changes and reloads;
+// a lesson enters SAVE.seen only when it becomes the visible tip. Arrow targets stay in memory.
+// Tip duration, fades and departure delay in seconds (proposal).
+const TIPC = { duration: 4, fadeIn: 0.15, fadeOut: 0.4, departure: 1.5 };
+const TIP_DUE = 'tipDue:';
+const TIP_DEFS = {
+  p_move: { msg: 'RIGHT-CLICK TO MOVE YOUR HELI.', where: 'play' },
+  currency_scrap: { msg: 'KILLS GIVE SCRAP. SCRAP BUYS UPGRADES.', where: 'both', cur: 'scrap' },
+  currency_surv: { msg: 'SURVIVORS CREW NEW UNITS. EACH NEW UNIT COSTS 1.', where: 'depot', cur: 'surv' },
+  currency_gold: { msg: 'GOLD BUYS SPECIAL NODES.', where: 'depot', cur: 'gold' },
+  p_plane: { msg: 'PRESS Q (OR CLICK THE PLANE), AIM, THEN LEFT CLICK. RIGHT CLICK CANCELS.', where: 'play' },
+  p_plane_double: { msg: 'PRESS Q TWICE TO HIT THE BIGGEST CROWD.', where: 'play' },
+  p_ram: { msg: 'PRESS SPACE TO RAM!', where: 'play' },
+  p_charge: { msg: 'THIS PLANE NOW HOLDS 2 STRIKES.', where: 'both' },
+  p_hangar: { msg: 'PICK WHICH PLANES TO BRING.', where: 'hangar' },
+  p_golden: { msg: 'CATCH THE GOLDEN ZOMBIE!', where: 'play' },
+  p_sos: { msg: 'HOVER OVER HIM TO WINCH HIM UP.', where: 'play' },
+  p_wall: { msg: 'A DEAD WALL! SHOOT IT DOWN.', where: 'play' },
+  p_brute_focus: { msg: 'RIGHT-CLICK A BRUTE TO FOCUS IT.', where: 'play' },
+  p_boom: { msg: 'EXPLOSIVE ZOMBIES BLOW UP THEIR FRIENDS.', where: 'play' },
+  p_b2: { msg: 'A B-2 JOINS YOU, ONCE! PRESS E TWICE TO STRIKE.', where: 'play' }
 };
+const TUT = { tip: null, tipQ: [], anchors: {}, save: null, g: null, mode: '', fade: 1, fadeK: 1,
+  card: null, sum: [] };
 const seen = (k) => !!SAVE.seen[k];
 // Mark prompt k as shown. True the first time.
 function see(k) {
@@ -26,60 +34,27 @@ function see(k) {
 // a real run is on (not the demo, not over)
 const tutLive = () => G && !G.demo && mode === 'play' && !G.result;
 
-// ---------- the channels
-// A task: key (seen once done), the words, how many it needs (a count shows from 2 up), and what
-// counts for it (tutCount(kind)).
-function task(key, label, need, kind) {
-  if (seen(key) || TUT.tasks.concat(TUT.taskQ).some((t) => t.key === key)) return;
-  const t = { key, label, need: need || 1, kind, n: 0, t: 0, done: -1, bump: 0 };
-  (TUT.tasks.length < 3 ? TUT.tasks : TUT.taskQ).push(t);
-}
-// n more of kind done: every task waiting for it counts up, and ticks off when full
-function tutCount(kind, n) {
-  for (const t of TUT.tasks.concat(TUT.taskQ)) {
-    if (t.kind !== kind || t.done >= 0) continue;
-    const was = Math.floor(t.n);
-    t.n = Math.min(t.need, t.n + (n || 1));
-    if (Math.floor(t.n) > was) t.bump = 0.25;
-    if (t.n >= t.need) {
-      t.done = 0;
-      see(t.key);
-      if (TUT.tasks.includes(t)) SFX.tick();
-    }
-  }
-}
-// A tip for 4 s: key (seen at once), the words, and where its arrow points (a function giving a
-// point on the screen, or null for no arrow).
+// ---------- the queue
+// SAVE.flags is a strict boolean map. Its insertion order preserves the order lessons became due.
 function tip(key, msg, at) {
-  if (!see(key)) return;
-  TUT.tipQ.push({ msg, at: at || null, t: 0 });
+  if (TUT.save !== SAVE) { TUT.save = SAVE; TUT.tip = null; TUT.anchors = {}; }
+  if (!TIP_DEFS[key] || seen(key)) return;
+  if (at) TUT.anchors[key] = { g: G, at };
+  const flag = TIP_DUE + key;
+  if (!SAVE.flags[flag]) { SAVE.flags[flag] = true; saveSave(); }
 }
-// Currency lessons wait until they can actually be shown. A screen change may empty the queue,
-// so their persistent event flags are the source of truth until promotion marks the lesson seen.
+function tutPending() {
+  const keys = Object.keys(SAVE.flags).filter((k) => k.startsWith(TIP_DUE) && SAVE.flags[k] === true)
+    .map((k) => k.slice(TIP_DUE.length)).filter((k) => TIP_DEFS[k] && !seen(k));
+  // A very early first kill must still teach moving before it teaches scrap.
+  const i = keys.indexOf('p_move');
+  if (i > 0) keys.unshift(keys.splice(i, 1)[0]);
+  return keys;
+}
 function currencyTips() {
-  if (!['play', 'depot'].includes(mode) || (mode === 'play' && G.demo)) return;
-  const lessons = [
-    ['scrap', SAVE.flags.scrapEarned, 'KILLS GIVE SCRAP. SCRAP BUYS UPGRADES.'],
-    ['surv', SAVE.flags.survShown, 'SURVIVORS CREW NEW UNITS. EACH NEW UNIT COSTS 1.'],
-    ['gold', SAVE.flags.goldShown, 'GOLD BUYS SPECIAL NODES.']
-  ];
-  for (const [cur, due, msg] of lessons) {
-    const key = 'currency_' + cur;
-    if (!due || seen(key) || TUT.tip?.key === key || TUT.tipQ.some((t) => t.key === key)) continue;
-    TUT.tipQ.push({ key, cur, msg, t: 0, at: () => [currencyX(cur), 8] });
-  }
-}
-// A radio line, once per save.
-function radioOnce(key, who, msg) {
-  if (see(key)) radio(who, msg);
-}
-// A banner, once per save; it waits while one of ours still shows.
-function bannerOnce(key, a, b, col) {
-  if (see(key)) TUT.banQ.push([a, b, col || U.gold]);
-}
-// words over zombie z for 4 s
-function label(z, s, col) {
-  TUT.labels.push({ z, s, col, t: 0 });
+  if (SAVE.flags.scrapEarned) tip('currency_scrap');
+  if (SAVE.flags.survShown) tip('currency_surv');
+  if (SAVE.flags.goldShown) tip('currency_gold');
 }
 // a zombie's place on the screen
 const onScreen = (z) => [z.x - G.camX, z.y - G.camY];
@@ -88,26 +63,57 @@ const inView = (z) => {
   return x > 4 && x < W - 4 && y > 24 && y < VH - 8;
 };
 
-// ---------- the events features send
-// tutEvent(name, data): see the shared list (station, loot and shooting moments).
+const tutNormalPlane = () => !!G && G.up.planeOwned.some((id) => id !== 'b2' && PLANES[id]?.available);
+function tutRunTips() {
+  if (!tutLive()) return;
+  tip('p_move');
+  if (tutNormalPlane()) tip('p_plane');
+  if (G.up.ram) tip('p_ram');
+  if (Object.values(G.up.planeCharges).some((n) => n > 1)) tip('p_charge');
+}
+// Eligibility belongs to the surface that actually draws the lesson, not merely to its trigger.
+function tutEligible(key) {
+  const d = TIP_DEFS[key], play = tutLive() && !paused, depot = mode === 'depot';
+  if (!d || TUT.fade > 0 || !(play || depot)) return false;
+  if (d.where === 'play' && !play || d.where === 'depot' && !depot) return false;
+  if (d.where === 'hangar' && !(depot && depotTab === 'hangar' && hangarVisible())) return false;
+  if (key === 'currency_scrap' && !seen('p_move')) return false;
+  if (key === 'p_move' && G.run < TIPC.departure) return false;
+  if (['p_plane', 'p_plane_double'].includes(key) && (!tutNormalPlane() || !seen('p_move'))) return false;
+  if (key === 'p_plane_double' && !seen('p_plane')) return false;
+  if (key === 'p_ram' && (!G.up.ram || !seen('p_move'))) return false;
+  if (key === 'p_b2' && !G.finale?.gifted) return false;
+  return true;
+}
+function tutWorldAt(o) {
+  return () => o && !o.dead && !o.gone && !o.saved && !o.broken && inView(o) ? onScreen(o) : null;
+}
+// Feature hooks retain their moment even when no UI frame has been rendered yet.
 function tutEvent(name, d) {
   d = d || {};
+  if (name === 'plane_charge') {
+    if (mode !== 'depot' && !tutLive()) return;
+    tip('p_charge', null, () => mode === 'depot' && depotTab === 'tree' && NODE[d.id] ? (() => {
+      const p = nodeXY(d.id); return [p.x, p.y];
+    })() : null);
+    return;
+  }
   if (!G || G.demo || !(mode === 'play' || mode === 'ending')) return;
-  const P = (o) => () => (o && o.x != null ? [o.x - G.camX, o.y - G.camY] : null);
   const ev = {
-    pile_seen: () => {
-      task('t_piles', 'GRAB 3 SCRAP PILES', 3, 'pile');
-      tip('p_pile', 'RIGHT CLICK A SCRAP PILE TO SEND YOUR VIPER.', P(d));
+    run_start: tutRunTips,
+    plane_strike: () => {
+      if (d.gift || d.id === 'b2') return;
+      if (!SAVE.flags.planeStrike1) { SAVE.flags.planeStrike1 = true; saveSave(); }
+      else if (!SAVE.flags.planeStrike2) { SAVE.flags.planeStrike2 = true; tip('p_plane_double'); saveSave(); }
     },
-    pile_taken: () => tutCount('pile'),
-    crate_seen: () => task('t_crate', 'GRAB THE SUPPLY CRATE', 1, 'crate'),
-    crate_taken: () => tutCount('crate'),
-    sos_seen: () => tip('p_sos', 'HOVER OVER HIM TO WINCH HIM UP.', P(d)),
-    golden_seen: () => tip('p_golden', 'CATCH THE GOLDEN ZOMBIE!', P(d.z || d)),
-    boom_seen: () => tip('p_boom', 'EXPLOSIVE ZOMBIES BLOW UP THEIR FRIENDS.', P(d.z || d)),
+    sos_seen: () => tip('p_sos', null, tutWorldAt(d.rescueId && G.loot?.find((f) => f.rescueId === d.rescueId) || d)),
+    golden_seen: () => tip('p_golden', null, tutWorldAt(d.z || d)),
+    boom_seen: () => tip('p_boom', null, tutWorldAt(d.z || d)),
+    dead_wall: () => tip('p_wall', null, tutWorldAt(d.wall || d)),
+    brute_seen: () => tip('p_brute_focus', null, tutWorldAt(d.z || d)),
     b2_gift: () => {
       radio('CONTROL', 'B-2 SUPPORT IS HERE. ONE STRIKE IS YOURS.');
-      tip('p_b2', 'A B-2 JOINS YOU, ONCE! PRESS E TWICE TO STRIKE.', () => {
+      tip('p_b2', null, () => {
         const slot = airBandSlots().find((s) => s.gift);
         return slot ? [slot.x + slot.w / 2, slot.y + slot.h / 2] : null;
       });
@@ -115,134 +121,69 @@ function tutEvent(name, d) {
   }[name];
   if (ev) ev();
 }
-// A zombie dies (called from kill()): the tasks that count shots.
-function tutKill(z, cause, free) {
-  if (!scoring() || free) return;
-  if (z.st === 1) tutCount('track');
-  if (z.st === 2) tutCount('climber');
-  // (only your own shots count: not the flatcar gun, the ram or the train)
-  if (cause !== 'gun' && cause !== 'ram' && cause !== 'train') tutCount('shoot');
-}
 
 // ---------- each frame
 function tutFrame(dt) {
-  // a new screen: fade in from black (lighter over the run that just ended); a new run starts clean
+  if (TUT.save !== SAVE) { TUT.save = SAVE; TUT.tip = null; TUT.anchors = {}; }
   const m = mode === 'ending' ? 'play' : mode;
   if (m !== TUT.mode) {
     TUT.fade = TUT.fadeK = m === 'summary' ? 0.5 : 1;
     if (m === 'play') tutNewRun();
     if (m === 'summary') tutSumOpen();
-    if (TUT.mode === 'play') TUT.tasks.length = TUT.taskQ.length = TUT.tipQ.length = TUT.banQ.length = 0;
+    TUT.tip = null;
     TUT.mode = m;
   }
   TUT.fade = Math.max(0, TUT.fade - dt / 0.25 * TUT.fadeK);
   if (TUT.card && mode !== 'summary') TUT.card = null;
-  currencyTips();
-  // This lesson belongs to the Hangar; its seen key is set when the queued line appears.
-  if (mode === 'depot' && depotTab === 'hangar') {
-    if (!seen('p_hangar') && TUT.tip?.key !== 'p_hangar' && !TUT.tipQ.some((t) => t.key === 'p_hangar')) {
-      TUT.tipQ.push({ key: 'p_hangar', msg: 'PICK WHICH PLANES TO BRING.', at: null, t: 0 });
-    }
-  } else {
-    TUT.tipQ = TUT.tipQ.filter((t) => t.key !== 'p_hangar');
-    if (TUT.tip?.key === 'p_hangar') TUT.tip = null;
+  if (G !== TUT.g) {
+    TUT.g = G;
+    TUT.anchors = Object.fromEntries(Object.entries(TUT.anchors).filter(([, a]) => a.g === G));
+    if (m === 'play') tutNewRun();
+    else TUT.tip = null;
   }
+  if (tutLive() && !paused) tutLook();
+  currencyTips();
+  if (mode === 'depot' && hangarVisible()) tip('p_hangar');
+  if (SAVE.flags.planeStrike2) tip('p_plane_double');
   tutChannels(dt);
-  if (tutLive() && !paused) tutLook(dt);
 }
-// a new run: the channels empty, the counters from zero; Depot prompts shown are now done
 function tutNewRun() {
-  TUT.tasks.length = TUT.taskQ.length = TUT.tipQ.length = TUT.banQ.length = TUT.labels.length = 0;
   TUT.tip = null;
   TUT.card = null;
-  for (const k of TUT.after) see(k);
-  TUT.after.clear();
+  tutRunTips();
 }
-// the timers of the tasks, the tip, the banners and the labels
 function tutChannels(dt) {
-  const T = TUT;
-  for (let i = T.tasks.length - 1; i >= 0; i--) {
-    const t = T.tasks[i];
-    t.t += dt;
-    t.bump = Math.max(0, t.bump - dt);
-    if (t.done >= 0) t.done += dt;
-    if (t.done > 1.35) T.tasks.splice(i, 1);
+  TUT.tipQ = tutPending();
+  if (mode === 'play' && paused) return;
+  if (TUT.tip && !tutEligible(TUT.tip.key)) TUT.tip = null;
+  if (TUT.tip) {
+    TUT.tip.t += dt;
+    if (TUT.tip.t >= TIPC.duration) TUT.tip = null;
   }
-  while (T.tasks.length < 3 && T.taskQ.length) T.tasks.push(T.taskQ.shift());
-  if (T.tip) {
-    T.tip.t += dt;
-    if (T.tip.t >= 4) T.tip = null;
-  }
-  if (!T.tip && T.tipQ.length) {
-    T.tip = T.tipQ.shift();
-    if (T.tip.key) see(T.tip.key);
-  }
-  if (T.banQ.length && !banners.some((b) => b.tut)) {
-    const [a, b, c] = T.banQ.shift();
-    banner(a, b, c, 2);
-    if (banners[0] && banners[0].a === a) banners[0].tut = true;
-  }
-  for (let i = T.labels.length - 1; i >= 0; i--) {
-    const l = T.labels[i];
-    l.t += dt;
-    if (l.t >= 4 || l.z.dead || l.z.gone) T.labels.splice(i, 1);
-  }
+  TUT.tipQ = tutPending();
+  if (TUT.tip) return;
+  const key = TUT.tipQ.find(tutEligible);
+  if (!key) return;
+  const d = TIP_DEFS[key];
+  TUT.tip = { key, msg: key === 'p_wall' && G.up.ram ? 'A DEAD WALL! PRESS SPACE TO RAM IT.' : d.msg,
+    cur: d.cur || null, t: Math.min(Math.max(dt, 1 / 60), TIPC.fadeIn) };
+  delete SAVE.flags[TIP_DUE + key];
+  see(key);
+  TUT.tipQ = tutPending();
 }
-// What the run shows now that has a prompt (the ones no feature sends an event for).
-function tutLook(dt) {
-  const runs = SAVE.runs;
-  // The Viper fires by itself; right click gives it a target or a place to fly.
-  if (G.run > 1.5) {
-    task('t_attack', 'RIGHT CLICK A ZOMBIE TO ATTACK IT', 1, 'attack');
-    const h = G.helis[0];
-    if (h) tip('p_auto', 'YOUR VIPER FIGHTS BY ITSELF. RIGHT CLICK TO MOVE IT.', () => [h.x - G.camX, h.y - h.alt - G.camY]);
-  }
-  // scrap piles: from 11 s into run 2 (once there is loot on the line)
-  if (runs >= 2 && G.run > 11 && G.loot) task('t_piles', 'GRAB 3 SCRAP PILES', 3, 'pile');
-  // the dead in view: a crowd on the rails, one on the train, a runner, a brute
-  let rail = 0, climb = null, runner = null, brute = null;
-  for (const z of G.zombies) {
-    if (z.dead || !inView(z)) continue;
-    if (z.st === 1) rail++;
-    if (z.st === 2) climb = z;
-    if (z.type === 1) runner = z;
-    if (z.type === 2) {
-      brute = brute || z;
-    }
-  }
-  if (rail >= 3) {
-    task('t_track', 'SHOOT THE DEAD ON THE TRACK', 5, 'track');
-  }
-  if (climb && runs >= 2) task('t_climb', 'SHOOT THE DEAD OFF THE TRAIN', 1, 'climber');
-  if (runner && runs >= 2) bannerOnce('b_run', 'RUNNERS', 'FAST, BUT ONLY ' + CFG.types[1].hp + ' HP', U.amber);
-  const at = (z) => () => onScreen(z);
-  if (brute && !seen('p_brute')) {
-    label(brute, 'BRUTE!', U.red);
-    tip('p_brute', 'BRUTES HAVE ' + CFG.types[2].hp + " HP. THE TRAIN CAN'T PUSH THEM.", at(brute));
-  }
+function tutLook() {
+  tutRunTips();
+  const w = G.walls.find((w) => !w.broken && inView(w));
+  if (w) tip('p_wall', null, tutWorldAt(w));
+  const z = G.zombies.find((z) => !z.dead && !z.gone && z.type === 2 && inView(z));
+  if (z) tip('p_brute_focus', null, tutWorldAt(z));
 }
 
 // ---------- drawing in the run
-// the top of the weapon cards (the Ram's card can sit over the 25mm's on a narrow window)
+// Keep the tip and radio above the Ram card and the plane band.
 const cardsTop = () => Math.min(VH - 30, RAMCARD.on ? RAMCARD.y : VH - 30);
-// the task box: [right edge, bottom], or null while it is empty
-function taskBox() {
-  if (!TUT.tasks.length || mode !== 'play') return null;
-  const w = Math.max(...TUT.tasks.map((t) => tw(taskText(t)))) + 19;
-  return [4 + w, 22 + 5 + TUT.tasks.length * 10];
-}
-const taskText = (t) => t.label + (t.need > 1 ? ' (' + Math.floor(t.n) + '/' + t.need + ')' : '');
-// Where the warnings under the top bar go (L = their lines): in the middle, or moved right of the
-// task box, or under it when there is no room beside it. Returns [x of the middle, y].
-function warnAt(L) {
-  const b = taskBox();
-  if (!b || !L.length) return [W / 2, 24];
-  const ww = Math.max(...L.map(([t]) => tw(t)));
-  const x = Math.max(W / 2, b[0] + 8 + ww / 2);
-  return x + ww / 2 <= W - 4 ? [Math.round(x), 24] : [W / 2, b[1] + 4];
-}
-// room the tip takes over the weapon cards (the radio box goes above it)
-const tipRoom = () => (TUT.tip && mode === 'play' ? 14 : 0);
+const warnAt = () => [W / 2, 24];
+const tipRoom = () => TUT.tip && mode === 'play' ? wrap(TUT.tip.msg, W - 36).length * 10 + 4 : 0;
 // A small blinking triangle at (x, y), its tip toward (ux, uy).
 function triangle(x, y, ux, uy, col) {
   for (const [c, g] of [['#07080a', 1], [col, 0]]) {
@@ -255,48 +196,40 @@ function triangle(x, y, ux, uy, col) {
 }
 function drawTut() {
   if (mode !== 'play') return;
-  drawTasks();
   drawTipLine();
-  for (const l of TUT.labels) {
-    const [x, y] = onScreen(l.z), u = l.t;
-    ctx.globalAlpha = u > 3.6 ? (4 - u) / 0.4 : 1;
-    text(l.s, x, y - l.z.S.ay - 10 - (Math.floor(realT * 4) % 2), l.col, { align: 'center' });
-    ctx.globalAlpha = 1;
-  }
 }
-function drawTasks() {
-  const b = taskBox();
-  if (!b) return;
-  const x = 4, y = 22, w = b[0] - x, h = b[1] - y;
-  panel(x, y, w, h, 'rgba(10,11,14,0.86)');
-  ctx.fillStyle = '#8a6a2a';
-  ctx.fillRect(x + 2, y + 1, w - 4, 1);
-  TUT.tasks.forEach((t, i) => {
-    const ry = y + 5 + i * 10, d = t.done;
-    // done: green, then it fades after 1 s; a new one fades in
-    ctx.globalAlpha = d > 1 ? Math.max(0, 1 - (d - 1) / 0.35) : Math.min(1, t.t / 0.2);
-    ctx.fillStyle = '#07080a';
-    ctx.fillRect(x + 4, ry, 7, 7);
-    ctx.fillStyle = d >= 0 ? U.green : '#6a6f7b';
-    ctx.fillRect(x + 5, ry + 1, 5, 5);
-    if (d < 0) {
-      ctx.fillStyle = '#16171c';
-      ctx.fillRect(x + 6, ry + 2, 3, 3);
-    }
-    text(taskText(t), x + 14, ry, d >= 0 ? U.green : t.bump > 0 ? '#ffffff' : U.ink);
-    ctx.globalAlpha = 1;
-  });
+function tutTipAt(t) {
+  if (t.cur) return [currencyX(t.cur), 8];
+  const a = TUT.anchors[t.key];
+  if (a && a.g === G) {
+    const p = a.at();
+    if (p) return p;
+  }
+  if (t.key === 'p_move') {
+    const h = G.helis[0]; return h ? [h.x - G.camX, h.y - h.alt - G.camY] : null;
+  }
+  if (t.key === 'p_ram') return RAMCARD.on ? [RAMCARD.x + RAMCARD.w / 2, RAMCARD.y + 13] : null;
+  if (['p_plane', 'p_plane_double', 'p_b2', 'p_charge'].includes(t.key) && mode === 'play') {
+    const slot = airBandSlots().find((s) => t.key === 'p_b2' ? s.gift : !s.gift);
+    return slot ? [slot.x + slot.w / 2, slot.y + slot.h / 2] : null;
+  }
+  return null;
+}
+function tutTipLayout() {
+  const t = TUT.tip;
+  if (!t) return null;
+  const lines = wrap(t.msg, W - 36), w = Math.max(...lines.map((l) => tw(l))), target = tutTipAt(t), aw = target ? 12 : 0;
+  const x = Math.round((W - w - aw) / 2), y = (mode === 'depot' ? H - 60 : cardsTop() - 22) - (lines.length - 1) * 10;
+  return { x, y, w: w + aw, h: lines.length * 10 + 3, lines, target, aw };
 }
 function drawTipLine() {
   const t = TUT.tip;
   if (!t) return;
-  const L = wrap(t.msg, W - 36), w = Math.max(...L.map((l) => tw(l))), p = t.at && t.at();
-  const y = (mode === 'depot' ? H - 60 : cardsTop() - 22) - (L.length - 1) * 10;
+  const { x, y, w, h, lines: L, target: p, aw } = tutTipLayout();
   const col = t.cur === 'scrap' ? U.blue : t.cur === 'surv' ? U.amber : U.gold;
-  const aw = p ? 12 : 0, x = Math.round(W / 2 - (w + aw) / 2);
-  ctx.globalAlpha = t.t < 0.15 ? t.t / 0.15 : t.t > 3.6 ? (4 - t.t) / 0.4 : 1;
+  ctx.globalAlpha = t.t < TIPC.fadeIn ? t.t / TIPC.fadeIn : Math.min(1, (TIPC.duration - t.t) / TIPC.fadeOut);
   ctx.fillStyle = 'rgba(5,6,8,0.7)';
-  ctx.fillRect(x - 5, y - 3, w + aw + 10, L.length * 10 + 3);
+  ctx.fillRect(x - 5, y - 3, w + 10, h);
   L.forEach((l, i) => text(l, x + aw, y + i * 10, col));
   // the arrow toward the thing it means, blinking
   if (p && Math.floor(realT * 4) % 2 === 0) {
@@ -311,48 +244,34 @@ function drawTipLine() {
 function tutHint() {
   return null;
 }
-// The tag that shows now: [node id or 'start', words], or null.
+// The fresh Depot tag points to an affordable blue node until the player buys one.
 function tutTag() {
   if (depotTab !== 'tree' || NODES.some((n) => n.k === 'scrap' && lv(n.id) > 0)) return null;
   const first = NODES.find((n) => n.k === 'scrap' && nodeState(n) === 'buy');
   return first ? [first.id, 'CHOOSE ANY BLUE UPGRADE.'] : null;
 }
 function drawTutTags() {
-  if (TUT.tip?.cur || TUT.tip?.key === 'p_hangar') { drawTipLine(); return; }
+  if (TUT.tip) { drawTipLine(); return; }
   const g = tutTag();
   if (!g) return;
   const [id, msg] = g, L = tw(msg) > 190 ? wrap(msg, 190) : [msg];
   const w = Math.max(...L.map((l) => tw(l))) + 12, h = L.length * 10 + 6, bob = Math.round(Math.sin(realT * 6) * 1.5);
-  let x, y, ux, uy, ax, ay;
-  if (id === 'start') {
-    // over START RUN, which pulses
-    const b = depotStartRect(), bx = b.x, by = b.y;
-    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(realT * 8);
-    frame(bx - 2, by - 2, b.w + 4, b.h + 4, '#ffd36a');
-    ctx.globalAlpha = 1;
-    x = clamp(bx + b.w / 2 - w / 2, 4, W - w - 4);
-    y = by - 12 - h + bob;
-    [ax, ay, ux, uy] = [bx + b.w / 2, y + h + 4, 0, 1];
-  } else {
-    // beside the node: right, left, over or under it, on the side that covers the fewest other
-    // nodes (and stays on the screen)
-    const p = nodeXY(id), r = halfOf(NODE[id]) + 10, sides = [
-      [p.x + r, p.y - h / 2, -1, 0], [p.x - r - w, p.y - h / 2, 1, 0], [p.x - w / 2, p.y - r - h, 0, 1], [p.x - w / 2, p.y + r + 12, 0, -1]];
-    let best = 1e9;
-    for (const [sx, sy, dx, dy] of sides) {
-      let n = sx < 4 || sy < TREE.y0 + 3 || sx + w > W - 4 || sy + h > TREE.y1 - 3 ? 100 : 0;
-      for (const o of NODES) {
-        if (o.id === id || !shownAs(o)) continue;
-        const q = nodeXY(o.id), a = halfOf(o) + 2;
-        if (q.x + a > sx && q.x - a < sx + w && q.y + a + 12 > sy && q.y - a < sy + h) n++;
-      }
-      if (n < best) [best, x, y, ux, uy] = [n, sx, sy, dx, dy];
+  let x, y, ux, uy;
+  const p = nodeXY(id), r = halfOf(NODE[id]) + 10, sides = [
+    [p.x + r, p.y - h / 2, -1, 0], [p.x - r - w, p.y - h / 2, 1, 0], [p.x - w / 2, p.y - r - h, 0, 1], [p.x - w / 2, p.y + r + 12, 0, -1]];
+  let best = 1e9;
+  for (const [sx, sy, dx, dy] of sides) {
+    let n = sx < 4 || sy < TREE.y0 + 3 || sx + w > W - 4 || sy + h > TREE.y1 - 3 ? 100 : 0;
+    for (const o of NODES) {
+      if (o.id === id || !shownAs(o)) continue;
+      const q = nodeXY(o.id), a = halfOf(o) + 2;
+      if (q.x + a > sx && q.x - a < sx + w && q.y + a + 12 > sy && q.y - a < sy + h) n++;
     }
-    x += -ux * bob;
-    y = clamp(Math.round(y - uy * bob), TREE.y0 + 3, TREE.y1 - 3 - h);
-    ax = ux ? (ux < 0 ? x - 4 : x + w + 3) : p.x;
-    ay = uy ? (uy < 0 ? y - 4 : y + h + 3) : p.y;
+    if (n < best) [best, x, y, ux, uy] = [n, sx, sy, dx, dy];
   }
+  x += -ux * bob;
+  y = clamp(Math.round(y - uy * bob), TREE.y0 + 3, TREE.y1 - 3 - h);
+  const ax = ux ? (ux < 0 ? x - 4 : x + w + 3) : p.x, ay = uy ? (uy < 0 ? y - 4 : y + h + 3) : p.y;
   x = Math.round(x);
   panel(x, y, w, h, 'rgba(14,12,8,0.95)');
   frame(x, y, w, h, '#b8862f');
@@ -455,10 +374,16 @@ Object.assign(window.__sr, {
   // tut(name, data): send a tutorial event; seen() = the prompts shown so far (SAVE.seen)
   tut: (name, d) => tutEvent(name, d),
   seen: () => Object.keys(SAVE.seen).filter((k) => SAVE.seen[k] === true),
-  // tutState() = what each channel shows now
+  // tutState() preserves empty task diagnostics for old callers; all teaching is one tip now.
   tutState: () => ({
-    tasks: TUT.tasks.map((t) => taskText(t) + (t.done >= 0 ? ' DONE' : '')), queued: TUT.taskQ.length, tip: TUT.tip && TUT.tip.msg,
-    tips: TUT.tipQ.length, tipKey: TUT.tip?.key || null, radio: RADIO.cur && RADIO.cur.msg, banner: banners[0] && banners[0].a, tag: mode === 'depot' ? tutTag() : null,
+    tasks: [], queued: 0, tip: TUT.tip && TUT.tip.msg,
+    tips: tutPending().length, tipKey: TUT.tip?.key || null, tipAge: TUT.tip?.t || 0,
+    queuedKeys: tutPending().filter(tutEligible), pendingKeys: tutPending(), layout: tutTipLayout(),
+    lessonText: Object.entries(TIP_DEFS).map(([key, d]) => ({ key, text: d.msg })).concat([
+      { key: 'p_wall_ram', text: 'A DEAD WALL! PRESS SPACE TO RAM IT.' }]),
+    fontOK: Object.values(TIP_DEFS).every((d) => [...d.msg].every((c) => c === ' ' || GL[c])) &&
+      [...'A DEAD WALL! PRESS SPACE TO RAM IT.'].every((c) => c === ' ' || GL[c]),
+    radio: RADIO.cur && RADIO.cur.msg, banner: banners[0] && banners[0].a, tag: mode === 'depot' && !TUT.tip ? tutTag() : null,
     hint: mode === 'depot' ? tutHint() : null, card: !!TUT.card,
     endCard: TUT.card?.finale ? { title: 'THANKS FOR PLAYING!', buttonLabel: 'TO THE DEPOT', ...endCardLayout(), replay: TUT.card.replay } : null,
     fade: +TUT.fade.toFixed(2), paused

@@ -223,6 +223,7 @@ function startGame(number, replay) {
   const st = G.station;
   banner('LEG ' + number + ': ' + st.name, replay ? 'REPLAY: SCRAP ONLY' : 'ESCORT THE TRAIN TO THE NEXT STATION', U.gold);
   SFX.horn();
+  if (typeof tutEvent === 'function') tutEvent('run_start');
 }
 // Put what this run has earned so far in the save. You keep it all, whatever happens to the train.
 function bankRun() {
@@ -978,7 +979,6 @@ function blood(x, y, n, zh) {
 function kill(z, cause, cx, cy, dist, free) {
   if (z.wall) { breakWall(z.wall, cause); return; }
   if (z.dead) return;
-  if (typeof tutKill === 'function') tutKill(z, cause, free);
   z.dead = true;
   z.hp = 0;
   z.paid = 0;

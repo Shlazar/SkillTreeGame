@@ -203,9 +203,12 @@ function drawWarnings() {
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', L = [];
   if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (SPACE RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
-  // Place the lines beside the task box, or under it when they would touch (tut.js).
-  const [wx, wy] = warnAt(L);
-  L.forEach(([t, c], i) => text(t, wx, wy + i * 10, c, { align: 'center' }));
+  // Wrap long warnings below the HUD, leaving its right-hand stars and mute control clear.
+  const [wx, wy] = warnAt(), room = W - 80;
+  let row = 0;
+  for (const [t, c] of L) for (const line of wrap(t, room)) {
+    text(line, wx, wy + row++ * 10, c, { align: 'center' });
+  }
 }
 // An arrow on the edge of the screen pointing at (wx, wy) in the world when that is out of view,
 // with a label just inside it.

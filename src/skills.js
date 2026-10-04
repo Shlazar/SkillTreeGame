@@ -90,6 +90,8 @@ function addGolden(params = {}, eventId = '', primary = true, itemId = 'golden-p
   z.goldItemId = itemId; z.goldPrimary = primary; z.goldDir = -edge; z.goldSY = sy; z.goldRecord = record;
   z.left = edge > 0;
   state.events.push(record); G.zombies.push(z);
+  // Teach the crossing at its actual spawn, before a quick first shot can remove the runner.
+  skillEvent('golden_seen', { z, value: SK.gold.reward });
   if (primary) {
     const n = clamp(Math.floor(G.up.goldHunt || 0), 0, 3);
     for (let i = 1; i <= n; i++) state.queue.push({ at: G.run + i * c.huntGap,
@@ -189,7 +191,6 @@ function updateSkills(dt) {
     lights.push({ x: z.x, y: z.y, z: 6, r: 12, c: '#ffd24a', life: 0.03, max: 0.03, a: 0.35 });
     if (!G.goldSeen && !offView(z.x, z.y, -24)) {
       G.goldSeen = true;
-      floatText(z.x, z.y - z.S.h - 4, 'CATCH THE GOLDEN ZOMBIE!', U.gold);
       SFX.coin();
       skillEvent('golden_seen', { z, value: SK.gold.reward });
     }

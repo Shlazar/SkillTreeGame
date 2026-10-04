@@ -277,6 +277,7 @@ function buyNode(id) {
   boughtFx(n, p);
   grew(before);
   SFX.buy(!!n.star || n.id === 'root');
+  if (n.charge && typeof tutEvent === 'function') tutEvent('plane_charge', { id: n.id });
   return true;
 }
 // The look of a buy: a white flash, glowing rings, a burst of sparks, the price floating up, the line lit.

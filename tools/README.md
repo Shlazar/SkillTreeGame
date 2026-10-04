@@ -368,9 +368,9 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 
 ### 5.15 Tutorial (src/tut.js)
 
-- `tut(name, data)`: send a tutorial event (`tutEvent`). Works in play/ending only, not in the demo.
-- `seen()`: the prompt keys shown so far (`SAVE.seen`).
-- `tutState()`: what each channel shows now: `{tasks, queued, tip, tips, radio, banner, tag, hint, card, fade, paused}`.
+- `tut(name, data)`: send a first-use tutorial event (`tutEvent`). Real play and Depot purchases can queue lessons; the menu demo cannot. Successful normal plane strikes and actual +1 Charge purchases have production hooks.
+- `seen()`: prompt keys actually shown (`SAVE.seen`), in their first-display order. Unseen queued lessons remain pending across screens and save reloads.
+- `tutState()`: the current `tip`, `tipKey`, `tipAge`, wrapped `layout`/arrow target, eligible `queuedKeys`, persistent `pendingKeys`, and copied `lessonText` catalog. `tasks` is always empty and `queued` is zero. It also copies radio/banner, Depot tag, pause/fade and finale `endCard` bounds. Only one keyed tip is displayed; currency and Hangar lessons wait for the appropriate screen.
 
 ### 5.16 Performance (src/main.js)
 

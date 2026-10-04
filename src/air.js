@@ -124,6 +124,7 @@ function airLaunch(id, x, y, ux, uy) {
   else if (p.cd <= 0) p.cd = p.maxCd;
   p.strikes++;
   p.lastStrike = { x, y, ux, uy, t: G.run };
+  if (typeof tutEvent === 'function') tutEvent('plane_strike', { id, gift: p.gift === true });
   AIR.arm = AIR.aim = AIR.tap = null;
   return true;
 }

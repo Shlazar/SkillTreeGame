@@ -416,20 +416,9 @@ function zombieAt(x, y) {
   }
   return best || wallAt(x, y);
 }
-// tell the tutorial what was done (when it is built in)
-function heliTut(kind) {
-  if (typeof tutCount === 'function') tutCount(kind);
-}
-// the selection changed: count it for the tutorial
-function selDone() {
-  const n = G.helis.filter((h) => h.sel).length;
-  if (n) heliTut('select');
-  if (n >= 2 && n === G.helis.length) heliTut('selall');
-}
 function selectAll() {
   for (const h of G.helis) h.sel = true;
   SFX.ui();
-  selDone();
 }
 // a click on a heli (or its card): select it alone; shift adds or takes it away; twice = all
 function clickHeli(h, shift) {
@@ -447,7 +436,6 @@ function clickHeli(h, shift) {
   if (shift) h.sel = !h.sel;
   else for (const q of G.helis) q.sel = q === h;
   SFX.ui();
-  selDone();
 }
 // Left button down: a card is clicked or the dormant armed 105 fires. A drag selects units only
 // when multiple helis are enabled in the full game.
@@ -482,7 +470,6 @@ function heliUp(x, y) {
     if (!b.shift) for (const h of G.helis) h.sel = false;
     for (const h of got) h.sel = true;
     if (got.length) SFX.ui();
-    selDone();
     return;
   }
   const h = heliAt(x, y);
@@ -507,7 +494,6 @@ function heliRight(x, y) {
       h.tgt = z;
     }
     HUI.marks.push({ kind: 'attack', z, t: realT });
-    heliTut('attack');
     SFX.lock();
   } else if (trainDist(wx, wy + 5) < 4) {
     for (const h of sel) h.order = null;
@@ -520,7 +506,6 @@ function heliRight(x, y) {
       h.order = { kind: 'move', x: wx + Math.cos(a) * r, y: wy + Math.sin(a) * r * FORE };
     });
     HUI.marks.push({ kind: 'move', x: wx, y: wy, t: realT });
-    heliTut('move');
     SFX.ui();
   }
   for (const h of sel) h.cmdT = realT;
@@ -536,7 +521,6 @@ function heliKey(k) {
   if (i < 0 || !G.helis[i]) return false;
   for (const q of G.helis) q.sel = q === G.helis[i];
   SFX.ui();
-  selDone();
   return true;
 }
 
