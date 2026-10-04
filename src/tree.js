@@ -234,6 +234,9 @@ function treeUp(L, up) {
     mgCar: L('mgCar') > 0, mgDamage: UP.mgDamage(L('mgDamage')),
     mgRate: UP.mgRate(L('mgRate')), mgRange: UP.mgRange(L('mgRange')),
     mgTurrets: UP.mgTurrets(L('mgTurrets')), apRounds: UP.apRounds(L('apRounds')),
+    katyusha: L('katyusha') > 0, katyushaRockets: UP.katyushaRockets(L('katyushaRockets')),
+    katyushaReload: UP.katyushaReload(L('katyushaReload')), katyushaBlast: UP.katyushaBlast(L('katyushaBlast')),
+    clusterRockets: UP.clusterRockets(L('clusterRockets')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
     ramTime: 0, ramCharge: 0, power: false

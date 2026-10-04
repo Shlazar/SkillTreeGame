@@ -215,6 +215,8 @@ Object.assign(window.__sr, {
     const active = G.rounds.filter((r) => r.kind === 'rocket' && r.source === 'pods');
     const missiles = G.rounds.filter((r) => r.kind === 'hellfire');
     const mg = trainWeaponState().mg;
+    const kat = trainWeaponState().katyusha, km = trainMount(KATC.car, 0, 0, KATC.deck);
+    const copyKat = (v) => v ? { ...v } : null;
     const copyMGShot = (s) => s ? { ...s, muzzle: { ...s.muzzle }, target: { ...s.target },
       targets: s.targets.map((t) => ({ ...t })) } : null;
     return {
@@ -247,6 +249,19 @@ Object.assign(window.__sr, {
         art: { normal: MGART.n.length, hot: MGART.h.length, barrel: MGART.bn.length, hotBarrel: MGART.bh.length,
           w: MGART.n[0].width, h: MGART.n[0].height,
           atlas: [...MGART.n, ...MGART.h, ...MGART.bn, ...MGART.bh].every((s) => !!ATL.get(s)) } },
+      katyusha: { enabled: !!G.up.katyusha, range: KATC.range, damage: KATC.damage,
+        blastRadius: KATC.radius * G.up.katyushaBlast, reload: G.up.katyushaReload,
+        salvo: G.up.katyushaRockets, clusterCount: G.up.clusterRockets, cooldown: Math.max(0, kat.next - clock),
+        ready: !!G.up.katyusha && clock >= kat.next, salvos: kat.salvos, shots: kat.shots, hits: kat.hits, kills: kat.kills,
+        impacts: kat.impacts, rocketImpacts: kat.rocketImpacts, clusterImpacts: kat.clusterImpacts,
+        splits: kat.splits, clusterBombs: kat.clusterBombs, queued: kat.queue.length, inFlight: kat.rounds.length,
+        flash: kat.flash.slice(), ang: kat.ang, lastTarget: copyKat(kat.lastTarget), lastSalvo: copyKat(kat.lastSalvo),
+        lastLaunch: copyKat(kat.lastLaunch), lastImpact: copyKat(kat.lastImpact), recentImpacts: kat.recentImpacts.map(copyKat),
+        active: kat.rounds.map((r) => ({ source: r.source, sx: r.sx, sy: r.sy, sz: r.sz, bx: r.bx, by: r.by,
+          age: r.age, T: r.T, dmg: r.dmg, R: r.R, arc: r.arc, cluster: r.cluster, position: rocketAt(r) })),
+        mount: { ...km, sx: km.x - G.camX, sy: km.y - km.z - G.camY },
+        art: { normal: KATART.n.length, hot: KATART.h.length, w: KATART.n[0].width, h: KATART.n[0].height,
+          atlas: [...KATART.n, ...KATART.h].every((s) => !!ATL.get(s)) } },
       planes: airSnapshot(), cars: [], gadgets: []
     };
   },

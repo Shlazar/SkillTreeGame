@@ -132,7 +132,7 @@ function drawCar(i) {
     ctx.globalAlpha = 1;
   }
   drawTrainWeapon(i);
-  if (i !== 2) return;
+  if (i !== 2 || G.up.katyusha) return;
   const gun = G.up.gun > 0, R = gun ? RIDERS_GUN : RIDERS;
   if (gun) drawCannon();
   for (let k = 0; k < R.length; k++) {
