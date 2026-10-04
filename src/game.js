@@ -1254,6 +1254,7 @@ function step(dt) {
   updateStation(dt);
   if (!G.demo) updateWalls();
   updateZombies(dt);
+  updateGadgets(dt);
   updateTrainWeapons(dt);
   updateRounds(dt);
   updateBurn(dt);

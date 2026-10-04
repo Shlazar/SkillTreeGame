@@ -16,6 +16,18 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  // Steam counters and the current curved train envelope; no mutable cloud state is exposed.
+  steam: () => {
+    if (!G) return null;
+    const s = steamState(), reach = STEAMC.reachStep * G.up.steamReach;
+    return { enabled: !!G.up.steamVent, damage: STEAMC.damage * G.up.steamDamage,
+      interval: G.up.steamSpeed, reach, cloudReach: STEAMC.cloudBase + reach, hotCloud: G.up.hotCloud,
+      cooldown: Math.max(0, s.next - heliWeaponTime()), bursts: s.bursts, hits: s.hits, kills: s.kills,
+      cloudHits: s.cloudHits, cloudKills: s.cloudKills, lastBurst: s.lastBurst ? { ...s.lastBurst } : null,
+      cloud: s.cloud ? { ...s.cloud } : null,
+      envelope: { halfWidth: CAR.half, fore: FORE, segments: G.tr.cars.map((c) => ({
+        ax: c.x1, ay: c.y1, bx: c.x0 + c.dx * 6, by: c.y0 + c.dy * 6 })) } };
+  },
   // Seconds until the Ram can be used again; kills never change this clock.
   ramCd: () => G ? G.ram.cd : 0,
   // Copy the actual Ram state, card bounds and live shock rings without changing cooldowns.

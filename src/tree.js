@@ -239,6 +239,9 @@ function treeUp(L, up) {
     clusterRockets: UP.clusterRockets(L('clusterRockets')),
     ramPower: UP.ramPower(L('ramPower')), ramCooldown: UP.ramCooldown(L('ramCooldown')),
     ramDuration: UP.ramDuration(L('ramDuration')), shockwave: UP.shockwave(L('shockwave')),
+    steamVent: L('steamVent') > 0, steamDamage: UP.steamDamage(L('steamDamage')),
+    steamSpeed: UP.steamSpeed(L('steamSpeed')), steamReach: UP.steamReach(L('steamReach')),
+    hotCloud: UP.hotCloud(L('hotCloud')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
     power: false
