@@ -341,7 +341,6 @@ function boot() {
       const s = clamp(sAtKm(x), G.goalS, G.tr.startS), tr = G.tr;
       tr.s = s;
       tr.fy = yOfS(s);
-      for (const w of G.walls) if (w.s > s) w.placed = w.warned = w.awake = true;
       for (const z of G.zombies) z.gone = true;
       G.maxKm = Math.max(G.maxKm, kmAt(s));
       layoutTrain();
@@ -473,7 +472,7 @@ function boot() {
       onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length, up: Object.assign({}, G.up),
       shots: G.shots, scavPaid: G.scavPaid, overheat: G.overheat, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),
       station: G.station ? G.station.id + ' ' + G.station.state : '-',
-      walls: G.walls.map((w) => w.km + (w.awake ? ' awake' : w.placed ? ' placed' : ' ahead')),
+      walls: G.walls.map((w) => w.km + ' ' + w.state),
       helis: G.helis.map((h) => [Math.round(h.x - G.tr.fx), Math.round(h.y - G.tr.fy)]),
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
       W, H, VH, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),

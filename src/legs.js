@@ -83,7 +83,7 @@ function legEventNotice(title, color) {
   if (banners[0] && banners[0] !== previous) banners[0].T = LEG_EVENT_NOTICE;
 }
 
-// Supported events use the existing spawners. Future gold, wall and rescue events are left to
+// Supported events use the existing spawners. Future gold and rescue events are left to
 // their real feature handlers; they never masquerade as another event or earn a fired receipt.
 function dispatchLegEvent(kind, params, id) {
   const p = params || {}, n = Math.max(0, Math.floor(Number(p.n) || 0));
@@ -108,6 +108,7 @@ function dispatchLegEvent(kind, params, id) {
     legEventNotice(kind === 'pile' ? 'SCRAP PILE' : 'SUPPLY CRATE', U.blue);
     return 1;
   }
+  if (kind === 'deadWall') return addDeadWall(p, id) ? 1 : null;
   return null;
 }
 

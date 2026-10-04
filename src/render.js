@@ -37,6 +37,7 @@ function bakeOverlays() {
 // DL = everything standing, sorted by depth (k: the ground y of its front, or just in front of the
 // car for the dead holding on to the train). CARS = the train's cars as draw-list entries.
 const DL = [], TREES = [], VZ = [], FIRES = [], CARS = [];
+const DEADWALL_DRAWS = [];
 // One reward actor is reused while a survivor boards or the locked chest is presented.
 const STATION_REWARD_DRAW = { stationReward: true, x: 0, y: 0, k: 0, z: 0, age: 0, kind: '' };
 const byK = (a, b) => a.k - b.k;
@@ -72,9 +73,37 @@ function gather(ci0, cj0, ci1, cj1) {
     if ((p.st === 'wait' || p.st === 'run' || p.st === 'grab') && p.x > x0 && p.x < x1 && p.y > y0 && p.y < y1 + 10) DL.push(p);
   }
   gatherStationReward();
+  gatherDeadWalls(x0, x1, y0, y1);
   // the dead: a crowd in the open is drawn in one go (drawHorde), the rest sorted in here (horde.js)
   gatherHorde(x0, x1, y0, y1);
   DL.sort(byK);
+}
+
+// The wall is one depth-sorted obstacle, separate from the living zombie lists and their caps.
+function gatherDeadWalls(x0, x1, y0, y1) {
+  const a = DEADWALLART;
+  for (let i = 0; i < G.walls.length; i++) {
+    const w = G.walls[i], x = w.x - a.ax, y = w.y - a.ay;
+    if (w.broken || w.placed === false || x > x1 || x + a.w < x0 || y - 20 > y1 || y + a.height < y0) continue;
+    const o = DEADWALL_DRAWS[i] || (DEADWALL_DRAWS[i] = {});
+    Object.assign(o, { deadWall: w, d: a.d, x: w.x, y: w.y, k: w.y + 1 });
+    DL.push(o);
+  }
+}
+function drawDeadWall(o) {
+  const a = DEADWALLART, w = o.deadWall;
+  blit(w.flash > 0 ? a.flash : thermal ? a.h : a.n, Math.round(o.x - a.ax), Math.round(o.y - a.ay));
+}
+// Bar width/height and spacing above the packed wall in world px (proposal)
+const DEADWALLBAR = { width: 52, height: 4, gap: 7, labelGap: 10 };
+function drawDeadWallBars() {
+  const a = DEADWALLART, c = DEADWALLBAR;
+  for (const o of DL) {
+    if (!o.deadWall) continue;
+    const w = o.deadWall, x = Math.round(o.x - c.width / 2), y = Math.round(o.y - a.ay - c.gap);
+    bar(x, y, c.width, c.height, w.hp / w.max, '#3a1210', U.red, '#f08a64');
+    text('DEAD WALL', Math.round(o.x), y - c.labelGap, U.red, { align: 'center', drop: true });
+  }
 }
 
 // Station rewards age with game time so the boarding moment can be frozen for a picture.
@@ -308,6 +337,7 @@ function render() {
     const S = z.S, fr = S.walk[(z.anim | 0) & 3];
     ctx.drawImage(fr.s, Math.round(z.x - S.ax), Math.round(z.y - 1 - S.shp));
   }
+  for (const o of DL) if (o.deadWall) blit(DEADWALLART.sh, Math.round(o.x - DEADWALLART.ax), Math.round(o.y - DEADWALLART.ay));
   drawTrainShadow();
   if (DL.includes(STATION_REWARD_DRAW)) {
     const o = STATION_REWARD_DRAW, d = o.kind === 'chest' ? LART.gold : SCN.campPeople[0][0];
@@ -322,6 +352,10 @@ function render() {
   // see past it.
   const ax = G.camX + G.aimSX, ay = G.camY + G.aimSY, aiming = mode === 'play';
   for (const o of DL) {
+    if (o.deadWall) {
+      drawDeadWall(o);
+      continue;
+    }
     if (o.stationReward) {
       drawStationReward(o);
       continue;
@@ -419,6 +453,7 @@ function render() {
     const hs = st.house;
     if (Math.abs(hs.y - G.camY - VH / 2) < VH) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });
   }
+  drawDeadWallBars();
   drawLoot();
   drawHeliTop();
   drawPlanes();

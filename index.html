@@ -1089,6 +1089,31 @@ function prop(spr, block, extra) {
   return Object.assign({ spr, sh: castShadow(spr), ax: spr.width >> 1, ay: spr.height - 1, block: block || 0 }, extra || {});
 }
 const PROPS = { pine: [], oak: [], fall: [], dead: [], bush: [], rock: [], big: [], stump: [], wreck: [], burnt: [], barrel: [], crate: [], wall: [], pole: [] };
+// Composite footprint/face anchor in px; wreck thermal brightness stays below living bodies (proposal)
+const DEADWALLART = { n: null, h: null, sh: null, flash: null, w: 80, height: 48, ax: 40, ay: 46, d: null };
+function bakeDeadWall() {
+  const a = DEADWALLART, [n, ng] = mk(a.w, a.height), [h, hg] = mk(a.w, a.height),
+    [sh, sg] = mk(a.w, a.height), pieces = [];
+  // Four staggered ranks use the already baked walker poses and clothing variants.
+  for (let row = 0; row < 4; row++) for (let col = 0; col < 5; col++) {
+    const i = row * 5 + col, S = ZS[0][i % ZS[0].length], fr = S.walk[i & 3], left = !!(i & 1);
+    pieces.push({ x: 7 + col * 15 + (row & 1 ? 0 : 4), y: 17 + row * 9 + (row === 3 ? 2 : 0),
+      ax: S.ax, ay: S.ay, n: left ? fr.nf : fr.n, h: left ? fr.hf : fr.h,
+      sh: fr.s, shY: -1 - S.shp });
+  }
+  for (const [d, x, y] of [[PROPS.wreck[0], 21, 29], [PROPS.burnt[0], 58, 32]]) {
+    pieces.push({ x, y, ax: d.ax, ay: d.ay, n: d.spr, h: hotSpr(d.spr, 35), sh: d.sh, shY: -1 });
+  }
+  pieces.sort((p, q) => p.y - q.y);
+  for (const p of pieces) {
+    ng.drawImage(p.n, p.x - p.ax, p.y - p.ay);
+    hg.drawImage(p.h, p.x - p.ax, p.y - p.ay);
+    sg.drawImage(p.sh, p.x - p.ax, p.y + p.shY);
+  }
+  Object.assign(a, { n, h, sh, flash: flashSpr(n) });
+  a.d = { spr: n, h, sh, ax: a.ax, ay: a.ay, block: 0 };
+  for (const c of [a.n, a.h, a.sh, a.flash]) atl(c);
+}
 // a telegraph pole: a crossbar with two glass insulators
 function poleSpr() {
   return pix(5, 22, (r) => {
@@ -1286,6 +1311,7 @@ function initSprites() {
   PROPS.crate.push(prop(crateSpr(), 4));
   for (let k = 0; k < 8; k++) PROPS.wall.push(prop(wallSpr(10 + ((rng() * 12) | 0), rng), 0, { wall: true }));
   PROPS.pole.push(prop(poleSpr(), 0));
+  bakeDeadWall();
   // the train at every heading: [slices, height, warmth on the thermal camera]
   TRAIN.length = 0;
   FOOT.length = 0;
@@ -2986,9 +3012,10 @@ const CFG = {
   station: { again: 3, gap: 1.1, run: 24, minStop: 12, grab: 1.4, clear: 34, wait: 8 },
   // Share of each zombie's scrap value paid now; fractions wait in the kill pot. (proposal)
   pay: { kill: 1 },
-  // a Dead Wall: px along the rails it fills, px from the rail middle, how near the train comes
-  // before it moves, how far ahead it is placed, how far ahead the warning comes (px)
-  wall: { len: 120, half: 12, wake: 110, place: 600, warn: 300 },
+  // Dead Wall health, rail placement/standoff, collectible scrap, warning/clearance and crash bodies. (proposal)
+  wall: { hp: 75, ahead: 180, stop: 20, loot: 40, warn: 300, len: 48, goalPad: 40, bodies: 6,
+    half: 34, depthY: 29 // Cached actor's ground feet span x7..71 and y17..46, behind its face. (proposal)
+  },
   // bought in the skill tree. The rail cannon (cannon.js): seconds to reload, seconds each GUN SPEED
   // level takes off, px either side of its line that it kills, how fast its barrel turns (radians/s).
   gun: { reload: 4, fast: 0.5, hw: 5, turn: 7 },
@@ -3106,7 +3133,7 @@ function newGame(demo, number, replay) {
     goalS: demo ? -1e12 : stopRailS(leg.to), goalY: -1e9,
     // the stops on this run (the Depot and the stations ahead), the stations alone, the one the
     // train goes to next (or stands at), and the Dead Walls ahead
-    stops: [], stations: [], station: null, walls: [],
+    stops: [], stations: [], station: null, walls: [], wall: null,
     camX: 0, camY: 0, aimSX: W / 2, aimSY: VH / 2,
     lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
@@ -3203,20 +3230,17 @@ function nearMiss(k) {
   const m = kmAt(st.stopS) - k;
   return st.name + ' WAS ' + fmt(Math.max(10, Math.round(m * 100) * 10)) + ' M AWAY!';
 }
-// The summary's lines for a run lost at a Dead Wall, or after one that cost the train a quarter of
-// its health or more (with no station since): what happened, and what gets you through (without the
-// Turbo Ram: buy it; with it: save it for the wall, or more armor when it ran into the
-// wall and the train still broke). [] for any other run.
+// A loss at the blocking wall, or after a costly wall fight, names the obstacle and its remedies.
 function wallStop(k) {
   if (G.result !== 'lost') return [];
-  let w = G.walls.find((x) => k > x.km - 0.04 && k < x.km + CFG.wall.len / CFG.line.km + 0.03), say = 'THE DEAD WALL STOPPED YOU.';
+  let w = G.walls.find((x) => !x.broken && k > x.km - 0.04 && k < x.km + 0.03), say = 'THE DEAD WALL STOPPED YOU.';
   if (!w) {
     w = G.walls.filter((x) => x.hpOut != null && x.km < k).pop();
     if (!w || w.hpIn - w.hpOut < G.tr.max * 0.25 || G.stations.some((st) => kmAt(st.s) > w.km && kmAt(st.s) < k)) return [];
     say = 'THE DEAD WALL COST THE TRAIN ' + Math.round(w.hpIn - w.hpOut) + ' HP.';
   }
-  const tip = !G.up.ram ? 'TURBO RAM SMASHES THROUGH IT.' : w.rammed ? 'MORE ARMOR WOULD GET YOU THROUGH.'
-    : w.ready ? 'RAM THE WALL TO BREAK THROUGH!' : 'SAVE YOUR TURBO RAM FOR IT.';
+  const tip = !G.up.ram ? 'UPGRADE YOUR WEAPONS OR ADD TURBO RAM.' : w.rammed ? 'MORE ARMOR WOULD GET YOU THROUGH.'
+    : ramState() === 'ready' ? 'RAM THE WALL TO BREAK THROUGH!' : 'SAVE YOUR TURBO RAM FOR IT.';
   return [[say, U.red], [tip, U.ink]];
 }
 // km as metres for the screen: 340 M (to the nearest 10 m), 1.25 KM from 1 km up
@@ -3394,57 +3418,102 @@ function scatter(at) {
   for (let k = 0; k < 5; k++) railZombie(G.tr.s - 110 - k * 6, rnd(-3, 3), 0);
 }
 // ---------- Dead Walls
-// Before each station a crowd of the dead with brutes stands packed on the rails. It is placed when
-// the train is 600 px away, stands still until the train is 110 px away, and comes back every run.
-// km = where its front is; it fills 120 px of rails behind that.
-const WALLS = [
-  { km: 0.75, walkers: 40, brutes: 2 },
-  { km: 1.75, walkers: 100, brutes: 6 }
-];
-// true when s (along the rails) is in a Dead Wall or in the 150 m in front of one
+// The timeline creates a composite wall with one health pool. Its weapon target is outside the
+// zombie grid, movement, spacing and kill rewards, at the actual rail face.
+function addDeadWall(params = {}, eventId = '') {
+  if (!G || G.demo || G.result || mode !== 'play') return null;
+  const id = String(params.id || eventId || 'leg-' + G.leg + '-wall'), old = G.walls.find((w) => w.id === id);
+  if (old) return old;
+  const c = CFG.wall, ahead = Number.isFinite(params.ahead) ? Math.max(c.stop, params.ahead) : c.ahead;
+  const s = Math.max(G.goalS + c.goalPad, G.tr.s - ahead);
+  if (G.tr.s - s < c.stop - 1e-9) return null;
+  const y = yOfS(s), x = railX(y), hp = Number.isFinite(params.hp) && params.hp > 0 ? params.hp : c.hp;
+  const w = { id, eventId: eventId || id, leg: G.leg, s, km: kmAt(s), x, y, stopS: s + c.stop,
+    hp, max: hp, placed: true, warned: true, awake: true, broken: false, state: 'ahead', flash: 0,
+    spawnT: G.run, stoppedAt: null, brokenAt: null, rammed: false, hpIn: null, hpOut: null,
+    lootId: null, hits: 0, damage: 0, lastHit: null };
+  const a = DEADWALLART;
+  w.target = { wall: w, x, y, type: -1, big: true, run: false, st: 1, still: false, gate: false,
+    dead: false, gone: false, pending: 0, paid: 0, value: 0, flash: 0, vx: 0, vy: 0, kbx: 0, kby: 0,
+    qd: 0, k: y, S: { w: a.w, h: a.height, ax: a.ax, ay: a.ay, walk: [{ n: a.n }] } };
+  Object.defineProperties(w.target, {
+    hp: { get: () => w.hp, set: (v) => { w.hp = v; }, enumerable: true },
+    max: { get: () => w.max, enumerable: true }
+  });
+  G.walls.push(w); G.wall = w;
+  legEventNotice('DEAD WALL', U.red); SFX.warn();
+  return w;
+}
+function blockingWall() {
+  if (!G || G.demo) return null;
+  let best = null;
+  for (const w of G.walls) if (!w.broken && G.tr.s - w.s >= -CFG.wall.len && (!best || w.s > best.s)) best = w;
+  return best;
+}
+// Blast circles intersect the packed ground body, extending only behind the aiming face.
+function wallDistance(x, y, w) {
+  const dx = Math.max(0, Math.abs(x - w.x) - CFG.wall.half);
+  const dy = y - clamp(y, w.y - CFG.wall.depthY, w.y);
+  return Math.hypot(dx, dy / FORE);
+}
+// Right-click uses the cached actor's real screen bounds.
+function wallAt(sx, sy) {
+  const x = G.camX + sx, y = G.camY + sy, a = DEADWALLART;
+  for (const w of G.walls) if (!w.broken && x >= w.x - a.ax && x < w.x - a.ax + a.w &&
+    y >= w.y - a.ay && y < w.y - a.ay + a.height) return w.target;
+  return null;
+}
 function wallZone(s) {
-  for (const w of G.walls) if (s <= w.s + CFG.wall.warn && s >= w.s - CFG.wall.len - 30) return true;
+  for (const w of G.walls) if (!w.broken && s <= w.s + CFG.wall.warn && s >= w.s - CFG.wall.len) return true;
   return false;
 }
-// true when the engine is less than d px before a Dead Wall (or in it)
 function wallAhead(d) {
-  for (const w of G.walls) if (G.tr.s - w.s < d && G.tr.s - w.s > -CFG.wall.len) return true;
+  for (const w of G.walls) if (!w.broken && G.tr.s - w.s < d && G.tr.s - w.s > -CFG.wall.len) return true;
   return false;
 }
-function placeWall(w) {
-  w.placed = true;
-  const c = CFG.wall;
-  for (let i = 0; i < w.walkers + w.brutes; i++) {
-    // anywhere in the wall, within c.half px of the rail middle (the brutes nearer to it)
-    const big = i < w.brutes;
-    const z = railZombie(w.s - rnd(0, c.len), rnd(-c.half, c.half) * (big ? 0.5 : 1), big ? 2 : 0);
-    z.still = true;
-    w.zs.push(z);
-  }
+function damageWall(w, damage, cause = 'mg') {
+  if (!w || w.broken || !(damage > 0) || !Number.isFinite(damage)) return false;
+  const paid = Math.min(w.hp, damage);
+  w.hp = Math.max(0, w.hp - damage); w.flash = w.target.flash = 0.12;
+  w.hits++; w.damage += paid; w.lastHit = { damage: paid, cause, t: G.run };
+  if (w.hp <= 0) { breakWall(w, cause); return true; }
+  SFX.hit();
+  return false;
 }
-// Place the walls coming up, warn of them, and wake them when the train is close.
-function updateWalls() {
-  const tr = G.tr, c = CFG.wall;
+// Rewards remain in a collectible pile; the crash bodies and wreck chunks are cosmetic.
+function breakWall(w, cause = 'mg') {
+  if (!w || w.broken) return false;
+  w.broken = true; w.state = 'broken'; w.hp = 0; w.brokenAt = G.run; w.hpOut = G.tr.hp;
+  w.cause = cause; w.rammed = cause === 'ram'; w.target.dead = w.target.gone = true;
+  w.target.pending = 0; w.target.paid = 0;
+  const f = addFind('pile', w.km, 0, 1, CFG.wall.loot);
+  f.eventId = w.id + '-scrap'; w.lootId = f.eventId;
+  boomFx(w.x, w.y, true);
+  for (let i = 0; i < CFG.wall.bodies && G.bodies.length < 160; i++) {
+    const S = ZS[0][i % ZS[0].length], a = i / CFG.wall.bodies * TAU, v = rnd(45, 100);
+    G.bodies.push({ S, x: w.x + Math.cos(a) * 12, y: w.y + Math.sin(a) * 8 * FORE, z: 3,
+      vx: Math.cos(a) * v, vy: Math.sin(a) * v * FORE, vz: rnd(90, 170), spin: rnd(8, 16), rot: 0, fall: false, age: 0 });
+  }
+  addShake(0.75); hitStop(0.06, 0.25); SFX.boom();
+  return true;
+}
+function stopAtWall(w) {
+  if (w.state !== 'stopped') { w.stoppedAt = G.run; w.hpIn = G.tr.hp; }
+  w.state = 'stopped'; G.tr.s = w.stopS; G.tr.v = 0; layoutTrain();
+}
+function updateWalls(dt) {
+  const tr = G.tr;
   for (const w of G.walls) {
+    w.flash = Math.max(0, w.flash - dt); w.target.flash = w.flash;
+    if (w.broken || G.result) continue;
     const d = tr.s - w.s;
-    if (!w.placed && d < c.place && d > -c.len) placeWall(w);
-    if (!w.warned && d < c.warn && d > 0) {
-      w.warned = true;
-      banner('DEAD WALL IN ' + Math.round(d / 2 / 10) * 10 + ' M', G.up.ram ? 'SAVE YOUR TURBO RAM!' : 'BRUTES ON THE TRACK', U.red, 3);
-      SFX.warn();
+    if (ramPowered()) {
+      if (w.state === 'stopped' || d <= CFG.ram.front) breakWall(w, 'ram');
+      continue;
     }
-    if (w.placed && !w.awake && d < c.wake) {
-      w.awake = true;
-      w.hpIn = tr.hp;
-      for (const z of w.zs) z.still = false;
-    }
-    // for the summary: the health the wall cost the train (from when it woke until the nose is 40 px
-    // past its far end), the Turbo Ram ran into it, or was full near it and not used
-    if (w.hpIn != null && w.hpOut == null && d < -c.len - 40) w.hpOut = tr.hp;
-    if (d < c.wake && d > -c.len) {
-      if (ramPowered() && d < 10) w.rammed = true;
-      else if (ramState() === 'ready') w.ready = true;
-    }
+    const remaining = tr.s - w.stopS;
+    if (w.state === 'ahead' && remaining < tr.v * tr.v / (2 * CFG.train.brake) + 1) w.state = 'braking';
+    if ((w.state === 'braking' || w.state === 'stopped') && remaining < 0.6) stopAtWall(w);
   }
 }
 
@@ -3473,6 +3542,10 @@ function queryEll(x, y, R, fn) {
       const d = Math.hypot(z.x - x, (z.y - y) / FORE);
       if (d <= R) fn(z, d);
     }
+  }
+  for (const w of G.walls) if (!w.broken) {
+    const d = wallDistance(x, y, w);
+    if (d <= R) fn(w.target, d);
   }
 }
 
@@ -3664,6 +3737,8 @@ function ramStart() {
     pop: 0, popT: -9 });
   r.cd = r.cooldown;
   r.uses++;
+  const wall = blockingWall();
+  if (wall && (wall.state === 'stopped' || G.tr.s - wall.stopS <= 0.6 && tr.v < 1)) breakWall(wall, 'ram');
   // The nose is cleared immediately; a surviving brute is pushed off it.
   for (const z of G.zombies) if (!z.dead && z.st === 2 && z.side === 0) ramHit(z);
   // black smoke and a jet of steam from the stack, a flash of fire at the engine
@@ -3830,6 +3905,7 @@ function blood(x, y, n, zh) {
 // cause = 'mg' (a heli's nose gun round), 'gun' (the flatcar gun), 'he' (the 105 at (cx, cy), dist away),
 // 'train' (run down) or 'ram' (the Turbo Ram). free = not the player's kill (no score).
 function kill(z, cause, cx, cy, dist, free) {
+  if (z.wall) { breakWall(z.wall, cause); return; }
   if (z.dead) return;
   if (typeof tutKill === 'function') tutKill(z, cause, free);
   z.dead = true;
@@ -3908,6 +3984,7 @@ function kill(z, cause, cx, cy, dist, free) {
 // A 25mm hit: 1 base damage, more with Gun Damage (the demo hits for 1). Or a hit of dmg from another
 // gun (cause 'gun' = the flatcar gun).
 function hitZombie(z, dmg, cause) {
+  if (z.wall) return damageWall(z.wall, dmg != null ? dmg : G.demo ? 1 : heliDmg(), cause || 'mg');
   z.hp -= dmg != null ? dmg : G.demo ? 1 : heliDmg();
   z.flash = z.big ? 0.16 : 0.1;
   juiceHit(z, cause);
@@ -4133,10 +4210,15 @@ function ride(d) {
 // ---------- one step of the game (STEP seconds)
 function step(dt) {
   G.t += dt;
-  const tr = G.tr, st = G.station;
+  const tr = G.tr, st = G.station, wall = blockingWall();
   // The train recovers after bumps, brakes at its goal, and remains parked after winning.
   if (G.result === 'lost') tr.v = Math.max(0, tr.v - 30 * dt);
   else if (G.result === 'won') tr.v = 0;
+  else if (wall && !ramPowered() && (wall.state === 'braking' || wall.state === 'stopped')) {
+    tr.v = Math.min(CFG.train.cruise, tr.v + CFG.train.accel * dt,
+      Math.sqrt(2 * CFG.train.brake * Math.max(0, tr.s - wall.stopS)) + 1.5);
+    if (tr.s - wall.stopS < 0.6) stopAtWall(wall);
+  }
   else if (st && st.state === 'braking') {
     // A zombie impact can slow the train below its stopping curve. Recover gently so an
     // approach does not become a permanent crawl, while the same curve still prevents overshoot.
@@ -4211,7 +4293,7 @@ function step(dt) {
   G.killBump = Math.max(0, G.killBump - dt * 6);
   G.cashPulse = Math.max(0, G.cashPulse - dt * 3);
   updateStation(dt);
-  if (!G.demo) updateWalls();
+  if (!G.demo) updateWalls(dt);
   updateZombies(dt);
   updateGadgets(dt);
   updateTrainWeapons(dt);
@@ -5473,7 +5555,7 @@ function legEventNotice(title, color) {
   if (banners[0] && banners[0] !== previous) banners[0].T = LEG_EVENT_NOTICE;
 }
 
-// Supported events use the existing spawners. Future gold, wall and rescue events are left to
+// Supported events use the existing spawners. Future gold and rescue events are left to
 // their real feature handlers; they never masquerade as another event or earn a fired receipt.
 function dispatchLegEvent(kind, params, id) {
   const p = params || {}, n = Math.max(0, Math.floor(Number(p.n) || 0));
@@ -5498,6 +5580,7 @@ function dispatchLegEvent(kind, params, id) {
     legEventNotice(kind === 'pile' ? 'SCRAP PILE' : 'SUPPLY CRATE', U.blue);
     return 1;
   }
+  if (kind === 'deadWall') return addDeadWall(p, id) ? 1 : null;
   return null;
 }
 
@@ -5927,14 +6010,14 @@ const heliRangeVisible = () => mode === 'play' && !G.demo && !G.result && (G.run
 // ground distance from heli h to zombie z (round the ellipse the view squashes, like queryEll)
 const hDist = (h, z) => Math.hypot(z.x - h.x, (z.y - h.y) / FORE);
 // The best target in reach of heli h (one the rounds in the air will not already kill), or null:
-// the dead on the train, then the dead on the rails ahead, then the nearest. (The dead at the Depot
+// the dead on the train, then a Dead Wall, the dead on the rails ahead, then the nearest. (The dead at the Depot
 // gate are left for the first run's Ram.)
 function heliTarget(h) {
   let best = null, bk = Infinity;
   const s0 = G.tr.s;
   queryEll(h.x, h.y, hRange(), (z, d) => {
     if (z.pending >= z.hp || z.gate && z.still) return;
-    const k = z.st === 2 ? d : z.st === 1 && trackLocal(z.x, z.y, TL).a < s0 ? 1000 + d : 2000 + d;
+    const k = z.st === 2 ? d : z.wall ? 500 + d : z.st === 1 && trackLocal(z.x, z.y, TL).a < s0 ? 1000 + d : 2000 + d;
     if (k < bk) {
       bk = k;
       best = z;
@@ -6153,7 +6236,7 @@ function zombieAt(x, y) {
     const d = Math.hypot(z.x - G.camX - x, z.y - z.S.h * 0.5 - G.camY - y);
     if (d < bd) { bd = d; best = z; }
   }
-  return best;
+  return best || wallAt(x, y);
 }
 // tell the tutorial what was done (when it is built in)
 function heliTut(kind) {
@@ -6680,14 +6763,14 @@ function updateHeliWeapons(dt) {
   updatePods(dt);
   updateHellfire(dt);
 }
-// Walls join this priority list in T6.3. Within a priority, current hp wins, then distance.
+// Walls first, then brutes, gold and current health. Within a priority, hp wins, then distance.
 function hellfireTarget(h, excluded = null) {
   let best = null, bestRank = Infinity, bestHp = -Infinity, nearest = Infinity;
   queryEll(h.x, h.y, HWC.hellfire.range, (z, d) => {
     if (z.gone || z.gate && z.still || excluded && excluded.has(z)) return;
-    const rank = z.big ? 0 : z.gold ? 1 : 2;
+    const rank = z.wall ? -1 : z.big ? 0 : z.gold ? 1 : 2;
     if (rank < bestRank || rank === bestRank && (z.hp > bestHp || z.hp === bestHp && d < nearest)) {
-      best = { z, priority: rank === 0 ? 'brute' : rank === 1 ? 'gold' : 'hp' };
+      best = { z, priority: rank === -1 ? 'wall' : rank === 0 ? 'brute' : rank === 1 ? 'gold' : 'hp' };
       bestRank = rank;
       bestHp = z.hp;
       nearest = d;
@@ -7892,6 +7975,7 @@ function bakeOverlays() {
 // DL = everything standing, sorted by depth (k: the ground y of its front, or just in front of the
 // car for the dead holding on to the train). CARS = the train's cars as draw-list entries.
 const DL = [], TREES = [], VZ = [], FIRES = [], CARS = [];
+const DEADWALL_DRAWS = [];
 // One reward actor is reused while a survivor boards or the locked chest is presented.
 const STATION_REWARD_DRAW = { stationReward: true, x: 0, y: 0, k: 0, z: 0, age: 0, kind: '' };
 const byK = (a, b) => a.k - b.k;
@@ -7927,9 +8011,37 @@ function gather(ci0, cj0, ci1, cj1) {
     if ((p.st === 'wait' || p.st === 'run' || p.st === 'grab') && p.x > x0 && p.x < x1 && p.y > y0 && p.y < y1 + 10) DL.push(p);
   }
   gatherStationReward();
+  gatherDeadWalls(x0, x1, y0, y1);
   // the dead: a crowd in the open is drawn in one go (drawHorde), the rest sorted in here (horde.js)
   gatherHorde(x0, x1, y0, y1);
   DL.sort(byK);
+}
+
+// The wall is one depth-sorted obstacle, separate from the living zombie lists and their caps.
+function gatherDeadWalls(x0, x1, y0, y1) {
+  const a = DEADWALLART;
+  for (let i = 0; i < G.walls.length; i++) {
+    const w = G.walls[i], x = w.x - a.ax, y = w.y - a.ay;
+    if (w.broken || w.placed === false || x > x1 || x + a.w < x0 || y - 20 > y1 || y + a.height < y0) continue;
+    const o = DEADWALL_DRAWS[i] || (DEADWALL_DRAWS[i] = {});
+    Object.assign(o, { deadWall: w, d: a.d, x: w.x, y: w.y, k: w.y + 1 });
+    DL.push(o);
+  }
+}
+function drawDeadWall(o) {
+  const a = DEADWALLART, w = o.deadWall;
+  blit(w.flash > 0 ? a.flash : thermal ? a.h : a.n, Math.round(o.x - a.ax), Math.round(o.y - a.ay));
+}
+// Bar width/height and spacing above the packed wall in world px (proposal)
+const DEADWALLBAR = { width: 52, height: 4, gap: 7, labelGap: 10 };
+function drawDeadWallBars() {
+  const a = DEADWALLART, c = DEADWALLBAR;
+  for (const o of DL) {
+    if (!o.deadWall) continue;
+    const w = o.deadWall, x = Math.round(o.x - c.width / 2), y = Math.round(o.y - a.ay - c.gap);
+    bar(x, y, c.width, c.height, w.hp / w.max, '#3a1210', U.red, '#f08a64');
+    text('DEAD WALL', Math.round(o.x), y - c.labelGap, U.red, { align: 'center', drop: true });
+  }
 }
 
 // Station rewards age with game time so the boarding moment can be frozen for a picture.
@@ -8163,6 +8275,7 @@ function render() {
     const S = z.S, fr = S.walk[(z.anim | 0) & 3];
     ctx.drawImage(fr.s, Math.round(z.x - S.ax), Math.round(z.y - 1 - S.shp));
   }
+  for (const o of DL) if (o.deadWall) blit(DEADWALLART.sh, Math.round(o.x - DEADWALLART.ax), Math.round(o.y - DEADWALLART.ay));
   drawTrainShadow();
   if (DL.includes(STATION_REWARD_DRAW)) {
     const o = STATION_REWARD_DRAW, d = o.kind === 'chest' ? LART.gold : SCN.campPeople[0][0];
@@ -8177,6 +8290,10 @@ function render() {
   // see past it.
   const ax = G.camX + G.aimSX, ay = G.camY + G.aimSY, aiming = mode === 'play';
   for (const o of DL) {
+    if (o.deadWall) {
+      drawDeadWall(o);
+      continue;
+    }
     if (o.stationReward) {
       drawStationReward(o);
       continue;
@@ -8274,6 +8391,7 @@ function render() {
     const hs = st.house;
     if (Math.abs(hs.y - G.camY - VH / 2) < VH) text(st.name, hs.x, hs.y - 36, st.id === 'depot' ? U.gold : U.blue, { align: 'center' });
   }
+  drawDeadWallBars();
   drawLoot();
   drawHeliTop();
   drawPlanes();
@@ -8452,7 +8570,7 @@ function drawRoute(x0, x1) {
   ctx.fillRect(x0, y, Math.max(0, X(G.tr.s) - x0), 1);
   // Only walls inside this leg belong on its route.
   for (const wl of G.walls) {
-    if (wl.s >= start || wl.s <= end) continue;
+    if (wl.broken || wl.s >= start || wl.s <= end) continue;
     ctx.fillStyle = '#07080a';
     ctx.fillRect(X(wl.s) - 2, y - 3, 5, 7);
     ctx.fillStyle = U.red;
@@ -11338,7 +11456,7 @@ function drawHangarTab(y0, y1) {
 // Hooks: updateTrainWeapons (step), drawTrainWeapon (drawCar), drawTrainWeaponFx (additive pass).
 const MGC = {
   car: 3, headings: 32, rate: 2, scale: 0.6, flash: 0.07,
-  damage: 1, range: 100, barrel: 8, barrelZ: 2, halfWidth: 3, recoil: 1.3, recoilDecay: 12 // (proposal)
+  damage: 1, range: 100, wallRange: 200, barrel: 8, barrelZ: 2, halfWidth: 3, recoil: 1.3, recoilDecay: 12 // (proposal)
 };
 const MG_OFFSETS = [[0], [-7, 7], [-9, 0, 9]];
 const MGART = { n: [], h: [], bn: [], bh: [] };
@@ -11413,10 +11531,14 @@ function mgTarget(t, range) {
     const s = (z.st === 2 ? 0 : range + 1) + d;
     if (s < score) { best = z; score = s; }
   });
+  // The rear boxcar can reach a blocking wall's actual face across the train's length.
+  // Ordinary enemies keep their short range and have priority over this fallback.
+  const w = !best && blockingWall();
+  if (w && mgCanHit(w.target) && Math.hypot(w.x - t.x, (w.y - t.y) / FORE) <= MGC.wallRange) best = w.target;
   return best;
 }
 function mgTargetView(z) {
-  return { x: z.x, y: z.y, type: z.type, st: z.st, car: z.car };
+  return { x: z.x, y: z.y, type: z.type, st: z.st, car: z.car, wall: z.wall?.id || null };
 }
 // AP tests the same narrow ground ray through the chosen target. Nearer bodies stop it first.
 const MG_RAY = [];
@@ -11432,6 +11554,7 @@ function mgShot(t, target, p) {
       const zx = z.x - t.x, zy = (z.y - t.y) / FORE, along = zx * ux + zy * uy;
       if (along >= 0 && Math.abs(zx * uy - zy * ux) <= MGC.halfWidth) MG_RAY.push({ z, d: along });
     });
+    if (target.wall && !MG_RAY.some((v) => v.z === target)) MG_RAY.push({ z: target, d: length });
     MG_RAY.sort((a, b) => a.d - b.d);
   }
   const muzzle = mgMuzzle(t), shot = { x: t.x, y: t.y, z: t.z, muzzle, angle: t.ang, t: G.t,
@@ -11673,7 +11796,7 @@ katyushaArt();
 // Hooks: updateGadgets (step, after updateZombies); steamState (read-only run diagnostics).
 
 // Base damage/ground reach, puff spacing/count, minimum emitter height and particle tuning (proposal)
-const STEAMC = { damage: 2, interval: 5, reachStep: 6, cloudBase: 6, cloudDuration: 2,
+const STEAMC = { damage: 2, interval: 5, reachStep: 6, wallReach: 24, cloudBase: 6, cloudDuration: 2,
   puffGap: 0.25, puffsPerVent: 2, refreshPuffs: 1, ventAcross: 8, ventZ: 3,
   life: [0.5, 0.75], size: [2, 3], grow: 8, growPerLevel: 3, sideSpeed: [24, 40], rise: [25, 45], carry: 0.45, drag: 2.6,
   colors: ['rgba(240,240,232,0.65)', 'rgba(214,218,214,0.5)'] };
@@ -11743,6 +11866,11 @@ function steamBurst(s, now) {
     if (!steamEligible(z) || !steamTouches(z, reach, bounds)) continue;
     hits++; if (steamHit(z, id, damage, false)) kills++;
   }
+  // Steam at the nose reaches the face of the wall that stopped this train. (proposal: 24 px)
+  const wall = blockingWall();
+  if (wall && trainDist(wall.x, wall.y) <= STEAMC.wallReach) {
+    hits++; if (steamHit(wall.target, id, damage, false)) kills++;
+  }
   const duration = G.up.hotCloud || 0;
   s.lastBurst = { id, t: now, damage, reach, hits, kills, cloudDuration: duration };
   steamPuffs(level, false);
@@ -11758,6 +11886,9 @@ function steamCloudHits(cloud) {
     if (z.steamBurst === cloud.id || !steamEligible(z) || !steamTouches(z, cloud.reach, bounds)) continue;
     steamHit(z, cloud.id, cloud.damage, true);
   }
+  const wall = blockingWall();
+  if (wall && trainDist(wall.x, wall.y) <= Math.max(STEAMC.wallReach, cloud.reach))
+    steamHit(wall.target, cloud.id, cloud.damage, true);
 }
 
 // Clouds age in game time, while the absolute burst clock keeps the upgrade's exact cadence.
@@ -12126,7 +12257,6 @@ function boot() {
       const s = clamp(sAtKm(x), G.goalS, G.tr.startS), tr = G.tr;
       tr.s = s;
       tr.fy = yOfS(s);
-      for (const w of G.walls) if (w.s > s) w.placed = w.warned = w.awake = true;
       for (const z of G.zombies) z.gone = true;
       G.maxKm = Math.max(G.maxKm, kmAt(s));
       layoutTrain();
@@ -12258,7 +12388,7 @@ function boot() {
       onTrain: G.onTrain, t: +G.run.toFixed(1), zombies: G.zombies.length, bodies: G.bodies.length, up: Object.assign({}, G.up),
       shots: G.shots, scavPaid: G.scavPaid, overheat: G.overheat, heReload: +G.heReload.toFixed(2), hurt: Object.assign({}, G.hurt),
       station: G.station ? G.station.id + ' ' + G.station.state : '-',
-      walls: G.walls.map((w) => w.km + (w.awake ? ' awake' : w.placed ? ' placed' : ' ahead')),
+      walls: G.walls.map((w) => w.km + ' ' + w.state),
       helis: G.helis.map((h) => [Math.round(h.x - G.tr.fx), Math.round(h.y - G.tr.fy)]),
       rounds: G.rounds.length, parts: parts.length, texts: texts.length, chunks: GROUND.size, decals: DECALS.size,
       W, H, VH, SCALE, fps: Math.round(FPS.avg), worstMs: Math.round(FPS.lastWorst * 1000), heat: +G.heat.toFixed(2),
@@ -13896,6 +14026,13 @@ Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assi
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 // QA-only plane injection is scoped to this G; it never writes saved ownership or slots.
 let TEST_PLANE_FIXTURE = null;
+function testWallView(w) {
+  return w ? { id: w.id, eventId: w.eventId, leg: w.leg, s: w.s, km: w.km, x: w.x, y: w.y,
+    sx: w.x - G.camX, sy: w.y - G.camY, hp: w.hp, max: w.max, state: w.state,
+    spawnT: w.spawnT, stoppedAt: w.stoppedAt, brokenAt: w.brokenAt, stopS: w.stopS,
+    broken: w.broken, rammed: w.rammed, hpIn: w.hpIn, hpOut: w.hpOut, lootId: w.lootId,
+    hits: w.hits, damage: w.damage, lastHit: w.lastHit ? { ...w.lastHit } : null } : null;
+}
 function testClearPlaneFixture() {
   const before = TEST_PLANE_FIXTURE;
   if (!before) return false;
@@ -13911,12 +14048,20 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  // Actual wall state, with no live target or sprite references.
+  wallState: () => G ? G.walls.map(testWallView) : [],
+  // QA-only wall placement through the real event handler; does not change rewards or ownership.
+  wallFixture: (params = {}) => {
+    if (!G || G.demo || G.result || mode !== 'play' || !params || typeof params !== 'object') return false;
+    const w = addDeadWall(params, typeof params.id === 'string' ? params.id : 'qa-wall-' + G.walls.length);
+    return w ? testWallView(w) : false;
+  },
   // Steam counters and the current curved train envelope; no mutable cloud state is exposed.
   steam: () => {
     if (!G) return null;
     const s = steamState(), reach = STEAMC.reachStep * G.up.steamReach;
     return { enabled: !!G.up.steamVent, damage: STEAMC.damage * G.up.steamDamage,
-      interval: G.up.steamSpeed, reach, cloudReach: STEAMC.cloudBase + reach, hotCloud: G.up.hotCloud,
+      interval: G.up.steamSpeed, reach, wallReach: STEAMC.wallReach, cloudReach: STEAMC.cloudBase + reach, hotCloud: G.up.hotCloud,
       cooldown: Math.max(0, s.next - heliWeaponTime()), bursts: s.bursts, hits: s.hits, kills: s.kills,
       cloudHits: s.cloudHits, cloudKills: s.cloudKills, lastBurst: s.lastBurst ? { ...s.lastBurst } : null,
       cloud: s.cloud ? { ...s.cloud } : null,
@@ -14161,7 +14306,7 @@ Object.assign(window.__sr, {
           age: r.age, T: r.T, dmg: r.dmg, R: r.R, priority: r.priority, position: hellfireAt(r),
           targetSnapshot: { ...r.targetSnapshot } })) },
       mg: { enabled: !!G.up.mgCar, damage: MGC.damage * G.up.mgDamage, rate: G.up.mgRate,
-        range: MGC.range * G.up.mgRange, count: G.up.mgTurrets, pierce: G.up.apRounds,
+        range: MGC.range * G.up.mgRange, wallRange: MGC.wallRange, count: G.up.mgTurrets, pierce: G.up.apRounds,
         shots: mg.shots, hits: mg.hits, kills: mg.kills, targetsHit: mg.targetsHit, lastShot: copyMGShot(mg.lastShot),
         turrets: mg.turrets.map((t) => ({ ...t, sx: t.x - G.camX, sy: t.y - t.z - G.camY,
           cooldown: t.cd, lastShot: copyMGShot(t.lastShot) })),
@@ -14269,7 +14414,7 @@ Object.assign(window.__sr, {
     result: G.result, replay: G.replay, eventIndex: G.eventIndex,
     events: G.events.map((e) => ({ ...e })), base: { ...legDef(G.leg)?.base },
     stars: (SAVE.legs[G.leg]?.stars || [false, false, false]).slice(),
-    gold: G.gold || 0, surv: G.surv, scrap: Math.floor(G.cash), wall: null })
+    gold: G.gold || 0, surv: G.surv, scrap: Math.floor(G.cash), wall: testWallView(blockingWall()) })
 });
 
 // Radar dot batching preserves the old one-pixel overwrite order and rounding exactly.

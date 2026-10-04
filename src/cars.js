@@ -3,7 +3,7 @@
 // Hooks: updateTrainWeapons (step), drawTrainWeapon (drawCar), drawTrainWeaponFx (additive pass).
 const MGC = {
   car: 3, headings: 32, rate: 2, scale: 0.6, flash: 0.07,
-  damage: 1, range: 100, barrel: 8, barrelZ: 2, halfWidth: 3, recoil: 1.3, recoilDecay: 12 // (proposal)
+  damage: 1, range: 100, wallRange: 200, barrel: 8, barrelZ: 2, halfWidth: 3, recoil: 1.3, recoilDecay: 12 // (proposal)
 };
 const MG_OFFSETS = [[0], [-7, 7], [-9, 0, 9]];
 const MGART = { n: [], h: [], bn: [], bh: [] };
@@ -78,10 +78,14 @@ function mgTarget(t, range) {
     const s = (z.st === 2 ? 0 : range + 1) + d;
     if (s < score) { best = z; score = s; }
   });
+  // The rear boxcar can reach a blocking wall's actual face across the train's length.
+  // Ordinary enemies keep their short range and have priority over this fallback.
+  const w = !best && blockingWall();
+  if (w && mgCanHit(w.target) && Math.hypot(w.x - t.x, (w.y - t.y) / FORE) <= MGC.wallRange) best = w.target;
   return best;
 }
 function mgTargetView(z) {
-  return { x: z.x, y: z.y, type: z.type, st: z.st, car: z.car };
+  return { x: z.x, y: z.y, type: z.type, st: z.st, car: z.car, wall: z.wall?.id || null };
 }
 // AP tests the same narrow ground ray through the chosen target. Nearer bodies stop it first.
 const MG_RAY = [];
@@ -97,6 +101,7 @@ function mgShot(t, target, p) {
       const zx = z.x - t.x, zy = (z.y - t.y) / FORE, along = zx * ux + zy * uy;
       if (along >= 0 && Math.abs(zx * uy - zy * ux) <= MGC.halfWidth) MG_RAY.push({ z, d: along });
     });
+    if (target.wall && !MG_RAY.some((v) => v.z === target)) MG_RAY.push({ z: target, d: length });
     MG_RAY.sort((a, b) => a.d - b.d);
   }
   const muzzle = mgMuzzle(t), shot = { x: t.x, y: t.y, z: t.z, muzzle, angle: t.ang, t: G.t,

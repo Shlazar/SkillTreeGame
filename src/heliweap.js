@@ -92,14 +92,14 @@ function updateHeliWeapons(dt) {
   updatePods(dt);
   updateHellfire(dt);
 }
-// Walls join this priority list in T6.3. Within a priority, current hp wins, then distance.
+// Walls first, then brutes, gold and current health. Within a priority, hp wins, then distance.
 function hellfireTarget(h, excluded = null) {
   let best = null, bestRank = Infinity, bestHp = -Infinity, nearest = Infinity;
   queryEll(h.x, h.y, HWC.hellfire.range, (z, d) => {
     if (z.gone || z.gate && z.still || excluded && excluded.has(z)) return;
-    const rank = z.big ? 0 : z.gold ? 1 : 2;
+    const rank = z.wall ? -1 : z.big ? 0 : z.gold ? 1 : 2;
     if (rank < bestRank || rank === bestRank && (z.hp > bestHp || z.hp === bestHp && d < nearest)) {
-      best = { z, priority: rank === 0 ? 'brute' : rank === 1 ? 'gold' : 'hp' };
+      best = { z, priority: rank === -1 ? 'wall' : rank === 0 ? 'brute' : rank === 1 ? 'gold' : 'hp' };
       bestRank = rank;
       bestHp = z.hp;
       nearest = d;

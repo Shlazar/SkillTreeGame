@@ -1,6 +1,13 @@
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 // QA-only plane injection is scoped to this G; it never writes saved ownership or slots.
 let TEST_PLANE_FIXTURE = null;
+function testWallView(w) {
+  return w ? { id: w.id, eventId: w.eventId, leg: w.leg, s: w.s, km: w.km, x: w.x, y: w.y,
+    sx: w.x - G.camX, sy: w.y - G.camY, hp: w.hp, max: w.max, state: w.state,
+    spawnT: w.spawnT, stoppedAt: w.stoppedAt, brokenAt: w.brokenAt, stopS: w.stopS,
+    broken: w.broken, rammed: w.rammed, hpIn: w.hpIn, hpOut: w.hpOut, lootId: w.lootId,
+    hits: w.hits, damage: w.damage, lastHit: w.lastHit ? { ...w.lastHit } : null } : null;
+}
 function testClearPlaneFixture() {
   const before = TEST_PLANE_FIXTURE;
   if (!before) return false;
@@ -16,12 +23,20 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  // Actual wall state, with no live target or sprite references.
+  wallState: () => G ? G.walls.map(testWallView) : [],
+  // QA-only wall placement through the real event handler; does not change rewards or ownership.
+  wallFixture: (params = {}) => {
+    if (!G || G.demo || G.result || mode !== 'play' || !params || typeof params !== 'object') return false;
+    const w = addDeadWall(params, typeof params.id === 'string' ? params.id : 'qa-wall-' + G.walls.length);
+    return w ? testWallView(w) : false;
+  },
   // Steam counters and the current curved train envelope; no mutable cloud state is exposed.
   steam: () => {
     if (!G) return null;
     const s = steamState(), reach = STEAMC.reachStep * G.up.steamReach;
     return { enabled: !!G.up.steamVent, damage: STEAMC.damage * G.up.steamDamage,
-      interval: G.up.steamSpeed, reach, cloudReach: STEAMC.cloudBase + reach, hotCloud: G.up.hotCloud,
+      interval: G.up.steamSpeed, reach, wallReach: STEAMC.wallReach, cloudReach: STEAMC.cloudBase + reach, hotCloud: G.up.hotCloud,
       cooldown: Math.max(0, s.next - heliWeaponTime()), bursts: s.bursts, hits: s.hits, kills: s.kills,
       cloudHits: s.cloudHits, cloudKills: s.cloudKills, lastBurst: s.lastBurst ? { ...s.lastBurst } : null,
       cloud: s.cloud ? { ...s.cloud } : null,
@@ -266,7 +281,7 @@ Object.assign(window.__sr, {
           age: r.age, T: r.T, dmg: r.dmg, R: r.R, priority: r.priority, position: hellfireAt(r),
           targetSnapshot: { ...r.targetSnapshot } })) },
       mg: { enabled: !!G.up.mgCar, damage: MGC.damage * G.up.mgDamage, rate: G.up.mgRate,
-        range: MGC.range * G.up.mgRange, count: G.up.mgTurrets, pierce: G.up.apRounds,
+        range: MGC.range * G.up.mgRange, wallRange: MGC.wallRange, count: G.up.mgTurrets, pierce: G.up.apRounds,
         shots: mg.shots, hits: mg.hits, kills: mg.kills, targetsHit: mg.targetsHit, lastShot: copyMGShot(mg.lastShot),
         turrets: mg.turrets.map((t) => ({ ...t, sx: t.x - G.camX, sy: t.y - t.z - G.camY,
           cooldown: t.cd, lastShot: copyMGShot(t.lastShot) })),
@@ -374,7 +389,7 @@ Object.assign(window.__sr, {
     result: G.result, replay: G.replay, eventIndex: G.eventIndex,
     events: G.events.map((e) => ({ ...e })), base: { ...legDef(G.leg)?.base },
     stars: (SAVE.legs[G.leg]?.stars || [false, false, false]).slice(),
-    gold: G.gold || 0, surv: G.surv, scrap: Math.floor(G.cash), wall: null })
+    gold: G.gold || 0, surv: G.surv, scrap: Math.floor(G.cash), wall: testWallView(blockingWall()) })
 });
 
 // Radar dot batching preserves the old one-pixel overwrite order and rounding exactly.

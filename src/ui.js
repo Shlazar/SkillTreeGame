@@ -148,7 +148,7 @@ function drawRoute(x0, x1) {
   ctx.fillRect(x0, y, Math.max(0, X(G.tr.s) - x0), 1);
   // Only walls inside this leg belong on its route.
   for (const wl of G.walls) {
-    if (wl.s >= start || wl.s <= end) continue;
+    if (wl.broken || wl.s >= start || wl.s <= end) continue;
     ctx.fillStyle = '#07080a';
     ctx.fillRect(X(wl.s) - 2, y - 3, 5, 7);
     ctx.fillStyle = U.red;

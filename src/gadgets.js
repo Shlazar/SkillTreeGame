@@ -4,7 +4,7 @@
 // Hooks: updateGadgets (step, after updateZombies); steamState (read-only run diagnostics).
 
 // Base damage/ground reach, puff spacing/count, minimum emitter height and particle tuning (proposal)
-const STEAMC = { damage: 2, interval: 5, reachStep: 6, cloudBase: 6, cloudDuration: 2,
+const STEAMC = { damage: 2, interval: 5, reachStep: 6, wallReach: 24, cloudBase: 6, cloudDuration: 2,
   puffGap: 0.25, puffsPerVent: 2, refreshPuffs: 1, ventAcross: 8, ventZ: 3,
   life: [0.5, 0.75], size: [2, 3], grow: 8, growPerLevel: 3, sideSpeed: [24, 40], rise: [25, 45], carry: 0.45, drag: 2.6,
   colors: ['rgba(240,240,232,0.65)', 'rgba(214,218,214,0.5)'] };
@@ -74,6 +74,11 @@ function steamBurst(s, now) {
     if (!steamEligible(z) || !steamTouches(z, reach, bounds)) continue;
     hits++; if (steamHit(z, id, damage, false)) kills++;
   }
+  // Steam at the nose reaches the face of the wall that stopped this train. (proposal: 24 px)
+  const wall = blockingWall();
+  if (wall && trainDist(wall.x, wall.y) <= STEAMC.wallReach) {
+    hits++; if (steamHit(wall.target, id, damage, false)) kills++;
+  }
   const duration = G.up.hotCloud || 0;
   s.lastBurst = { id, t: now, damage, reach, hits, kills, cloudDuration: duration };
   steamPuffs(level, false);
@@ -89,6 +94,9 @@ function steamCloudHits(cloud) {
     if (z.steamBurst === cloud.id || !steamEligible(z) || !steamTouches(z, cloud.reach, bounds)) continue;
     steamHit(z, cloud.id, cloud.damage, true);
   }
+  const wall = blockingWall();
+  if (wall && trainDist(wall.x, wall.y) <= Math.max(STEAMC.wallReach, cloud.reach))
+    steamHit(wall.target, cloud.id, cloud.damage, true);
 }
 
 // Clouds age in game time, while the absolute burst clock keeps the upgrade's exact cadence.

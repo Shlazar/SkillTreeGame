@@ -188,14 +188,14 @@ const heliRangeVisible = () => mode === 'play' && !G.demo && !G.result && (G.run
 // ground distance from heli h to zombie z (round the ellipse the view squashes, like queryEll)
 const hDist = (h, z) => Math.hypot(z.x - h.x, (z.y - h.y) / FORE);
 // The best target in reach of heli h (one the rounds in the air will not already kill), or null:
-// the dead on the train, then the dead on the rails ahead, then the nearest. (The dead at the Depot
+// the dead on the train, then a Dead Wall, the dead on the rails ahead, then the nearest. (The dead at the Depot
 // gate are left for the first run's Ram.)
 function heliTarget(h) {
   let best = null, bk = Infinity;
   const s0 = G.tr.s;
   queryEll(h.x, h.y, hRange(), (z, d) => {
     if (z.pending >= z.hp || z.gate && z.still) return;
-    const k = z.st === 2 ? d : z.st === 1 && trackLocal(z.x, z.y, TL).a < s0 ? 1000 + d : 2000 + d;
+    const k = z.st === 2 ? d : z.wall ? 500 + d : z.st === 1 && trackLocal(z.x, z.y, TL).a < s0 ? 1000 + d : 2000 + d;
     if (k < bk) {
       bk = k;
       best = z;
@@ -414,7 +414,7 @@ function zombieAt(x, y) {
     const d = Math.hypot(z.x - G.camX - x, z.y - z.S.h * 0.5 - G.camY - y);
     if (d < bd) { bd = d; best = z; }
   }
-  return best;
+  return best || wallAt(x, y);
 }
 // tell the tutorial what was done (when it is built in)
 function heliTut(kind) {

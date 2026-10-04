@@ -466,6 +466,31 @@ function prop(spr, block, extra) {
   return Object.assign({ spr, sh: castShadow(spr), ax: spr.width >> 1, ay: spr.height - 1, block: block || 0 }, extra || {});
 }
 const PROPS = { pine: [], oak: [], fall: [], dead: [], bush: [], rock: [], big: [], stump: [], wreck: [], burnt: [], barrel: [], crate: [], wall: [], pole: [] };
+// Composite footprint/face anchor in px; wreck thermal brightness stays below living bodies (proposal)
+const DEADWALLART = { n: null, h: null, sh: null, flash: null, w: 80, height: 48, ax: 40, ay: 46, d: null };
+function bakeDeadWall() {
+  const a = DEADWALLART, [n, ng] = mk(a.w, a.height), [h, hg] = mk(a.w, a.height),
+    [sh, sg] = mk(a.w, a.height), pieces = [];
+  // Four staggered ranks use the already baked walker poses and clothing variants.
+  for (let row = 0; row < 4; row++) for (let col = 0; col < 5; col++) {
+    const i = row * 5 + col, S = ZS[0][i % ZS[0].length], fr = S.walk[i & 3], left = !!(i & 1);
+    pieces.push({ x: 7 + col * 15 + (row & 1 ? 0 : 4), y: 17 + row * 9 + (row === 3 ? 2 : 0),
+      ax: S.ax, ay: S.ay, n: left ? fr.nf : fr.n, h: left ? fr.hf : fr.h,
+      sh: fr.s, shY: -1 - S.shp });
+  }
+  for (const [d, x, y] of [[PROPS.wreck[0], 21, 29], [PROPS.burnt[0], 58, 32]]) {
+    pieces.push({ x, y, ax: d.ax, ay: d.ay, n: d.spr, h: hotSpr(d.spr, 35), sh: d.sh, shY: -1 });
+  }
+  pieces.sort((p, q) => p.y - q.y);
+  for (const p of pieces) {
+    ng.drawImage(p.n, p.x - p.ax, p.y - p.ay);
+    hg.drawImage(p.h, p.x - p.ax, p.y - p.ay);
+    sg.drawImage(p.sh, p.x - p.ax, p.y + p.shY);
+  }
+  Object.assign(a, { n, h, sh, flash: flashSpr(n) });
+  a.d = { spr: n, h, sh, ax: a.ax, ay: a.ay, block: 0 };
+  for (const c of [a.n, a.h, a.sh, a.flash]) atl(c);
+}
 // a telegraph pole: a crossbar with two glass insulators
 function poleSpr() {
   return pix(5, 22, (r) => {
@@ -663,6 +688,7 @@ function initSprites() {
   PROPS.crate.push(prop(crateSpr(), 4));
   for (let k = 0; k < 8; k++) PROPS.wall.push(prop(wallSpr(10 + ((rng() * 12) | 0), rng), 0, { wall: true }));
   PROPS.pole.push(prop(poleSpr(), 0));
+  bakeDeadWall();
   // the train at every heading: [slices, height, warmth on the thermal camera]
   TRAIN.length = 0;
   FOOT.length = 0;
