@@ -31,13 +31,13 @@ function heliWeaponState() {
 }
 // Exact crowd count at every living zombie centre in reach. The grid keeps each local count small;
 // callers search only when a weapon is due, never for every projectile or every frame.
-function bestCrowd(x, y, R, r) {
+function bestCrowd(x, y, R, r, accepts = null) {
   let best = null, distance = Infinity;
   queryEll(x, y, R, (z, d) => {
-    if (z.gone || z.gate && z.still) return;
+    if (z.gone || z.gate && z.still || accepts && !accepts(z)) return;
     let count = 0;
     queryEll(z.x, z.y, r, (q) => {
-      if (!q.gone && !(q.gate && q.still)) count++;
+      if (!q.gone && !(q.gate && q.still) && (!accepts || accepts(q))) count++;
     });
     if (!best || count > best.count || count === best.count && d < distance) {
       best = { x: z.x, y: z.y, count };

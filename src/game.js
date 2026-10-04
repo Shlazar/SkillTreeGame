@@ -1202,6 +1202,7 @@ function step(dt) {
       if (G.endT > 3.4) endGame();
     }
   }
+  updateAir(dt);
   G.hitT = Math.max(0, G.hitT - dt);
   G.muzzle[0] = Math.max(0, G.muzzle[0] - dt);
   G.muzzle[1] = Math.max(0, G.muzzle[1] - dt);

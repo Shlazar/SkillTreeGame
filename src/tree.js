@@ -222,6 +222,8 @@ function treeUp(L, up) {
     hellfire: L('hellfire') > 0, hellfireDamage: UP.hellfireDamage(L('hellfireDamage')),
     hellfireReload: UP.hellfireReload(L('hellfireReload')), hellfireBlast: UP.hellfireBlast(L('hellfireBlast')),
     planeOwned: ['a10', 'f4', 'b52'].filter((id) => L(id) > 0),
+    planeCooldown: { a10: UP.a10Cooldown(L('a10Cooldown')), f4: UP.f4Cooldown(L('f4Cooldown')), b52: UP.b52Cooldown(L('b52Cooldown')) },
+    planeCharges: { a10: UP.a10Charge(L('a10Charge')), f4: UP.f4Charge(L('f4Charge')), b52: UP.b52Charge(L('b52Charge')) },
     hellfireCount: UP.doubleHellfire(L('doubleHellfire')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,

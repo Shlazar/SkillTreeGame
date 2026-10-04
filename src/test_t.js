@@ -27,13 +27,17 @@ Object.assign(window.__sr, {
   },
   treeZoom: (d) => treeZoom(d),
   // strafe(sx, sy, ux, uy): call the jet through screen pixel (sx, sy) (along the rails without a
-  // way); strafeState() = runs left and what is in the air
+  // way); strafeState() = the A-10's current charges and what is in the air
   strafe: (sx, sy, ux, uy) => {
     srSync();
     const [a, b] = ux != null ? [ux, uy] : strafeDir(sx, sy, sx, sy), l = Math.hypot(a, b) || 1;
     return callStrafe(G.camX + sx, G.camY + sy, a / l, b / l);
   },
-  strafeState: () => (srSync(), { left: STRAF.left, arm: STRAF.arm, jets: STRAF.jets.length, bombs: STRAF.bombs.length, up: G.up.strafe }),
+  strafeState: () => {
+    srSync();
+    const a = airSnapshot().find((p) => p.id === 'a10');
+    return { left: a?.charges || 0, arm: airAimActive(), jets: STRAF.jets.length, bombs: STRAF.bombs.length, up: a?.maxCharges || 0 };
+  },
   treeNodes: () => NODES.map((n) => ({ id: n.id, name: n.name, p: n.p || null, k: n.k, cur: n.cur || 'scrap',
     cost: n.cost.slice(), charge: !!n.charge, star: !!n.star, x: n.x, y: n.y,
     lv: lv(n.id), max: maxLv(n), st: nodeState(n) }))

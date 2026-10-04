@@ -1,9 +1,6 @@
-// planes.js - the STRAFING RUN: an attack jet you call in. Press Q (or click its card), then click
-// the map: the jet comes in low across the screen through that point, along the rails (drag before
-// you let go to aim it any way you like). Its big nose gun rakes a line of ground ahead of it: a row
-// of bright hits and blasts that kills the dead in a band, and with BOMB RUN it drops three bombs at
-// the end. G.up.strafe = runs per run (0 = locked), strafeW = half the band's width (px), strafeD =
-// damage a hit, strafeBomb = bombs, twin = a second jet beside it.
+// planes.js - plane flights and payloads. The shared air.js framework owns keys, aiming, charges
+// and cooldowns; this file only launches and updates the actual planes, bombs and glowing hits.
+// The A-10 uses the existing strafe flight until its payload upgrades are implemented in T4.4.
 
 // speed = px/s, alt = height (px) as it comes in, dive = px lower while it fires, len = px of
 // ground it strafes, lead = px ahead of the jet its rounds land, step = px between two hits you see
@@ -96,69 +93,14 @@ function bakeJet() {
 }
 bakeJet();
 
-// ---------- this run's strafing runs
-// STRAF = g: the run it is for, left: runs still to use, arm: waiting for a click on the map, aim:
-// where the press was (a drag aims), jets, bombs, embers = the holes that still glow, card = its card,
-// msg = a short line over the card.
-const STRAF = { g: null, left: 0, arm: false, aim: null, jets: [], bombs: [], embers: [], card: { x: 0, y: 0, w: 96, h: 26, on: false }, msg: null };
-// A new run: it starts with all its runs, nothing in the air.
+// ---------- this run's flights
+// STRAF holds transport effects only. Charges and input belong to AIR.
+const STRAF = { g: null, jets: [], bombs: [], embers: [], demoT: 6 };
 function srSync() {
   if (STRAF.g === G) return;
   STRAF.g = G;
-  STRAF.left = G.up.strafe || 0;
-  STRAF.arm = false;
-  STRAF.aim = null;
   STRAF.jets.length = STRAF.bombs.length = STRAF.embers.length = 0;
-  STRAF.msg = null;
-}
-// Q or a click on the card: get ready to pick a spot (again: put it away). True when it is ready.
-function tryStrafe() {
-  srSync();
-  if (!G.up.strafe || G.result || mode !== 'play') return false;
-  if (STRAF.arm) {
-    strafeCancel();
-    return false;
-  }
-  if (STRAF.left <= 0) {
-    STRAF.msg = { t: realT, s: 'NO STRAFING RUNS LEFT THIS RUN.' };
-    SFX.deny();
-    return false;
-  }
-  STRAF.arm = true;
-  HUI.arm = false;
-  SFX.ui();
-  return true;
-}
-function strafeCancel() {
-  if (!STRAF.arm) return false;
-  STRAF.arm = false;
-  STRAF.aim = null;
-  SFX.ui();
-  return true;
-}
-// Left button down at screen (x, y): the card, or the spot when it is ready. True when used here.
-function strafeDown(x, y) {
-  srSync();
-  const C = STRAF.card;
-  if (C.on && inR(x, y, C.x, C.y, C.w, C.h)) {
-    tryStrafe();
-    return true;
-  }
-  if (STRAF.arm && y >= 19) {
-    STRAF.aim = { x, y };
-    return true;
-  }
-  return false;
-}
-// Left button up: the jet is called in through where the press was, along the drag (or the rails).
-function strafeUp(x, y) {
-  const a = STRAF.aim;
-  if (!a) return false;
-  STRAF.aim = null;
-  STRAF.arm = false;
-  const [ux, uy] = strafeDir(a.x, a.y, x, y);
-  callStrafe(G.camX + a.x, G.camY + a.y, ux, uy);
-  return true;
+  STRAF.demoT = 6;
 }
 // The way the jet flies for a press at (ax, ay) let go at (bx, by): the drag, or the train's way.
 function strafeDir(ax, ay, bx, by) {
@@ -167,18 +109,24 @@ function strafeDir(ax, ay, bx, by) {
   const c = G.tr.cars[0];
   return [c.dx, c.dy];
 }
-// Send the jet (two with TWIN JETS) through world point (px, py) flying along (ux, uy).
+// AIR validates ownership and charges before asking a supported payload to launch.
+function launchPlane(id, worldX, worldY, ux, uy) {
+  if (id !== 'a10') return false;
+  return callStrafe(worldX, worldY, ux, uy);
+}
+// Send a flight through a world point. This transport does not spend any framework resources.
 function callStrafe(px, py, ux, uy) {
+  if (!G || G.result || !Number.isFinite(px) || !Number.isFinite(py)) return false;
+  const length = Math.hypot(ux, uy);
+  if (!Number.isFinite(length) || length <= 0) [ux, uy] = [G.tr.cars[0].dx, G.tr.cars[0].dy];
+  else { ux /= length; uy /= length; }
   srSync();
-  if (STRAF.left <= 0 && !G.demo) return false;
-  if (!G.demo) STRAF.left--;
   // it comes in from just off the screen, and flies on until it is off the other side
   const half = G.up.strafeW || JETC.half, offs = G.up.twin ? [-(half + 2), half + 2] : [0];
   const back = Math.max(jetEdge(px, py, -ux, -uy) + 40, JETC.len / 2 + JETC.lead + 20), on = jetEdge(px, py, ux, uy) + 60;
   offs.forEach((o, i) => STRAF.jets.push({ px, py, ux, uy, o, s: -back - i * 26, end: Math.max(on, JETC.len / 2 + 40),
     front: -Infinity, half, dmg: G.up.strafeD || JETC.dmg, bomb: !!G.up.strafeBomb, dropped: false, fired: false, step: 0, blast: 0,
     smoke: 0, alt: JETC.alt }));
-  if (!G.demo) STRAF.msg = { t: realT, s: G.up.twin ? 'TWO JETS INBOUND!' : 'JET INBOUND!' };
   return true;
 }
 
@@ -418,40 +366,10 @@ function drawPlanes() {
   ctx.globalCompositeOperation = 'source-over';
 }
 
-// ---------- the UI (screen px)
-// The STRAFE card, after the Ram's (rx, ry = where that one went; y = the cards' row): Q in gold while
-// a run is left, CLICK! while it waits for the map, USED when none are left. The bar = runs left.
-function drawStrafeCard(rx, ry, y) {
-  srSync();
-  const C = STRAF.card;
-  C.on = !!G.up.strafe && !G.demo;
-  if (!C.on) return;
-  let x = RAMCARD.on ? rx + RAMCARD.w + 4 : rx, cy = ry;
-  if (x + C.w > W - 82) [x, cy] = ry === y ? [4, y - 30] : [x, ry];
-  C.x = x;
-  C.y = cy;
-  const n = G.up.strafe, flying = STRAF.jets.length > 0;
-  const tag = STRAF.arm ? 'CLICK!' : flying ? 'GO!' : STRAF.left ? 'Q' + (STRAF.left > 1 ? ' ×' + STRAF.left : '') : 'USED';
-  const tc = STRAF.arm ? (Math.floor(realT * 8) % 2 ? '#ffe39a' : U.amber) : flying ? U.amber : STRAF.left ? U.gold : U.faint;
-  card(x, cy, C.w, C.h, NICON.strafe, 'STRAFE', tag, tc, STRAF.left / n, STRAF.left ? '#ff9a3a' : '#3a3e48', STRAF.left || flying ? U.ink : U.faint);
-  if (STRAF.arm) frame(x - 1, cy - 1, C.w + 2, C.h + 2, Math.floor(realT * 8) % 2 ? '#ffd36a' : '#b8862f');
-  else if (STRAF.left && !flying) frame(x, cy, C.w, C.h, '#b8862f');
-  if (mode === 'play' && !paused && inR(M.x, M.y, x, cy, C.w, C.h)) cursor = 'pointer';
-  const m = STRAF.msg, mt = m ? realT - m.t : 9;
-  if (mt < 2) {
-    ctx.globalAlpha = clamp((2 - mt) / 0.4, 0, 1);
-    text(m.s, clamp(x, 4, W - tw(m.s) - 4), cy - 10, U.amber);
-    ctx.globalAlpha = 1;
-  }
-  if (STRAF.arm && mode === 'play' && !paused) drawStrafeAim();
-}
-// While it waits for the map: the band the jet will strafe through the mouse (or from the press
-// along the drag), an arrow for its way, and what to do.
-function drawStrafeAim() {
-  if (!M.inside || M.y < 19 || inR(M.x, M.y, STRAF.card.x, STRAF.card.y, STRAF.card.w, STRAF.card.h)) return;
-  cursor = 'crosshair';
-  const a = STRAF.aim || { x: M.x, y: M.y }, [ux, uy] = STRAF.aim ? strafeDir(a.x, a.y, M.x, M.y) : strafeDir(a.x, a.y, a.x, a.y);
-  const nx = -uy, ny = ux, L = JETC.len / 2, hw = (G.up.strafeW || JETC.half) * (G.up.twin ? 2 : 1) + (G.up.twin ? 2 : 0);
+// ---------- preview geometry (screen px)
+// AIR supplies its current point and direction, and owns the prompt and pointer state.
+function drawStrafeLine(x, y, ux, uy) {
+  const a = { x, y }, nx = -uy, ny = ux, L = JETC.len / 2, hw = JETC.half;
   const on = Math.floor(realT * 6) % 2 ? 0.9 : 0.6;
   ctx.globalAlpha = 0.14;
   ctx.fillStyle = '#ff9a3a';
@@ -470,6 +388,4 @@ function drawStrafeAim() {
     ctx.fillRect(Math.round(a.x + ux * s - nx * w), Math.round(a.y + uy * s - ny * w), Math.max(1, Math.round(w * 2)), 1);
   }
   ctx.globalAlpha = 1;
-  const t = STRAF.aim ? 'LET GO: STRAFE' : 'CLICK: STRAFE HERE.  DRAG: AIM IT.', w = tw(t);
-  text(t, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, VH - 44)), '#ffb060', { align: 'center' });
 }

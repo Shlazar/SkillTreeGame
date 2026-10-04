@@ -2323,6 +2323,9 @@ function drawBanners() {
 // SFX holds every game sound; drone() is the helicopter's rotor under everything.
 
 const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null, roar: null };
+// Ready swoosh: gate ms, burst/note seconds, volumes and rising filter/note frequencies (proposal)
+const PLANE_READY_SFX = { gap: 90, life: 0.22, volume: 0.065, from: 500, to: 2300,
+  q: 0.7, note: 380, noteEnd: 740, noteLife: 0.16, noteVolume: 0.012 };
 
 function audioInit() {
   if (Au.ctx) {
@@ -2530,6 +2533,12 @@ const SFX = {
     // the 105 is loaded again
     tone(1250, 0.04, 'square', 0.014);
     tone(1650, 0.05, 'square', 0.014, null, 0.05);
+  },
+  planeReady() {
+    const c = PLANE_READY_SFX;
+    if (!gap('planeReady', c.gap)) return;
+    nz(c.life, c.volume, 'bandpass', c.from, c.q, c.to);
+    tone(c.note, c.noteLife, 'triangle', c.noteVolume, c.noteEnd);
   },
   overheat() {
     tone(900, 0.35, 'square', 0.02, 300);
@@ -3936,6 +3945,7 @@ function step(dt) {
       if (G.endT > 3.4) endGame();
     }
   }
+  updateAir(dt);
   G.hitT = Math.max(0, G.hitT - dt);
   G.muzzle[0] = Math.max(0, G.muzzle[0] - dt);
   G.muzzle[1] = Math.max(0, G.muzzle[1] - dt);
@@ -6177,13 +6187,13 @@ function heliWeaponState() {
 }
 // Exact crowd count at every living zombie centre in reach. The grid keeps each local count small;
 // callers search only when a weapon is due, never for every projectile or every frame.
-function bestCrowd(x, y, R, r) {
+function bestCrowd(x, y, R, r, accepts = null) {
   let best = null, distance = Infinity;
   queryEll(x, y, R, (z, d) => {
-    if (z.gone || z.gate && z.still) return;
+    if (z.gone || z.gate && z.still || accepts && !accepts(z)) return;
     let count = 0;
     queryEll(z.x, z.y, r, (q) => {
-      if (!q.gone && !(q.gate && q.still)) count++;
+      if (!q.gone && !(q.gate && q.still) && (!accepts || accepts(q))) count++;
     });
     if (!best || count > best.count || count === best.count && d < distance) {
       best = { x: z.x, y: z.y, count };
@@ -7987,7 +7997,7 @@ function drawRoute(x0, x1) {
 function drawWarnings() {
   if (G.result) return;
   const red = Math.floor(realT * 3) % 2 === 0 ? U.red : '#a8241a', L = [];
-  if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (E: RAM)' : ''), red]);
+  if (G.blocked) L.push(['THE DEAD ARE ON THE TRACK AHEAD' + (G.railAhead >= 4 && ramState() === 'ready' ? '  (CLICK RAM)' : ''), red]);
   if (G.onTrain > 0) L.push([G.onTrain + (G.onTrain > 1 ? ' ZOMBIES' : ' ZOMBIE') + ' ON THE TRAIN', red]);
   // Place the lines beside the task box, or under it when they would touch (tut.js).
   const [wx, wy] = warnAt(L);
@@ -8092,10 +8102,9 @@ function drawWeapons() {
   let rx = drawUnitCards(4, y), ry = y;
   if (rx + RAMCARD.w > W - 82) [rx, ry] = [4, y - 30];
   drawRamCard(rx, ry);
-  drawStrafeCard(rx, ry, y);
   text('CAMERA: ' + CAMS[thermal] + '  (T)', W - 6, VH - 90, U.faint, { align: 'right' });
 }
-// The Turbo Ram's card: E in gold when it is full, the % while it fills (the bar is the charge),
+// The Turbo Ram's card: CLICK in gold when it is full, the % while it fills (the bar is the charge),
 // GO! while it runs (the bar is the time left), and STOP near a station (grey). A click on it rams.
 // Over it, for a moment, why it can't ram now.
 const RAMCARD = { x: 0, y: 0, w: 106, h: 26, on: false };
@@ -8111,7 +8120,7 @@ function drawRamCard(x, y) {
   if (fl < 0.2) y--;
   let tag, tagc, f, fc, nc = U.ink, icon = ICON.ram;
   if (s === 'on') [tag, tagc, f, fc] = ['GO!', Math.floor(realT * 8) % 2 ? '#ffe39a' : U.amber, 1 - r.t / (r.dur + R.ease), '#ff8a3a'];
-  else if (s === 'ready') [tag, tagc, f, fc] = ['E', U.gold, 1, '#e3b04b'];
+  else if (s === 'ready') [tag, tagc, f, fc] = ['CLICK', U.gold, 1, '#e3b04b'];
   else if (s === 'charge') [tag, tagc, f, fc] = [Math.floor(ramCharge() * 100) + '%', U.dim, ramCharge(), '#8a6a3a'];
   else if (s === 'stop') [tag, tagc, f, fc, nc, icon] = ['STOP', U.faint, ramCharge(), '#3a3e48', U.faint, ICON.ramOff];
   else [tag, tagc, f, fc, nc, icon] = ['TREE', U.dim, 0, '#3a3e48', U.faint, ICON.lock];
@@ -8395,6 +8404,7 @@ function drawUI() {
     drawBanners();
     if (mode === 'play' && !paused) drawHeliCursor();
     drawTension();
+    drawAirAim();
     ctx.restore();
     drawAirBand();
     if (paused) drawPause();
@@ -8926,6 +8936,8 @@ function treeUp(L, up) {
     hellfire: L('hellfire') > 0, hellfireDamage: UP.hellfireDamage(L('hellfireDamage')),
     hellfireReload: UP.hellfireReload(L('hellfireReload')), hellfireBlast: UP.hellfireBlast(L('hellfireBlast')),
     planeOwned: ['a10', 'f4', 'b52'].filter((id) => L(id) > 0),
+    planeCooldown: { a10: UP.a10Cooldown(L('a10Cooldown')), f4: UP.f4Cooldown(L('f4Cooldown')), b52: UP.b52Cooldown(L('b52Cooldown')) },
+    planeCharges: { a10: UP.a10Charge(L('a10Charge')), f4: UP.f4Charge(L('f4Charge')), b52: UP.b52Charge(L('b52Charge')) },
     hellfireCount: UP.doubleHellfire(L('doubleHellfire')),
     salvage: UP.salvageCrew(L('salvageCrew')),
     boom: 0, boomR: 18, silver: 0,
@@ -9578,12 +9590,9 @@ function drawInfo(n, st, y0, y1) {
 const treeCovers = () => mode === 'depot' && depotTab === 'tree';
 
 
-// planes.js - the STRAFING RUN: an attack jet you call in. Press Q (or click its card), then click
-// the map: the jet comes in low across the screen through that point, along the rails (drag before
-// you let go to aim it any way you like). Its big nose gun rakes a line of ground ahead of it: a row
-// of bright hits and blasts that kills the dead in a band, and with BOMB RUN it drops three bombs at
-// the end. G.up.strafe = runs per run (0 = locked), strafeW = half the band's width (px), strafeD =
-// damage a hit, strafeBomb = bombs, twin = a second jet beside it.
+// planes.js - plane flights and payloads. The shared air.js framework owns keys, aiming, charges
+// and cooldowns; this file only launches and updates the actual planes, bombs and glowing hits.
+// The A-10 uses the existing strafe flight until its payload upgrades are implemented in T4.4.
 
 // speed = px/s, alt = height (px) as it comes in, dive = px lower while it fires, len = px of
 // ground it strafes, lead = px ahead of the jet its rounds land, step = px between two hits you see
@@ -9676,69 +9685,14 @@ function bakeJet() {
 }
 bakeJet();
 
-// ---------- this run's strafing runs
-// STRAF = g: the run it is for, left: runs still to use, arm: waiting for a click on the map, aim:
-// where the press was (a drag aims), jets, bombs, embers = the holes that still glow, card = its card,
-// msg = a short line over the card.
-const STRAF = { g: null, left: 0, arm: false, aim: null, jets: [], bombs: [], embers: [], card: { x: 0, y: 0, w: 96, h: 26, on: false }, msg: null };
-// A new run: it starts with all its runs, nothing in the air.
+// ---------- this run's flights
+// STRAF holds transport effects only. Charges and input belong to AIR.
+const STRAF = { g: null, jets: [], bombs: [], embers: [], demoT: 6 };
 function srSync() {
   if (STRAF.g === G) return;
   STRAF.g = G;
-  STRAF.left = G.up.strafe || 0;
-  STRAF.arm = false;
-  STRAF.aim = null;
   STRAF.jets.length = STRAF.bombs.length = STRAF.embers.length = 0;
-  STRAF.msg = null;
-}
-// Q or a click on the card: get ready to pick a spot (again: put it away). True when it is ready.
-function tryStrafe() {
-  srSync();
-  if (!G.up.strafe || G.result || mode !== 'play') return false;
-  if (STRAF.arm) {
-    strafeCancel();
-    return false;
-  }
-  if (STRAF.left <= 0) {
-    STRAF.msg = { t: realT, s: 'NO STRAFING RUNS LEFT THIS RUN.' };
-    SFX.deny();
-    return false;
-  }
-  STRAF.arm = true;
-  HUI.arm = false;
-  SFX.ui();
-  return true;
-}
-function strafeCancel() {
-  if (!STRAF.arm) return false;
-  STRAF.arm = false;
-  STRAF.aim = null;
-  SFX.ui();
-  return true;
-}
-// Left button down at screen (x, y): the card, or the spot when it is ready. True when used here.
-function strafeDown(x, y) {
-  srSync();
-  const C = STRAF.card;
-  if (C.on && inR(x, y, C.x, C.y, C.w, C.h)) {
-    tryStrafe();
-    return true;
-  }
-  if (STRAF.arm && y >= 19) {
-    STRAF.aim = { x, y };
-    return true;
-  }
-  return false;
-}
-// Left button up: the jet is called in through where the press was, along the drag (or the rails).
-function strafeUp(x, y) {
-  const a = STRAF.aim;
-  if (!a) return false;
-  STRAF.aim = null;
-  STRAF.arm = false;
-  const [ux, uy] = strafeDir(a.x, a.y, x, y);
-  callStrafe(G.camX + a.x, G.camY + a.y, ux, uy);
-  return true;
+  STRAF.demoT = 6;
 }
 // The way the jet flies for a press at (ax, ay) let go at (bx, by): the drag, or the train's way.
 function strafeDir(ax, ay, bx, by) {
@@ -9747,18 +9701,24 @@ function strafeDir(ax, ay, bx, by) {
   const c = G.tr.cars[0];
   return [c.dx, c.dy];
 }
-// Send the jet (two with TWIN JETS) through world point (px, py) flying along (ux, uy).
+// AIR validates ownership and charges before asking a supported payload to launch.
+function launchPlane(id, worldX, worldY, ux, uy) {
+  if (id !== 'a10') return false;
+  return callStrafe(worldX, worldY, ux, uy);
+}
+// Send a flight through a world point. This transport does not spend any framework resources.
 function callStrafe(px, py, ux, uy) {
+  if (!G || G.result || !Number.isFinite(px) || !Number.isFinite(py)) return false;
+  const length = Math.hypot(ux, uy);
+  if (!Number.isFinite(length) || length <= 0) [ux, uy] = [G.tr.cars[0].dx, G.tr.cars[0].dy];
+  else { ux /= length; uy /= length; }
   srSync();
-  if (STRAF.left <= 0 && !G.demo) return false;
-  if (!G.demo) STRAF.left--;
   // it comes in from just off the screen, and flies on until it is off the other side
   const half = G.up.strafeW || JETC.half, offs = G.up.twin ? [-(half + 2), half + 2] : [0];
   const back = Math.max(jetEdge(px, py, -ux, -uy) + 40, JETC.len / 2 + JETC.lead + 20), on = jetEdge(px, py, ux, uy) + 60;
   offs.forEach((o, i) => STRAF.jets.push({ px, py, ux, uy, o, s: -back - i * 26, end: Math.max(on, JETC.len / 2 + 40),
     front: -Infinity, half, dmg: G.up.strafeD || JETC.dmg, bomb: !!G.up.strafeBomb, dropped: false, fired: false, step: 0, blast: 0,
     smoke: 0, alt: JETC.alt }));
-  if (!G.demo) STRAF.msg = { t: realT, s: G.up.twin ? 'TWO JETS INBOUND!' : 'JET INBOUND!' };
   return true;
 }
 
@@ -9998,40 +9958,10 @@ function drawPlanes() {
   ctx.globalCompositeOperation = 'source-over';
 }
 
-// ---------- the UI (screen px)
-// The STRAFE card, after the Ram's (rx, ry = where that one went; y = the cards' row): Q in gold while
-// a run is left, CLICK! while it waits for the map, USED when none are left. The bar = runs left.
-function drawStrafeCard(rx, ry, y) {
-  srSync();
-  const C = STRAF.card;
-  C.on = !!G.up.strafe && !G.demo;
-  if (!C.on) return;
-  let x = RAMCARD.on ? rx + RAMCARD.w + 4 : rx, cy = ry;
-  if (x + C.w > W - 82) [x, cy] = ry === y ? [4, y - 30] : [x, ry];
-  C.x = x;
-  C.y = cy;
-  const n = G.up.strafe, flying = STRAF.jets.length > 0;
-  const tag = STRAF.arm ? 'CLICK!' : flying ? 'GO!' : STRAF.left ? 'Q' + (STRAF.left > 1 ? ' ×' + STRAF.left : '') : 'USED';
-  const tc = STRAF.arm ? (Math.floor(realT * 8) % 2 ? '#ffe39a' : U.amber) : flying ? U.amber : STRAF.left ? U.gold : U.faint;
-  card(x, cy, C.w, C.h, NICON.strafe, 'STRAFE', tag, tc, STRAF.left / n, STRAF.left ? '#ff9a3a' : '#3a3e48', STRAF.left || flying ? U.ink : U.faint);
-  if (STRAF.arm) frame(x - 1, cy - 1, C.w + 2, C.h + 2, Math.floor(realT * 8) % 2 ? '#ffd36a' : '#b8862f');
-  else if (STRAF.left && !flying) frame(x, cy, C.w, C.h, '#b8862f');
-  if (mode === 'play' && !paused && inR(M.x, M.y, x, cy, C.w, C.h)) cursor = 'pointer';
-  const m = STRAF.msg, mt = m ? realT - m.t : 9;
-  if (mt < 2) {
-    ctx.globalAlpha = clamp((2 - mt) / 0.4, 0, 1);
-    text(m.s, clamp(x, 4, W - tw(m.s) - 4), cy - 10, U.amber);
-    ctx.globalAlpha = 1;
-  }
-  if (STRAF.arm && mode === 'play' && !paused) drawStrafeAim();
-}
-// While it waits for the map: the band the jet will strafe through the mouse (or from the press
-// along the drag), an arrow for its way, and what to do.
-function drawStrafeAim() {
-  if (!M.inside || M.y < 19 || inR(M.x, M.y, STRAF.card.x, STRAF.card.y, STRAF.card.w, STRAF.card.h)) return;
-  cursor = 'crosshair';
-  const a = STRAF.aim || { x: M.x, y: M.y }, [ux, uy] = STRAF.aim ? strafeDir(a.x, a.y, M.x, M.y) : strafeDir(a.x, a.y, a.x, a.y);
-  const nx = -uy, ny = ux, L = JETC.len / 2, hw = (G.up.strafeW || JETC.half) * (G.up.twin ? 2 : 1) + (G.up.twin ? 2 : 0);
+// ---------- preview geometry (screen px)
+// AIR supplies its current point and direction, and owns the prompt and pointer state.
+function drawStrafeLine(x, y, ux, uy) {
+  const a = { x, y }, nx = -uy, ny = ux, L = JETC.len / 2, hw = JETC.half;
   const on = Math.floor(realT * 6) % 2 ? 0.9 : 0.6;
   ctx.globalAlpha = 0.14;
   ctx.fillStyle = '#ff9a3a';
@@ -10050,24 +9980,235 @@ function drawStrafeAim() {
     ctx.fillRect(Math.round(a.x + ux * s - nx * w), Math.round(a.y + uy * s - ny * w), Math.max(1, Math.round(w * 2)), 1);
   }
   ctx.globalAlpha = 1;
-  const t = STRAF.aim ? 'LET GO: STRAFE' : 'CLICK: STRAFE HERE.  DRAG: AIM IT.', w = tw(t);
-  text(t, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, VH - 44)), '#ffb060', { align: 'center' });
 }
 
-// air.js - the reserved plane band below the world and its shared view height.
-// Plane ownership is fixed when a leg starts, so the field never reads the skill tree.
+// air.js - plane slots, charges, aiming and the reserved band below the world.
+// Ownership and upgrades are fixed when a leg starts; flight and damage stay in planes.js.
 const AIRBAND = { height: 18 }; // Band height in game px.
+// Starting cooldowns and floors are seconds; payloads enable at their own tasks.
+const PLANES = {
+  a10: { name: 'A-10', cooldown: 25, floor: 12, available: true },
+  f4: { name: 'F-4', cooldown: 30, floor: 15, available: false },
+  b52: { name: 'B-52', cooldown: 45, floor: 25, available: false },
+  b2: { name: 'B-2', cooldown: 60, floor: 40, available: false }
+};
+// Double-tap seconds, slot width/gap/left px, return-animation seconds, and crowd radius px (proposal).
+const AIRCFG = { doubleTap: 0.35, slotWidth: 78, slotGap: 4, left: 6, returnTime: 0.25, crowdRadius: 40 };
+const AIRKEYS = ['q', 'w', 'e', 'r'];
+const AIR = { g: null, slots: [], planes: {}, arm: null, aim: null, tap: null };
 const planeBandVisible = () => !!G && !G.demo && (mode === 'play' || mode === 'ending') && G.up.planeOwned.length > 0;
 function syncViewHeight() {
   VH = H - (planeBandVisible() ? AIRBAND.height : 0);
 }
+// Keep valid slot choices, then fill empty slots in a stable order. Title demos never edit saves.
+function airSync() {
+  if (!G || AIR.g === G) return;
+  AIR.g = G;
+  AIR.arm = AIR.aim = AIR.tap = null;
+  AIR.planes = {};
+  AIR.slots = [];
+  if (G.demo) return;
+  const owned = G.up.planeOwned.filter((id) => PLANES[id]), used = new Set();
+  AIR.slots = SAVE.hangar.map((id) => {
+    if (!owned.includes(id) || used.has(id)) return null;
+    used.add(id);
+    return id;
+  });
+  for (const id of owned) {
+    if (used.has(id)) continue;
+    const slot = AIR.slots.indexOf(null);
+    if (slot < 0) break;
+    AIR.slots[slot] = id;
+    used.add(id);
+  }
+  if (AIR.slots.some((id, i) => id !== SAVE.hangar[i])) {
+    SAVE.hangar = AIR.slots.slice();
+    saveSave();
+  }
+  for (const id of owned) {
+    const desc = PLANES[id], cd = G.up.planeCooldown[id], charges = G.up.planeCharges[id];
+    AIR.planes[id] = { maxCd: Number.isFinite(cd) ? clamp(cd, desc.floor, desc.cooldown) : desc.cooldown,
+      maxCharges: Number.isFinite(charges) ? clamp(Math.floor(charges), 1, 2) : 1,
+      cd: 0, charges: 0, strikes: 0, lastStrike: null, readyAt: realT - AIRCFG.returnTime };
+    AIR.planes[id].charges = AIR.planes[id].maxCharges;
+  }
+}
+const airLive = () => !!G && !G.demo && !G.result && mode === 'play' && !paused;
+function airSlot(key) {
+  const i = AIRKEYS.indexOf(String(key).toLowerCase());
+  return i >= 0 && i < AIR.slots.length ? AIR.slots[i] : null;
+}
+const airReady = (id) => !!id && !!PLANES[id]?.available && AIR.planes[id]?.charges > 0;
+// Serial refill is a proposal: a second use keeps the first recharge's progress.
+function updateAir(dt) {
+  airSync();
+  if (!airLive()) {
+    if (G?.result) airCancel();
+    return;
+  }
+  for (const [id, p] of Object.entries(AIR.planes)) {
+    if (!PLANES[id].available || p.charges >= p.maxCharges) continue;
+    p.cd -= dt;
+    while (p.cd <= 1e-9 && p.charges < p.maxCharges) {
+      const wasEmpty = p.charges === 0;
+      p.charges++;
+      if (wasEmpty) { p.readyAt = realT; SFX.planeReady(); }
+      p.cd = p.charges < p.maxCharges ? p.cd + p.maxCd : 0;
+    }
+  }
+}
+function airCancel() {
+  const active = !!AIR.arm;
+  AIR.arm = AIR.aim = AIR.tap = null;
+  if (active && airLive()) SFX.ui();
+  return active;
+}
+function airArm(id) {
+  if (!airReady(id)) { SFX.deny(); return false; }
+  AIR.arm = id;
+  AIR.aim = null;
+  SFX.ui();
+  return true;
+}
+function airKey(key) {
+  airSync();
+  if (!airLive()) return false;
+  key = String(key).toLowerCase();
+  const id = airSlot(key);
+  if (!id || !PLANES[id].available) return false;
+  if (AIR.arm === id && AIR.tap?.key === key && realT - AIR.tap.t <= AIRCFG.doubleTap) return airSmart(key);
+  if (!airArm(id)) return false;
+  AIR.tap = { key, t: realT };
+  return true;
+}
+// Charges belong to the framework; a failed or unsupported transport never consumes one.
+function airLaunch(id, x, y, ux, uy) {
+  if (!airLive() || !airReady(id) || !launchPlane(id, x, y, ux, uy)) return false;
+  const p = AIR.planes[id];
+  p.charges--;
+  if (p.cd <= 0) p.cd = p.maxCd;
+  p.strikes++;
+  p.lastStrike = { x, y, ux, uy, t: G.run };
+  AIR.arm = AIR.aim = AIR.tap = null;
+  return true;
+}
+function airStrike(key, sx, sy, ang) {
+  airSync();
+  if (![sx, sy].every(Number.isFinite) || ang != null && !Number.isFinite(ang)) return false;
+  if (sx < 0 || sx >= W || sy < 19 || sy >= VH) return false;
+  const [ux, uy] = ang == null ? strafeDir(sx, sy, sx, sy) : [Math.cos(ang), Math.sin(ang)];
+  return airLaunch(airSlot(key), G.camX + sx, G.camY + sy, ux, uy);
+}
+function airSmart(key) {
+  airSync();
+  const id = airSlot(key);
+  if (!airLive() || !airReady(id)) return false;
+  const x = G.camX + W / 2, y = G.camY + VH / 2, R = Math.hypot(W / 2, VH / (2 * FORE));
+  const target = bestCrowd(x, y, R, AIRCFG.crowdRadius,
+    (z) => z.x >= G.camX && z.x < G.camX + W && z.y >= G.camY + 19 && z.y < G.camY + VH);
+  if (!target) { AIR.tap = null; SFX.deny(); return false; }
+  const c = G.tr.cars[0];
+  return airLaunch(id, target.x, target.y, c.dx, c.dy);
+}
+function airDown(x, y) {
+  airSync();
+  if (!airLive()) return false;
+  const slot = airBandSlots().find((r) => inR(x, y, r.x, r.y, r.w, r.h));
+  if (slot) {
+    AIR.tap = null;
+    airArm(slot.id);
+    return true;
+  }
+  if (!AIR.arm || x < 0 || x >= W || y < 19 || y >= VH) return false;
+  AIR.aim = { x: G.camX + x, y: G.camY + y };
+  return true;
+}
+function airUp(x, y) {
+  const a = AIR.aim;
+  if (!a) return false;
+  if (!airLive() || x < 0 || x >= W || y < 19 || y >= VH) { airCancel(); return true; }
+  const [ux, uy] = strafeDir(a.x - G.camX, a.y - G.camY, x, y), id = AIR.arm;
+  if (!airLaunch(id, a.x, a.y, ux, uy)) airCancel();
+  return true;
+}
+function airAimActive() {
+  airSync();
+  return airLive() && airReady(AIR.arm);
+}
+function airAimSnapshot() {
+  const active = airAimActive(), id = AIR.arm;
+  return { active, id, key: id ? AIRKEYS[AIR.slots.indexOf(id)] : null,
+    x: active ? AIR.aim ? AIR.aim.x - G.camX : M.x : null,
+    y: active ? AIR.aim ? AIR.aim.y - G.camY : M.y : null };
+}
+function airBandSlots() {
+  airSync();
+  if (!planeBandVisible()) return [];
+  return AIR.slots.flatMap((id, i) => id && PLANES[id].available ? [{ id, key: AIRKEYS[i],
+    x: AIRCFG.left + i * (AIRCFG.slotWidth + AIRCFG.slotGap), y: VH + 1,
+    w: AIRCFG.slotWidth, h: AIRBAND.height - 1 }] : []);
+}
+function airSnapshot() {
+  airSync();
+  return AIR.slots.flatMap((id, slot) => {
+    if (!id) return [];
+    const p = AIR.planes[id];
+    return [{ id, slot, key: AIRKEYS[slot], available: PLANES[id].available, ready: airReady(id),
+      cd: Math.max(0, p.cd), maxCd: p.maxCd, charges: p.charges, maxCharges: p.maxCharges,
+      aiming: AIR.arm === id, strikes: p.strikes, lastStrike: p.lastStrike ? { ...p.lastStrike } : null }];
+  });
+}
 // Draw after the field's UI, before full-screen menus and fades.
 function drawAirBand() {
   if (!planeBandVisible()) return;
+  airSync();
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, VH, W, H - VH);
+  ctx.clip();
   ctx.fillStyle = 'rgba(6,7,9,0.88)';
   ctx.fillRect(0, VH, W, H - VH);
   ctx.fillStyle = '#24272e';
   ctx.fillRect(0, VH, W, 1);
+  for (const s of airBandSlots()) {
+    const p = AIR.planes[s.id], ready = airReady(s.id), icon = NICON[s.id];
+    if (AIR.arm === s.id) { ctx.fillStyle = 'rgba(184,134,47,0.16)'; ctx.fillRect(s.x, s.y, s.w, s.h); }
+    const loop = G.t * 1.5 + AIR.slots.indexOf(s.id), enter = clamp((realT - p.readyAt) / AIRCFG.returnTime, 0, 1);
+    const ix = Math.round(s.x + 6 + (ready ? Math.sin(loop) * 3 : 0));
+    const iy = Math.round(VH + 2 + (ready ? Math.cos(loop) : 0) + (ready ? (1 - enter) * AIRBAND.height : 0));
+    ctx.globalAlpha = ready ? 1 : 0.3;
+    blit(icon, ix, iy);
+    ctx.globalAlpha = 1;
+    if (ready) text(s.key.toUpperCase(), s.x + 29, VH + 6, U.gold);
+    if (p.maxCharges > 1 && p.charges > 0) text(String(p.charges), s.x + 40, VH + 6, U.ink);
+    if (p.charges < p.maxCharges) {
+      const f = clamp(1 - p.cd / p.maxCd, 0, 1), cx = s.x + 61, cy = VH + 9;
+      ctx.fillStyle = '#3a3e48';
+      ctx.fillRect(cx - 3, cy - 3, 7, 7);
+      ctx.fillStyle = '#08090c';
+      ctx.fillRect(cx - 2, cy - 2, 5, 5);
+      ctx.fillStyle = '#e3b04b';
+      for (let py = -2; py <= 2; py++) for (let px = -2; px <= 2; px++) {
+        const a = mod(Math.atan2(py, px) + Math.PI / 2, TAU) / TAU;
+        if (a <= f) ctx.fillRect(cx + px, cy + py, 1, 1);
+      }
+    }
+    if (airLive() && inR(M.x, M.y, s.x, s.y, s.w, s.h)) cursor = 'pointer';
+  }
+  ctx.restore();
+}
+function drawAirAim() {
+  if (!airAimActive() || !M.inside || M.y < 19 || M.y >= VH) return;
+  const a = airAimSnapshot(), [ux, uy] = AIR.aim ? strafeDir(a.x, a.y, M.x, M.y) : strafeDir(a.x, a.y, a.x, a.y);
+  cursor = 'crosshair';
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 19, W, VH - 19);
+  ctx.clip();
+  drawStrafeLine(a.x, a.y, ux, uy);
+  const hint = AIR.aim ? 'LET GO: STRIKE' : 'CLICK: STRIKE. DRAG: AIM. RIGHT CLICK: CANCEL.', w = tw(hint);
+  text(hint, Math.round(clamp(M.x, w / 2 + 3, W - w / 2 - 3)), Math.round(Math.min(M.y + 12, VH - 44)), U.gold, { align: 'center' });
+  ctx.restore();
 }
 
 // main.js - input (mouse, keys, wheel), the camera mode, the main loop (fixed steps with hit-stop)
@@ -10105,20 +10246,23 @@ cv.addEventListener('pointerdown', (e) => {
     M.right = true;
     try { cv.setPointerCapture(e.pointerId); } catch (_) { /* release still reaches the window */ }
     if (mode === 'depot') M.rpressed = true;
-    if (mode === 'play' && !paused && strafeCancel()) return;
+    if (mode === 'play' && !paused && airCancel()) return;
     if (mode === 'play' && !paused && p.y >= 19 && p.y < VH) heliRight(p.x, p.y);
     return;
   }
   if (e.button !== 0) return;
-  // the Strafing Run's card, and its aim on the map (planes.js)
+  // Plane controls consume their own clicks before the battlefield sees them.
+  if (mode === 'play' && !paused && airDown(p.x, p.y)) {
+    try { cv.setPointerCapture(e.pointerId); } catch (_) { /* release can still reach the canvas */ }
+    return;
+  }
   if (mode === 'play' && p.y >= VH) return;
-  if (mode === 'play' && !paused && strafeDown(p.x, p.y)) return;
   // a click on the Turbo Ram's card rams (it does not fire the 25mm)
   if (mode === 'play' && !paused && RAMCARD.on && inR(p.x, p.y, RAMCARD.x, RAMCARD.y, RAMCARD.w, RAMCARD.h)) {
     tryRam();
     return;
   }
-  // with reduced motion, PRESS E! stops the game: a click on the field goes on without the Ram
+  // The remaining click is handled by the current screen or the field.
   M.down = true;
   M.pressed = true;
   M.px = p.x;
@@ -10144,14 +10288,15 @@ cv.addEventListener('pointerup', (e) => {
     M.down = false;
     M.released = true;
   }
+  if (mode === 'play' && !paused && airUp(p.x, p.y)) return;
   // A drag released in the reserved strip cannot command units in the world above it.
   if (mode === 'play' && p.y >= VH) { HUI.box = null; return; }
-  if (mode === 'play' && !paused && strafeUp(p.x, p.y)) return;
   if (mode === 'play' && !paused && p.y < VH) heliUp(p.x, p.y);
   else HUI.box = null;
 });
 cv.addEventListener('pointercancel', () => {
   M.down = M.right = false;
+  airCancel();
   if (G) G.trigger = false;
 });
 cv.addEventListener('lostpointercapture', () => { M.right = false; });
@@ -10196,9 +10341,7 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (mode === 'play') {
-    // (with reduced motion PRESS E! stops the game: any other key goes on without the Ram)
-    if (k === 'e') { if (!paused) tryRam(); }
-    else if (k === 'q') { if (!paused) tryStrafe(); }
+    if (['q', 'w', 'e', 'r'].includes(k)) { if (!paused) airKey(k); }
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
     else if (!paused) heliKey(k);
   } else if (mode === 'title') {
@@ -10225,6 +10368,7 @@ function lostFocus() {
   for (const k in KEYS) KEYS[k] = false;
   if (G) G.trigger = false;
   M.down = M.right = false;
+  airCancel();
   if (mode === 'play') setPaused(true);
 }
 addEventListener('blur', lostFocus);
@@ -10276,6 +10420,8 @@ function oneFrame(dt) {
     ts = slowK;
     if (slowT <= 0) slowK = 1;
   }
+  // Aiming leaves time to place the strike; reduced motion keeps normal game speed.
+  if (!REDUCED && mode === 'play' && airAimActive()) ts = Math.min(ts, 0.5);
   // fixed steps of STEP seconds, at most 8 a frame
   if (!(mode === 'play' && paused) && !hold && !treeCovers()) {
     acc += dt * ts;
@@ -11360,8 +11506,8 @@ function drawPause() {
     return;
   }
   const L = ['YOUR VIPER FIGHTS BY ITSELF.', 'RIGHT CLICK: ATTACK OR MOVE.', 'FLY OVER A SURVIVOR TO WINCH THEM UP.'];
-  if (G.up.ram) L.push('E: TURBO RAM.');
-  if (G.up.strafe) L.push('Q: STRAFING RUN, THEN CLICK THE MAP.');
+  if (G.up.ram) L.push('CLICK THE TURBO RAM CARD.');
+  if (G.up.planeOwned.length) L.push('Q / W: AIM PLANE. DOUBLE TAP: SMART STRIKE.');
   L.push('T: CAMERA.  M: SOUND.  WHEEL: ZOOM.');
   const w = 280, h = 112 + L.length * 10, x = Math.round(W / 2 - w / 2), y = Math.max(22, Math.round((H + 19) / 2 - h / 2)), cx = x + w / 2;
   Object.assign(PAUSE, { x, y, w, h });
@@ -12118,13 +12264,17 @@ Object.assign(window.__sr, {
   },
   treeZoom: (d) => treeZoom(d),
   // strafe(sx, sy, ux, uy): call the jet through screen pixel (sx, sy) (along the rails without a
-  // way); strafeState() = runs left and what is in the air
+  // way); strafeState() = the A-10's current charges and what is in the air
   strafe: (sx, sy, ux, uy) => {
     srSync();
     const [a, b] = ux != null ? [ux, uy] : strafeDir(sx, sy, sx, sy), l = Math.hypot(a, b) || 1;
     return callStrafe(G.camX + sx, G.camY + sy, a / l, b / l);
   },
-  strafeState: () => (srSync(), { left: STRAF.left, arm: STRAF.arm, jets: STRAF.jets.length, bombs: STRAF.bombs.length, up: G.up.strafe }),
+  strafeState: () => {
+    srSync();
+    const a = airSnapshot().find((p) => p.id === 'a10');
+    return { left: a?.charges || 0, arm: airAimActive(), jets: STRAF.jets.length, bombs: STRAF.bombs.length, up: a?.maxCharges || 0 };
+  },
   treeNodes: () => NODES.map((n) => ({ id: n.id, name: n.name, p: n.p || null, k: n.k, cur: n.cur || 'scrap',
     cost: n.cost.slice(), charge: !!n.charge, star: !!n.star, x: n.x, y: n.y,
     lv: lv(n.id), max: maxLv(n), st: nodeState(n) }))
@@ -12139,7 +12289,12 @@ Object.assign(window.__sr, { treeState: () => ({ drag: TREE.drag, M: Object.assi
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
   // The band's rectangle is in game px, including its full canvas and world heights.
-  planeBand: () => ({ visible: planeBandVisible(), x: 0, y: VH, w: W, h: H - VH, worldHeight: VH, fullHeight: H }),
+  planeBand: () => ({ visible: planeBandVisible(), x: 0, y: VH, w: W, h: H - VH, worldHeight: VH, fullHeight: H, slots: airBandSlots() }),
+  // Copy plane resources and aiming state; strikes use the same path as input.
+  planes: () => airSnapshot(),
+  planeAim: () => airAimSnapshot(),
+  strike: (key, sx, sy, ang) => airStrike(key, sx, sy, ang),
+  smart: (key) => airSmart(key),
   // Report only implemented unit systems; later weapons stay neutral until their own tasks.
   units: () => {
     if (!G) return null;
@@ -12168,7 +12323,7 @@ Object.assign(window.__sr, {
         active: missiles.map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz, bx: r.bx, by: r.by,
           age: r.age, T: r.T, dmg: r.dmg, R: r.R, priority: r.priority, position: hellfireAt(r),
           targetSnapshot: { ...r.targetSnapshot } })) },
-      planes: [], cars: [], gadgets: []
+      planes: airSnapshot(), cars: [], gadgets: []
     };
   },
   // Copy the burning ground and its run counters without exposing mutable patches or G.

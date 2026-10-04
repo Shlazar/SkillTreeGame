@@ -33,20 +33,23 @@ cv.addEventListener('pointerdown', (e) => {
     M.right = true;
     try { cv.setPointerCapture(e.pointerId); } catch (_) { /* release still reaches the window */ }
     if (mode === 'depot') M.rpressed = true;
-    if (mode === 'play' && !paused && strafeCancel()) return;
+    if (mode === 'play' && !paused && airCancel()) return;
     if (mode === 'play' && !paused && p.y >= 19 && p.y < VH) heliRight(p.x, p.y);
     return;
   }
   if (e.button !== 0) return;
-  // the Strafing Run's card, and its aim on the map (planes.js)
+  // Plane controls consume their own clicks before the battlefield sees them.
+  if (mode === 'play' && !paused && airDown(p.x, p.y)) {
+    try { cv.setPointerCapture(e.pointerId); } catch (_) { /* release can still reach the canvas */ }
+    return;
+  }
   if (mode === 'play' && p.y >= VH) return;
-  if (mode === 'play' && !paused && strafeDown(p.x, p.y)) return;
   // a click on the Turbo Ram's card rams (it does not fire the 25mm)
   if (mode === 'play' && !paused && RAMCARD.on && inR(p.x, p.y, RAMCARD.x, RAMCARD.y, RAMCARD.w, RAMCARD.h)) {
     tryRam();
     return;
   }
-  // with reduced motion, PRESS E! stops the game: a click on the field goes on without the Ram
+  // The remaining click is handled by the current screen or the field.
   M.down = true;
   M.pressed = true;
   M.px = p.x;
@@ -72,14 +75,15 @@ cv.addEventListener('pointerup', (e) => {
     M.down = false;
     M.released = true;
   }
+  if (mode === 'play' && !paused && airUp(p.x, p.y)) return;
   // A drag released in the reserved strip cannot command units in the world above it.
   if (mode === 'play' && p.y >= VH) { HUI.box = null; return; }
-  if (mode === 'play' && !paused && strafeUp(p.x, p.y)) return;
   if (mode === 'play' && !paused && p.y < VH) heliUp(p.x, p.y);
   else HUI.box = null;
 });
 cv.addEventListener('pointercancel', () => {
   M.down = M.right = false;
+  airCancel();
   if (G) G.trigger = false;
 });
 cv.addEventListener('lostpointercapture', () => { M.right = false; });
@@ -124,9 +128,7 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (mode === 'play') {
-    // (with reduced motion PRESS E! stops the game: any other key goes on without the Ram)
-    if (k === 'e') { if (!paused) tryRam(); }
-    else if (k === 'q') { if (!paused) tryStrafe(); }
+    if (['q', 'w', 'e', 'r'].includes(k)) { if (!paused) airKey(k); }
     else if (k === 'Escape' || k === 'p') setPaused(!paused);
     else if (!paused) heliKey(k);
   } else if (mode === 'title') {
@@ -153,6 +155,7 @@ function lostFocus() {
   for (const k in KEYS) KEYS[k] = false;
   if (G) G.trigger = false;
   M.down = M.right = false;
+  airCancel();
   if (mode === 'play') setPaused(true);
 }
 addEventListener('blur', lostFocus);
@@ -204,6 +207,8 @@ function oneFrame(dt) {
     ts = slowK;
     if (slowT <= 0) slowK = 1;
   }
+  // Aiming leaves time to place the strike; reduced motion keeps normal game speed.
+  if (!REDUCED && mode === 'play' && airAimActive()) ts = Math.min(ts, 0.5);
   // fixed steps of STEP seconds, at most 8 a frame
   if (!(mode === 'play' && paused) && !hold && !treeCovers()) {
     acc += dt * ts;

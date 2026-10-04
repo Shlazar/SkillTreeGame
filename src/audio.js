@@ -4,6 +4,9 @@
 // SFX holds every game sound; drone() is the helicopter's rotor under everything.
 
 const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null, roar: null };
+// Ready swoosh: gate ms, burst/note seconds, volumes and rising filter/note frequencies (proposal)
+const PLANE_READY_SFX = { gap: 90, life: 0.22, volume: 0.065, from: 500, to: 2300,
+  q: 0.7, note: 380, noteEnd: 740, noteLife: 0.16, noteVolume: 0.012 };
 
 function audioInit() {
   if (Au.ctx) {
@@ -211,6 +214,12 @@ const SFX = {
     // the 105 is loaded again
     tone(1250, 0.04, 'square', 0.014);
     tone(1650, 0.05, 'square', 0.014, null, 0.05);
+  },
+  planeReady() {
+    const c = PLANE_READY_SFX;
+    if (!gap('planeReady', c.gap)) return;
+    nz(c.life, c.volume, 'bandpass', c.from, c.q, c.to);
+    tone(c.note, c.noteLife, 'triangle', c.noteVolume, c.noteEnd);
   },
   overheat() {
     tone(900, 0.35, 'square', 0.02, 300);

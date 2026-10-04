@@ -1,7 +1,12 @@
 // test_f.js - small test helpers for the station-to-station game. Loaded after main creates __sr.
 Object.assign(window.__sr, {
   // The band's rectangle is in game px, including its full canvas and world heights.
-  planeBand: () => ({ visible: planeBandVisible(), x: 0, y: VH, w: W, h: H - VH, worldHeight: VH, fullHeight: H }),
+  planeBand: () => ({ visible: planeBandVisible(), x: 0, y: VH, w: W, h: H - VH, worldHeight: VH, fullHeight: H, slots: airBandSlots() }),
+  // Copy plane resources and aiming state; strikes use the same path as input.
+  planes: () => airSnapshot(),
+  planeAim: () => airAimSnapshot(),
+  strike: (key, sx, sy, ang) => airStrike(key, sx, sy, ang),
+  smart: (key) => airSmart(key),
   // Report only implemented unit systems; later weapons stay neutral until their own tasks.
   units: () => {
     if (!G) return null;
@@ -30,7 +35,7 @@ Object.assign(window.__sr, {
         active: missiles.map((r) => ({ sx: r.sx, sy: r.sy, sz: r.sz, bx: r.bx, by: r.by,
           age: r.age, T: r.T, dmg: r.dmg, R: r.R, priority: r.priority, position: hellfireAt(r),
           targetSnapshot: { ...r.targetSnapshot } })) },
-      planes: [], cars: [], gadgets: []
+      planes: airSnapshot(), cars: [], gadgets: []
     };
   },
   // Copy the burning ground and its run counters without exposing mutable patches or G.
