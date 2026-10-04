@@ -310,6 +310,7 @@ Node ids come from `NODES` in `src/tree.js` (for example `'root'`, `'hdmg'`, `'h
 
 ### 5.14 Legs and rewards (src/test_f.js)
 
+- `incomeState()`: copies the current leg's scrap target, ordinary kill multiplier, total paid scrap, paid/base sources (`ordinary`, `silver`, `loot`, `wall`) and remaining fractions. Ordinary kill payouts are tuned per leg while keeping the horde; silver remains 15 base scrap and Salvage Crew applies once to every source. Wall scrap counts only after collecting its dropped pile.
 - `starState()`: copies the current leg's earned stars, total one-time star gold, HUD positions/pop progress and cached icon readiness. From leg 3, reaching the station, arriving with at least 75% health and catching the primary golden zombie each pay 3 gold once. The catch star saves immediately; replays cannot earn missed stars.
 - `variantState()`: copies silver/explosive spawn and blast counters, active variant positions, eligible spawn chances, queued blasts, and startup-art atlas checks. Silver pays 15 base scrap; explosive walkers and runners detonate only if they were visibly explosive before dying.
 - `variantSpawn(kind, sx, sy, type = 0)`: QA-only controlled placement using the real variant converters. `kind` is `normal`, `silver` or `boom`; returns the actor index or `-1`. Special variants respect their leg introductions and cannot be brutes. Screen coordinates must be inside the world view.

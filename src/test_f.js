@@ -29,6 +29,9 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  incomeState: () => G ? { leg: G.leg, target: legDef(G.leg)?.scrapTarget || 0, ordinaryPay: G.killPay,
+    scrap: Math.floor(G.cash), sources: { ...G.earnedSources }, base: { ...G.earnedBase }, counts: { ...G.earnedCounts },
+    fractions: { ordinary: G.killAcc, silver: G.silverAcc, loot: G.lootAcc, wall: G.wallAcc } } : null,
   starState: () => {
     if (!G) return null;
     const record = SAVE.legs[G.leg], stars = record?.stars || [false, false, false];
@@ -422,6 +425,7 @@ Object.assign(window.__sr, {
   line: () => ({
     stops: STOPS.map(({ id, name, kind, km, side }) => ({ id, name, kind, km, side })),
     legs: LEGS.map((l) => ({ n: l.n, from: l.from.id, to: l.to.id, len: l.len,
+      scrapTarget: l.scrapTarget, ordinaryPay: l.ordinaryPay, wallPay: l.wallPay,
       stars: l.stars, rescue: l.rescue, finale: l.finale, base: { ...l.base },
       events: l.events.map(([at, kind, params]) => [at, kind, { ...params }]) }))
   }),

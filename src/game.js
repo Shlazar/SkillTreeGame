@@ -106,13 +106,18 @@ function runUp(demo) {
 function maxHP() {
   return UP.hp(lv('armor'));
 }
-// Loot and gold items' scrap alternatives share a fractional pot, separate from killAcc.
+// Finds and gold alternatives share lootAcc; wall piles use their own pot for exact source totals.
 // Apply Salvage Crew once here; bankRun only stores the whole scrap already paid.
-function payLootScrap(base) {
+function payLootScrap(base, source = 'loot') {
   if (!(base > 0)) return 0;
-  G.lootAcc += base * (1 + G.up.salvage);
-  const pay = Math.floor(G.lootAcc + 1e-9);
-  G.lootAcc = Math.max(0, G.lootAcc - pay);
+  source = source === 'wall' ? 'wall' : 'loot';
+  const pot = source === 'wall' ? 'wallAcc' : 'lootAcc';
+  G.earnedBase[source] += base;
+  G.earnedCounts[source]++;
+  G[pot] += base * (1 + G.up.salvage);
+  const pay = Math.floor(G[pot] + 1e-9);
+  G[pot] = Math.max(0, G[pot] - pay);
+  G.earnedSources[source] += pay;
   G.cash += pay;
   G.pay.loot += pay;
   if (pay) G.cashPulse = 1;
@@ -134,6 +139,11 @@ function newGame(demo, number, replay) {
   for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
     demo: !!demo, leg: leg ? leg.n : 0, replay: !!replay, eventIndex: 0, events: [], t: 0, run: 0, endT: 0, result: '', up,
+    // Ordinary kill pay is fixed for this leg. Raw source bases exclude its factor and Salvage.
+    killPay: Number.isFinite(leg?.ordinaryPay) ? Math.max(0, leg.ordinaryPay) : 1,
+    earnedSources: { ordinary: 0, silver: 0, loot: 0, wall: 0 },
+    earnedBase: { ordinary: 0, silver: 0, loot: 0, wall: 0 },
+    earnedCounts: { ordinaryKills: 0, silverKills: 0, ramKills: 0, loot: 0, wall: 0 },
     kills: 0, cash: 0, gold: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
     // Legacy debug fields stay zero until the final cleanup; Salvage Crew uses the pay pots below.
     scavAcc: 0, scavPaid: 0,
@@ -152,8 +162,9 @@ function newGame(demo, number, replay) {
     camX: 0, camY: 0, aimSX: W / 2, aimSY: VH / 2,
     lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
-    // Fractions from boosted kills and finds carry forward to the next reward in that group.
-    spawnCd: 0, waveCd: null, waves: 0, killAcc: 0, lootAcc: 0, railCd: rnd(4, 6), onTrain: 0, blocked: false, decalT: 0, sum: null,
+    // Each source carries its own fraction, so silver and wall rewards never inherit ordinary pay.
+    spawnCd: 0, waveCd: null, waves: 0, killAcc: 0, silverAcc: 0, lootAcc: 0, wallAcc: 0,
+    railCd: rnd(4, 6), onTrain: 0, blocked: false, decalT: 0, sum: null,
     // this run's scrap by where it came from (the summary lists them), the survivors aboard, the px
     // the train has ridden, the furthest km, and what is already in the save
     pay: { kills: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0, gold: 0 },
@@ -507,7 +518,9 @@ function breakWall(w, cause = 'mg') {
   w.broken = true; w.state = 'broken'; w.hp = 0; w.brokenAt = G.run; w.hpOut = G.tr.hp;
   w.cause = cause; w.rammed = cause === 'ram'; w.target.dead = w.target.gone = true;
   w.target.pending = 0; w.target.paid = 0;
-  const f = addFind('pile', w.km, 0, 1, CFG.wall.loot);
+  const wallPay = legDef(G.leg)?.wallPay;
+  const f = addFind('pile', w.km, 0, 1, Number.isFinite(wallPay) ? Math.max(0, wallPay) : CFG.wall.loot);
+  f.scrapSource = 'wall';
   f.eventId = w.id + '-scrap'; w.lootId = f.eventId;
   boomFx(w.x, w.y, true);
   for (let i = 0; i < CFG.wall.bodies && G.bodies.length < 160; i++) {
@@ -933,14 +946,19 @@ function kill(z, cause, cx, cy, dist, free) {
   z.hp = 0;
   z.paid = 0;
   const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160, ram = cause === 'ram';
-  // Its value (twice for the Ram) times kill pay, then Salvage Crew's extra share.
-  // Whole scrap pays now; the fraction waits for the next scored kill.
+  // Ordinary kills retain the Ram bonus and the leg's fractional pay. Silver remains worth 15,
+  // boosted only by Salvage. Whole scrap pays now; each source keeps its own fraction.
   let pay = 0;
   if (sc) {
-    const base = z.value * (ram ? CFG.ram.pay : 1) * (z.gold ? 1 : CFG.pay.kill);
-    G.killAcc += base * (1 + G.up.salvage);
-    pay = Math.floor(G.killAcc + 1e-9);
-    G.killAcc -= pay;
+    const source = z.silver ? 'silver' : 'ordinary', pot = z.silver ? 'silverAcc' : 'killAcc';
+    const base = z.silver ? SILVER_PAY : z.value * (ram ? CFG.ram.pay : 1) * CFG.pay.kill;
+    G.earnedBase[source] += base;
+    if (!z.gold) G.earnedCounts[z.silver ? 'silverKills' : 'ordinaryKills']++;
+    if (ram && !z.gold && !z.silver) G.earnedCounts.ramKills++;
+    G[pot] += base * (z.silver ? 1 : G.killPay) * (1 + G.up.salvage);
+    pay = Math.floor(G[pot] + 1e-9);
+    G[pot] = Math.max(0, G[pot] - pay);
+    G.earnedSources[source] += pay;
     if (cause === 'gun') G.gun.kills++;
     if (!SAVE.flags.scrapEarned) { SAVE.flags.scrapEarned = true; saveSave(); }
     G.kills++;

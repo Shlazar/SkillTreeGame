@@ -4,6 +4,9 @@
 // SFX holds every game sound; drone() is the helicopter's rotor under everything.
 
 const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null, roar: null };
+// Audio voice/gap limits use wall time. Their random draws must never advance combat's RNG.
+const audioRandom = mulberry(0xa0d10);
+const audioRnd = (a, b) => b === undefined ? audioRandom() * a : a + audioRandom() * (b - a);
 // Ready swoosh: gate ms, burst/note seconds, volumes and rising filter/note frequencies (proposal)
 const PLANE_READY_SFX = { gap: 90, life: 0.22, volume: 0.065, from: 500, to: 2300,
   q: 0.7, note: 380, noteEnd: 740, noteLife: 0.16, noteVolume: 0.012 };
@@ -32,7 +35,7 @@ function audioInit() {
     const ir = a.createBuffer(2, a.sampleRate * 1.3 | 0, a.sampleRate);
     for (let c = 0; c < 2; c++) {
       const d = ir.getChannelData(c);
-      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 4);
+      for (let i = 0; i < d.length; i++) d[i] = (audioRandom() * 2 - 1) * Math.pow(1 - i / d.length, 4);
     }
     const rv = a.createConvolver();
     rv.buffer = ir;
@@ -43,7 +46,7 @@ function audioInit() {
     wet.connect(comp);
     // 1 second of white noise, shared by all noise sounds
     const b = a.createBuffer(1, a.sampleRate, a.sampleRate), d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    for (let i = 0; i < d.length; i++) d[i] = audioRandom() * 2 - 1;
     Au.noise = b;
   } catch (e) {
     Au.ctx = null;
@@ -104,7 +107,7 @@ function nz(d, v, ft, f, q, f2, delay) {
   s.connect(fl);
   fl.connect(g);
   g.connect(Au.master);
-  s.start(t, Math.random() * 0.4, d + 0.05);
+  s.start(t, audioRandom() * 0.4, d + 0.05);
 }
 
 // The helicopter: rotor noise through a low-pass filter, chopped by the blades (an LFO on its
@@ -172,8 +175,8 @@ const SFX = {
   pop() {
     // a 25mm round bursts on the ground
     if (!gap('pop', 32)) return;
-    nz(0.13, 0.04, 'bandpass', rnd(480, 900), 1.1, 150);
-    tone(rnd(160, 220), 0.06, 'triangle', 0.016, 70);
+    nz(0.13, 0.04, 'bandpass', audioRnd(480, 900), 1.1, 150);
+    tone(audioRnd(160, 220), 0.06, 'triangle', 0.016, 70);
   },
   cannon() {
     // the 105 fires: a deep blast
@@ -187,7 +190,7 @@ const SFX = {
   },
   boom() {
     if (!voice('boom', 3, 1)) return;
-    const p = rnd(0.85, 1.15);
+    const p = audioRnd(0.85, 1.15);
     nz(1.1, 0.27, 'lowpass', 1000 * p, 0.7, 45);
     tone(50 * p, 0.8, 'sine', 0.24, 24);
     nz(0.6, 0.05, 'highpass', 2600, 0.7, 900, 0.06);
@@ -195,16 +198,16 @@ const SFX = {
   splat() {
     // a kill: a wet smack and a short knock
     if (!gap('splat', 28)) return;
-    nz(0.07, 0.05, 'bandpass', rnd(260, 520), 1.6, 140);
-    tone(rnd(300, 360), 0.05, 'triangle', 0.02, 110);
+    nz(0.07, 0.05, 'bandpass', audioRnd(260, 520), 1.6, 140);
+    tone(audioRnd(300, 360), 0.05, 'triangle', 0.02, 110);
   },
   hit() {
     if (!gap('hit', 45)) return;
-    nz(0.04, 0.045, 'bandpass', rnd(650, 1100), 2, 260);
+    nz(0.04, 0.045, 'bandpass', audioRnd(650, 1100), 2, 260);
   },
   coin() {
     if (!gap('coin', 70)) return;
-    const f = rnd(2500, 2900);
+    const f = audioRnd(2500, 2900);
     tone(f, 0.05, 'sine', 0.012);
     tone(f * 1.49, 0.035, 'sine', 0.007, null, 0.012);
     nz(0.02, 0.01, 'highpass', 6500);
@@ -386,7 +389,7 @@ const SFX = {
     if (!gap('crush', 40)) return;
     nz(0.14, big ? 0.12 : 0.07, 'lowpass', 600, 0.8, 120);
     tone(big ? 70 : 110, 0.1, 'triangle', 0.05, 50);
-    nz(0.06, 0.04, 'bandpass', rnd(400, 700), 1.5);
+    nz(0.06, 0.04, 'bandpass', audioRnd(400, 700), 1.5);
   },
   saved() {
     // a survivor made it aboard: a bright double chime

@@ -3,6 +3,11 @@
 
 // Rail px between stations: about 60 s at the train's 40 px/s cruise. (proposal)
 const LEG_LENGTH = 2400;
+// First-pass scrap targets from the final design; ordinary kill shares are tuned with real rides.
+const LEG_SCRAP_TARGETS = [80, 95, 115, 135, 160, 190, 225, 265, 310, 365, 430, 500];
+// Ordinary kill multipliers preserve the large hordes; wall drops remain collectible. (proposal)
+const LEG_ORDINARY_PAY = [0.67831, 0.884, 0.75047, 0.66879, 0.37451, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.58263];
+const LEG_WALL_PAY = { 5: 40, 9: 40 };
 const STOPS = [
   Object.assign(DEPOT, { kind: 'big', side: 1 }),
   { id: 'millbrook', name: 'MILLBROOK', kind: 'big' },
@@ -34,32 +39,32 @@ const LEG_BASE_ROWS = [
 // real handlers exist. Leg 9's two events at 27 s deliberately overlap. (proposal)
 const legPile = (pay) => ({ ahead: 120, off: 100, side: 1, pay });
 const LEG_EVENT_ROWS = [
-  [[3, 'railCrowd', { n: 6 }], [12, 'stream', { edge: -1, n: 12 }], [22, 'pile', legPile(15)],
+  [[3, 'railCrowd', { n: 6 }], [12, 'stream', { edge: -1, n: 12 }], [22, 'pile', legPile(24)],
     [32, 'stream', { edge: 1, n: 14 }], [42, 'railCrowd', { n: 8 }], [52, 'wave', { n: 10 }]],
-  [[3, 'railCrowd', { n: 10 }], [12, 'stream', { edge: -1, n: 18, type: 1 }], [22, 'pile', legPile(15)],
+  [[3, 'railCrowd', { n: 10 }], [12, 'stream', { edge: -1, n: 18, type: 1 }], [22, 'pile', legPile(29)],
     [32, 'stream', { edge: 1, n: 20 }], [42, 'railCrowd', { n: 12 }], [52, 'wave', { n: 12 }]],
   [[3, 'railCrowd', { n: 12 }], [11, 'stream', { edge: -1, n: 22 }], [19, 'golden', { edge: -1 }],
-    [27, 'pile', legPile(20)], [35, 'stream', { edge: 1, n: 24 }], [43, 'railCrowd', { n: 16 }], [51, 'wave', { n: 14 }]],
+    [27, 'pile', legPile(35)], [35, 'stream', { edge: 1, n: 24 }], [43, 'railCrowd', { n: 16 }], [51, 'wave', { n: 14 }]],
   [[3, 'railCrowd', { n: 14 }], [11, 'stream', { edge: -1, n: 24 }], [19, 'golden', { edge: 1 }],
-    [27, 'rescue', { id: 'rescue-4' }], [35, 'pile', legPile(25)], [43, 'silverGroup', { n: 3, edge: 1 }], [51, 'wave', { n: 16 }]],
+    [27, 'rescue', { id: 'rescue-4' }], [35, 'pile', legPile(41)], [43, 'silverGroup', { n: 3, edge: 1 }], [51, 'wave', { n: 16 }]],
   [[3, 'railCrowd', { n: 18 }], [11, 'stream', { edge: -1, n: 26 }], [19, 'golden', { edge: -1 }],
-    [27, 'deadWall', {}], [35, 'pile', legPile(30)], [43, 'stream', { edge: 1, n: 28 }], [51, 'wave', { n: 18 }]],
+    [27, 'deadWall', {}], [35, 'pile', legPile(48)], [43, 'stream', { edge: 1, n: 28 }], [51, 'wave', { n: 18 }]],
   [[3, 'railCrowd', { n: 20, leaders: 1, leadType: 2 }], [11, 'stream', { edge: -1, n: 30 }], [19, 'golden', { edge: 1 }],
-    [27, 'goldCrate', {}], [35, 'pile', legPile(35)], [43, 'stream', { edge: 1, n: 32 }], [51, 'wave', { n: 20 }]],
+    [27, 'goldCrate', {}], [35, 'pile', legPile(57)], [43, 'stream', { edge: 1, n: 32 }], [51, 'wave', { n: 20 }]],
   [[3, 'explosiveStream', { edge: -1, n: 8 }], [11, 'stream', { edge: 1, n: 34 }], [19, 'golden', { edge: -1 }],
-    [27, 'crate', legPile(50)], [35, 'pile', legPile(40)], [43, 'railCrowd', { n: 24 }], [51, 'wave', { n: 24 }]],
+    [27, 'crate', legPile(38)], [35, 'pile', legPile(30)], [43, 'railCrowd', { n: 24 }], [51, 'wave', { n: 24 }]],
   [[3, 'railCrowd', { n: 26 }], [11, 'golden', { edge: 1 }], [19, 'rescue', { id: 'rescue-8' }],
-    [27, 'pile', legPile(45)], [35, 'goldCrate', {}], [43, 'silverGroup', { n: 4, edge: 1 }], [51, 'wave', { n: 40, big: true }]],
+    [27, 'pile', legPile(80)], [35, 'goldCrate', {}], [43, 'silverGroup', { n: 4, edge: 1 }], [51, 'wave', { n: 40, big: true }]],
   [[3, 'railCrowd', { n: 30 }], [11, 'stream', { edge: -1, n: 40 }], [19, 'golden', { edge: -1 }],
-    [27, 'stream', { edge: 1, n: 40 }], [27, 'deadWall', {}], [35, 'pile', legPile(50)], [43, 'goldCrate', {}], [51, 'wave', { n: 44, big: true }]],
+    [27, 'stream', { edge: 1, n: 40 }], [27, 'deadWall', {}], [35, 'pile', legPile(93)], [43, 'goldCrate', {}], [51, 'wave', { n: 44, big: true }]],
   [[3, 'stream', { edge: 0, n: 26, leaders: 2, leadType: 2, type: 1 }], [11, 'railCrowd', { n: 34 }], [19, 'golden', { edge: 1 }],
-    [27, 'rescue', { id: 'rescue-10' }], [35, 'pile', legPile(55)],
+    [27, 'rescue', { id: 'rescue-10' }], [35, 'pile', legPile(110)],
     [43, 'stream', { edge: 0, n: 30, leaders: 3, leadType: 2, type: 1 }], [51, 'wave', { n: 48, big: true }]],
   [[3, 'railCrowd', { n: 40 }], [11, 'stream', { edge: -1, n: 50 }], [19, 'golden', { edge: -1 }],
-    [27, 'goldCrate', {}], [35, 'pile', legPile(60)],
+    [27, 'goldCrate', {}], [35, 'pile', legPile(129)],
     [43, 'stream', { edge: 0, n: 50, leaders: 4, leadType: 2, type: 1 }], [51, 'wave', { n: 65, big: true }]],
   [[3, 'wave', { n: 65, big: true }], [11, 'stream', { edge: -1, n: 60 }], [19, 'golden', { edge: 1 }],
-    [27, 'goldCrate', {}], [35, 'pile', legPile(70)], [43, 'railCrowd', { n: 50 }], [51, 'wave', { n: 75, big: true }]]
+    [27, 'goldCrate', {}], [35, 'pile', legPile(150)], [43, 'railCrowd', { n: 50 }], [51, 'wave', { n: 75, big: true }]]
 ];
 const LEGS = [];
 for (let n = 1; n < STOPS.length; n++) {
@@ -69,6 +74,7 @@ for (let n = 1; n < STOPS.length; n++) {
   const b = LEG_BASE_ROWS[n - 1], base = HORDE[n - 1];
   Object.assign(base, { want: b[0], size: b[1], gap: b[2], run: b[3], brute: b[4], railBrute: b[5] });
   LEGS.push({ n, from, to, len: LEG_LENGTH, stars: n >= 3, base: HORDE[n - 1],
+    scrapTarget: LEG_SCRAP_TARGETS[n - 1], ordinaryPay: LEG_ORDINARY_PAY[n - 1], wallPay: LEG_WALL_PAY[n] ?? CFG.wall.loot,
     rescue: [4, 8, 10].includes(n) ? 'rescue-' + n : null, finale: n === 12, events: LEG_EVENT_ROWS[n - 1] });
 }
 const legDef = (n) => LEGS[n - 1] || null;

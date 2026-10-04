@@ -2565,6 +2565,9 @@ function drawNormalFx(withFlames = false) {
 // SFX holds every game sound; drone() is the helicopter's rotor under everything.
 
 const Au = { ctx: null, master: null, noise: null, muted: false, last: {}, hum: null, roar: null };
+// Audio voice/gap limits use wall time. Their random draws must never advance combat's RNG.
+const audioRandom = mulberry(0xa0d10);
+const audioRnd = (a, b) => b === undefined ? audioRandom() * a : a + audioRandom() * (b - a);
 // Ready swoosh: gate ms, burst/note seconds, volumes and rising filter/note frequencies (proposal)
 const PLANE_READY_SFX = { gap: 90, life: 0.22, volume: 0.065, from: 500, to: 2300,
   q: 0.7, note: 380, noteEnd: 740, noteLife: 0.16, noteVolume: 0.012 };
@@ -2593,7 +2596,7 @@ function audioInit() {
     const ir = a.createBuffer(2, a.sampleRate * 1.3 | 0, a.sampleRate);
     for (let c = 0; c < 2; c++) {
       const d = ir.getChannelData(c);
-      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 4);
+      for (let i = 0; i < d.length; i++) d[i] = (audioRandom() * 2 - 1) * Math.pow(1 - i / d.length, 4);
     }
     const rv = a.createConvolver();
     rv.buffer = ir;
@@ -2604,7 +2607,7 @@ function audioInit() {
     wet.connect(comp);
     // 1 second of white noise, shared by all noise sounds
     const b = a.createBuffer(1, a.sampleRate, a.sampleRate), d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    for (let i = 0; i < d.length; i++) d[i] = audioRandom() * 2 - 1;
     Au.noise = b;
   } catch (e) {
     Au.ctx = null;
@@ -2665,7 +2668,7 @@ function nz(d, v, ft, f, q, f2, delay) {
   s.connect(fl);
   fl.connect(g);
   g.connect(Au.master);
-  s.start(t, Math.random() * 0.4, d + 0.05);
+  s.start(t, audioRandom() * 0.4, d + 0.05);
 }
 
 // The helicopter: rotor noise through a low-pass filter, chopped by the blades (an LFO on its
@@ -2733,8 +2736,8 @@ const SFX = {
   pop() {
     // a 25mm round bursts on the ground
     if (!gap('pop', 32)) return;
-    nz(0.13, 0.04, 'bandpass', rnd(480, 900), 1.1, 150);
-    tone(rnd(160, 220), 0.06, 'triangle', 0.016, 70);
+    nz(0.13, 0.04, 'bandpass', audioRnd(480, 900), 1.1, 150);
+    tone(audioRnd(160, 220), 0.06, 'triangle', 0.016, 70);
   },
   cannon() {
     // the 105 fires: a deep blast
@@ -2748,7 +2751,7 @@ const SFX = {
   },
   boom() {
     if (!voice('boom', 3, 1)) return;
-    const p = rnd(0.85, 1.15);
+    const p = audioRnd(0.85, 1.15);
     nz(1.1, 0.27, 'lowpass', 1000 * p, 0.7, 45);
     tone(50 * p, 0.8, 'sine', 0.24, 24);
     nz(0.6, 0.05, 'highpass', 2600, 0.7, 900, 0.06);
@@ -2756,16 +2759,16 @@ const SFX = {
   splat() {
     // a kill: a wet smack and a short knock
     if (!gap('splat', 28)) return;
-    nz(0.07, 0.05, 'bandpass', rnd(260, 520), 1.6, 140);
-    tone(rnd(300, 360), 0.05, 'triangle', 0.02, 110);
+    nz(0.07, 0.05, 'bandpass', audioRnd(260, 520), 1.6, 140);
+    tone(audioRnd(300, 360), 0.05, 'triangle', 0.02, 110);
   },
   hit() {
     if (!gap('hit', 45)) return;
-    nz(0.04, 0.045, 'bandpass', rnd(650, 1100), 2, 260);
+    nz(0.04, 0.045, 'bandpass', audioRnd(650, 1100), 2, 260);
   },
   coin() {
     if (!gap('coin', 70)) return;
-    const f = rnd(2500, 2900);
+    const f = audioRnd(2500, 2900);
     tone(f, 0.05, 'sine', 0.012);
     tone(f * 1.49, 0.035, 'sine', 0.007, null, 0.012);
     nz(0.02, 0.01, 'highpass', 6500);
@@ -2947,7 +2950,7 @@ const SFX = {
     if (!gap('crush', 40)) return;
     nz(0.14, big ? 0.12 : 0.07, 'lowpass', 600, 0.8, 120);
     tone(big ? 70 : 110, 0.1, 'triangle', 0.05, 50);
-    nz(0.06, 0.04, 'bandpass', rnd(400, 700), 1.5);
+    nz(0.06, 0.04, 'bandpass', audioRnd(400, 700), 1.5);
   },
   saved() {
     // a survivor made it aboard: a bright double chime
@@ -3100,13 +3103,18 @@ function runUp(demo) {
 function maxHP() {
   return UP.hp(lv('armor'));
 }
-// Loot and gold items' scrap alternatives share a fractional pot, separate from killAcc.
+// Finds and gold alternatives share lootAcc; wall piles use their own pot for exact source totals.
 // Apply Salvage Crew once here; bankRun only stores the whole scrap already paid.
-function payLootScrap(base) {
+function payLootScrap(base, source = 'loot') {
   if (!(base > 0)) return 0;
-  G.lootAcc += base * (1 + G.up.salvage);
-  const pay = Math.floor(G.lootAcc + 1e-9);
-  G.lootAcc = Math.max(0, G.lootAcc - pay);
+  source = source === 'wall' ? 'wall' : 'loot';
+  const pot = source === 'wall' ? 'wallAcc' : 'lootAcc';
+  G.earnedBase[source] += base;
+  G.earnedCounts[source]++;
+  G[pot] += base * (1 + G.up.salvage);
+  const pay = Math.floor(G[pot] + 1e-9);
+  G[pot] = Math.max(0, G[pot] - pay);
+  G.earnedSources[source] += pay;
   G.cash += pay;
   G.pay.loot += pay;
   if (pay) G.cashPulse = 1;
@@ -3128,6 +3136,11 @@ function newGame(demo, number, replay) {
   for (let k = 0; k < CAR.n; k++) cars.push({ x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0, dx: 0, dy: -1, nx: 1, ny: 0, ang: 0, k: 0 });
   G = {
     demo: !!demo, leg: leg ? leg.n : 0, replay: !!replay, eventIndex: 0, events: [], t: 0, run: 0, endT: 0, result: '', up,
+    // Ordinary kill pay is fixed for this leg. Raw source bases exclude its factor and Salvage.
+    killPay: Number.isFinite(leg?.ordinaryPay) ? Math.max(0, leg.ordinaryPay) : 1,
+    earnedSources: { ordinary: 0, silver: 0, loot: 0, wall: 0 },
+    earnedBase: { ordinary: 0, silver: 0, loot: 0, wall: 0 },
+    earnedCounts: { ordinaryKills: 0, silverKills: 0, ramKills: 0, loot: 0, wall: 0 },
     kills: 0, cash: 0, gold: 0, shownCash: 0, cashPulse: 0, killBump: 0, shots: 0, hits: 0, bestBlast: 0,
     // Legacy debug fields stay zero until the final cleanup; Salvage Crew uses the pay pots below.
     scavAcc: 0, scavPaid: 0,
@@ -3146,8 +3159,9 @@ function newGame(demo, number, replay) {
     camX: 0, camY: 0, aimSX: W / 2, aimSY: VH / 2,
     lock: null, lockWait: false, box: null,
     zombies: [], bodies: [], rounds: [], timers: [], statics: [], people: [],
-    // Fractions from boosted kills and finds carry forward to the next reward in that group.
-    spawnCd: 0, waveCd: null, waves: 0, killAcc: 0, lootAcc: 0, railCd: rnd(4, 6), onTrain: 0, blocked: false, decalT: 0, sum: null,
+    // Each source carries its own fraction, so silver and wall rewards never inherit ordinary pay.
+    spawnCd: 0, waveCd: null, waves: 0, killAcc: 0, silverAcc: 0, lootAcc: 0, wallAcc: 0,
+    railCd: rnd(4, 6), onTrain: 0, blocked: false, decalT: 0, sum: null,
     // this run's scrap by where it came from (the summary lists them), the survivors aboard, the px
     // the train has ridden, the furthest km, and what is already in the save
     pay: { kills: 0, loot: 0 }, stopNames: [], surv: 0, ride: 0, maxKm: 0, banked: { scrap: 0, surv: 0, gold: 0 },
@@ -3501,7 +3515,9 @@ function breakWall(w, cause = 'mg') {
   w.broken = true; w.state = 'broken'; w.hp = 0; w.brokenAt = G.run; w.hpOut = G.tr.hp;
   w.cause = cause; w.rammed = cause === 'ram'; w.target.dead = w.target.gone = true;
   w.target.pending = 0; w.target.paid = 0;
-  const f = addFind('pile', w.km, 0, 1, CFG.wall.loot);
+  const wallPay = legDef(G.leg)?.wallPay;
+  const f = addFind('pile', w.km, 0, 1, Number.isFinite(wallPay) ? Math.max(0, wallPay) : CFG.wall.loot);
+  f.scrapSource = 'wall';
   f.eventId = w.id + '-scrap'; w.lootId = f.eventId;
   boomFx(w.x, w.y, true);
   for (let i = 0; i < CFG.wall.bodies && G.bodies.length < 160; i++) {
@@ -3927,14 +3943,19 @@ function kill(z, cause, cx, cy, dist, free) {
   z.hp = 0;
   z.paid = 0;
   const sc = scoring() && !free, S = z.S, bs = G.bodies, room = bs.length < 160, ram = cause === 'ram';
-  // Its value (twice for the Ram) times kill pay, then Salvage Crew's extra share.
-  // Whole scrap pays now; the fraction waits for the next scored kill.
+  // Ordinary kills retain the Ram bonus and the leg's fractional pay. Silver remains worth 15,
+  // boosted only by Salvage. Whole scrap pays now; each source keeps its own fraction.
   let pay = 0;
   if (sc) {
-    const base = z.value * (ram ? CFG.ram.pay : 1) * (z.gold ? 1 : CFG.pay.kill);
-    G.killAcc += base * (1 + G.up.salvage);
-    pay = Math.floor(G.killAcc + 1e-9);
-    G.killAcc -= pay;
+    const source = z.silver ? 'silver' : 'ordinary', pot = z.silver ? 'silverAcc' : 'killAcc';
+    const base = z.silver ? SILVER_PAY : z.value * (ram ? CFG.ram.pay : 1) * CFG.pay.kill;
+    G.earnedBase[source] += base;
+    if (!z.gold) G.earnedCounts[z.silver ? 'silverKills' : 'ordinaryKills']++;
+    if (ram && !z.gold && !z.silver) G.earnedCounts.ramKills++;
+    G[pot] += base * (z.silver ? 1 : G.killPay) * (1 + G.up.salvage);
+    pay = Math.floor(G[pot] + 1e-9);
+    G[pot] = Math.max(0, G[pot] - pay);
+    G.earnedSources[source] += pay;
     if (cause === 'gun') G.gun.kills++;
     if (!SAVE.flags.scrapEarned) { SAVE.flags.scrapEarned = true; saveSave(); }
     G.kills++;
@@ -5567,6 +5588,11 @@ function updateStation(dt) {
 
 // Rail px between stations: about 60 s at the train's 40 px/s cruise. (proposal)
 const LEG_LENGTH = 2400;
+// First-pass scrap targets from the final design; ordinary kill shares are tuned with real rides.
+const LEG_SCRAP_TARGETS = [80, 95, 115, 135, 160, 190, 225, 265, 310, 365, 430, 500];
+// Ordinary kill multipliers preserve the large hordes; wall drops remain collectible. (proposal)
+const LEG_ORDINARY_PAY = [0.67831, 0.884, 0.75047, 0.66879, 0.37451, 0.47, 0.74115, 0.54759, 0.80347, 0.60226, 0.56248, 0.58263];
+const LEG_WALL_PAY = { 5: 40, 9: 40 };
 const STOPS = [
   Object.assign(DEPOT, { kind: 'big', side: 1 }),
   { id: 'millbrook', name: 'MILLBROOK', kind: 'big' },
@@ -5598,32 +5624,32 @@ const LEG_BASE_ROWS = [
 // real handlers exist. Leg 9's two events at 27 s deliberately overlap. (proposal)
 const legPile = (pay) => ({ ahead: 120, off: 100, side: 1, pay });
 const LEG_EVENT_ROWS = [
-  [[3, 'railCrowd', { n: 6 }], [12, 'stream', { edge: -1, n: 12 }], [22, 'pile', legPile(15)],
+  [[3, 'railCrowd', { n: 6 }], [12, 'stream', { edge: -1, n: 12 }], [22, 'pile', legPile(24)],
     [32, 'stream', { edge: 1, n: 14 }], [42, 'railCrowd', { n: 8 }], [52, 'wave', { n: 10 }]],
-  [[3, 'railCrowd', { n: 10 }], [12, 'stream', { edge: -1, n: 18, type: 1 }], [22, 'pile', legPile(15)],
+  [[3, 'railCrowd', { n: 10 }], [12, 'stream', { edge: -1, n: 18, type: 1 }], [22, 'pile', legPile(29)],
     [32, 'stream', { edge: 1, n: 20 }], [42, 'railCrowd', { n: 12 }], [52, 'wave', { n: 12 }]],
   [[3, 'railCrowd', { n: 12 }], [11, 'stream', { edge: -1, n: 22 }], [19, 'golden', { edge: -1 }],
-    [27, 'pile', legPile(20)], [35, 'stream', { edge: 1, n: 24 }], [43, 'railCrowd', { n: 16 }], [51, 'wave', { n: 14 }]],
+    [27, 'pile', legPile(35)], [35, 'stream', { edge: 1, n: 24 }], [43, 'railCrowd', { n: 16 }], [51, 'wave', { n: 14 }]],
   [[3, 'railCrowd', { n: 14 }], [11, 'stream', { edge: -1, n: 24 }], [19, 'golden', { edge: 1 }],
-    [27, 'rescue', { id: 'rescue-4' }], [35, 'pile', legPile(25)], [43, 'silverGroup', { n: 3, edge: 1 }], [51, 'wave', { n: 16 }]],
+    [27, 'rescue', { id: 'rescue-4' }], [35, 'pile', legPile(41)], [43, 'silverGroup', { n: 3, edge: 1 }], [51, 'wave', { n: 16 }]],
   [[3, 'railCrowd', { n: 18 }], [11, 'stream', { edge: -1, n: 26 }], [19, 'golden', { edge: -1 }],
-    [27, 'deadWall', {}], [35, 'pile', legPile(30)], [43, 'stream', { edge: 1, n: 28 }], [51, 'wave', { n: 18 }]],
+    [27, 'deadWall', {}], [35, 'pile', legPile(48)], [43, 'stream', { edge: 1, n: 28 }], [51, 'wave', { n: 18 }]],
   [[3, 'railCrowd', { n: 20, leaders: 1, leadType: 2 }], [11, 'stream', { edge: -1, n: 30 }], [19, 'golden', { edge: 1 }],
-    [27, 'goldCrate', {}], [35, 'pile', legPile(35)], [43, 'stream', { edge: 1, n: 32 }], [51, 'wave', { n: 20 }]],
+    [27, 'goldCrate', {}], [35, 'pile', legPile(57)], [43, 'stream', { edge: 1, n: 32 }], [51, 'wave', { n: 20 }]],
   [[3, 'explosiveStream', { edge: -1, n: 8 }], [11, 'stream', { edge: 1, n: 34 }], [19, 'golden', { edge: -1 }],
-    [27, 'crate', legPile(50)], [35, 'pile', legPile(40)], [43, 'railCrowd', { n: 24 }], [51, 'wave', { n: 24 }]],
+    [27, 'crate', legPile(38)], [35, 'pile', legPile(30)], [43, 'railCrowd', { n: 24 }], [51, 'wave', { n: 24 }]],
   [[3, 'railCrowd', { n: 26 }], [11, 'golden', { edge: 1 }], [19, 'rescue', { id: 'rescue-8' }],
-    [27, 'pile', legPile(45)], [35, 'goldCrate', {}], [43, 'silverGroup', { n: 4, edge: 1 }], [51, 'wave', { n: 40, big: true }]],
+    [27, 'pile', legPile(80)], [35, 'goldCrate', {}], [43, 'silverGroup', { n: 4, edge: 1 }], [51, 'wave', { n: 40, big: true }]],
   [[3, 'railCrowd', { n: 30 }], [11, 'stream', { edge: -1, n: 40 }], [19, 'golden', { edge: -1 }],
-    [27, 'stream', { edge: 1, n: 40 }], [27, 'deadWall', {}], [35, 'pile', legPile(50)], [43, 'goldCrate', {}], [51, 'wave', { n: 44, big: true }]],
+    [27, 'stream', { edge: 1, n: 40 }], [27, 'deadWall', {}], [35, 'pile', legPile(93)], [43, 'goldCrate', {}], [51, 'wave', { n: 44, big: true }]],
   [[3, 'stream', { edge: 0, n: 26, leaders: 2, leadType: 2, type: 1 }], [11, 'railCrowd', { n: 34 }], [19, 'golden', { edge: 1 }],
-    [27, 'rescue', { id: 'rescue-10' }], [35, 'pile', legPile(55)],
+    [27, 'rescue', { id: 'rescue-10' }], [35, 'pile', legPile(110)],
     [43, 'stream', { edge: 0, n: 30, leaders: 3, leadType: 2, type: 1 }], [51, 'wave', { n: 48, big: true }]],
   [[3, 'railCrowd', { n: 40 }], [11, 'stream', { edge: -1, n: 50 }], [19, 'golden', { edge: -1 }],
-    [27, 'goldCrate', {}], [35, 'pile', legPile(60)],
+    [27, 'goldCrate', {}], [35, 'pile', legPile(129)],
     [43, 'stream', { edge: 0, n: 50, leaders: 4, leadType: 2, type: 1 }], [51, 'wave', { n: 65, big: true }]],
   [[3, 'wave', { n: 65, big: true }], [11, 'stream', { edge: -1, n: 60 }], [19, 'golden', { edge: 1 }],
-    [27, 'goldCrate', {}], [35, 'pile', legPile(70)], [43, 'railCrowd', { n: 50 }], [51, 'wave', { n: 75, big: true }]]
+    [27, 'goldCrate', {}], [35, 'pile', legPile(150)], [43, 'railCrowd', { n: 50 }], [51, 'wave', { n: 75, big: true }]]
 ];
 const LEGS = [];
 for (let n = 1; n < STOPS.length; n++) {
@@ -5633,6 +5659,7 @@ for (let n = 1; n < STOPS.length; n++) {
   const b = LEG_BASE_ROWS[n - 1], base = HORDE[n - 1];
   Object.assign(base, { want: b[0], size: b[1], gap: b[2], run: b[3], brute: b[4], railBrute: b[5] });
   LEGS.push({ n, from, to, len: LEG_LENGTH, stars: n >= 3, base: HORDE[n - 1],
+    scrapTarget: LEG_SCRAP_TARGETS[n - 1], ordinaryPay: LEG_ORDINARY_PAY[n - 1], wallPay: LEG_WALL_PAY[n] ?? CFG.wall.loot,
     rescue: [4, 8, 10].includes(n) ? 'rescue-' + n : null, finale: n === 12, events: LEG_EVENT_ROWS[n - 1] });
 }
 const legDef = (n) => LEGS[n - 1] || null;
@@ -5963,7 +5990,7 @@ Object.assign(SFX, {
   clang() {
     // the plow hits one: a steel knock
     if (!gap('clang', 40)) return;
-    tone(rnd(700, 820), 0.08, 'square', 0.012, 380);
+    tone(audioRnd(700, 820), 0.08, 'square', 0.012, 380);
     nz(0.04, 0.03, 'bandpass', 1800, 2);
   },
   gold() {
@@ -12831,7 +12858,7 @@ function takeLoot(f, h) {
 function lootPaid(f, h) {
   const gx = h.x, gy = h.y - h.alt + 14, big = f.kind !== 'pile';
   const reward = f.kind === 'gold' ? f.reward || { gold: 0, scrap: 0 } : null;
-  const pay = reward ? reward.scrap : payLootScrap(f.pay);
+  const pay = reward ? reward.scrap : payLootScrap(f.pay, f.scrapSource);
   if (pay > 0) addTotal(gx, gy - 14, pay, U.blue, scrapPopScale(big));
   if (reward?.gold > 0) addTotal(gx, gy - 14, reward.gold, U.gold, 2);
   coinPop(gx, gy, f.kind === 'gold' ? 16 : big ? 8 : 4);
@@ -13088,7 +13115,7 @@ Object.assign(window.__sr, {
   // still holds it back on the next step). lootTake(i): take find i at once. lootSpawn(kind): a find
   // of that kind (pile, crate, gold, sos) right under the heli.
   loot: () => (G.loot || []).map((f, i) => ({ i, kind: f.kind, eventId: f.eventId || null, km: f.km, s: f.s,
-    off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, rewardId: f.rewardId || null,
+    off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, scrapSource: f.scrapSource || 'loot', rewardId: f.rewardId || null,
     reward: f.reward ? { ...f.reward } : null, gone: f.gone, seen: f.seen,
     stage: f.stage, w: f.w, u: f.u, rescueId: f.rescueId || null, saved: f.saved === true, carried: f.carried === true, ground: f.ground === true,
     placed: f.placed, awake: f.awake, guards: f.zs ? f.zs.filter((z) => !z.dead).length : 0 })),
@@ -14306,6 +14333,9 @@ function testClearPlaneFixture() {
   return true;
 }
 Object.assign(window.__sr, {
+  incomeState: () => G ? { leg: G.leg, target: legDef(G.leg)?.scrapTarget || 0, ordinaryPay: G.killPay,
+    scrap: Math.floor(G.cash), sources: { ...G.earnedSources }, base: { ...G.earnedBase }, counts: { ...G.earnedCounts },
+    fractions: { ordinary: G.killAcc, silver: G.silverAcc, loot: G.lootAcc, wall: G.wallAcc } } : null,
   starState: () => {
     if (!G) return null;
     const record = SAVE.legs[G.leg], stars = record?.stars || [false, false, false];
@@ -14699,6 +14729,7 @@ Object.assign(window.__sr, {
   line: () => ({
     stops: STOPS.map(({ id, name, kind, km, side }) => ({ id, name, kind, km, side })),
     legs: LEGS.map((l) => ({ n: l.n, from: l.from.id, to: l.to.id, len: l.len,
+      scrapTarget: l.scrapTarget, ordinaryPay: l.ordinaryPay, wallPay: l.wallPay,
       stars: l.stars, rescue: l.rescue, finale: l.finale, base: { ...l.base },
       events: l.events.map(([at, kind, params]) => [at, kind, { ...params }]) }))
   }),

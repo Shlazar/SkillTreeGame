@@ -201,7 +201,7 @@ Object.assign(SFX, {
   clang() {
     // the plow hits one: a steel knock
     if (!gap('clang', 40)) return;
-    tone(rnd(700, 820), 0.08, 'square', 0.012, 380);
+    tone(audioRnd(700, 820), 0.08, 'square', 0.012, 380);
     nz(0.04, 0.03, 'bandpass', 1800, 2);
   },
   gold() {

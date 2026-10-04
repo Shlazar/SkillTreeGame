@@ -238,7 +238,7 @@ function takeLoot(f, h) {
 function lootPaid(f, h) {
   const gx = h.x, gy = h.y - h.alt + 14, big = f.kind !== 'pile';
   const reward = f.kind === 'gold' ? f.reward || { gold: 0, scrap: 0 } : null;
-  const pay = reward ? reward.scrap : payLootScrap(f.pay);
+  const pay = reward ? reward.scrap : payLootScrap(f.pay, f.scrapSource);
   if (pay > 0) addTotal(gx, gy - 14, pay, U.blue, scrapPopScale(big));
   if (reward?.gold > 0) addTotal(gx, gy - 14, reward.gold, U.gold, 2);
   coinPop(gx, gy, f.kind === 'gold' ? 16 : big ? 8 : 4);
@@ -495,7 +495,7 @@ Object.assign(window.__sr, {
   // still holds it back on the next step). lootTake(i): take find i at once. lootSpawn(kind): a find
   // of that kind (pile, crate, gold, sos) right under the heli.
   loot: () => (G.loot || []).map((f, i) => ({ i, kind: f.kind, eventId: f.eventId || null, km: f.km, s: f.s,
-    off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, rewardId: f.rewardId || null,
+    off: f.off * f.side, x: f.x, y: f.y, pay: f.pay, scrapSource: f.scrapSource || 'loot', rewardId: f.rewardId || null,
     reward: f.reward ? { ...f.reward } : null, gone: f.gone, seen: f.seen,
     stage: f.stage, w: f.w, u: f.u, rescueId: f.rescueId || null, saved: f.saved === true, carried: f.carried === true, ground: f.ground === true,
     placed: f.placed, awake: f.awake, guards: f.zs ? f.zs.filter((z) => !z.dead).length : 0 })),
